@@ -1,0 +1,46 @@
+{
+  "record_version": 2,
+  "recorded_at_utc": "2026-10-12T17:45:31.648Z",
+  "command": "python3 -B docs/testing/validate_docs.py",
+  "working_directory": "/Volumes/RootKernel/RootKernel/aquarium-tools/haeryong",
+  "result": "pass",
+  "manifest_check": "enabled",
+  "scope": "After preserving the original brief and removing active references to the redundant dated design folder; before physical deletion of that folder.",
+  "obsolete_directory_removed_at_record_time": false,
+  "after_removal": "Regenerate docs/MANIFEST.md and rerun the validator; the expected Markdown count is 144 after removing the old directory's four Markdown files.",
+  "validation": {
+    "counts": {
+      "bundle": "1.6.2",
+      "markdown_files": 148,
+      "review_guide_version": "1.6.2",
+      "tasks": 61,
+      "epics": 10,
+      "frontmatter": 71,
+      "syntax_blocks": {
+        "yaml": 1,
+        "json": 4,
+        "jsonl": 1
+      },
+      "task_assertions": 207,
+      "source_sha256": "8f26fea2833cd3cc3312c1afadea74e042d1d895b079bfa1bdff9cc02cf563e5",
+      "requirements": 40,
+      "acceptance": 29,
+      "supplemental_cases": 20,
+      "catalog_named_edges": 85,
+      "relative_links": 1925,
+      "heading_links": 167,
+      "example_digests": {
+        "payload_sha256": "df1a2aaa44139da7592c4a5c158addfec74b438351c5561ca8e64b4cfe6363da",
+        "supplied_metadata_sha256": "1f2cf1cb072cbabb9f3f0a5722d031cefec0f42d27bf86bae6cf30d1f303f7ae",
+        "manifest_sha256": "7e8b471f187350c2781098e6038aa7d89bc70b3d7d441bd4bc63334b14a95f86"
+      },
+      "payload_files": 7,
+      "html_pages": 3,
+      "directory_entries": 3,
+      "example_local_html_targets": 8,
+      "manifest_entries": 148,
+      "scope": "Documentation only; no browser/provider/runtime evidence"
+    },
+    "issues": []
+  }
+}

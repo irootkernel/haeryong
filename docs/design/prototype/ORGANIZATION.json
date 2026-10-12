@@ -1,0 +1,288 @@
+{
+  "record_version": 1,
+  "design_revision": "r5-unapproved",
+  "canonical_path": "docs/design/prototype/",
+  "scope": "Canonical source organization and reproduction integrity only. This record does not claim a new full R5 browser run or implementation gate.",
+  "source_copy_check": {
+    "recorded_at_utc": "2026-10-12T17:30:55.940074+00:00",
+    "source_directory": "/Volumes/RootKernel/RootKernel/aquarium-tools/haeryong/docs/design/2026-10-12-grok",
+    "canonical_directory": "/Volumes/RootKernel/RootKernel/aquarium-tools/haeryong/docs/design/prototype",
+    "files": [
+      {
+        "name": "ASIDE-VALIDATION.json",
+        "bytes": 49136,
+        "sha256": "e9c9f8020cb899edd4b5e35af7c2e021ec40d1b3ee3e0dc76d9baf62f00b9845",
+        "source_sha256": "e9c9f8020cb899edd4b5e35af7c2e021ec40d1b3ee3e0dc76d9baf62f00b9845",
+        "byte_identical": true
+      },
+      {
+        "name": "DESIGN-NOTES.md",
+        "bytes": 22750,
+        "sha256": "4ec8e546421ea14cef86ac5543cd0f109c7175849f4d9c2de91bc5e7b23c49b4",
+        "source_sha256": "4ec8e546421ea14cef86ac5543cd0f109c7175849f4d9c2de91bc5e7b23c49b4",
+        "byte_identical": true
+      },
+      {
+        "name": "GROK-R2-REQUEST.txt",
+        "bytes": 3521,
+        "sha256": "519f2b37221928de2cc9045d8ffb9e6ca742576be94510ca806261d8130aae2d",
+        "source_sha256": "519f2b37221928de2cc9045d8ffb9e6ca742576be94510ca806261d8130aae2d",
+        "byte_identical": true
+      },
+      {
+        "name": "GROK-REVISION-REQUESTS.json",
+        "bytes": 12031,
+        "sha256": "7d29764947cfef089361f9128eadd6652dc5cb5438f36e5c73c7d136c70a3fbf",
+        "source_sha256": "7d29764947cfef089361f9128eadd6652dc5cb5438f36e5c73c7d136c70a3fbf",
+        "byte_identical": true
+      },
+      {
+        "name": "MAC-SYNC-R5.json",
+        "bytes": 2819,
+        "sha256": "37276860cfc0213a352ba66fdf5dd71c90af4e9de45d026478105331c357fe33",
+        "source_sha256": "37276860cfc0213a352ba66fdf5dd71c90af4e9de45d026478105331c357fe33",
+        "byte_identical": true
+      },
+      {
+        "name": "REVIEW.md",
+        "bytes": 28399,
+        "sha256": "5b6f1bcffc6e03a3e7a5048675dbb85e04e3e1cd1c59a793d778f95235f36f8a",
+        "source_sha256": "5b6f1bcffc6e03a3e7a5048675dbb85e04e3e1cd1c59a793d778f95235f36f8a",
+        "byte_identical": true
+      },
+      {
+        "name": "STATIC-R5.json",
+        "bytes": 12027,
+        "sha256": "32dfae48b3ba629adec32bfb3f19f6a41aceb268278543e09fa2f8b516564704",
+        "source_sha256": "32dfae48b3ba629adec32bfb3f19f6a41aceb268278543e09fa2f8b516564704",
+        "byte_identical": true
+      },
+      {
+        "name": "VALIDATION.json",
+        "bytes": 14087,
+        "sha256": "79a1e45f11fac38810223da6302a5b2adee84d4e24ce3bbd7edbe6a359576e32",
+        "source_sha256": "79a1e45f11fac38810223da6302a5b2adee84d4e24ce3bbd7edbe6a359576e32",
+        "byte_identical": true
+      },
+      {
+        "name": "assemble-prototype.py",
+        "bytes": 7446,
+        "sha256": "de3c9e7432184ed6682bca499db5f71bc39204008991b594827e2129d265f702",
+        "source_sha256": "de3c9e7432184ed6682bca499db5f71bc39204008991b594827e2129d265f702",
+        "byte_identical": true
+      },
+      {
+        "name": "grok-context-r5.css",
+        "bytes": 2593,
+        "sha256": "b93e52d0b85f7e3e7dc3ecf2f1b7faea6053457c88ad40271cb16e43ad6950e0",
+        "source_sha256": "b93e52d0b85f7e3e7dc3ecf2f1b7faea6053457c88ad40271cb16e43ad6950e0",
+        "byte_identical": true
+      },
+      {
+        "name": "grok-context-r5.json",
+        "bytes": 29593,
+        "sha256": "f3dd6a98bc62eb43ed30fdffba9d1eb967b93af0d54959da376a4a57038a5630",
+        "source_sha256": "f3dd6a98bc62eb43ed30fdffba9d1eb967b93af0d54959da376a4a57038a5630",
+        "byte_identical": true
+      },
+      {
+        "name": "grok-fragments.json",
+        "bytes": 70456,
+        "sha256": "d0c9a107008ea1c053df143cb5e3d375ed45986489d8f55ff0313487cbc974b7",
+        "source_sha256": "d0c9a107008ea1c053df143cb5e3d375ed45986489d8f55ff0313487cbc974b7",
+        "byte_identical": true
+      },
+      {
+        "name": "grok-management-r5.css",
+        "bytes": 8547,
+        "sha256": "4135e9b7f832dd2a0e2da85fdd292cf815ccf28e7b1f4878c336417dddb8b8c9",
+        "source_sha256": "4135e9b7f832dd2a0e2da85fdd292cf815ccf28e7b1f4878c336417dddb8b8c9",
+        "byte_identical": true
+      },
+      {
+        "name": "grok-management-r5.json",
+        "bytes": 82831,
+        "sha256": "0fe39b82129cf4e6bdaacd7021bd0b6e6f89f81a791a4901f6642797a298d6a1",
+        "source_sha256": "0fe39b82129cf4e6bdaacd7021bd0b6e6f89f81a791a4901f6642797a298d6a1",
+        "byte_identical": true
+      },
+      {
+        "name": "grok-product-r5.css",
+        "bytes": 4732,
+        "sha256": "d38aece02730ddf27e79daf7e2fe6f3125dde145eceb259407cbf6a5d314ba80",
+        "source_sha256": "d38aece02730ddf27e79daf7e2fe6f3125dde145eceb259407cbf6a5d314ba80",
+        "byte_identical": true
+      },
+      {
+        "name": "grok-product-r5.json",
+        "bytes": 90668,
+        "sha256": "1663c83c6b5768c94d730e022b0b2adbaa129bd5a55994d540104ff62c6bd775",
+        "source_sha256": "1663c83c6b5768c94d730e022b0b2adbaa129bd5a55994d540104ff62c6bd775",
+        "byte_identical": true
+      },
+      {
+        "name": "grok-reader-r3.json",
+        "bytes": 26425,
+        "sha256": "c52e4c87f9c5cd143a71708264fc53df9bccd30d93e91e9c0baa77e96b785f2d",
+        "source_sha256": "c52e4c87f9c5cd143a71708264fc53df9bccd30d93e91e9c0baa77e96b785f2d",
+        "byte_identical": true
+      },
+      {
+        "name": "grok-responsive-r4.json",
+        "bytes": 39366,
+        "sha256": "f71304cae6c93b7a6fd1bdec059880887b9a93c662e497e00a377d1c7af5a855",
+        "source_sha256": "f71304cae6c93b7a6fd1bdec059880887b9a93c662e497e00a377d1c7af5a855",
+        "byte_identical": true
+      },
+      {
+        "name": "grok-settings-r5.css",
+        "bytes": 4262,
+        "sha256": "88a6d76ca17e097a044ae8ec14f23617515150858268bdd39cba231b40ab38f6",
+        "source_sha256": "88a6d76ca17e097a044ae8ec14f23617515150858268bdd39cba231b40ab38f6",
+        "byte_identical": true
+      },
+      {
+        "name": "grok-settings-r5.json",
+        "bytes": 142955,
+        "sha256": "fd46eb2244c4db36f19cc112f89f1de0cc6156b23b51bde18b06931588cefac1",
+        "source_sha256": "fd46eb2244c4db36f19cc112f89f1de0cc6156b23b51bde18b06931588cefac1",
+        "byte_identical": true
+      },
+      {
+        "name": "prototype-context-r5.js",
+        "bytes": 2504,
+        "sha256": "f4878dc769f85a89f914ab35e3538b810a1bb13486538843f3579400c5d30a41",
+        "source_sha256": "f4878dc769f85a89f914ab35e3538b810a1bb13486538843f3579400c5d30a41",
+        "byte_identical": true
+      },
+      {
+        "name": "prototype-core.js",
+        "bytes": 32502,
+        "sha256": "0cd70f58824bae344052cf3e044d0896f47a2a70a11b71efccda47847f731f38",
+        "source_sha256": "0cd70f58824bae344052cf3e044d0896f47a2a70a11b71efccda47847f731f38",
+        "byte_identical": true
+      },
+      {
+        "name": "prototype-integration.css",
+        "bytes": 13127,
+        "sha256": "c67e91488102523c8469ad4063fa649a2317632bbb42feb20e7e13570526a4e4",
+        "source_sha256": "c67e91488102523c8469ad4063fa649a2317632bbb42feb20e7e13570526a4e4",
+        "byte_identical": true
+      },
+      {
+        "name": "prototype-management-r5.js",
+        "bytes": 15222,
+        "sha256": "89e5b2797a3895fa578f6de29df6249890e0e95b430cbafaef13ad10d260481c",
+        "source_sha256": "89e5b2797a3895fa578f6de29df6249890e0e95b430cbafaef13ad10d260481c",
+        "byte_identical": true
+      },
+      {
+        "name": "prototype-management.js",
+        "bytes": 45170,
+        "sha256": "3094c656b1568c7f3430a2baa91b6fc95ad06148ac232d45647292c2fa41f6b0",
+        "source_sha256": "3094c656b1568c7f3430a2baa91b6fc95ad06148ac232d45647292c2fa41f6b0",
+        "byte_identical": true
+      },
+      {
+        "name": "prototype-product-r5.js",
+        "bytes": 6336,
+        "sha256": "b4248051050e9f2fca16061f0bea0704317151f186be0226cd1fd3ce3440f6f6",
+        "source_sha256": "b4248051050e9f2fca16061f0bea0704317151f186be0226cd1fd3ce3440f6f6",
+        "byte_identical": true
+      },
+      {
+        "name": "prototype-r5-safety.css",
+        "bytes": 112,
+        "sha256": "0f0fe8b69af55807d93fe9c795e7b7fcb93cb41f8504d21d3381bfbdfa91263e",
+        "source_sha256": "0f0fe8b69af55807d93fe9c795e7b7fcb93cb41f8504d21d3381bfbdfa91263e",
+        "byte_identical": true
+      },
+      {
+        "name": "prototype-reader.js",
+        "bytes": 37030,
+        "sha256": "7bd71ea5b04083c35799800ad3ce3bc2f530071dfd9621739f7423224c926742",
+        "source_sha256": "7bd71ea5b04083c35799800ad3ce3bc2f530071dfd9621739f7423224c926742",
+        "byte_identical": true
+      },
+      {
+        "name": "prototype-recovery-r5.js",
+        "bytes": 1774,
+        "sha256": "22937e6b6538e9af685856c1978fc34c99657c99eb3f3189cc2fb63e235df220",
+        "source_sha256": "22937e6b6538e9af685856c1978fc34c99657c99eb3f3189cc2fb63e235df220",
+        "byte_identical": true
+      },
+      {
+        "name": "prototype-settings-r5.js",
+        "bytes": 18251,
+        "sha256": "b7957b9a546c9182293a47a2fa96ed42b6c73a38b246d9d073fc3e7111c097fe",
+        "source_sha256": "b7957b9a546c9182293a47a2fa96ed42b6c73a38b246d9d073fc3e7111c097fe",
+        "byte_identical": true
+      },
+      {
+        "name": "prototype-settings.js",
+        "bytes": 35214,
+        "sha256": "9e1c55b1fc1fd1e0e993f3bc9db02fe43c49a30c37563a12137200959be68d09",
+        "source_sha256": "9e1c55b1fc1fd1e0e993f3bc9db02fe43c49a30c37563a12137200959be68d09",
+        "byte_identical": true
+      },
+      {
+        "name": "prototype.html",
+        "bytes": 309429,
+        "sha256": "719567a66a51350b02f49c073f7103061d71b7e60c196b8209aa3c766b0e4f1a",
+        "source_sha256": "719567a66a51350b02f49c073f7103061d71b7e60c196b8209aa3c766b0e4f1a",
+        "byte_identical": true
+      },
+      {
+        "name": "recovery-r5-validation.json",
+        "bytes": 14046,
+        "sha256": "a67b462be684b6f9edc1109852ea9b91cda3bc3687b8496cc44c6b42371540a2",
+        "source_sha256": "a67b462be684b6f9edc1109852ea9b91cda3bc3687b8496cc44c6b42371540a2",
+        "byte_identical": true
+      },
+      {
+        "name": "review-frame.html",
+        "bytes": 1744,
+        "sha256": "be0fb88b727115804d848fb2da0998dc8367402f22fe4d23059203618be7e4c9",
+        "source_sha256": "be0fb88b727115804d848fb2da0998dc8367402f22fe4d23059203618be7e4c9",
+        "byte_identical": true
+      }
+    ],
+    "compared": 34,
+    "identical": 34,
+    "canonical_file_count": 37,
+    "transfer_marker_files": []
+  },
+  "reproduction_record": "LOCAL-REPRODUCTION.json",
+  "reproduction_result": {
+    "result": "pass",
+    "execution_environment": "local temporary canonical mirror",
+    "remote_execution": false,
+    "browser_execution": false,
+    "assembly_runs": 1,
+    "html_bytes": 309429,
+    "html_sha256": "719567a66a51350b02f49c073f7103061d71b7e60c196b8209aa3c766b0e4f1a",
+    "both_generated_aliases_byte_identical": true
+  },
+  "documentation_report": "../../testing/bundle-validation.md",
+  "historical_snapshot_retained_at_organization_time": true,
+  "current_history_documents": [
+    "00-BRIEF.md",
+    "DESIGN-NOTES.md",
+    "REVIEW.md"
+  ],
+  "deprecated_directory_cleanup": {
+    "recorded_at_utc": "2026-10-12T17:43:46.594Z",
+    "directory": "docs/design/2026-10-12-grok/",
+    "removal_ready": true,
+    "physically_removed_at_record_time": false,
+    "preserved_source_and_review_files": 35,
+    "original_brief": {
+      "path": "00-BRIEF.md",
+      "bytes": 9764,
+      "sha256": "6084d9a78102593ed75ef67beab587749d3476d60acba03eebd6254316b86f31",
+      "byte_identical": true
+    },
+    "active_documentation_dependencies_removed": true,
+    "post_removal_requirement": "Regenerate docs/MANIFEST.md and rerun the full documentation validator. Earlier inspection paths are historical provenance."
+  }
+}

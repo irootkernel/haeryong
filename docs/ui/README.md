@@ -1,6 +1,6 @@
 # UI proposal: a reader with inspectable context
 
-**Status:** Proposed product UI and behavior specification, not a built prototype or approved visual design. Delivery/action mappings follow the [1.4.0 review reconciliation](../changes/2026-10-11-opus-review-reconciliation.md). Basis: Revision 4 as amended by D-08/D-09: personal development, directory results with multiple HTML pages, personal review and first-class desktop/mobile browser use.
+**Status:** Proposed product UI and behavior specification. The separate [R5 interactive concept](../design/prototype/README.md) supplies the current visual reference; its [UI handoff](../design/prototype/HANDOFF.md) records baseline inputs, differences, and review limits. The visual design remains unapproved. Delivery/action mappings follow the [1.4.0 review reconciliation](../changes/2026-10-11-opus-review-reconciliation.md). Basis: Revision 4 as amended by D-08/D-09: personal development, directory results with multiple HTML pages, personal review and first-class desktop/mobile browser use.
 
 ## Brief
 

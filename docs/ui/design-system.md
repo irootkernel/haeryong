@@ -4,6 +4,8 @@
 
 A restrained document workspace: neutral surfaces, clear typography, one action accent, generous reading width and compact operational metadata. Prefer persistent meaning-bearing labels to icon-only status. Avoid a decorative knowledge graph on Home, excessive cards, gradients behind code, or simulating a full IDE.
 
+The [R5 interactive concept](../design/prototype/README.md) provides a separate visual baseline input. Its [UI handoff](../design/prototype/HANDOFF.md) explains R5 differences from these proposed tokens and responsive values; the proposal values below remain unchanged.
+
 ## Proposed tokens
 
 | Token | Light | Dark | Usage |

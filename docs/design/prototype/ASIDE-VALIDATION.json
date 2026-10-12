@@ -1,0 +1,1306 @@
+{
+  "revision": "R5",
+  "updated_at_utc": "2026-10-12T16:48:43.170536+00:00",
+  "design_approved": false,
+  "setup": {
+    "browser": "Aside",
+    "cli_version": "1.26.1010.1739",
+    "cli_path": "/Users/draccoon/.local/bin/aside",
+    "host": "local",
+    "existing_account_signed_in": true,
+    "additional_login_or_permission_requested": false
+  },
+  "target": {
+    "title": "해룡 · 전체 제품 디자인 시안",
+    "target_id": "2224110EFBFDBF082AB844FA8074C9F1",
+    "opened_by": "USER",
+    "local_path": "/Volumes/RootKernel/RootKernel/aquarium-tools/haeryong/docs/design/2026-10-12-grok/prototype.html"
+  },
+  "scope": {
+    "loaded_file_revision": "R3",
+    "loaded_file_sha256": "8b91299e21733fa3e76cc20bfb2dc65241b7087aaab2ba2961d48c58141ad135",
+    "source_revision": "R5",
+    "source_sha256": "719567a66a51350b02f49c073f7103061d71b7e60c196b8209aa3c766b0e4f1a",
+    "new_r5_file_load_or_reload": "NOT_EXECUTED",
+    "r5_javascript_browser_validation": "NOT_EXECUTED",
+    "r5_css_preview": "REVIEWED_ON_EXISTING_R3_HTML_AND_JS",
+    "viewport_control": "NO_AUTOMATED_RESIZE; CAPTURE_VIEWPORTS_OBSERVED_AT_THEIR_RECORDED_TIMES",
+    "viewport_change_actor": "NOT_ESTABLISHED",
+    "mobile_and_touch": "NOT_VERIFIED",
+    "full_keyboard_and_assistive_technology": "NOT_VERIFIED"
+  },
+  "counts": {
+    "routes": 11,
+    "dialog_flows": 2,
+    "screenshots": 63,
+    "metadata_records": 63,
+    "representative_images": 12,
+    "r5_css_preview_images": 14,
+    "earlier_partial_fix_and_state_images": 49,
+    "viewport_counts": {
+      "1280x1368": 39,
+      "920x1324": 24
+    }
+  },
+  "evidence_distribution": "Full HTML report, JSON metadata and JPEG files are in the delivered haeryong-design-r5.zip. Source and Markdown review records are mirrored to the Mac design folder.",
+  "verified_interactions_in_existing_r3_tab": [
+    "Navigate the 11 primary routes and inspect all 10 settings sections.",
+    "Open Reader document management, compare versions, browse project source and library empty search state.",
+    "Inspect all six maintenance reports and finding/draft dialogs.",
+    "Start a mock structural scan and observe later structure 12/12 and meaning 0/12 results; no real AI invocation.",
+    "Open mock import, start and pause at 0 percent; inspect retained target and resume control.",
+    "Inspect create, retention-impact and purge-impact dialogs; cancel the impact dialogs.",
+    "Request a mock connection code, reject, request again and approve; existing R3 returns to Reader.",
+    "Open Files, Evidence, Notes and Links panels.",
+    "Fix the closed navigation backdrop with temporary CSS; confirm display and hit target; open and close navigation.",
+    "Fill and save a sample note in tab memory.",
+    "Inspect note conflict, conflict resolution and disconnected states while preserving draft content.",
+    "Preview progressively integrated R5 CSS on selected routes, including General settings in light and dark themes."
+  ],
+  "closed_navigation_fix": {
+    "before": "audit-r5/12c-reader-notes-before.jpg",
+    "after": "audit-r5/12c2-reader-overlay-fixed.jpg",
+    "paired_css_viewport": {
+      "width": 920,
+      "height": 1324,
+      "dpr": 1
+    },
+    "observed_problem": "Hidden navigation backdrop was displayed and intercepted pointer input.",
+    "read_only_dom_finding": "hidden=true with computed display:flex; hit test selected backdrop over note input.",
+    "temporary_css_correction": "#navBackdrop[hidden]{display:none!important}",
+    "verified_after": "Computed display:none and underlying textarea hit target; actual menu open/close and mock note save.",
+    "new_r5_html_js_reloaded": false
+  },
+  "limitations": [
+    "미확정 R5 디자인 시안입니다. 사용자 승인이나 디자인 확정, 출시 준비 완료를 뜻하지 않습니다.",
+    "실제 캡처는 사용자가 이미 열어 둔 R3 HTML·JavaScript에 임시 R4 CSS를 적용한 화면입니다. 후반 20~28번의 14장은 여기에 R5 CSS를 단계적으로 추가한 미리보기입니다.",
+    "신규 R5 HTML·JavaScript는 브라우저에 로드하거나 실행 검증하지 않았습니다. 새 문구, 요소 이동, 선택 상태, 적용·취소 및 상태별 행동의 소스 수정은 이 캡처만으로 검증할 수 없습니다.",
+    "캡처 39장은 1280×1368, 24장은 920×1324입니다. 촬영 시점에 뷰포트가 달랐으며, 검토자가 창 크기를 조절한 통제된 검사는 아닙니다. 일반적인 기준·미리보기 화면을 통제된 동일 뷰포트 전후 비교로 해석하지 않습니다.",
+    "12c와 12c2만은 같은 920×1324의 메모 화면에서 가림막 수정을 비교한 사례입니다. 메뉴가 열린 상태는 별도 12e에서 확인했습니다.",
+    "JPEG 품질 인자는 6·12·35이며 대부분 12입니다. 캡처는 구조·배치·표시 상태와 동작을 확인하는 자료입니다. 미세한 픽셀 정렬, 색 정확도, 대비 수치의 최종 판정에는 원본 품질 검증이 필요합니다.",
+    "Grok CLI에는 소스와 검토자의 텍스트 관찰을 전달했습니다. Grok에 캡처 이미지의 픽셀을 보내거나 Grok이 이미지를 직접 보았다고 주장하지 않습니다.",
+    "상태 시연은 프로토타입의 샘플 데이터와 탭 메모리를 사용합니다. 실제 서버 연결, 실제 업로드·생성·발행·영구 삭제, 영속 저장을 검증한 기록이 아닙니다.",
+    "Node 기반 소스·메모리 상태 점검은 브라우저 렌더링, 키보드·보조 기술 사용성, 실사용자 평가를 대신하지 않습니다. 이 보고서 HTML도 정적 구조만 점검했으며 브라우저 렌더링 검증을 별도로 주장하지 않습니다."
+  ],
+  "captures": [
+    {
+      "file": "audit-r5/01-home-before.jpg",
+      "metadata": "audit-r5/01-home-before.json",
+      "sha256": "51d546cc8a80729baa53d259fad96a5165d594abe2fb71a10adc8a413790bc16",
+      "bytes": 23737,
+      "captured_at_utc": "2026-10-12T15:36:10.158Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JavaScript with temporary R4 CSS; R5 not applied.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/02-library-before.jpg",
+      "metadata": "audit-r5/02-library-before.json",
+      "sha256": "2c43062c01f8c63975e3359ab28407dc41de53af7a0657e51adeaba4a617b5b2",
+      "bytes": 23736,
+      "captured_at_utc": "2026-10-12T15:37:46.243Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/02b-library-empty-before.jpg",
+      "metadata": "audit-r5/02b-library-empty-before.json",
+      "sha256": "5cea7bc42e3db36f90ef30e38ff651268bd8c30e6be993f0afafeac105d24275",
+      "bytes": 18774,
+      "captured_at_utc": "2026-10-12T15:38:23.322Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/03-projects-before.jpg",
+      "metadata": "audit-r5/03-projects-before.json",
+      "sha256": "9dee781d7b3e7f7bb7cea04fd453f9ea70dbb0acd788f5a4daa079a1698ab95e",
+      "bytes": 25664,
+      "captured_at_utc": "2026-10-12T15:39:14.906Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/03b-project-source-before.jpg",
+      "metadata": "audit-r5/03b-project-source-before.json",
+      "sha256": "bbe7089aed3d3a0ee4ac9182a362a08fe885bbedc87103f176f77a677fc7f245",
+      "bytes": 19008,
+      "captured_at_utc": "2026-10-12T15:39:51.128Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/04-versions-before.jpg",
+      "metadata": "audit-r5/04-versions-before.json",
+      "sha256": "981e231edfb882c9224af92a8f13801fd1550d46daf0c68fafb39de86123e8bf",
+      "bytes": 29068,
+      "captured_at_utc": "2026-10-12T15:41:26.390Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 6,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/04a-reader-menu-before.jpg",
+      "metadata": "audit-r5/04a-reader-menu-before.json",
+      "sha256": "c1773693d675777c095a4ed73bab8e0133b3ab114c260d6ceb2945713f4723a8",
+      "bytes": 33409,
+      "captured_at_utc": "2026-10-12T15:40:50.467Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/05-maintenance-before.jpg",
+      "metadata": "audit-r5/05-maintenance-before.json",
+      "sha256": "e1089ad1bb3314c4e2a6cfb555460f058f0cecc9ed79f719579a73b6d6495c39",
+      "bytes": 27256,
+      "captured_at_utc": "2026-10-12T15:43:15.449Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 6,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/05b-freshness-before.jpg",
+      "metadata": "audit-r5/05b-freshness-before.json",
+      "sha256": "42f39fc1f505f29649e006c58c16c8e7e107dbe3c0cda1924d838a64f4a0c573",
+      "bytes": 29486,
+      "captured_at_utc": "2026-10-12T15:43:48.358Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/05c-finding-before.jpg",
+      "metadata": "audit-r5/05c-finding-before.json",
+      "sha256": "23885def3be513779132f135761285fed7753553faab6dd963b9272605cb66ef",
+      "bytes": 24390,
+      "captured_at_utc": "2026-10-12T15:44:14.619Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 6,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/05d-relationships-before.jpg",
+      "metadata": "audit-r5/05d-relationships-before.json",
+      "sha256": "57abaf4f953fc07185c3533f43afb32ff64c7627a2ee5159eb1326d04c19585e",
+      "bytes": 32753,
+      "captured_at_utc": "2026-10-12T15:44:52.478Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/05e-topics-before.jpg",
+      "metadata": "audit-r5/05e-topics-before.json",
+      "sha256": "1cccc18b7a1f7b66495e62fb13ddbbf685dbf94baf52d4cb39a25af840d84b41",
+      "bytes": 30743,
+      "captured_at_utc": "2026-10-12T15:45:28.080Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/05f-drafts-before.jpg",
+      "metadata": "audit-r5/05f-drafts-before.json",
+      "sha256": "193374341627e826ecaf94cc80e7ef78dfee14e8c6a175b40cbc0a90ba908309",
+      "bytes": 26287,
+      "captured_at_utc": "2026-10-12T15:45:55.923Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/05g-draft-preview-before.jpg",
+      "metadata": "audit-r5/05g-draft-preview-before.json",
+      "sha256": "3c9dedca402b59b3c34a7c528dc62accb37e99d86a9f91e5584455f5c9be25a8",
+      "bytes": 31332,
+      "captured_at_utc": "2026-10-12T15:46:21.796Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/05h-activity-before.jpg",
+      "metadata": "audit-r5/05h-activity-before.json",
+      "sha256": "cd61c75e427021fd651e2d921d09424de8a54fe5265d327ad6bb32158535cf67",
+      "bytes": 26338,
+      "captured_at_utc": "2026-10-12T15:46:53.609Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/05i-scan-before.jpg",
+      "metadata": "audit-r5/05i-scan-before.json",
+      "sha256": "49e2680d627f4f6b6fcca9fb86ce5604fea566d2c45d475f5755c812ecc4cb95",
+      "bytes": 24616,
+      "captured_at_utc": "2026-10-12T15:47:25.197Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/05j-scan-running-before.jpg",
+      "metadata": "audit-r5/05j-scan-running-before.json",
+      "sha256": "3852260d74568831a50aecae7c2c7127533994a48423a1449325b1c03dd791a0",
+      "bytes": 26596,
+      "captured_at_utc": "2026-10-12T15:47:58.330Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/06-archive-before.jpg",
+      "metadata": "audit-r5/06-archive-before.json",
+      "sha256": "019122b1b03e71092392cfd0cfef8df621fc6c05bcbaaf1c76e8241036556ee7",
+      "bytes": 15891,
+      "captured_at_utc": "2026-10-12T15:48:38.535Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/07-trash-before.jpg",
+      "metadata": "audit-r5/07-trash-before.json",
+      "sha256": "4a487d0f0ccab8e27e41504605b55ce1021a41d51be7f0becb3d72e9075ad992",
+      "bytes": 18017,
+      "captured_at_utc": "2026-10-12T15:49:04.136Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/07b-purge-impact-before.jpg",
+      "metadata": "audit-r5/07b-purge-impact-before.json",
+      "sha256": "75c6c688194f04a46e83f421c1fcc60ae6bb39550652a15916f92b38d6cc69ca",
+      "bytes": 21009,
+      "captured_at_utc": "2026-10-12T15:49:27.303Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/08-import-before.jpg",
+      "metadata": "audit-r5/08-import-before.json",
+      "sha256": "c4de5136ab492ee4a7931266ad3687b4a394634eeb6d6842c2c01a5ef5b00665",
+      "bytes": 21738,
+      "captured_at_utc": "2026-10-12T15:50:23.274Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/08b-import-paused-before.jpg",
+      "metadata": "audit-r5/08b-import-paused-before.json",
+      "sha256": "24fd60cab2f1de345cfe3a0f3325946a20e80c6340ed77e52e9011da3d7729b5",
+      "bytes": 21348,
+      "captured_at_utc": "2026-10-12T15:51:07.547Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/09-create-before.jpg",
+      "metadata": "audit-r5/09-create-before.json",
+      "sha256": "78f90d4b61efb0514e11f0fdbf1220b9b824d8f07f0c1f87a46b85099b385165",
+      "bytes": 22558,
+      "captured_at_utc": "2026-10-12T15:51:56.768Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/10-settings-general-before.jpg",
+      "metadata": "audit-r5/10-settings-general-before.json",
+      "sha256": "0791a7166682fe0f46ed400bc0848c852a29ce4ae7579cffc51aee7bd920465a",
+      "bytes": 20681,
+      "captured_at_utc": "2026-10-12T15:52:52.378Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/10b-settings-connection-before.jpg",
+      "metadata": "audit-r5/10b-settings-connection-before.json",
+      "sha256": "408a90c67630976623b7faec4f82ccb38f5f8fe106da1c0465fca5825885b8f9",
+      "bytes": 20102,
+      "captured_at_utc": "2026-10-12T15:53:48.496Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/10c-settings-sessions-before.jpg",
+      "metadata": "audit-r5/10c-settings-sessions-before.json",
+      "sha256": "ac75a67a5ded3b492bd4040ccc4bf00ab1836cf90510b1843e0bc824f3713181",
+      "bytes": 19241,
+      "captured_at_utc": "2026-10-12T15:54:44.655Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/10d-settings-projects-before.jpg",
+      "metadata": "audit-r5/10d-settings-projects-before.json",
+      "sha256": "37aad9d63d42a044cedf04be075650dee043277fad62e1c8f787ec9de7fffa4f",
+      "bytes": 22857,
+      "captured_at_utc": "2026-10-12T16:00:19.813Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/10e-settings-ai-before.jpg",
+      "metadata": "audit-r5/10e-settings-ai-before.json",
+      "sha256": "df8f11b456fef5824116ceda8551d69a5891f2f77711d22b1d5fa7f3c2b405ea",
+      "bytes": 22902,
+      "captured_at_utc": "2026-10-12T16:00:48.785Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/10f-settings-maintenance-before.jpg",
+      "metadata": "audit-r5/10f-settings-maintenance-before.json",
+      "sha256": "f730d49d6f9d072110de50ee170566105b6c5b37492a495a6c4f591bd3772c6e",
+      "bytes": 23835,
+      "captured_at_utc": "2026-10-12T16:01:00.631Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/10g-settings-retention-before.jpg",
+      "metadata": "audit-r5/10g-settings-retention-before.json",
+      "sha256": "cec925c93cf95a07167cd05132b8c742efa8ee1042c6d303a995e89fbcb90a97",
+      "bytes": 20358,
+      "captured_at_utc": "2026-10-12T16:01:51.133Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/10g2-retention-impact-before.jpg",
+      "metadata": "audit-r5/10g2-retention-impact-before.json",
+      "sha256": "d3890bc4fbe9f6f41259260b09a0c9c2fbb291737dbdcb83e928b4222077a1ff",
+      "bytes": 23593,
+      "captured_at_utc": "2026-10-12T16:02:11.394Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/10h-settings-storage-before.jpg",
+      "metadata": "audit-r5/10h-settings-storage-before.json",
+      "sha256": "c9d8ca6e905028bbc3b9d050769647f2b57e071832ed97aa7e79fb0ad1bc5fdd",
+      "bytes": 19534,
+      "captured_at_utc": "2026-10-12T16:02:28.188Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/10i-settings-backup-before.jpg",
+      "metadata": "audit-r5/10i-settings-backup-before.json",
+      "sha256": "2884ecbdd55013488dffd4c26660dfabd97766a94ba3ba0c4bb18c3c907e427f",
+      "bytes": 20169,
+      "captured_at_utc": "2026-10-12T16:02:33.833Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/10j-settings-about-before.jpg",
+      "metadata": "audit-r5/10j-settings-about-before.json",
+      "sha256": "5e979d7aeaae402c0e034c60087701ced72bbcce0821ffd16744fb632f22698f",
+      "bytes": 22768,
+      "captured_at_utc": "2026-10-12T16:02:57.857Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/11-connect-before.jpg",
+      "metadata": "audit-r5/11-connect-before.json",
+      "sha256": "3b4060b40cb4d69335ff63a5542391cfac7a9450df06ee06ffbde55e199569b9",
+      "bytes": 22815,
+      "captured_at_utc": "2026-10-12T16:03:07.394Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/11b-connect-waiting-before.jpg",
+      "metadata": "audit-r5/11b-connect-waiting-before.json",
+      "sha256": "de01110094445eb5c832233fc70bee61a6bda567ce9b173917e936d652fa1dc0",
+      "bytes": 24170,
+      "captured_at_utc": "2026-10-12T16:03:26.401Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/11c-connect-rejected-before.jpg",
+      "metadata": "audit-r5/11c-connect-rejected-before.json",
+      "sha256": "716e2d2473562602a749467a6416d959365fb79c870c448dc12b1f74d30eac1e",
+      "bytes": 23249,
+      "captured_at_utc": "2026-10-12T16:03:40.954Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/11d-connect-approved-before.jpg",
+      "metadata": "audit-r5/11d-connect-approved-before.json",
+      "sha256": "911f0152c75fe8c179775be6b7de3590858290bc883180081182dc038425ce72",
+      "bytes": 33077,
+      "captured_at_utc": "2026-10-12T16:04:33.472Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/12-reader-files-before.jpg",
+      "metadata": "audit-r5/12-reader-files-before.json",
+      "sha256": "64e0b6d0b0d7dcf1c08685b80aaab33a60b228691cb9a76700e5ae42234d2069",
+      "bytes": 27680,
+      "captured_at_utc": "2026-10-12T16:05:03.696Z",
+      "geometry": {
+        "width": 1280,
+        "height": 1368,
+        "dpr": 1,
+        "scrollWidth": 1280,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 6,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/12b-reader-evidence-before.jpg",
+      "metadata": "audit-r5/12b-reader-evidence-before.json",
+      "sha256": "eca752ca77c2a8804ba6e3656debe7b25c21145d0cbaa86131c42cc68fc6792b",
+      "bytes": 27439,
+      "captured_at_utc": "2026-10-12T16:05:54.251Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/12c-reader-notes-before.jpg",
+      "metadata": "audit-r5/12c-reader-notes-before.json",
+      "sha256": "20dde30991044fdab1d779f6a2fa05b26c1ff333502d25c56de1a3af6b6cb69b",
+      "bytes": 24788,
+      "captured_at_utc": "2026-10-12T16:06:09.486Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS, with existing temporary R4 CSS.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/12c2-reader-overlay-fixed.jpg",
+      "metadata": "audit-r5/12c2-reader-overlay-fixed.json",
+      "sha256": "bcd341c683ae7e07d18e3159a09a42c8767f9fe644c35ca9417c0c14c127fc17",
+      "bytes": 32380,
+      "captured_at_utc": "2026-10-12T16:08:31.795Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "closed-menu-backdrop-fix"
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 CSS + R5 closed-menu backdrop fix.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/12d-reader-links-before.jpg",
+      "metadata": "audit-r5/12d-reader-links-before.json",
+      "sha256": "a11fac0f53c7c66b375b186db812b72ecd7f5cb046ba347fd9bfd6a9a2295ab3",
+      "bytes": 32268,
+      "captured_at_utc": "2026-10-12T16:09:12.939Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "closed-menu-backdrop-fix"
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 CSS + R5 closed-menu backdrop fix.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/12e-navigation-open-check.jpg",
+      "metadata": "audit-r5/12e-navigation-open-check.json",
+      "sha256": "9e6bb9e84b834fcba9d91d6133420447467c25d4ae02a5304dd52cc0d3eb3cff",
+      "bytes": 18663,
+      "captured_at_utc": "2026-10-12T16:09:28.036Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "closed-menu-backdrop-fix"
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 CSS + R5 closed-menu backdrop fix.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/12f-reader-note-saved-check.jpg",
+      "metadata": "audit-r5/12f-reader-note-saved-check.json",
+      "sha256": "35818a3e758eb6cd0861a57b4d2c683902bbf45d18702f8b3c44b756556469eb",
+      "bytes": 33677,
+      "captured_at_utc": "2026-10-12T16:10:11.736Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "closed-menu-backdrop-fix"
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 CSS + R5 closed-menu backdrop fix.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/13-state-preview-controls.jpg",
+      "metadata": "audit-r5/13-state-preview-controls.json",
+      "sha256": "560388b1cbc01b40ed70968566cd3f6e9333dc6ff410b2047b95db447b32ff9b",
+      "bytes": 25979,
+      "captured_at_utc": "2026-10-12T16:10:33.155Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "closed-menu-backdrop-fix"
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 CSS + R5 closed-menu backdrop fix.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/13b-note-conflict-before.jpg",
+      "metadata": "audit-r5/13b-note-conflict-before.json",
+      "sha256": "523e56681c5e01c329c6ae76f13974c20d8f7bcf4023fab0b2c5fafda681dc2b",
+      "bytes": 33500,
+      "captured_at_utc": "2026-10-12T16:11:04.559Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "closed-menu-backdrop-fix"
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 CSS + R5 closed-menu backdrop fix.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/13c-note-conflict-resolution-before.jpg",
+      "metadata": "audit-r5/13c-note-conflict-resolution-before.json",
+      "sha256": "3190161048145b62eddae60419a252acc68fe9b4dee7809c16e50f52ad71eb8c",
+      "bytes": 27250,
+      "captured_at_utc": "2026-10-12T16:11:35.679Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "closed-menu-backdrop-fix"
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 CSS + R5 closed-menu backdrop fix.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/13d-disconnected-before.jpg",
+      "metadata": "audit-r5/13d-disconnected-before.json",
+      "sha256": "b019344319a37bcc9d5316dfc39012ba0d6bad80c9128edf045888e29471f147",
+      "bytes": 33444,
+      "captured_at_utc": "2026-10-12T16:12:10.321Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "closed-menu-backdrop-fix"
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 CSS + R5 closed-menu backdrop fix.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/20-reader-css-regression-check.jpg",
+      "metadata": "audit-r5/20-reader-css-regression-check.json",
+      "sha256": "d06e7d1dd3fb8a061d67a01ff335ec1f6c8f68903159f6e9f9aa8c93f5e4ff56",
+      "bytes": 27930,
+      "captured_at_utc": "2026-10-12T16:13:11.977Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "product-A-plus-navigation-fix"
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 and R5 product CSS. R5 HTML/JS not loaded.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/21-versions-r5-css-preview.jpg",
+      "metadata": "audit-r5/21-versions-r5-css-preview.json",
+      "sha256": "3d0c2e0690296c342edffc25656f213daccd11c1eae039dfd988c26dbc999858",
+      "bytes": 27363,
+      "captured_at_utc": "2026-10-12T16:13:36.398Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "product-A-plus-navigation-fix"
+      },
+      "jpeg_quality": 6,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 and R5 product CSS. R5 HTML/JS not loaded.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/22-home-r5-css-preview.jpg",
+      "metadata": "audit-r5/22-home-r5-css-preview.json",
+      "sha256": "ab59b1071d889ef6665ee4797ba14d1d7660d360d5b6802678f81bf89eb4f887",
+      "bytes": 21871,
+      "captured_at_utc": "2026-10-12T16:16:00.502Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "product-A-context-D-navigation-fix"
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 and R5 product/context CSS. R5 HTML/JS not loaded.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/23-projects-r5-css-preview.jpg",
+      "metadata": "audit-r5/23-projects-r5-css-preview.json",
+      "sha256": "9d0e5227dadff1bf013fabfea8f35345c5f0892e26a1d6ae660c7b4858af1b52",
+      "bytes": 20924,
+      "captured_at_utc": "2026-10-12T16:16:26.259Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "product-A-context-D-navigation-fix"
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 and R5 product/context CSS. R5 HTML/JS not loaded.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/24-sources-r5-css-preview.jpg",
+      "metadata": "audit-r5/24-sources-r5-css-preview.json",
+      "sha256": "c56cc7bd4a364fbab2a7238f67f58787aca7ebe4d9f9f7633513c8a21b1d076e",
+      "bytes": 14758,
+      "captured_at_utc": "2026-10-12T16:17:17.628Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "product-A-context-D-navigation-fix"
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 and R5 product/context CSS. R5 HTML/JS not loaded.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/25-maintenance-r5-css-preview.jpg",
+      "metadata": "audit-r5/25-maintenance-r5-css-preview.json",
+      "sha256": "de83f878df47a7e1ec39b20fb326cb94cbf35c4c90a1e13ee423f8f06230677f",
+      "bytes": 20916,
+      "captured_at_utc": "2026-10-12T16:18:59.540Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "product-A-management-B-context-D"
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 and R5 product/management/context CSS. R5 HTML/JS not loaded.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/25b-coverage-r5-css-preview.jpg",
+      "metadata": "audit-r5/25b-coverage-r5-css-preview.json",
+      "sha256": "2327d6817b552aaefb944d88d497a5594d8b1e50844b06fb5513142f70d09387",
+      "bytes": 28634,
+      "captured_at_utc": "2026-10-12T16:19:20.347Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "product-A-management-B-context-D"
+      },
+      "jpeg_quality": 6,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 and R5 product/management/context CSS. R5 HTML/JS not loaded.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/25c-freshness-r5-css-preview.jpg",
+      "metadata": "audit-r5/25c-freshness-r5-css-preview.json",
+      "sha256": "fd8589121fd9a26fc82d9b73d254ac789709ab04ee5729130fccd6658ef53624",
+      "bytes": 22876,
+      "captured_at_utc": "2026-10-12T16:19:27.417Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "product-A-management-B-context-D"
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 and R5 product/management/context CSS. R5 HTML/JS not loaded.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/25d-finding-r5-css-preview.jpg",
+      "metadata": "audit-r5/25d-finding-r5-css-preview.json",
+      "sha256": "28e36a21564ddf8dcfe8b72b7e3f31e25d9637ee0bc81e5e6e1e360985949d21",
+      "bytes": 30596,
+      "captured_at_utc": "2026-10-12T16:20:10.009Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "product-A-management-B-context-D"
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 and R5 product/management/context CSS. R5 HTML/JS not loaded.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/26-settings-r5-css-preview.jpg",
+      "metadata": "audit-r5/26-settings-r5-css-preview.json",
+      "sha256": "112da46b1381cca8eb68b670472f00e5d08cc348632ca8e120741ed293b5301e",
+      "bytes": 17367,
+      "captured_at_utc": "2026-10-12T16:22:20.065Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "complete-R5-A-B-C-D"
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 and complete R5 CSS. R5 HTML/JS not loaded.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/26b-general-r5-css-preview.jpg",
+      "metadata": "audit-r5/26b-general-r5-css-preview.json",
+      "sha256": "95ab5c83941312038816944ce63d76fe539fd6436815fe570ff1ba4a7878113f",
+      "bytes": 24422,
+      "captured_at_utc": "2026-10-12T16:24:02.337Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "complete-R5-A-B-C-D"
+      },
+      "jpeg_quality": 35,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 and complete R5 CSS. R5 HTML/JS not loaded.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/26c-general-dark-r5-css-preview.jpg",
+      "metadata": "audit-r5/26c-general-dark-r5-css-preview.json",
+      "sha256": "8dd6b91c437a14b5ea02971464ccaead7a5d7c280c5a4436a6bff3ca38441e41",
+      "bytes": 24265,
+      "captured_at_utc": "2026-10-12T16:24:14.168Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "complete-R5-A-B-C-D"
+      },
+      "jpeg_quality": 35,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 and complete R5 CSS. R5 HTML/JS not loaded.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/27-connect-r5-css-preview.jpg",
+      "metadata": "audit-r5/27-connect-r5-css-preview.json",
+      "sha256": "1160776ee60c289219c8517ea141bd721817c484838cb4a9f1659498be1f978d",
+      "bytes": 29858,
+      "captured_at_utc": "2026-10-12T16:25:00.642Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "complete-R5-A-B-C-D"
+      },
+      "jpeg_quality": 35,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 and complete R5 CSS. R5 HTML/JS not loaded.",
+      "reviewed_by_root": true
+    },
+    {
+      "file": "audit-r5/28-files-r5-css-preview.jpg",
+      "metadata": "audit-r5/28-files-r5-css-preview.json",
+      "sha256": "a434dc83b5a3e6e88307a779a0bc3d6ac7274a111738a60cb41f07aba4d3453d",
+      "bytes": 33559,
+      "captured_at_utc": "2026-10-12T16:26:07.620Z",
+      "geometry": {
+        "width": 920,
+        "height": 1324,
+        "dpr": 1,
+        "scrollWidth": 920,
+        "r4TemporaryStyle": true,
+        "r5TemporaryStyle": "complete-R5-A-B-C-D"
+      },
+      "jpeg_quality": 12,
+      "source_scope": "User-opened R3 HTML and JS + temporary R4 and complete R5 CSS. R5 HTML/JS not loaded.",
+      "reviewed_by_root": true
+    }
+  ],
+  "historical_r4_record": {
+    "setup": {
+      "browser": "Aside",
+      "cli_version": "1.26.1010.1739",
+      "cli_path": "/Users/draccoon/.local/bin/aside",
+      "host": "local",
+      "existing_account_signed_in": true,
+      "additional_login_or_permission_requested": false
+    },
+    "target": {
+      "title": "해룡 · 전체 제품 디자인 시안",
+      "target_id": "2224110EFBFDBF082AB844FA8074C9F1",
+      "opened_by": "USER",
+      "local_path": "/Volumes/RootKernel/RootKernel/aquarium-tools/haeryong/docs/design/2026-10-12-grok/prototype.html"
+    },
+    "scope": {
+      "loaded_file_revision": "R3",
+      "loaded_file_sha256": "8b91299e21733fa3e76cc20bfb2dc65241b7087aaab2ba2961d48c58141ad135",
+      "local_source_revision": "R4",
+      "local_source_sha256": "d19bee5cc68b9442078da793d5da012b5dbdbb87ebab731fd1802ec6f9cfcf9e",
+      "file_open_or_reload": "NOT_EXECUTED",
+      "other_routes": "NOT_VERIFIED",
+      "keyboard_and_mobile": "NOT_VERIFIED"
+    },
+    "verified_interactions": [
+      "Attached to the user's already-open exact tab and read its snapshot",
+      "Clicked Ask and opened the reading tools panel",
+      "Filled a Korean sample question",
+      "Changed selected document page from index to flow using a fresh snapshot reference",
+      "Confirmed draft text and captured index-page target persisted",
+      "Closed and reopened the Ask panel; text and captured target persisted",
+      "Sent the sample question and observed pending then completed mock answer",
+      "Confirmed the answer remained labelled with the original index-page target and explicit sample-only/no-AI-call copy"
+    ],
+    "api_limitations": [
+      "getByPlaceholder was unavailable",
+      "A named combobox role lookup failed; fresh observed snapshot references worked",
+      "page.setViewportSize was unavailable; responsive resizing remains unverified",
+      "reload exists as an API but was not executed"
+    ],
+    "r3_narrow_capture": {
+      "path": "/Volumes/RootKernel/tmp/haeryong-aside-ask-current.png",
+      "file": "haeryong-aside-ask-current.png",
+      "bytes": 155761,
+      "sha256": "72a38e8b04e3ae1cd633f1a8ad35b9ecfc90258eb67a2f66a59156d8e5af16fd",
+      "width": 920,
+      "height": 1324,
+      "captured_at": "2026-10-12T23:45:23.270402+09:00",
+      "css_viewport": "UNVERIFIED_AT_CAPTURE",
+      "finding": "The panel obscures the article title, line endings and table result column. The three sample code lines themselves remain visible."
+    },
+    "r3_later_paired_geometry": {
+      "css_width": 1280,
+      "css_height": 1368,
+      "dpr": 1,
+      "png_width": 1280,
+      "png_height": 1368,
+      "main_columns": [
+        716,
+        340
+      ],
+      "context_position": "static",
+      "context_x": 940,
+      "captured_at": "2026-10-12T23:51:36.713429+09:00",
+      "note": "Do not combine this later CSS viewport with the earlier 920px screenshot."
+    },
+    "r4_live_style_preview": {
+      "style": {
+        "applied": true,
+        "characters": 2068
+      },
+      "geometry": {
+        "innerWidth": 1280,
+        "innerHeight": 1368,
+        "dpr": 1,
+        "elements": [
+          {
+            "selector": ".sidebar",
+            "x": 0,
+            "y": 0,
+            "width": 224,
+            "height": 1368,
+            "position": "sticky",
+            "grid": "none"
+          },
+          {
+            "selector": ".main",
+            "x": 224,
+            "y": 0,
+            "width": 1056,
+            "height": 1368,
+            "position": "static",
+            "grid": "716px 340px"
+          },
+          {
+            "selector": ".content",
+            "x": 224,
+            "y": 63,
+            "width": 716,
+            "height": 1305,
+            "position": "static",
+            "grid": "none"
+          },
+          {
+            "selector": ".context",
+            "x": 940,
+            "y": 0,
+            "width": 340,
+            "height": 1368,
+            "position": "static",
+            "grid": "none"
+          }
+        ]
+      },
+      "diff": "No changes detected\n",
+      "path": "/Volumes/RootKernel/tmp/haeryong-aside-r4-style-preview.png",
+      "bytes": 224722,
+      "sha256": "eecf875e60f9c775903f1ae56dd8cf9040b91a4f94c8edfb941062bfd8c174e2",
+      "width": 1280,
+      "height": 1368,
+      "captured_at": "2026-10-13T00:10:15.034223+09:00",
+      "scope": "Temporary reviewed CSS only on the user's already-open R3 page; no file read or reload. Existing JavaScript remains R3.",
+      "review": "Root viewed the rendered preview. At this paired 1280x1368 viewport, article and context do not overlap. Narrow-width correction remains unverified."
+    },
+    "design_approved": false
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "revision": "r5",
+  "change": {
+    "file": "prototype-recovery-r5.js",
+    "authoredBy": "ChatGPT integration",
+    "reason": "The recovery notes branch bypassed Reader.openContext, so opening the panel did not focus noteInput or record the banner as the close return target.",
+    "behavior": [
+      "Reset only the transient panel selection before navigating to Reader, so Reader captures the current recovery entry even when another panel was already open.",
+      "After navigation, use the newly rendered, connected recovery:notes button as the opener passed to the existing readerAction('context:notes', opener).",
+      "Open the panel only when Reader navigation succeeds; retain the original missing-document fallback to Library.",
+      "Retain existing recovery destinations and the previous coreAction delegation chain."
+    ],
+    "filesWritten": [
+      "prototype-recovery-r5.js",
+      "recovery-r5-validation.json"
+    ]
+  },
+  "syntax": {
+    "command": "node --check prototype-recovery-r5.js",
+    "exitCode": 0,
+    "result": "PASS"
+  },
+  "validation": {
+    "result": "PASS",
+    "node": "v24.19.0",
+    "testedAt": "2026-10-12T16:33:51.896Z",
+    "sourceOrder": [
+      "prototype-core.js",
+      "prototype-reader.js",
+      "prototype-management.js",
+      "prototype-settings.js",
+      "prototype-product-r5.js",
+      "prototype-management-r5.js",
+      "prototype-settings-r5.js",
+      "prototype-context-r5.js",
+      "prototype-recovery-r5.js"
+    ],
+    "sourceSHA256": {
+      "prototype-core.js": "0cd70f58824bae344052cf3e044d0896f47a2a70a11b71efccda47847f731f38",
+      "prototype-reader.js": "7bd71ea5b04083c35799800ad3ce3bc2f530071dfd9621739f7423224c926742",
+      "prototype-management.js": "3094c656b1568c7f3430a2baa91b6fc95ad06148ac232d45647292c2fa41f6b0",
+      "prototype-settings.js": "9e1c55b1fc1fd1e0e993f3bc9db02fe43c49a30c37563a12137200959be68d09",
+      "prototype-product-r5.js": "b4248051050e9f2fca16061f0bea0704317151f186be0226cd1fd3ce3440f6f6",
+      "prototype-management-r5.js": "89e5b2797a3895fa578f6de29df6249890e0e95b430cbafaef13ad10d260481c",
+      "prototype-settings-r5.js": "b7957b9a546c9182293a47a2fa96ed42b6c73a38b246d9d073fc3e7111c097fe",
+      "prototype-context-r5.js": "f4878dc769f85a89f914ab35e3538b810a1bb13486538843f3579400c5d30a41",
+      "prototype-recovery-r5.js": "22937e6b6538e9af685856c1978fc34c99657c99eb3f3189cc2fb63e235df220"
+    },
+    "tests": [
+      {
+        "id": "recovery_source",
+        "description": "Recovery source reaches the intended destination and preserves scenario plus all captured drafts.",
+        "result": "PASS"
+      },
+      {
+        "id": "recovery_provider",
+        "description": "Recovery provider reaches the intended destination and preserves scenario plus all captured drafts.",
+        "result": "PASS"
+      },
+      {
+        "id": "recovery_notes",
+        "description": "Recovery notes reaches the intended destination and preserves scenario plus all captured drafts.",
+        "result": "PASS"
+      },
+      {
+        "id": "recovery_coverage",
+        "description": "Recovery coverage reaches the intended destination and preserves scenario plus all captured drafts.",
+        "result": "PASS"
+      },
+      {
+        "id": "recovery_drafts",
+        "description": "Recovery drafts reaches the intended destination and preserves scenario plus all captured drafts.",
+        "result": "PASS"
+      },
+      {
+        "id": "notes_from_existing_panel",
+        "description": "Opening recovery from an existing Ask panel records the new live banner opener and restores it on close.",
+        "result": "PASS"
+      },
+      {
+        "id": "notes_close_after_render",
+        "description": "Reader resolves the replacement banner button by action when a render occurs before panel close.",
+        "result": "PASS"
+      },
+      {
+        "id": "notes_unavailable_document",
+        "description": "A missing selected document keeps the Reader guard and does not open a notes panel after fallback to Library.",
+        "result": "PASS"
+      },
+      {
+        "id": "connect_guard_delegation",
+        "description": "The later recovery wrapper still delegates to C and blocks go:reader before pairing approval.",
+        "result": "PASS"
+      }
+    ],
+    "scope": "Original nine modules with R5 fragment edits loaded in assembler order; actual Reader openContext/closeContext and all recovery actions execute against a bounded memory DOM.",
+    "limitations": [
+      "The memory DOM explicitly models banner replacement, focus and connected-element lookup; it is not a browser or a complete DOM implementation.",
+      "No real keyboard events, responsive geometry, browser focus trap, remote build, publish, purge or I/O action was exercised."
+    ]
+  },
+  "reproduction": {
+    "workingDirectory": "/workspace/scratch/ae6dadf49630/haeryong-design",
+    "command": "node -e 'eval(JSON.parse(require(\"fs\").readFileSync(\"recovery-r5-validation.json\",\"utf8\")).reproduction.script)'",
+    "script": "const fs=require('fs'),vm=require('vm'),assert=require('assert'),crypto=require('crypto');\nconst order=['prototype-core.js','prototype-reader.js','prototype-management.js','prototype-settings.js','prototype-product-r5.js','prototype-management-r5.js','prototype-settings-r5.js','prototype-context-r5.js','prototype-recovery-r5.js'];\nconst sources=Object.fromEntries(order.map(file=>[file,fs.readFileSync(file,'utf8')]));\nconst hashes=Object.fromEntries(order.map(file=>[file,crypto.createHash('sha256').update(sources[file]).digest('hex')]));\nconst noop=()=>{};\nconst els={};let document,bannerButton;let serial=0;\nfunction element(name=''){\n const node={name,serial:++serial,id:'',textContent:'',dataset:{},children:[],childNodes:[],value:'',hidden:false,open:false,isConnected:true,\n  classList:{add:noop,remove:noop,toggle:noop,contains:()=>false},style:{setProperty:noop},\n  querySelector:()=>null,querySelectorAll:()=>[],setAttribute:noop,removeAttribute:noop,addEventListener:noop,\n  appendChild:noop,prepend:noop,closest:()=>null,focus(){if(this.isConnected)document.activeElement=this;}};\n let html='';\n Object.defineProperty(node,'innerHTML',{get(){return html;},set(value){\n  html=String(value);\n  if(name==='banner'){\n   if(bannerButton){bannerButton.isConnected=false;if(document.activeElement===bannerButton)document.activeElement=document.body;}\n   const match=html.match(/data-action=\"([^\"]+)\"/);\n   bannerButton=match?element('banner-button'):null;\n   if(bannerButton)bannerButton.dataset.action=match[1];\n  }\n  if(name==='context'){\n   if(els.noteInput){els.noteInput.isConnected=false;if(document.activeElement===els.noteInput)document.activeElement=document.body;delete els.noteInput;}\n   if(/id=['\"]noteInput['\"]/.test(html)){els.noteInput=element('note-input');els.noteInput.id='noteInput';}\n  }\n }});\n return node;\n}\nfor(const id of ['screen','main','banner','context','appDialog','dialogBody','dialogTitle','dialogFooter','toast']){els[id]=element(id);els[id].id=id;}\nels.banner.querySelector=selector=>selector==='button'?bannerButton:selector==='[data-action=\"recovery:notes\"]'&&bannerButton?.dataset.action==='recovery:notes'?bannerButton:null;\nconst app=element('app'),body=element('body');\nlet oldToolbar=null;\ndocument={getElementById:id=>els[id]||null,createElement:()=>Object.assign(element(),{content:{querySelector:()=>null}}),createTextNode:text=>({textContent:text,nodeType:3}),querySelector:selector=>selector==='.app'?app:null,\n querySelectorAll:selector=>selector==='[data-action]'?[bannerButton,oldToolbar].filter(node=>node?.isConnected):[],\n addEventListener:noop,documentElement:element('root'),body,activeElement:body};\nconst fragments=JSON.parse(fs.readFileSync('grok-fragments.json','utf8'));\nfor(const file of ['grok-product-r5.json','grok-management-r5.json','grok-settings-r5.json','grok-context-r5.json']){\n for(const edit of JSON.parse(fs.readFileSync(file,'utf8')).applied.fragmentEdits||[]){\n  assert.strictEqual(fragments[edit.fragment].split(edit.oldText).length-1,1,'unique edit '+file);\n  fragments[edit.fragment]=fragments[edit.fragment].replace(edit.oldText,edit.newText);\n }\n}\nconst H={fragments};\nconst context={HR:H,window:{HR:H},document,innerWidth:390,console,setTimeout:()=>1,clearTimeout:noop,URL,Promise};\nvm.createContext(context);\nfor(const file of order)vm.runInContext(sources[file],context,{filename:file});\nconst readerAction=H.readerAction;const notesCalls=[];\nH.readerAction=function(action,button){\n if(action==='context:notes')notesCalls.push({button,wasConnected:!!button?.isConnected});\n return readerAction.apply(this,arguments);\n};\nconst cases=[];\nconst check=(id,description,fn)=>{fn();cases.push({id,description,result:'PASS'});};\nH.state.route='settings';H.state.setting='ai';H.render();\nH.settingsChange('defaultSource','current');\nH.state.questionDraft={text:'보존할 질문',captured:H.target(),quote:'보존할 인용',mode:'snapshot',answers:[]};\nH.state.noteDrafts={'podway|v3|index':{text:'보존할 메모',baseline:'이전 메모',dirty:true,conflictResolved:false,target:H.target()}};\nH.state.draft.body='<h2>보존할 게시 전 초안</h2>';H.state.draft.title='검토 중인 초안';\nconst baseline={question:JSON.stringify(H.state.questionDraft),notes:JSON.stringify(H.state.noteDrafts),draft:JSON.stringify(H.state.draft)};\nfunction preserved(scenario){\n assert.strictEqual(H.state.scenario,scenario);\n assert.strictEqual(JSON.stringify(H.state.questionDraft),baseline.question);\n assert.strictEqual(JSON.stringify(H.state.noteDrafts),baseline.notes);\n assert.strictEqual(JSON.stringify(H.state.draft),baseline.draft);\n assert.strictEqual(H.state.settingsR5.drafts.ai.defaultSource,'current');\n}\nfor(const [scenario,action,route,detail] of [['source','source','sources',null],['provider','provider','settings','ai'],['conflict','notes','reader','notes'],['partial','coverage','maintenance','coverage'],['stale','drafts','maintenance','drafts']]){\n check('recovery_'+action,'Recovery '+action+' reaches the intended destination and preserves scenario plus all captured drafts.',()=>{\n  H.state.scenario=scenario;H.render();\n  const previousButton=bannerButton;\n  assert.strictEqual(H.coreAction('recovery:'+action),true);\n  assert.strictEqual(H.state.route,route);\n  if(route==='settings')assert.strictEqual(H.state.setting,detail);\n  if(route==='maintenance')assert.strictEqual(H.state.report,detail);\n  if(route==='sources')assert.strictEqual(H.state.projectId,H.doc().project);\n  if(route==='reader'){\n   assert.strictEqual(H.state.context,'notes');\n   assert.strictEqual(document.activeElement,els.noteInput);\n   assert.notStrictEqual(bannerButton,previousButton);\n   assert.strictEqual(previousButton.isConnected,false);\n   assert.strictEqual(notesCalls.at(-1).button,bannerButton);\n   assert.strictEqual(notesCalls.at(-1).wasConnected,true);\n   H.readerAction('context:close');\n   assert.strictEqual(H.state.context,null);\n   assert.strictEqual(document.activeElement,bannerButton);\n  }\n  preserved(scenario);\n });\n}\ncheck('notes_from_existing_panel','Opening recovery from an existing Ask panel records the new live banner opener and restores it on close.',()=>{\n H.state.scenario='conflict';H.go('reader');\n oldToolbar=element('old-toolbar');oldToolbar.dataset.action='context:ask';\n H.readerAction('context:ask',oldToolbar);\n assert.strictEqual(H.state.context,'ask');\n H.coreAction('recovery:notes');\n assert.strictEqual(document.activeElement,els.noteInput);\n assert.strictEqual(notesCalls.at(-1).button,bannerButton);\n assert.strictEqual(notesCalls.at(-1).wasConnected,true);\n H.readerAction('context:close');\n assert.strictEqual(document.activeElement,bannerButton);\n assert.notStrictEqual(document.activeElement,oldToolbar);\n preserved('conflict');\n});\ncheck('notes_close_after_render','Reader resolves the replacement banner button by action when a render occurs before panel close.',()=>{\n H.coreAction('recovery:notes');\n const recorded=notesCalls.at(-1).button;\n H.render();\n assert.notStrictEqual(bannerButton,recorded);\n assert.strictEqual(recorded.isConnected,false);\n H.readerAction('context:close');\n assert.strictEqual(document.activeElement,bannerButton);\n assert.strictEqual(bannerButton.isConnected,true);\n preserved('conflict');\n});\ncheck('notes_unavailable_document','A missing selected document keeps the Reader guard and does not open a notes panel after fallback to Library.',()=>{\n const count=notesCalls.length;\n H.state.docId='missing-for-test';\n H.coreAction('recovery:notes');\n assert.strictEqual(H.state.route,'library');\n assert.strictEqual(H.state.context,null);\n assert.strictEqual(notesCalls.length,count);\n preserved('conflict');\n H.state.docId='podway';\n});\ncheck('connect_guard_delegation','The later recovery wrapper still delegates to C and blocks go:reader before pairing approval.',()=>{\n H.state.route='connect';H.state.pair.status='waiting';H.state.scenario='session';\n const target=JSON.stringify(H.state.pair.returnTarget||null);\n assert.strictEqual(H.coreAction('go:reader'),true);\n assert.strictEqual(H.state.route,'connect');\n assert.strictEqual(H.state.pair.status,'waiting');\n assert.strictEqual(JSON.stringify(H.state.pair.returnTarget||null),target);\n preserved('session');\n});\nconsole.log(JSON.stringify({result:'PASS',node:process.version,testedAt:new Date().toISOString(),sourceOrder:order,sourceSHA256:hashes,tests:cases,scope:'Original nine modules with R5 fragment edits loaded in assembler order; actual Reader openContext/closeContext and all recovery actions execute against a bounded memory DOM.',limitations:['The memory DOM explicitly models banner replacement, focus and connected-element lookup; it is not a browser or a complete DOM implementation.','No real keyboard events, responsive geometry, browser focus trap, remote build, publish, purge or I/O action was exercised.']}));\n"
+  }
+}

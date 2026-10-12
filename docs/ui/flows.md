@@ -1,5 +1,7 @@
 # Product interaction flows
 
+The [R5 interactive concept](../design/prototype/README.md) and its [UI handoff](../design/prototype/HANDOFF.md) provide current UI baseline inputs for walking these flows. The handoff distinguishes sample interactions and reviewed states from the production behavior specified below.
+
 ## Connect once and resume
 
 A new browser shows a comparison code and Remember this device, selected by default. An approved owner can reject that exact request; Stop waiting only ends local polling and discards the pending secret, leaving server expiry/rejection semantics explicit. Approve the exact request from local bootstrap or an existing owner device. Subsequent reloads, tabs and browser restarts reuse the stored credential and open the original version/page/query/fragment/region after a session check. A revoked, optionally expired or restore-invalidated session reconnects explicitly. Temporary mode omits persistence. Routine reading, JavaScript execution and already configured source/provider use do not prompt again.

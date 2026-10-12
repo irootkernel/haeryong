@@ -1,0 +1,51 @@
+{
+  "record_version": 1,
+  "recorded_at_utc": "2026-10-12T17:20:13.152134+00:00",
+  "scope": "One local regeneration using the copied canonical assembler and its colocated inputs, followed only by byte identity and SHA-256 comparison.",
+  "working_directory": "/workspace/scratch/ae6dadf49630/haeryong-prototype-canonical",
+  "assembly": {
+    "command": "python3 -B assemble-prototype.py",
+    "argv": [
+      "python3",
+      "-B",
+      "assemble-prototype.py"
+    ],
+    "execution_count": 1,
+    "exit_code": 0,
+    "stdout": "{\"artifact\": \"prototype.html\", \"bytes\": 309429, \"fragments\": 38}\n",
+    "assembler_path": "/workspace/scratch/ae6dadf49630/haeryong-prototype-canonical/assemble-prototype.py",
+    "assembler_sha256": "de3c9e7432184ed6682bca499db5f71bc39204008991b594827e2129d265f702",
+    "input_root": "/workspace/scratch/ae6dadf49630/haeryong-prototype-canonical",
+    "input_resolution": "The assembler uses ROOT = Path(__file__).resolve().parent; its input reads are relative to ROOT."
+  },
+  "comparison": {
+    "command": "python3 -",
+    "method": "Read the reference and both generated HTML files with pathlib.Path.read_bytes(); compare each output directly to reference bytes and calculate hashlib.sha256.",
+    "reference_path": "/workspace/scratch/ae6dadf49630/haeryong-design/prototype.html",
+    "reference_bytes": 309429,
+    "reference_sha256": "719567a66a51350b02f49c073f7103061d71b7e60c196b8209aa3c766b0e4f1a",
+    "expected_reference_sha256": "719567a66a51350b02f49c073f7103061d71b7e60c196b8209aa3c766b0e4f1a",
+    "reference_matches_expected_sha256": true,
+    "outputs": [
+      {
+        "path": "/workspace/scratch/ae6dadf49630/haeryong-prototype-canonical/prototype.html",
+        "bytes": 309429,
+        "sha256": "719567a66a51350b02f49c073f7103061d71b7e60c196b8209aa3c766b0e4f1a",
+        "byte_identical_to_reference": true,
+        "matches_expected_sha256": true
+      },
+      {
+        "path": "/workspace/scratch/ae6dadf49630/haeryong-prototype-canonical/haeryong-prototype.html",
+        "bytes": 309429,
+        "sha256": "719567a66a51350b02f49c073f7103061d71b7e60c196b8209aa3c766b0e4f1a",
+        "byte_identical_to_reference": true,
+        "matches_expected_sha256": true
+      }
+    ],
+    "aliases_byte_identical": true
+  },
+  "result": "pass",
+  "remote_execution": false,
+  "browser_execution": false,
+  "additional_functional_tests_run": false
+}

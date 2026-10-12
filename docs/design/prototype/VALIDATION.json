@@ -1,0 +1,326 @@
+{
+  "artifact": "prototype.html",
+  "revision": "R5",
+  "design_approved": false,
+  "updated_at_utc": "2026-10-12T16:48:43.170536+00:00",
+  "bytes": 309429,
+  "sha256": "719567a66a51350b02f49c073f7103061d71b7e60c196b8209aa3c766b0e4f1a",
+  "aliases_byte_identical": [
+    "prototype.html",
+    "haeryong-prototype.html"
+  ],
+  "alias_scope": "Both aliases are present in the delivered archive. The Mac project uses prototype.html.",
+  "inline_script_count": 1,
+  "syntax_exit": 0,
+  "external_script_count": 0,
+  "static_record": "STATIC-R5.json",
+  "static_result": "PASS",
+  "deterministic_reassembly": true,
+  "r5_css_records_match_assembled_html": true,
+  "browser_visual_qa": "EXISTING_R3_TAB_ROUTE_AND_STATE_AUDIT_PLUS_R5_TEMPORARY_CSS_PREVIEWS",
+  "r5_new_file_load_or_reload": "NOT_EXECUTED",
+  "r5_new_html_and_javascript_browser_qa": "NOT_EXECUTED",
+  "browser_scope": {
+    "loaded_file_revision": "R3",
+    "loaded_file_sha256": "8b91299e21733fa3e76cc20bfb2dc65241b7087aaab2ba2961d48c58141ad135",
+    "source_revision": "R5",
+    "source_sha256": "719567a66a51350b02f49c073f7103061d71b7e60c196b8209aa3c766b0e4f1a",
+    "new_r5_file_load_or_reload": "NOT_EXECUTED",
+    "r5_javascript_browser_validation": "NOT_EXECUTED",
+    "r5_css_preview": "REVIEWED_ON_EXISTING_R3_HTML_AND_JS",
+    "viewport_control": "NO_AUTOMATED_RESIZE; CAPTURE_VIEWPORTS_OBSERVED_AT_THEIR_RECORDED_TIMES",
+    "viewport_change_actor": "NOT_ESTABLISHED",
+    "mobile_and_touch": "NOT_VERIFIED",
+    "full_keyboard_and_assistive_technology": "NOT_VERIFIED"
+  },
+  "capture_counts": {
+    "routes": 11,
+    "dialog_flows": 2,
+    "screenshots": 63,
+    "metadata_records": 63,
+    "representative_images": 12,
+    "r5_css_preview_images": 14,
+    "earlier_partial_fix_and_state_images": 49,
+    "viewport_counts": {
+      "1280x1368": 39,
+      "920x1324": 24
+    }
+  },
+  "state_validation_scope": "Focused memory-DOM and state checks of original modules plus R5 adapters, not browser end-to-end tests.",
+  "state_validation_records": [
+    "grok-product-r5.json",
+    "grok-management-r5.json",
+    "grok-settings-r5.json",
+    "grok-context-r5.json",
+    "recovery-r5-validation.json"
+  ],
+  "integration_corrections": [
+    "Closed navigation backdrop no longer overrides hidden state.",
+    "Recovery to notes uses original Reader open/close focus path and a live opener.",
+    "Native retention dialog cancel/close clears pending confirmation but preserves settings drafts."
+  ],
+  "mac_artifact": {
+    "path": "/Volumes/RootKernel/RootKernel/aquarium-tools/haeryong/docs/design/2026-10-12-grok/prototype.html",
+    "revision": "R5",
+    "bytes": 309429,
+    "sha256": "719567a66a51350b02f49c073f7103061d71b7e60c196b8209aa3c766b0e4f1a",
+    "verification": "HASH_MATCHED_LOCAL_FINAL_R5",
+    "render_after_revision": "NEW_R5_FILE_LOAD_NOT_EXECUTED; EXISTING_R3_PAGE_WITH_TEMPORARY_R5_CSS_ONLY",
+    "verified_at_utc": "2026-10-12T16:50:49.755264+00:00"
+  },
+  "current_bundle": "haeryong-design-r5.zip",
+  "review_report": "haeryong-design-review-r5.html",
+  "review_data": "review-r5-data.json",
+  "aside_validation_record": "ASIDE-VALIDATION.json",
+  "preserved_source_hashes": {
+    "grok-fragments.json": "d0c9a107008ea1c053df143cb5e3d375ed45986489d8f55ff0313487cbc974b7",
+    "prototype-core.js": "0cd70f58824bae344052cf3e044d0896f47a2a70a11b71efccda47847f731f38",
+    "prototype-reader.js": "7bd71ea5b04083c35799800ad3ce3bc2f530071dfd9621739f7423224c926742",
+    "prototype-management.js": "3094c656b1568c7f3430a2baa91b6fc95ad06148ac232d45647292c2fa41f6b0",
+    "prototype-settings.js": "9e1c55b1fc1fd1e0e993f3bc9db02fe43c49a30c37563a12137200959be68d09"
+  },
+  "historical_r4_record": {
+    "artifact": "prototype.html",
+    "revision": "R4",
+    "design_approved": false,
+    "bytes": 243200,
+    "sha256": "d19bee5cc68b9442078da793d5da012b5dbdbb87ebab731fd1802ec6f9cfcf9e",
+    "aliases_byte_identical": [
+      "prototype.html",
+      "haeryong-prototype.html"
+    ],
+    "inline_script_count": 1,
+    "syntax_exit": 0,
+    "syntax_error": "",
+    "external_script_count": 0,
+    "network_call_count": 0,
+    "responsive_css_matches_record_and_generated_html": true,
+    "focus_trap_source_condition": "innerWidth<768",
+    "focus_trap_browser_validation": "NOT_VERIFIED_R3_JAVASCRIPT_REMAINS_IN_OPEN_TAB",
+    "revision_record_matches_generated_artifact": true,
+    "browser_visual_qa": "R3_INTERACTIONS_VERIFIED_R4_1280_LIVE_CSS_ONLY_NARROW_RECHECK_PENDING",
+    "r3_browser_render": "BASIC_READER_AND_ASK_INITIAL_DESKTOP_SCREENS_CAPTURED_AND_REVIEWED",
+    "r4_browser_render": "TEMPORARY_CSS_ON_OPEN_R3_PAGE_AT_PAIRED_1280X1368_ONLY",
+    "r4_new_file_load_or_reload": "NOT_EXECUTED",
+    "r4_narrow_layout": "NOT_VERIFIED",
+    "mac_artifact": {
+      "record_scope": "CURRENT_R4_SOURCE_HASH_VERIFIED; RENDERED_TAB_REMAINS_R3_PLUS_TEMPORARY_R4_CSS",
+      "revision": "R4",
+      "path": "/Volumes/RootKernel/RootKernel/aquarium-tools/haeryong/docs/design/2026-10-12-grok/prototype.html",
+      "bytes": 243200,
+      "sha256": "d19bee5cc68b9442078da793d5da012b5dbdbb87ebab731fd1802ec6f9cfcf9e",
+      "verification": "HASH_MATCHED_LOCAL_R4",
+      "render_after_revision": "NEW_R4_FILE_LOAD_NOT_EXECUTED; EXISTING_R3_PAGE_WITH_R4_CSS_REVIEWED_AT_1280"
+    },
+    "r3_browser_interaction": "ASK_SAMPLE_FLOW_VERIFIED_VIA_ASIDE",
+    "r3_simulation_later_states": "NOT_VERIFIED",
+    "r3_expanded_document_menu": "NOT_VERIFIED",
+    "r3_question_panel": "INITIAL_RENDER_AND_ASK_OPEN_CLOSE_REOPEN_VERIFIED",
+    "r3_question_input_and_send": "KOREAN_SAMPLE_INPUT_PENDING_AND_COMPLETED_MOCK_ANSWER_VERIFIED",
+    "r3_context_retention": "DRAFT_AND_CAPTURED_INDEX_TARGET_PERSIST_ACROSS_FLOW_SELECTION_AND_PANEL_REOPEN",
+    "r3_panel_switching": "OTHER_CONTEXT_TABS_NOT_VERIFIED",
+    "keyboard_interaction": "NOT_VERIFIED",
+    "mobile_visual_qa": "NOT_VERIFIED",
+    "other_routes_visual_qa": "NOT_VERIFIED",
+    "r2_state_tests_repeated_on_r3": false,
+    "prior_state_tests_repeated_on_r4": false,
+    "revision_record": "grok-responsive-r4.json",
+    "prior_revision_record": "grok-reader-r3.json",
+    "aside_validation_record": "ASIDE-VALIDATION.json",
+    "current_bundle": "haeryong-design-r4.zip",
+    "grok_r3_session_id": "015f1532-c438-4c74-8bd2-2be0c4fc1f67",
+    "grok_r3_request_count": 2,
+    "grok_r4_session_id": "015f1532-c438-4c74-8bd2-2be0c4fc1f67",
+    "grok_r4_correction_request_id": "353fe3ba-e719-432c-9c72-212da59b1d0d",
+    "r2_reader_capture": {
+      "file": "haeryong-reader-before-20261012-2215.png",
+      "bytes": 271715,
+      "sha256": "954f9024ce5a4f90231ae9ab0dfcbe1b78653d2d677bdcc33322924a30f94eba",
+      "png_size": {
+        "width": 1326,
+        "height": 1456
+      },
+      "window_id": 16359,
+      "window_logical_size": {
+        "width": 1280,
+        "height": 1410
+      },
+      "css_viewport": "UNVERIFIED",
+      "browser_zoom": "UNVERIFIED",
+      "reviewers": [
+        "ChatGPT root",
+        "reader_visual_review"
+      ],
+      "scope": "One R2 desktop Reader screen; no browser interaction verification"
+    },
+    "r3_reader_capture": {
+      "file": "haeryong-reader-r3-20261012-2246.png",
+      "bytes": 275966,
+      "sha256": "394617956d8568dfc5e0421c7794c9db80dd206e3e7758bf3fab6310d393ba3a",
+      "source_html_sha256": "8b91299e21733fa3e76cc20bfb2dc65241b7087aaab2ba2961d48c58141ad135",
+      "png_size": {
+        "width": 1326,
+        "height": 1456
+      },
+      "window_id": 16359,
+      "window_logical_size": {
+        "width": 1280,
+        "height": 1410
+      },
+      "css_viewport": "UNVERIFIED",
+      "browser_zoom": "UNVERIFIED",
+      "reload": "USER_MANUAL_RELOAD",
+      "grok_capture_session_id": "a4d91e2b-90c8-4edb-a24c-22c0d6831b69",
+      "grok_capture_request_id": "66dbcf6c-dd69-467a-9fd9-8c0cb872e0aa",
+      "reviewers": [
+        "ChatGPT root",
+        "reader_visual_review"
+      ],
+      "scope": "One R3 basic desktop Reader screen; no browser interaction verification",
+      "observations": [
+        "Toolbar now reads as two intentional groups; its overall height was not substantially reduced",
+        "The currently selected page title is fully visible",
+        "Review/source badges and version creation date are easier to distinguish",
+        "Create-result button and generation-1 ready-state box improve the initial example guidance",
+        "No clear new overlap or clipping observed in this screen"
+      ],
+      "review_decision": "Basic Reader visual review completed without another UI change; overall concept remains unapproved"
+    },
+    "r3_ask_initial_capture": {
+      "file": "haeryong-reader-ask-20261012-2316.png",
+      "remote_path": "/Volumes/RootKernel/tmp/haeryong-reader-ask-20261012-2316.png",
+      "capture_time": "2026-10-12 23:16 KST",
+      "bytes": 336032,
+      "sha256": "95f9fa271d8edb2b4de5cfac03d728b338bb4a5702e45c309b62fa9493bcda7b",
+      "source_html_bytes": 241213,
+      "source_html_sha256": "8b91299e21733fa3e76cc20bfb2dc65241b7087aaab2ba2961d48c58141ad135",
+      "png_size": {
+        "width": 1326,
+        "height": 1456
+      },
+      "window_id": 16359,
+      "window_title": "해룡 · 전체 제품 디자인 시안",
+      "window_logical_bounds": {
+        "x": 3840,
+        "y": 30,
+        "width": 1280,
+        "height": 1410
+      },
+      "css_viewport": "UNVERIFIED",
+      "browser_zoom": "UNVERIFIED",
+      "panel_opened_by": "USER",
+      "capture_method": "NORMAL_OS_EXACT_WINDOW_SCREENSHOT_VIA_GROK",
+      "permission_status": {
+        "requested": false,
+        "screenCapture": true
+      },
+      "grok_capture_session_id": "a4d91e2b-90c8-4edb-a24c-22c0d6831b69",
+      "grok_capture_request_id": "4f1d09a4-f548-4385-bc8c-e8163f43727f",
+      "reviewers": [
+        "ChatGPT root",
+        "reader_visual_review"
+      ],
+      "scope": "One R3 desktop Reader with Ask panel in its initial state; no input, sending, context-retention or interaction verification",
+      "observations": [
+        "Reader and right-hand 340px Ask panel show no collision",
+        "Long document title is visible",
+        "Document name, version, path and quote selection are visually distinct",
+        "Source selection, textarea and Send form a clear hierarchy",
+        "Active Ask tab and Close control are clear",
+        "No new visual defect was identified in this screen"
+      ],
+      "review_decision": "Ask initial-state visual review completed without UI changes; design remains unapproved"
+    },
+    "aside_validation": {
+      "cli_version": "1.26.1010.1739",
+      "connection": "VERIFIED_TO_USERS_ALREADY_OPEN_EXACT_R3_TAB",
+      "additional_login_or_permission_requested": false,
+      "loaded_file_revision": "R3",
+      "loaded_file_sha256": "8b91299e21733fa3e76cc20bfb2dc65241b7087aaab2ba2961d48c58141ad135",
+      "verified_flow": [
+        "Click Ask and fill a Korean sample question",
+        "Change page index to flow; draft and captured index-page target persist",
+        "Close and reopen Ask; draft and target persist",
+        "Send and observe pending then completed mock answer with original target and sample-only/no-AI-call copy"
+      ],
+      "r3_narrow_capture": {
+        "file": "haeryong-aside-ask-current.png",
+        "bytes": 155761,
+        "sha256": "72a38e8b04e3ae1cd633f1a8ad35b9ecfc90258eb67a2f66a59156d8e5af16fd",
+        "png_size": {
+          "width": 920,
+          "height": 1324
+        },
+        "css_viewport": "UNVERIFIED_AT_CAPTURE",
+        "finding": "Panel obscures title, paragraph line endings and table result column; the three sample code lines themselves remain visible"
+      },
+      "later_paired_r3_geometry": {
+        "css_width": 1280,
+        "css_height": 1368,
+        "dpr": 1,
+        "main_columns": [
+          716,
+          340
+        ],
+        "context_position": "static",
+        "context_x": 940,
+        "scope": "Later same-tab paired measurement; must not be combined with the earlier 920px PNG"
+      },
+      "r4_live_css_preview": {
+        "file": "haeryong-aside-r4-style-preview.png",
+        "bytes": 224722,
+        "sha256": "eecf875e60f9c775903f1ae56dd8cf9040b91a4f94c8edfb941062bfd8c174e2",
+        "png_size": {
+          "width": 1280,
+          "height": 1368
+        },
+        "css_viewport": {
+          "width": 1280,
+          "height": 1368,
+          "dpr": 1
+        },
+        "main_columns": [
+          716,
+          340
+        ],
+        "context_position": "static",
+        "context_x": 940,
+        "applied_css_characters": 2068,
+        "reviewer": "ChatGPT root",
+        "finding": "No overlap at this paired 1280x1368 viewport",
+        "scope": "Temporary R4 CSS on an already-open R3 page; JavaScript remains R3; no file load or reload",
+        "narrow_correction": "NOT_VERIFIED"
+      },
+      "set_viewport_size": "UNAVAILABLE_IN_CURRENT_CLI",
+      "file_open_or_reload": "NOT_EXECUTED",
+      "automation_scope": "Connection and listed interactions verified; unrestricted automation and all APIs not established"
+    },
+    "historical_r3": {
+      "artifact": "prototype.html",
+      "bytes": 241213,
+      "sha256": "8b91299e21733fa3e76cc20bfb2dc65241b7087aaab2ba2961d48c58141ad135",
+      "inline_script_count": 1,
+      "syntax_exit": 0,
+      "external_script_count": 0,
+      "network_call_count": 0,
+      "reader_html_structure": "PASSED_STATIC_CHECK",
+      "reader_identifiers_and_actions": "PRESERVED_STATIC_CHECK",
+      "archive": "haeryong-design-r3.zip",
+      "archive_policy": "PRESERVE_AS_HISTORICAL_R3"
+    },
+    "historical_r2": {
+      "artifact": "prototype.html",
+      "bytes": 235964,
+      "sha256": "2d1dabec98c667a9225c0aa5001e57f1cfd1fa598bc59349332a0a7147917aee",
+      "inline_script_count": 1,
+      "syntax_exit": 0,
+      "syntax_error": "",
+      "external_script_count": 0,
+      "network_call_count": 0,
+      "initial_cloud_browser_visual_qa": "BLOCKED",
+      "initial_cloud_browser_error": "net::ERR_BLOCKED_BY_CLIENT",
+      "later_mac_reader_screenshot_review": "COMPLETED",
+      "archive": "haeryong-design-r2.zip"
+    }
+  }
+}

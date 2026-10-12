@@ -1,0 +1,448 @@
+{
+  "revision": "R5",
+  "design_approved": false,
+  "status": "CORRECTED_CANDIDATE_READY_FOR_ROOT_VISUAL_REVIEW",
+  "created_at_utc": "2026-10-12T16:05:12.622Z",
+  "baseline_html_sha256": "d19bee5cc68b9442078da793d5da012b5dbdbb87ebab731fd1802ec6f9cfcf9e",
+  "designer": "Grok",
+  "requested_model": "grok-4.7-build-fast",
+  "session_id": "1769fc93-6bd8-41e8-bf04-018be5701b0f",
+  "request_id": null,
+  "prompt": "You are the actual Grok design author for Haeryong R5 MANAGEMENT, an unapproved full-product Korean interactive design concept, not production implementation. This is a bounded design correction from the lead after personally inspecting actual screenshots. You have not received image files and must not claim you visually verified them. Do not call any tools, browse, read files, run commands, write files, or delegate. Work only from these exact RAW fragments and observed issues. Return one JSON object only, no Markdown fences: {\"css\":\"...\",\"fragmentEdits\":[{\"fragment\":\"maintenance|coverage|freshness|relationships|topics|drafts|activity|finding|draftPreview|scan|archive|trash|import|create\",\"oldText\":\"exact unique substring of RAW fragment\",\"newText\":\"...\"}],\"notes\":[\"minimal dynamic integration requirements\"]}. Keep CSS compact and targeted about 4500-7000 chars, <=20 fragmentEdits, omit unaffected fragments if CSS suffices. Every existing id, data-action, action scope, form value and accessible control must survive. Do not change action behavior. No URLs, external resources, @import, script, invented features, fake metrics or CSS content data. Calm neutral surfaces, restrained borders, blue actions, Korean-readable lists, preserve Reader and Settings styles. Theme tokens --ink,--muted,--canvas,--soft,--line,--accent,--blue support light/dark.\n\nSCOPE AND ACTUAL SCREENSHOT FINDINGS (1280x1368 CSS viewport, plus useful 390px fallback required):\nA Maintenance six reports: results start ~y650 due to outer heading, tall blank scan notice, report title+duplicated counts, boxed tabs, nested report h1 and cards. Flatten chrome/vertical overhead while retaining one page title, all six labeled tabs, structure and meaning as DISTINCT measures with the same total selected-page denominator (assessed+unchecked+unavailable). Raw old counts are stale; dynamic engine replaces. Target useful results near y400 or above without tiny text. Keep one short semantic summary with details once, compact scan status (cannot hide running/completed). #reportBody contains selected report fragment. Reduce nested borders and h2.section boxes in relationships while preserving authored/backlink/proposal distinctions and approvals. Topics compact coherent group grid and clearly separate pending merge. Freshness two rows keep source-unknown separate from source-changed; dynamic heading. Drafts publication approval separate.\nB Coverage table: current first cell repeats long document title for each page and path below. Prefer page title/path as first line, document context subordinate (root dynamic adapter required); header should accurately say 페이지 / 경로. Do not lose project, structure, meaning columns or unknown denominator. Cannot solve row text by CSS generated content.\nC Finding dialog ~1040px tall, baseline width560: widen to 680-720 on desktop, reduce nested card padding and headings while preserve evidence, proposal and limitation as distinct sections; change technical label 연결 오버레이 to clear Korean relation proposal. Keep evidence first article.card, proposal article.section and p.notice hooks. Preserve exact actions finding:approve/reject/reassess/undo and draft:create. Separate draft creation as next-step row from metadata decision group; no implication that approval publishes or marks reviewed. H2 evidence/proposal, optional subordinate h3. Inner doc heading .page-header h1 is dynamic; retain it but style compact, no redundant eyebrow. #findingDecision is live status/actions.\nD Draft preview ~880 tall: widen 680-720, flatten baseline context; content remains readable and distinct from source/base context. Retain .page-header h1, #draftState, original article.card, proposal article.section, p.small.muted, all three actions. Preserve explicit \"검토한 초안 게시\" and stale publication gate; draft replace/reject remain distinct from publish. Body dynamically contains draft title heading too; note root should avoid duplicate title and duplicate status title without deleting action buttons appended inside #draftState.\nE Scan: remove internal implementation sentence \"진행 표시는 정비 개요의 진행 영역이 맡습니다. 이 창은 막대를 두지 않습니다.\" Replace with concise action-first explanation of scope and structure/meaning. Label budget \"AI 호출 예산\" with helpful description; STRUCTURAL uses no AI, so budget field disabled or hidden with useful inline explanation in that mode, semantic reveals enabled. Existing #scanBudget min1 maxremoved by engine; no invented currency/page limit. Existing engine overwrites first p.small: root will adapt actual budget explanation. Keep #scanScope options both/yard/harbor, #scanDepth structural/semantic and scan:start.\nF Archive/Trash: .list-row currently metadata/actions sit together on left. Align metadata flexible left and actions consistently right at desktop, mobile wrap. Restore labels use actual destination 서재로 복원 or 보관함으로 복원. Typo \"보관함로\" must become \"보관함으로\". Dynamic engine rewrites all rows; leave root integration notes. Preserve purge impact dialog unchanged: exact doc scope, all versions+notes effect, other docs reference missing, backup not affected, cancel autofocus default; never turn deletion into primary blue.\nG Import: redundant inner title repeats outer title. Use concise intro without doubled heading. Hide base field entirely for newdoc and reveal for newversion. Keep #importBase inside a stable wrapper hook; all form values/actions unchanged. Remove implementation-only copy \"샘플 선택은 이 한 곳입니다. 확장자 목록으로 거르지 않습니다.\" and \"실제 모델 반영은 루트가 합니다.\" Preserve sample-label honesty. Use compact form, optional2col only where clear. #importStatus is live; #importProgress is real element preserved. When paused, Resume is primary, disabled Start must not stay blue; when completed Open is primary; when idle Start is primary. Need root dynamic adapter class toggles; no CSS fake state. Dialog close (including Escape) must refresh Home paused/running import entry; root handles this. Existing all actions remain accessible even if unavailable.\nH Create: current repeated heading and wrong static summary \"프로젝트 작업 노트 · 공급자 Grok 샘플 · 출처 매핑된 프로젝트만\" despite Podway chosen. Remove technical implementation paragraph; concise action-first copy. Add #createScopeSummary empty status/summary hook for root to render selected H.state.projectId actual project and source mode from current settings, sample-provider label if appropriate. No static fake project name. Keep createTitle/createRequest/createStatus and create:start/create:open. Creating prepares a draft; explicit publish stays in draft review. No silent publication.\n\nEXISTING DOM/CSS CONTRACT:\nRoutes have #main[data-route=\"maintenance|archive|trash\"] > #screen.content. Shell dialog is #appDialog.dialog with .dialog-head h2#dialogTitle, #dialogBody.dialog-body and #dialogFooter.dialog-foot. Scope management dialogs via .dialog:has(#findingDecision), :has(#draftState), :has(#scanScope), :has(#importKind), :has(#createTitle), not global dialog styles, to protect Settings/Reader.\nCurrent content padding32px36px; p margin0 0 14px, .page-header margin-bottom24px; .section border1px padding20 margin24px0; .card border1px padding16; .list margin-top20; .list-row flex padding18px20; .row-end flex column margin-left:auto (but runtime lifecycle rows use .row, not row-end). .stack flex column gap12px, .grid 2col desktop/1col mobile. .dialog width560 desktop, body padding24, max-height90dvh; mobile<=699 full viewport with body20. min44px touch targets. Existing R4 may add generic padding/background. Your end-appended CSS should explicitly target routes/dialogs with sufficient specificity, no global .grid/.section/.stack changes.\nManagement runtime writes H.fragments[s.report] into #reportBody, then raw heading slots may be updated. Keep .page-header and h1 inside reports due runtime selector, but visual hierarchy should be report subheading not second page title (root adapter can use role/aria-level or shift runtime selectors if needed). Main heading desc overwritten. report.parentElement.querySelector(\"header .small\") gets duplicate overall count string; allow root to remove that duplication while preserving accurate summary. Coverage runtime query \".grid .card\" uses .row-title and .muted, so retain those hooks in first two summary cards. Coverage tbody rebuilt every paint. Header/table structure remains. Dynamic finding references article.card first p, article.section paragraphs, .code, p.notice. Dynamic draft uses original article.card, article.section becomes #draftContent, its entire innerHTML is draft.body. p.small.muted is history explanation. Runtime Import state can be idle/running/paused/completed/abandoned/conflict/failed and has immutable captured target snapshot; UI must present that captured target on resumed uploads, no recapture! Create draft project comes from H.state.projectId. Engine retains original event hooks, disabled logic.\nAssembler applies your edits to RAW fragments below before language normalizer (개정→버전, 선호 개정→기본 버전, 개인 검토→내 검토, 발행→게시) and runtime topic/sample substitutions. oldText must match RAW, not screen copy. Prefer short exact edits, don't replace full fragments. Root owns all dynamic adapter and browser validation, note requirements clearly. Do not claim completed UX or design approval.\n\nRAW_FRAGMENTS:\n{\"maintenance\":\"<section class=\\\"page-header\\\"><p class=\\\"eyebrow\\\">해룡 로컬 지식</p><h1>정비 개요</h1><p class=\\\"muted\\\">2026-10-12 합성 현황. 프로젝트 2곳, 커버리지는 부분입니다.</p><div class=\\\"row\\\"><button class=\\\"button primary\\\" type=\\\"button\\\" data-action=\\\"dialog:scan\\\">검사</button><button class=\\\"button ghost\\\" type=\\\"button\\\" data-action=\\\"go:settings\\\">일정 설정</button></div></section><div id=\\\"scanStatus\\\" class=\\\"notice\\\"><p class=\\\"row-title\\\">진행 중: 구조 검사</p><p class=\\\"small\\\">해룡 작업 지식 6/10 파일. 의미 검사는 대기. 근해 항로는 이번 작업에 없음.</p></div><section class=\\\"section\\\"><header class=\\\"stack\\\"><h2>보고서</h2><p class=\\\"small\\\">범위 프로젝트 2곳 · 부분 커버리지 · 구조 9/10 · 의미 4/9</p></header><div class=\\\"tabs\\\"><button class=\\\"tab\\\" type=\\\"button\\\" data-action=\\\"report:coverage\\\">커버리지</button><button class=\\\"tab\\\" type=\\\"button\\\" data-action=\\\"report:freshness\\\">신선도</button><button class=\\\"tab\\\" type=\\\"button\\\" data-action=\\\"report:relationships\\\">관계</button><button class=\\\"tab\\\" type=\\\"button\\\" data-action=\\\"report:topics\\\">주제</button><button class=\\\"tab\\\" type=\\\"button\\\" data-action=\\\"report:drafts\\\">초안</button><button class=\\\"tab\\\" type=\\\"button\\\" data-action=\\\"report:activity\\\">활동</button></div><div id=\\\"reportBody\\\" class=\\\"card\\\"><p>보고서를 고르면 이 영역에 붙습니다. 기본 요약: 읽을 수 있는 파일 9개 중 의미 주석 4개, 파일 없음 1개.</p></div></section><section class=\\\"section\\\"><h2>검사 기록</h2><div class=\\\"list\\\"><article class=\\\"list-row\\\"><div><p class=\\\"row-title\\\">구조 검사 완료</p><p class=\\\"row-meta\\\">2026-10-12 09:40 · 프로젝트 2곳 · 파일 10 중 9 읽음</p></div><p class=\\\"row-end chip good\\\">부분</p></article><article class=\\\"list-row\\\"><div><p class=\\\"row-title\\\">의미 검사 중단</p><p class=\\\"row-meta\\\">2026-10-11 16:05 · 해룡 작업 지식 · 예산 40 중 22 사용 후 멈춤</p></div><p class=\\\"row-end chip warn\\\">미완</p></article></div></section><section class=\\\"section\\\"><h2>일정</h2><div class=\\\"list\\\"><article class=\\\"list-row\\\"><div><p class=\\\"row-title\\\">월요일 구조 검사</p><p class=\\\"row-meta\\\">두 프로젝트 · 다음 2026-10-19</p></div></article><article class=\\\"list-row\\\"><div><p class=\\\"row-title\\\">의미 검사는 수동</p><p class=\\\"row-meta\\\">자동 반복 없음</p></div></article></div></section>\",\"coverage\":\"<section class=\\\"page-header\\\"><p class=\\\"eyebrow\\\">커버리지</p><h1>구조와 의미를 분리</h1><p class=\\\"muted\\\">구조 9/10 파일. 의미 4/9 파일. 없는 파일은 의미 분모에서 뺍니다.</p></section><div class=\\\"grid\\\"><article class=\\\"card\\\"><p class=\\\"small\\\">구조</p><p class=\\\"row-title\\\">9/10</p><p class=\\\"muted small\\\">헤더, 문단, 링크를 읽음</p></article><article class=\\\"card\\\"><p class=\\\"small\\\">의미</p><p class=\\\"row-title\\\">4/9</p><p class=\\\"muted small\\\">읽을 수 있는 파일만 대상</p></article></div><div class=\\\"table-wrap\\\"><table><thead><tr><th>문서</th><th>프로젝트</th><th>구조</th><th>의미</th></tr></thead><tbody><tr><td>야간 입항 체크리스트</td><td>근해 항로</td><td>있음</td><td>있음</td></tr><tr><td>크레인 점검 주기</td><td>해룡 작업 지식</td><td>있음</td><td>있음</td></tr><tr><td>부두 전력 배분</td><td>근해 항로</td><td>있음</td><td>있음</td></tr><tr><td>용접 자격 명단</td><td>해룡 작업 지식</td><td>있음</td><td>있음</td></tr><tr><td>도장 작업 환기</td><td>해룡 작업 지식</td><td>있음</td><td>없음</td></tr><tr><td>부품 입고 절차</td><td>해룡 작업 지식</td><td>있음</td><td>없음</td></tr><tr><td>비상 정지 동선</td><td>해룡 작업 지식</td><td>있음</td><td>없음</td></tr><tr><td>조류 관측 메모</td><td>근해 항로</td><td>있음</td><td>없음</td></tr><tr><td>선체 블록 배치</td><td>해룡 작업 지식</td><td>있음</td><td>없음</td></tr><tr><td>선체 두께 측정</td><td>해룡 작업 지식</td><td>파일 없음</td><td>대상 아님</td></tr></tbody></table></div><p class=\\\"notice\\\">선체 두께 측정은 경로가 비어 구조 커버리지에서 실패입니다. 의미 4/9의 9에는 넣지 않습니다.</p><button class=\\\"button\\\" type=\\\"button\\\" data-action=\\\"dialog:finding\\\">없는 파일 근거</button>\",\"freshness\":\"<section class=\\\"page-header\\\"><p class=\\\"eyebrow\\\">신선도</p><h1>발견 2건</h1><p class=\\\"muted\\\">바뀐 원문 1건, 시각을 알 수 없음 1건. 나머지 문서는 이 목록에 없습니다.</p></section><div class=\\\"list\\\"><article class=\\\"list-row\\\"><div><p class=\\\"row-title\\\">크레인 점검 주기</p><p class=\\\"row-meta\\\">원문 변경 · 포착 기준 v3(2026-10-09) 이후 2026-10-11 14:22 저장</p><p class=\\\"small\\\">해룡 작업 지식 · 월간 부하 시험 문단이 달라짐</p></div><div class=\\\"row-end\\\"><span class=\\\"chip warn\\\">변경</span><button class=\\\"button\\\" type=\\\"button\\\" data-action=\\\"dialog:finding\\\">근거</button></div></article><article class=\\\"list-row\\\"><div><p class=\\\"row-title\\\">조류 관측 메모</p><p class=\\\"row-meta\\\">시각 불명 · 파일은 읽혔으나 수정 시각 필드가 비어 있음</p><p class=\\\"small\\\">근해 항로 · 신선도를 추정하지 않음</p></div><div class=\\\"row-end\\\"><span class=\\\"chip\\\">불명</span><button class=\\\"button\\\" type=\\\"button\\\" data-action=\\\"dialog:finding\\\">근거</button></div></article></div>\",\"relationships\":\"<section class=\\\"page-header\\\"><p class=\\\"eyebrow\\\">관계</p><h1>기록된 연결과 제안</h1><p class=\\\"muted\\\">작성 연결과 역링크는 이미 문서에 있습니다. 제안은 승인 전까지 오버레이입니다.</p></section><h2 class=\\\"section\\\">작성한 연결</h2><div class=\\\"list\\\"><article class=\\\"list-row\\\"><div><p class=\\\"row-title\\\">크레인 점검 주기 → 비상 정지 동선</p><p class=\\\"row-meta\\\">박서준이 2026-08-14에 본문에 넣음 · 해룡 작업 지식</p></div><span class=\\\"row-end chip good\\\">작성됨</span></article></div><h2 class=\\\"section\\\">역링크</h2><div class=\\\"list\\\"><article class=\\\"list-row\\\"><div><p class=\\\"row-title\\\">부품 입고 절차 ← 크레인 점검 주기</p><p class=\\\"row-meta\\\">상대 문서가 이 문서를 가리킴 · 2026-09-02 확인</p></div><span class=\\\"row-end chip\\\">역링크</span></article></div><h2 class=\\\"section\\\">제안</h2><div class=\\\"list\\\"><article class=\\\"list-row\\\"><div><p class=\\\"row-title\\\">야간 입항 체크리스트 → 부두 전력 배분</p><p class=\\\"row-meta\\\">근해 항로 · 근거 문장: 접안 전 전력 확인</p></div><div class=\\\"row-end\\\"><button class=\\\"button primary\\\" type=\\\"button\\\" data-action=\\\"finding:approve\\\">연결 승인</button><button class=\\\"button ghost\\\" type=\\\"button\\\" data-action=\\\"finding:reject\\\">거절</button></div></article><article class=\\\"list-row\\\"><div><p class=\\\"row-title\\\">도장 작업 환기 → 용접 자격 명단</p><p class=\\\"row-meta\\\">해룡 작업 지식 · 같은 작업장 언급뿐이라 근거가 약함</p></div><div class=\\\"row-end\\\"><button class=\\\"button primary\\\" type=\\\"button\\\" data-action=\\\"finding:approve\\\">연결 승인</button><button class=\\\"button ghost\\\" type=\\\"button\\\" data-action=\\\"finding:reject\\\">거절</button></div></article></div><p class=\\\"small muted\\\">승인은 링크 메타데이터만 기록합니다. 본문 발행이 아닙니다.</p>\",\"topics\":\"<section class=\\\"page-header\\\"><p class=\\\"eyebrow\\\">주제</p><h1>묶음과 병합 제안</h1></section><div class=\\\"grid\\\"><article class=\\\"card\\\"><h2>입항 절차</h2><p class=\\\"small\\\">야간 입항 체크리스트, 초기 연결 프로토콜</p><p class=\\\"muted small\\\">문서 2 · 근해 항로</p></article><article class=\\\"card\\\"><h2>설비 안전</h2><p class=\\\"small\\\">크레인 점검 주기, 비상 정지 동선, 도장 작업 환기</p><p class=\\\"muted small\\\">문서 3 · 해룡 작업 지식</p></article><article class=\\\"card\\\"><h2>자격과 입고</h2><p class=\\\"small\\\">용접 자격 명단, 부품 입고 절차</p><p class=\\\"muted small\\\">문서 2 · 서로 링크 없음</p></article></div><article class=\\\"section card\\\"><p class=\\\"chip warn\\\">병합 제안</p><h2>전력과 부두 전력</h2><p>부두 전력 배분에 붙은 주제 전력, 부두 전력을 하나로 제안합니다. 적용 전이며 다른 묶음은 그대로입니다.</p><button class=\\\"button\\\" type=\\\"button\\\" data-action=\\\"dialog:finding\\\">병합 근거</button></article>\",\"drafts\":\"<section class=\\\"page-header\\\"><p class=\\\"eyebrow\\\">초안</p><h1>본문 후보</h1><p class=\\\"muted\\\">메타데이터 승인과 발행은 별개입니다. 발행은 초안 미리보기에서만 합니다.</p></section><div class=\\\"list\\\"><article class=\\\"list-row\\\"><div><p class=\\\"row-title\\\">야간 입항 체크리스트</p><p class=\\\"row-meta\\\">준비됨 · 포착 기준 v3 · 제안 2문단 · 근해 항로</p></div><div class=\\\"row-end\\\"><span class=\\\"chip good\\\">준비됨</span><button class=\\\"button primary\\\" type=\\\"button\\\" data-action=\\\"dialog:draft\\\">초안 열기</button></div></article><article class=\\\"list-row\\\"><div><p class=\\\"row-title\\\">크레인 점검 주기</p><p class=\\\"row-meta\\\">갱신 대기 · 원문 변경을 반영할 차례 · 발행 버튼 없음</p></div><span class=\\\"row-end chip warn\\\">갱신 대기</span></article><article class=\\\"list-row\\\"><div><p class=\\\"row-title\\\">조류 관측 메모</p><p class=\\\"row-meta\\\">기준 오래됨 · 시각 불명이라 발행 불가 · 대기열 밖</p></div><span class=\\\"row-end chip warn\\\">기준 오래됨</span></article></div>\",\"activity\":\"<section class=\\\"page-header\\\"><p class=\\\"eyebrow\\\">활동</p><h1>오늘 기록 3건</h1><p class=\\\"muted\\\">2026-10-12. 사람이 한 정비 동작만 적습니다.</p></section><div class=\\\"list\\\"><article class=\\\"list-row\\\"><div><p class=\\\"row-title\\\">09:40 구조 검사 마감</p><p class=\\\"row-meta\\\">김하린 · 프로젝트 2곳 · 파일 9개 읽음, 선체 두께 측정은 없음</p></div></article><article class=\\\"list-row\\\"><div><p class=\\\"row-title\\\">11:18 메타데이터 승인</p><p class=\\\"row-meta\\\">박서준 · 크레인 점검 주기에 주제 설비 안전을 기록 · 본문은 발행하지 않음</p></div></article><article class=\\\"list-row\\\"><div><p class=\\\"row-title\\\">14:05 초안이 갱신 대기로 이동</p><p class=\\\"row-meta\\\">시스템 표시가 아니라 원문 저장 시각 때문 · 크레인 점검 주기 v3과 2026-10-11 원문이 어긋남</p></div></article></div>\",\"finding\":\"<section class=\\\"page-header\\\"><p class=\\\"eyebrow\\\">발견</p><h1>크레인 점검 주기</h1><p class=\\\"muted\\\">해룡 작업 지식 · 신선도 발견</p></section><article class=\\\"card stack\\\"><h2>증거</h2><p>포착본 3단락: 월간 부하 시험은 정격의 80퍼센트에서 10분. 현재 파일 같은 위치: 정격의 90퍼센트에서 8분.</p><p class=\\\"small\\\">범위: 이 문서 한 편. 프로젝트 전체로 확대하지 않음.</p><p class=\\\"code\\\">포착 기준 v3 · 2026-10-09 18:11</p></article><article class=\\\"section card\\\"><h2>제안 메타데이터</h2><p>주제: 설비 안전. 신선도: 원문 변경. 상태 후보는 주의.</p><h2>연결 오버레이</h2><p>비상 정지 동선으로 가는 링크는 본문 위에만 겹칩니다. 승인 전에는 파일에 쓰지 않습니다.</p></article><p class=\\\"notice\\\">한계: 의미 검사는 4개 문서만 끝났습니다. 선체 두께 측정은 파일이 없어 판단하지 않습니다. 승인해도 발행되지 않으며 버전은 v3에 머뭅니다.</p><div id=\\\"findingDecision\\\" class=\\\"stack\\\"><p class=\\\"small\\\">결정 영역. 승인은 메타데이터만 기록합니다.</p><div class=\\\"row\\\"><button class=\\\"button primary\\\" type=\\\"button\\\" data-action=\\\"finding:approve\\\">메타데이터 승인</button><button class=\\\"button ghost\\\" type=\\\"button\\\" data-action=\\\"finding:reject\\\">거절</button><button class=\\\"button\\\" type=\\\"button\\\" data-action=\\\"finding:reassess\\\">다시 평가</button><button class=\\\"button ghost\\\" type=\\\"button\\\" data-action=\\\"finding:undo\\\">승인 취소</button><button class=\\\"button\\\" type=\\\"button\\\" data-action=\\\"draft:create\\\">초안 만들기</button></div></div>\",\"draftPreview\":\"<section class=\\\"page-header\\\"><p class=\\\"eyebrow\\\">초안 미리보기</p><h1>야간 입항 체크리스트</h1><p id=\\\"draftState\\\" class=\\\"notice\\\">준비됨. 포착 기준 v3이 현재 활성 기준과 같습니다. 발행은 명시 동작으로 v4만 만듭니다. 기준이 오래되면 발행은 막힙니다.</p></section><article class=\\\"card\\\"><h2>포착 기준 v3</h2><p class=\\\"muted\\\">2026-10-09. 접안 전 무전 채널과 도선 시각만 적혀 있습니다.</p></article><article class=\\\"section card stack\\\"><h2>제안 본문</h2><p>접안 40분 전에 부두 전력 배분의 야간 회로가 켜졌는지 확인한다. 확인 전 선체 쪽 히터를 올리지 않는다.</p><p>도선이 15분 이상 늦으면 체크리스트를 다시 연다. 채널 2가 잠겨 있으면 근해 항로 당직에게 시각만 알리고, 임의로 회로를 바꾸지 않는다.</p></article><p class=\\\"small muted\\\">교체는 초안 내용을 갈음합니다. 거절은 초안을 버립니다. 발행만 활성 문서를 v4로 만듭니다.</p><div class=\\\"row\\\"><button class=\\\"button\\\" type=\\\"button\\\" data-action=\\\"draft:replace\\\">제안문으로 교체</button><button class=\\\"button ghost\\\" type=\\\"button\\\" data-action=\\\"draft:reject\\\">초안 거절</button><button class=\\\"button primary\\\" type=\\\"button\\\" data-action=\\\"draft:publish\\\">발행하여 v4 만들기</button></div>\",\"scan\":\"<section class=\\\"page-header\\\"><p class=\\\"eyebrow\\\">검사</p><h1>범위와 깊이</h1><p class=\\\"muted\\\">진행 표시는 정비 개요의 진행 영역이 맡습니다. 이 창은 막대를 두지 않습니다.</p></section><form class=\\\"form\\\"><label class=\\\"field\\\">프로젝트 범위<select id=\\\"scanScope\\\" name=\\\"scanScope\\\"><option value=\\\"both\\\">프로젝트 2곳</option><option value=\\\"yard\\\">해룡 작업 지식</option><option value=\\\"harbor\\\">근해 항로</option></select></label><label class=\\\"field\\\">깊이<select id=\\\"scanDepth\\\" name=\\\"scanDepth\\\"><option value=\\\"structural\\\">구조</option><option value=\\\"semantic\\\">의미</option></select></label><label class=\\\"field\\\">예산<input id=\\\"scanBudget\\\" name=\\\"scanBudget\\\" type=\\\"number\\\" value=\\\"40\\\" min=\\\"1\\\" max=\\\"200\\\"></label><button class=\\\"button primary\\\" type=\\\"button\\\" data-action=\\\"scan:start\\\">검사 실행</button></form><p class=\\\"small\\\">구조는 파일 읽기와 링크 목록입니다. 의미는 주제와 신선도 후보입니다. 예산은 이번 실행의 문서 상한입니다.</p>\",\"archive\":\"<section class=\\\"page-header\\\"><p class=\\\"eyebrow\\\">보관함</p><h1>보관 문서</h1><p class=\\\"muted\\\">활성 목록에서 빠져 있고 삭제는 아닙니다.</p></section><div id=\\\"archiveRows\\\" class=\\\"list\\\"><article class=\\\"list-row\\\"><div><p class=\\\"row-title\\\">초기 연결 프로토콜</p><p class=\\\"row-meta\\\">디렉터리 문서 · 근해 항로 · 2026-09-02 보관 · 기준 v2</p></div><div class=\\\"row-end\\\"><button class=\\\"button\\\" type=\\\"button\\\" data-action=\\\"open:archived\\\">열기</button><button class=\\\"button ghost\\\" type=\\\"button\\\" data-action=\\\"lifecycle:unarchive:archived\\\">보관 해제</button></div></article></div>\",\"trash\":\"<section class=\\\"page-header\\\"><p class=\\\"eyebrow\\\">휴지통</p><h1>제거된 문서</h1><p class=\\\"muted\\\">복원 위치를 항목마다 적습니다. 완전 삭제는 영향을 읽은 뒤 확인합니다.</p></section><div id=\\\"trashRows\\\" class=\\\"list\\\"><article class=\\\"list-row\\\"><div><p class=\\\"row-title\\\">부두 연락망</p><p class=\\\"row-meta\\\">활성 문서에서 제거 · 복원 위치: 해룡 작업 지식 / 활성</p><p class=\\\"small\\\">완전 삭제 영향: 본문, 승인된 주제 1개, 작성 연결 2건이 이 기기에서 사라집니다. 보관본은 없습니다.</p></div><div class=\\\"row-end\\\"><button class=\\\"button\\\" type=\\\"button\\\" data-action=\\\"lifecycle:restore:deleted1\\\">활성으로 복원</button><button class=\\\"button danger\\\" type=\\\"button\\\" data-action=\\\"dialog:purge:deleted1\\\">영향 확인 후 삭제</button></div></article><article class=\\\"list-row\\\"><div><p class=\\\"row-title\\\">구형 항로표</p><p class=\\\"row-meta\\\">보관함에서 제거 · 복원 위치: 보관함 / 근해 항로</p><p class=\\\"small\\\">완전 삭제 영향: 보관 사본 1건과 주제 태그만 사라집니다. 활성 문서에는 없습니다.</p></div><div class=\\\"row-end\\\"><button class=\\\"button\\\" type=\\\"button\\\" data-action=\\\"lifecycle:restore:deleted2\\\">보관함으로 복원</button><button class=\\\"button danger\\\" type=\\\"button\\\" data-action=\\\"dialog:purge:deleted2\\\">영향 확인 후 삭제</button></div></article></div><p class=\\\"empty\\\" hidden>휴지통이 비어 있습니다. 활성 문서나 보관함에서 빼낸 항목만 여기 나타납니다.</p>\",\"import\":\"<div class=\\\"stack\\\"><header class=\\\"page-header\\\"><p class=\\\"eyebrow\\\">가져오기</p><h2>문서 또는 새 판</h2></header><form class=\\\"form stack\\\"><div class=\\\"field\\\"><label for=\\\"importKind\\\">종류</label><select id=\\\"importKind\\\"><option value=\\\"newdoc\\\" selected>새 문서</option><option value=\\\"newversion\\\">새 버전</option></select></div><div class=\\\"field\\\"><label for=\\\"importTitle\\\">제목</label><input id=\\\"importTitle\\\" type=\\\"text\\\" value=\\\"분기 회의 메모\\\"></div><div class=\\\"field\\\"><label for=\\\"importBase\\\">기준 판</label><select id=\\\"importBase\\\"><option value=\\\"v3\\\" selected>v3 현재</option><option value=\\\"v2\\\">v2</option></select><p class=\\\"small muted\\\">새 문서는 기준 판을 쓰지 않습니다. 새 버전일 때만 v3 또는 v2 위에 쌓습니다.</p></div><div class=\\\"field\\\"><label for=\\\"importSample\\\">샘플 선택</label><select id=\\\"importSample\\\"><option value=\\\"file\\\" selected>파일 1개 샘플</option><option value=\\\"folder\\\">폴더 샘플</option><option value=\\\"zip\\\">ZIP 샘플</option></select><p class=\\\"small muted\\\">샘플 선택은 이 한 곳입니다. 확장자 목록으로 거르지 않습니다.</p></div><p id=\\\"importProgress\\\">진행 62%. 이어서 받을 조각이 남아 있습니다.</p><p id=\\\"importStatus\\\">2026-10-12 09:21에 중단되었습니다. 받은 부분은 유지됩니다. 실제 모델 반영은 루트가 합니다.</p><div class=\\\"row\\\"><button class=\\\"button primary\\\" type=\\\"button\\\" data-action=\\\"upload:start\\\">전송 시작</button><button class=\\\"button\\\" type=\\\"button\\\" data-action=\\\"upload:pause\\\">일시정지</button><button class=\\\"button\\\" type=\\\"button\\\" data-action=\\\"upload:resume\\\">이어서 받기</button><button class=\\\"button\\\" type=\\\"button\\\" data-action=\\\"upload:open\\\">받은 문서 열기</button></div></form></div>\",\"create\":\"<div class=\\\"stack\\\"><header class=\\\"page-header\\\"><p class=\\\"eyebrow\\\">만들기</p><h2>읽기 초안 요청</h2><p class=\\\"muted\\\">기억된 프로젝트와 공급자, 출처만 요약합니다. 백엔드 호출과 파일 쓰기는 없습니다.</p></header><article class=\\\"card stack\\\"><p class=\\\"row-meta\\\">프로젝트 작업 노트 · 공급자 Grok 샘플 · 출처 매핑된 프로젝트만</p></article><form class=\\\"form stack\\\"><div class=\\\"field\\\"><label for=\\\"createTitle\\\">제목</label><input id=\\\"createTitle\\\" type=\\\"text\\\" value=\\\"\\\"></div><div class=\\\"field\\\"><label for=\\\"createRequest\\\">요청</label><textarea id=\\\"createRequest\\\" rows=\\\"4\\\"></textarea></div><button class=\\\"button primary\\\" type=\\\"button\\\" data-action=\\\"create:start\\\">초안 요청</button><p id=\\\"createStatus\\\">아직 요청하지 않았습니다.</p><button class=\\\"button\\\" type=\\\"button\\\" data-action=\\\"create:open\\\">결과 열기</button></form></div>\"}",
+  "source_images_supplied_to_grok": false,
+  "source_images_reviewed_by": "ChatGPT delegated management reviewer",
+  "image_evidence": [
+    {
+      "path": "/workspace/scratch/ae6dadf49630/haeryong-design/audit-r5/05-maintenance-before.jpg",
+      "sha256": "e1089ad1bb3314c4e2a6cfb555460f058f0cecc9ed79f719579a73b6d6495c39",
+      "bytes": 27256
+    },
+    {
+      "path": "/workspace/scratch/ae6dadf49630/haeryong-design/audit-r5/05b-freshness-before.jpg",
+      "sha256": "42f39fc1f505f29649e006c58c16c8e7e107dbe3c0cda1924d838a64f4a0c573",
+      "bytes": 29486
+    },
+    {
+      "path": "/workspace/scratch/ae6dadf49630/haeryong-design/audit-r5/05c-finding-before.jpg",
+      "sha256": "23885def3be513779132f135761285fed7753553faab6dd963b9272605cb66ef",
+      "bytes": 24390
+    },
+    {
+      "path": "/workspace/scratch/ae6dadf49630/haeryong-design/audit-r5/05d-relationships-before.jpg",
+      "sha256": "57abaf4f953fc07185c3533f43afb32ff64c7627a2ee5159eb1326d04c19585e",
+      "bytes": 32753
+    },
+    {
+      "path": "/workspace/scratch/ae6dadf49630/haeryong-design/audit-r5/05e-topics-before.jpg",
+      "sha256": "1cccc18b7a1f7b66495e62fb13ddbbf685dbf94baf52d4cb39a25af840d84b41",
+      "bytes": 30743
+    },
+    {
+      "path": "/workspace/scratch/ae6dadf49630/haeryong-design/audit-r5/05f-drafts-before.jpg",
+      "sha256": "193374341627e826ecaf94cc80e7ef78dfee14e8c6a175b40cbc0a90ba908309",
+      "bytes": 26287
+    },
+    {
+      "path": "/workspace/scratch/ae6dadf49630/haeryong-design/audit-r5/05g-draft-preview-before.jpg",
+      "sha256": "3c9dedca402b59b3c34a7c528dc62accb37e99d86a9f91e5584455f5c9be25a8",
+      "bytes": 31332
+    },
+    {
+      "path": "/workspace/scratch/ae6dadf49630/haeryong-design/audit-r5/05h-activity-before.jpg",
+      "sha256": "cd61c75e427021fd651e2d921d09424de8a54fe5265d327ad6bb32158535cf67",
+      "bytes": 26338
+    },
+    {
+      "path": "/workspace/scratch/ae6dadf49630/haeryong-design/audit-r5/05i-scan-before.jpg",
+      "sha256": "49e2680d627f4f6b6fcca9fb86ce5604fea566d2c45d475f5755c812ecc4cb95",
+      "bytes": 24616
+    },
+    {
+      "path": "/workspace/scratch/ae6dadf49630/haeryong-design/audit-r5/05j-scan-running-before.jpg",
+      "sha256": "3852260d74568831a50aecae7c2c7127533994a48423a1449325b1c03dd791a0",
+      "bytes": 26596
+    },
+    {
+      "path": "/workspace/scratch/ae6dadf49630/haeryong-design/audit-r5/06-archive-before.jpg",
+      "sha256": "019122b1b03e71092392cfd0cfef8df621fc6c05bcbaaf1c76e8241036556ee7",
+      "bytes": 15891
+    },
+    {
+      "path": "/workspace/scratch/ae6dadf49630/haeryong-design/audit-r5/07-trash-before.jpg",
+      "sha256": "4a487d0f0ccab8e27e41504605b55ce1021a41d51be7f0becb3d72e9075ad992",
+      "bytes": 18017
+    },
+    {
+      "path": "/workspace/scratch/ae6dadf49630/haeryong-design/audit-r5/07b-purge-impact-before.jpg",
+      "sha256": "75c6c688194f04a46e83f421c1fcc60ae6bb39550652a15916f92b38d6cc69ca",
+      "bytes": 21009
+    },
+    {
+      "path": "/workspace/scratch/ae6dadf49630/haeryong-design/audit-r5/08-import-before.jpg",
+      "sha256": "c4de5136ab492ee4a7931266ad3687b4a394634eeb6d6842c2c01a5ef5b00665",
+      "bytes": 21738
+    },
+    {
+      "path": "/workspace/scratch/ae6dadf49630/haeryong-design/audit-r5/08b-import-paused-before.jpg",
+      "sha256": "24fd60cab2f1de345cfe3a0f3325946a20e80c6340ed77e52e9011da3d7729b5",
+      "bytes": 21348
+    },
+    {
+      "path": "/workspace/scratch/ae6dadf49630/haeryong-design/audit-r5/09-create-before.jpg",
+      "sha256": "78f90d4b61efb0514e11f0fdbf1220b9b824d8f07f0c1f87a46b85099b385165",
+      "bytes": 22558
+    }
+  ],
+  "browser_visual_verification": "Pending parent/root review of corrected candidate. This agent inspected 16 before-revision screenshots only, and did not use the browser.",
+  "dispatch_result": "tool call error: tool call failed for `codex_apps/devspace.bash`\n\nCaused by:\n    Mcp error: -32603: MCP request timed out",
+  "dispatch_at_utc": "2026-10-12T16:05:30.078Z",
+  "response": {
+    "css": "#main[data-route=maintenance]>#screen.content{padding:12px 22px 20px}#main[data-route=maintenance] .page-header{margin:0 0 6px}#main[data-route=maintenance] .page-header .eyebrow{display:none}#main[data-route=maintenance] .page-header h1{margin:0 0 2px;font-size:1.35rem;line-height:1.25}#main[data-route=maintenance] .page-header p,#main[data-route=maintenance] #scanStatus p{margin:0}#main[data-route=maintenance]>#screen.content>.page-header .row{margin-top:8px}#main[data-route=maintenance] #scanStatus{min-height:0;margin:0 0 8px;padding:6px 10px}#main[data-route=maintenance]>#screen.content>.section{margin:10px 0 0;padding:0;border:0;background:transparent;box-shadow:none}#main[data-route=maintenance] .tabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px;padding:0;border:0;background:transparent;box-shadow:none}#main[data-route=maintenance] .tab{min-height:44px;padding:6px 10px;border:1px solid transparent;background:transparent;color:var(--muted)}#main[data-route=maintenance] .tab[aria-selected=true]{border-color:var(--line);background:var(--soft);color:var(--ink)}#main[data-route=maintenance] #reportBody.card{margin:0;padding:0;border:0;background:transparent;box-shadow:none}#main[data-route=maintenance] #reportBody .page-header h1{font-size:1.05rem;font-weight:650;line-height:1.3}#main[data-route=maintenance] #reportBody .page-header .muted{font-size:.95rem;line-height:1.45}#main[data-route=maintenance] #reportBody h2{margin:0 0 4px;font-size:1rem;line-height:1.35}#main[data-route=maintenance] #reportBody h2.section{margin:12px 0 4px;padding:0;border:0;background:transparent;box-shadow:none}#main[data-route=maintenance] #reportBody .card{padding:10px 12px;border:1px solid var(--line);background:var(--canvas);box-shadow:none}#main[data-route=maintenance] #reportBody>.grid{gap:8px;margin-top:8px}#main[data-route=maintenance] #reportBody>article.section.card{margin-top:14px;background:var(--soft)}#main[data-route=maintenance] #reportBody .list{margin-top:4px}#main[data-route=maintenance] #reportBody .list-row{padding:8px 0}#main[data-route=maintenance] .table-wrap{overflow-x:auto}#main[data-route=maintenance] #reportBody table{width:100%;border-collapse:collapse}#main[data-route=maintenance] #reportBody th,#main[data-route=maintenance] #reportBody td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left;line-height:1.45}#main[data-route=maintenance] #reportBody td .row-title,#main[data-route=maintenance] #reportBody td .small{display:block}#main[data-route=maintenance] #reportBody td .small{color:var(--muted)}#main[data-route=maintenance] .list-row,#main[data-route=archive]>#screen .list-row,#main[data-route=trash]>#screen .list-row{align-items:flex-start;line-height:1.45}#main[data-route=archive]>#screen .list-row,#main[data-route=trash]>#screen .list-row{display:flex;justify-content:space-between;gap:12px;padding:10px 0}#main[data-route=archive]>#screen .list-row>div:first-child,#main[data-route=trash]>#screen .list-row>div:first-child{flex:1 1 auto;min-width:0}#main[data-route=archive]>#screen .list-row>.row-end,#main[data-route=trash]>#screen .list-row>.row-end,#main[data-route=archive]>#screen .list-row>.row,#main[data-route=trash]>#screen .list-row>.row{display:flex;flex:0 1 auto;flex-direction:row;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;margin-left:auto}#main[data-route=trash] button.button.danger,#appDialog.dialog button.button.danger{background:var(--soft);color:var(--ink);border:1px solid var(--line)}@media(min-width:700px){#appDialog.dialog:has(#findingDecision),#appDialog.dialog:has(#draftState){width:700px;max-width:calc(100vw - 48px)}}#appDialog.dialog:has(#findingDecision) .dialog-body,#appDialog.dialog:has(#draftState) .dialog-body,#appDialog.dialog:has(#scanScope) .dialog-body,#appDialog.dialog:has(#importKind) .dialog-body,#appDialog.dialog:has(#createTitle) .dialog-body{padding:12px 16px}#appDialog.dialog:has(#findingDecision) .page-header,#appDialog.dialog:has(#draftState) .page-header,#appDialog.dialog:has(#scanScope) .page-header,#appDialog.dialog:has(#importKind) .page-header,#appDialog.dialog:has(#createTitle) .page-header{margin-bottom:8px}#appDialog.dialog:has(#findingDecision) .page-header .eyebrow{display:none}#appDialog.dialog:has(#findingDecision) .page-header h1,#appDialog.dialog:has(#draftState) .page-header h1{margin:0;font-size:1.15rem;line-height:1.3}#appDialog.dialog:has(#findingDecision) .page-header p,#appDialog.dialog:has(#draftState) .page-header p,#appDialog.dialog:has(#scanScope) .page-header p,#appDialog.dialog:has(#importKind) .page-header p,#appDialog.dialog:has(#createTitle) .page-header p{margin:0 0 4px}#appDialog.dialog:has(#findingDecision) article.card,#appDialog.dialog:has(#findingDecision) article.section{margin:8px 0;padding:10px 12px;border:1px solid var(--line);box-shadow:none}#appDialog.dialog:has(#findingDecision) article.card{background:var(--canvas)}#appDialog.dialog:has(#findingDecision) article.section{background:var(--soft)}#appDialog.dialog:has(#findingDecision) h2{margin:0 0 4px;font-size:1rem}#appDialog.dialog:has(#findingDecision) h3{margin:8px 0 4px;font-size:.95rem;color:var(--ink)}#appDialog.dialog:has(#findingDecision) .next-step{margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}#appDialog.dialog:has(#findingDecision) .row,#appDialog.dialog:has(#draftState) .row{flex-wrap:wrap;gap:8px}#appDialog.dialog:has(#draftState) #draftState{margin:6px 0 0;padding:8px 10px}#appDialog.dialog:has(#draftState) article.card{margin:8px 0;padding:8px 10px;border:0;background:var(--soft);box-shadow:none}#appDialog.dialog:has(#draftState) article.section{margin:8px 0;padding:12px 14px;border:1px solid var(--line);background:var(--canvas);line-height:1.55}#appDialog.dialog:has(#scanScope) .pair,#appDialog.dialog:has(#importKind) .pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}#appDialog.dialog:has(#scanScope) .form,#appDialog.dialog:has(#importKind) .form,#appDialog.dialog:has(#createTitle) .form{gap:10px}#appDialog.dialog:has(#scanScope) #scanBudgetField .small{display:block;margin-top:4px;color:var(--muted);line-height:1.45}#appDialog.dialog:has(#scanDepth option[value=structural]:checked) #scanBudget,#appDialog.dialog:has(#scanScope)[data-scan-depth=structural] #scanBudget{display:none}#appDialog.dialog:has(#scanScope)[data-scan-depth=semantic] #scanBudget{display:block;width:8rem;max-width:100%}#appDialog.dialog:has(#importKind) #importBaseWrap{margin:0}#appDialog.dialog:has(#importKind option[value=newdoc]:checked) #importBaseWrap,#appDialog.dialog:has(#importKind)[data-import-kind=newdoc] #importBaseWrap{display:none}#appDialog.dialog:has(#importKind option[value=newversion]:checked) #importBaseWrap,#appDialog.dialog:has(#importKind)[data-import-kind=newversion] #importBaseWrap{display:block}#appDialog.dialog[data-upload-state=idle] [data-action=upload\\:start]:not(:disabled),#appDialog.dialog[data-upload-state=paused] [data-action=upload\\:resume]:not(:disabled),#appDialog.dialog[data-upload-state=completed] [data-action=upload\\:open]:not(:disabled){background:var(--blue);color:var(--canvas);border-color:transparent}#appDialog.dialog:has(#importKind) button.button:disabled,#appDialog.dialog[data-upload-state=paused] [data-action=upload\\:start]{background:var(--soft);color:var(--muted);border:1px solid var(--line)}#appDialog.dialog:has(#createTitle) #createScopeSummary:empty{margin:0}#main[data-route=maintenance] #screen,#main[data-route=archive] #screen,#main[data-route=trash] #screen,#appDialog.dialog:has(#findingDecision),#appDialog.dialog:has(#draftState),#appDialog.dialog:has(#scanScope),#appDialog.dialog:has(#importKind),#appDialog.dialog:has(#createTitle){word-break:keep-all}#main[data-route=maintenance] button.button,#main[data-route=archive] button.button,#main[data-route=trash] button.button,#appDialog.dialog:has(#findingDecision) button.button,#appDialog.dialog:has(#draftState) button.button,#appDialog.dialog:has(#scanScope) button.button,#appDialog.dialog:has(#importKind) button.button,#appDialog.dialog:has(#createTitle) button.button{min-height:44px}@media(max-width:699px){#main[data-route=maintenance]>#screen.content{padding:12px 14px 18px}#main[data-route=archive]>#screen .list-row,#main[data-route=trash]>#screen .list-row{flex-wrap:wrap}#main[data-route=archive]>#screen .list-row>.row-end,#main[data-route=trash]>#screen .list-row>.row-end,#main[data-route=archive]>#screen .list-row>.row,#main[data-route=trash]>#screen .list-row>.row{width:100%;margin-left:0;justify-content:flex-start}#appDialog.dialog:has(#scanScope) .pair,#appDialog.dialog:has(#importKind) .pair{grid-template-columns:1fr}}",
+    "fragmentEdits": [
+      {
+        "fragment": "maintenance",
+        "oldText": "<section class=\"section\"><header class=\"stack\"><h2>보고서</h2><p class=\"small\">범위 프로젝트 2곳 · 부분 커버리지 · 구조 9/10 · 의미 4/9</p></header><div class=\"tabs\">",
+        "newText": "<section class=\"section\" id=\"reportShell\"><div class=\"tabs\">"
+      },
+      {
+        "fragment": "coverage",
+        "oldText": "<p class=\"muted\">구조 9/10 파일. 의미 4/9 파일. 없는 파일은 의미 분모에서 뺍니다.</p>",
+        "newText": "<p class=\"muted\">구조와 의미는 다른 척도입니다. 분모는 같은 선택 페이지 총수이고, 평가됨·미확인·확인 불가를 모두 포함합니다.</p>"
+      },
+      {
+        "fragment": "coverage",
+        "oldText": "<p class=\"muted small\">읽을 수 있는 파일만 대상</p>",
+        "newText": "<p class=\"muted small\">같은 페이지 총수 안의 의미 평가</p>"
+      },
+      {
+        "fragment": "coverage",
+        "oldText": "<th>문서</th>",
+        "newText": "<th>페이지 / 경로</th>"
+      },
+      {
+        "fragment": "coverage",
+        "oldText": "<p class=\"notice\">선체 두께 측정은 경로가 비어 구조 커버리지에서 실패입니다. 의미 4/9의 9에는 넣지 않습니다.</p>",
+        "newText": "<p class=\"notice\">선체 두께 측정은 경로가 비어 확인 불가입니다. 구조와 의미의 같은 분모에 남기고, 평가됨이 아닌 확인 불가로 둡니다.</p>"
+      },
+      {
+        "fragment": "relationships",
+        "oldText": "제안은 승인 전까지 오버레이입니다.",
+        "newText": "제안은 승인 전까지 문서를 바꾸지 않습니다."
+      },
+      {
+        "fragment": "topics",
+        "oldText": "<article class=\"section card\"><p class=\"chip warn\">병합 제안</p>",
+        "newText": "<article class=\"section card pending-merge\"><p class=\"chip warn\">병합 제안</p>"
+      },
+      {
+        "fragment": "finding",
+        "oldText": "<h2>연결 오버레이</h2>",
+        "newText": "<h3>관계 제안</h3>"
+      },
+      {
+        "fragment": "finding",
+        "oldText": "<button class=\"button ghost\" type=\"button\" data-action=\"finding:undo\">승인 취소</button><button class=\"button\" type=\"button\" data-action=\"draft:create\">초안 만들기</button></div></div>",
+        "newText": "<button class=\"button ghost\" type=\"button\" data-action=\"finding:undo\">승인 취소</button></div><div class=\"next-step\"><p class=\"small\">초안 만들기는 별도 단계입니다. 승인이나 검토 완료가 아니며 게시하지 않습니다.</p><div class=\"row\"><button class=\"button\" type=\"button\" data-action=\"draft:create\">초안 만들기</button></div></div></div>"
+      },
+      {
+        "fragment": "draftPreview",
+        "oldText": "data-action=\"draft:publish\">발행하여 v4 만들기</button>",
+        "newText": "data-action=\"draft:publish\">검토한 초안 게시</button>"
+      },
+      {
+        "fragment": "scan",
+        "oldText": "<p class=\"muted\">진행 표시는 정비 개요의 진행 영역이 맡습니다. 이 창은 막대를 두지 않습니다.</p>",
+        "newText": "<p class=\"muted\">범위와 깊이를 고르고 검사를 시작합니다. 구조는 읽기와 연결 목록이고, 의미는 주제와 신선도 후보입니다.</p>"
+      },
+      {
+        "fragment": "scan",
+        "oldText": "<form class=\"form\"><label class=\"field\">프로젝트 범위<select id=\"scanScope\" name=\"scanScope\"><option value=\"both\">프로젝트 2곳</option><option value=\"yard\">해룡 작업 지식</option><option value=\"harbor\">근해 항로</option></select></label><label class=\"field\">깊이<select id=\"scanDepth\" name=\"scanDepth\"><option value=\"structural\">구조</option><option value=\"semantic\">의미</option></select></label><label class=\"field\">예산<input id=\"scanBudget\" name=\"scanBudget\" type=\"number\" value=\"40\" min=\"1\" max=\"200\"></label>",
+        "newText": "<form class=\"form\"><div class=\"pair\"><label class=\"field\">프로젝트 범위<select id=\"scanScope\" name=\"scanScope\"><option value=\"both\">프로젝트 2곳</option><option value=\"yard\">해룡 작업 지식</option><option value=\"harbor\">근해 항로</option></select></label><label class=\"field\">깊이<select id=\"scanDepth\" name=\"scanDepth\"><option value=\"structural\">구조</option><option value=\"semantic\">의미</option></select></label></div><label class=\"field\" id=\"scanBudgetField\">AI 호출 예산<input id=\"scanBudget\" name=\"scanBudget\" type=\"number\" value=\"40\" min=\"1\"><span class=\"small\">의미 깊이에서만 사용합니다. 구조 깊이는 AI를 호출하지 않습니다.</span></label>"
+      },
+      {
+        "fragment": "scan",
+        "oldText": "<p class=\"small\">구조는 파일 읽기와 링크 목록입니다. 의미는 주제와 신선도 후보입니다. 예산은 이번 실행의 문서 상한입니다.</p>",
+        "newText": "<p class=\"small\">AI 호출 예산은 의미 검사에만 적용됩니다.</p>"
+      },
+      {
+        "fragment": "archive",
+        "oldText": "data-action=\"lifecycle:unarchive:archived\">보관 해제</button>",
+        "newText": "data-action=\"lifecycle:unarchive:archived\">서재로 복원</button>"
+      },
+      {
+        "fragment": "trash",
+        "oldText": "data-action=\"lifecycle:restore:deleted1\">활성으로 복원</button>",
+        "newText": "data-action=\"lifecycle:restore:deleted1\">서재로 복원</button>"
+      },
+      {
+        "fragment": "import",
+        "oldText": "<header class=\"page-header\"><p class=\"eyebrow\">가져오기</p><h2>문서 또는 새 판</h2></header>",
+        "newText": "<header class=\"page-header\"><p class=\"muted\">샘플로 새 문서나 새 버전을 가져옵니다. 새 버전은 고른 기준 판 위에만 쌓입니다.</p></header>"
+      },
+      {
+        "fragment": "import",
+        "oldText": "<form class=\"form stack\"><div class=\"field\"><label for=\"importKind\">종류</label><select id=\"importKind\"><option value=\"newdoc\" selected>새 문서</option><option value=\"newversion\">새 버전</option></select></div><div class=\"field\"><label for=\"importTitle\">제목</label><input id=\"importTitle\" type=\"text\" value=\"분기 회의 메모\"></div>",
+        "newText": "<form class=\"form stack\"><div class=\"pair\"><div class=\"field\"><label for=\"importKind\">종류</label><select id=\"importKind\"><option value=\"newdoc\" selected>새 문서</option><option value=\"newversion\">새 버전</option></select></div><div class=\"field\"><label for=\"importTitle\">제목</label><input id=\"importTitle\" type=\"text\" value=\"분기 회의 메모\"></div></div>"
+      },
+      {
+        "fragment": "import",
+        "oldText": "<div class=\"field\"><label for=\"importBase\">",
+        "newText": "<div class=\"field\" id=\"importBaseWrap\"><label for=\"importBase\">"
+      },
+      {
+        "fragment": "import",
+        "oldText": "<p class=\"small muted\">샘플 선택은 이 한 곳입니다. 확장자 목록으로 거르지 않습니다.</p>",
+        "newText": "<p class=\"small muted\">파일, 폴더, ZIP은 모두 샘플입니다.</p>"
+      },
+      {
+        "fragment": "import",
+        "oldText": "받은 부분은 유지됩니다. 실제 모델 반영은 루트가 합니다.",
+        "newText": "받은 부분은 유지됩니다."
+      },
+      {
+        "fragment": "create",
+        "oldText": "<header class=\"page-header\"><p class=\"eyebrow\">만들기</p><h2>읽기 초안 요청</h2><p class=\"muted\">기억된 프로젝트와 공급자, 출처만 요약합니다. 백엔드 호출과 파일 쓰기는 없습니다.</p></header><article class=\"card stack\"><p class=\"row-meta\">프로젝트 작업 노트 · 공급자 Grok 샘플 · 출처 매핑된 프로젝트만</p></article>",
+        "newText": "<header class=\"page-header\"><p class=\"muted\">요청하면 초안만 준비합니다. 게시는 초안 검토에서 따로 합니다.</p><p id=\"createScopeSummary\" class=\"small muted\" role=\"status\"></p></header>"
+      }
+    ],
+    "notes": [
+      "This is an unapproved design correction. Screenshots were not available here and were not visually verified. Root owns adapters and browser checks.",
+      "Maintenance: keep one summary in the page-header muted line, which runtime already overwrites. The duplicate report header count slot is removed; do not write another overall count. Keep #scanStatus visible for running and completed. Report h1 stays for the runtime selector but is a subheading; root may set aria-level 2. Set aria-selected on the active tab.",
+      "Coverage: structure and meaning stay distinct and share one selected-page denominator: assessed + unchecked + unavailable. Replace stale counts. Rebuild each body cell with page title and path on the first line and document context subordinate; keep .row-title and .muted on the first two summary cards, plus project, structure, and meaning columns.",
+      "Finding: keep evidence article.card, proposal article.section, p.notice, and #findingDecision. Draft creation stays a separate next step and must not mean approved, reviewed, or published.",
+      "Draft: avoid a second title against .page-header h1 and a second status title. Do not remove action buttons appended inside #draftState. Keep replace, reject, and explicit publish distinct; a stale base still blocks publish.",
+      "Scan: structural depth disables or hides #scanBudget and shows the inline no-AI note; semantic enables it. Root may set data-scan-depth. Engine may remove max; do not add currency or a page cap. Engine overwrites the first p.small with the live budget explanation. Progress stays in maintenance #scanStatus.",
+      "Archive and trash: engine-built rows place metadata left and actions in .row or .row-end at the right, wrapping at 390px. Restore labels are 서재로 복원 or 보관함으로 복원, never 보관함로. Purge copy, full version and note effect, missing references, backup exclusion, and cancel autofocus stay unchanged. Purge or danger never uses primary blue.",
+      "Import: #importBase remains inside #importBaseWrap, hidden for newdoc and shown for newversion. Root sets data-import-kind and data-upload-state. Idle makes Start primary, paused makes Resume primary while disabled Start is not blue, completed makes Open primary. Keep every action present. Show the immutable captured target on resume and do not recapture. Dialog close, including Escape, refreshes the Home paused or running import entry. #importStatus and #importProgress stay live.",
+      "Create: fill empty #createScopeSummary from H.state.projectId and the current source mode, adding a sample-provider label only when that mode is selected. create:start prepares a draft; publish stays in draft review."
+    ]
+  },
+  "applied": {
+    "css": "#main[data-route=maintenance]>#screen.content{padding:24px 36px 40px}#main[data-route=maintenance] .page-header{margin:0 0 6px}#main[data-route=maintenance] .page-header .eyebrow{display:none}#main[data-route=maintenance] .page-header h1{margin:0 0 2px;font-size:30px;line-height:1.25}#main[data-route=maintenance] .page-header p,#main[data-route=maintenance] #scanStatus p{margin:0}#main[data-route=maintenance]>#screen.content>.page-header .row{margin-top:8px}#main[data-route=maintenance] #scanStatus{min-height:0;margin:0 0 8px;padding:6px 10px}#main[data-route=maintenance]>#screen.content>.section{margin:10px 0 0;padding:0;border:0;background:transparent;box-shadow:none}#main[data-route=maintenance] .tabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px;padding:0;border:0;background:transparent;box-shadow:none}#main[data-route=maintenance] .tab{min-height:44px;padding:6px 10px;border:1px solid transparent;background:transparent;color:var(--muted)}#main[data-route=maintenance] .tab[aria-selected=true]{border-color:var(--line);background:var(--soft);color:var(--ink)}#main[data-route=maintenance] #reportBody.card{margin:0;padding:0;border:0;background:transparent;box-shadow:none}#main[data-route=maintenance] #reportBody .page-header h1{font-size:20px;font-weight:650;line-height:1.3}#main[data-route=maintenance] #reportBody .page-header .muted{font-size:.95rem;line-height:1.45}#main[data-route=maintenance] #reportBody h2{margin:0 0 4px;font-size:1rem;line-height:1.35}#main[data-route=maintenance] #reportBody h2.section{margin:12px 0 4px;padding:0;border:0;background:transparent;box-shadow:none}#main[data-route=maintenance] #reportBody .card{padding:10px 12px;border:1px solid var(--line);background:var(--canvas);box-shadow:none}#main[data-route=maintenance] #reportBody>.grid{gap:8px;margin-top:8px}#main[data-route=maintenance] #reportBody>article.section.card{margin-top:14px;background:var(--soft)}#main[data-route=maintenance] #reportBody .list{margin-top:4px}#main[data-route=maintenance] #reportBody .list-row{padding:12px 16px}#main[data-route=maintenance] .table-wrap{overflow-x:auto}#main[data-route=maintenance] #reportBody table{width:100%;border-collapse:collapse}#main[data-route=maintenance] #reportBody th,#main[data-route=maintenance] #reportBody td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left;line-height:1.45}#main[data-route=maintenance] #reportBody td .row-title,#main[data-route=maintenance] #reportBody td .small{display:block}#main[data-route=maintenance] #reportBody td .small{color:var(--muted)}#main[data-route=maintenance] .list-row,#main[data-route=archive]>#screen .list-row,#main[data-route=trash]>#screen .list-row{align-items:flex-start;line-height:1.45}#main[data-route=archive]>#screen .list-row,#main[data-route=trash]>#screen .list-row{display:flex;justify-content:space-between;gap:12px;padding:16px 20px}#main[data-route=archive]>#screen .list-row>div:first-child,#main[data-route=trash]>#screen .list-row>div:first-child{flex:1 1 auto;min-width:0}#main[data-route=archive]>#screen .list-row>.row-end,#main[data-route=trash]>#screen .list-row>.row-end,#main[data-route=archive]>#screen .list-row>.row,#main[data-route=trash]>#screen .list-row>.row{display:flex;flex:0 1 auto;flex-direction:row;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;margin-left:auto}@media(min-width:700px){#appDialog.dialog:has(#findingDecision),#appDialog.dialog:has(#draftState){width:700px;max-width:calc(100vw - 48px)}}#appDialog.dialog:has(#findingDecision) .dialog-body,#appDialog.dialog:has(#draftState) .dialog-body,#appDialog.dialog:has(#scanScope) .dialog-body,#appDialog.dialog:has(#importKind) .dialog-body,#appDialog.dialog:has(#createTitle) .dialog-body{padding:12px 16px}#appDialog.dialog:has(#findingDecision) .page-header,#appDialog.dialog:has(#draftState) .page-header,#appDialog.dialog:has(#scanScope) .page-header,#appDialog.dialog:has(#importKind) .page-header,#appDialog.dialog:has(#createTitle) .page-header{margin-bottom:8px}#appDialog.dialog:has(#findingDecision) .page-header .eyebrow{display:none}#appDialog.dialog:has(#findingDecision) .page-header h1,#appDialog.dialog:has(#draftState) .page-header h1{margin:0;font-size:22px;line-height:1.3}#appDialog.dialog:has(#findingDecision) .page-header p,#appDialog.dialog:has(#draftState) .page-header p,#appDialog.dialog:has(#scanScope) .page-header p,#appDialog.dialog:has(#importKind) .page-header p,#appDialog.dialog:has(#createTitle) .page-header p{margin:0 0 4px}#appDialog.dialog:has(#findingDecision) article.card,#appDialog.dialog:has(#findingDecision) article.section{margin:8px 0;padding:10px 12px;border:1px solid var(--line);box-shadow:none}#appDialog.dialog:has(#findingDecision) article.card{background:var(--canvas)}#appDialog.dialog:has(#findingDecision) article.section{background:var(--soft)}#appDialog.dialog:has(#findingDecision) h2{margin:0 0 4px;font-size:1rem}#appDialog.dialog:has(#findingDecision) h3{margin:8px 0 4px;font-size:.95rem;color:var(--ink)}#appDialog.dialog:has(#findingDecision) .next-step{margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}#appDialog.dialog:has(#findingDecision) .row,#appDialog.dialog:has(#draftState) .row{flex-wrap:wrap;gap:8px}#appDialog.dialog:has(#draftState) #draftState{margin:6px 0 0;padding:8px 10px}#appDialog.dialog:has(#draftState) article.card{margin:8px 0;padding:8px 10px;border:0;background:var(--soft);box-shadow:none}#appDialog.dialog:has(#draftState) article.section{margin:8px 0;padding:12px 14px;border:1px solid var(--line);background:var(--canvas);line-height:1.55}#appDialog.dialog:has(#scanScope) .pair,#appDialog.dialog:has(#importKind) .pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}#appDialog.dialog:has(#scanScope) .form,#appDialog.dialog:has(#importKind) .form,#appDialog.dialog:has(#createTitle) .form{gap:10px}#appDialog.dialog:has(#scanScope) #scanBudgetField .small{display:block;margin-top:4px;color:var(--muted);line-height:1.45}#appDialog.dialog:has(#scanDepth option[value=structural]:checked) #scanBudget,#appDialog.dialog:has(#scanScope)[data-scan-depth=structural] #scanBudget{display:none}#appDialog.dialog:has(#scanScope)[data-scan-depth=semantic] #scanBudget{display:block;width:8rem;max-width:100%}#appDialog.dialog:has(#importKind) #importBaseWrap{margin:0}#appDialog.dialog:has(#importKind option[value=newdoc]:checked) #importBaseWrap,#appDialog.dialog:has(#importKind)[data-import-kind=newdoc] #importBaseWrap{display:none}#appDialog.dialog:has(#importKind option[value=newversion]:checked) #importBaseWrap,#appDialog.dialog:has(#importKind)[data-import-kind=newversion] #importBaseWrap{display:block}#appDialog.dialog[data-upload-state=idle] [data-action=upload\\:start]:not(:disabled),#appDialog.dialog[data-upload-state=paused] [data-action=upload\\:resume]:not(:disabled),#appDialog.dialog[data-upload-state=completed] [data-action=upload\\:open]:not(:disabled){background:var(--blue);color:#fff;border-color:transparent}#appDialog.dialog:has(#importKind) button.button:disabled,#appDialog.dialog[data-upload-state=paused] [data-action=upload\\:start]{background:var(--soft);color:var(--muted);border:1px solid var(--line)}#appDialog.dialog:has(#createTitle) #createScopeSummary:empty{margin:0}#main[data-route=maintenance] #screen,#main[data-route=archive] #screen,#main[data-route=trash] #screen,#appDialog.dialog:has(#findingDecision),#appDialog.dialog:has(#draftState),#appDialog.dialog:has(#scanScope),#appDialog.dialog:has(#importKind),#appDialog.dialog:has(#createTitle){word-break:keep-all}#main[data-route=maintenance] button.button,#main[data-route=archive] button.button,#main[data-route=trash] button.button,#appDialog.dialog:has(#findingDecision) button.button,#appDialog.dialog:has(#draftState) button.button,#appDialog.dialog:has(#scanScope) button.button,#appDialog.dialog:has(#importKind) button.button,#appDialog.dialog:has(#createTitle) button.button{min-height:44px}@media(max-width:699px){#main[data-route=maintenance]>#screen.content{padding:12px 14px 18px}#main[data-route=archive]>#screen .list-row,#main[data-route=trash]>#screen .list-row{flex-wrap:wrap}#main[data-route=archive]>#screen .list-row>.row-end,#main[data-route=trash]>#screen .list-row>.row-end,#main[data-route=archive]>#screen .list-row>.row,#main[data-route=trash]>#screen .list-row>.row{width:100%;margin-left:0;justify-content:flex-start}#appDialog.dialog:has(#scanScope) .pair,#appDialog.dialog:has(#importKind) .pair{grid-template-columns:1fr}}",
+    "fragmentEdits": [
+      {
+        "fragment": "maintenance",
+        "oldText": "<section class=\"section\"><header class=\"stack\"><h2>보고서</h2><p class=\"small\">범위 프로젝트 2곳 · 부분 커버리지 · 구조 9/10 · 의미 4/9</p></header><div class=\"tabs\">",
+        "newText": "<section class=\"section\" id=\"reportShell\"><div class=\"tabs\">"
+      },
+      {
+        "fragment": "coverage",
+        "oldText": "<p class=\"muted\">구조 9/10 파일. 의미 4/9 파일. 없는 파일은 의미 분모에서 뺍니다.</p>",
+        "newText": "<p class=\"muted\">구조와 의미는 다른 척도입니다. 분모는 같은 선택 페이지 총수이고, 평가됨·미확인·확인 불가를 모두 포함합니다.</p>"
+      },
+      {
+        "fragment": "coverage",
+        "oldText": "<p class=\"muted small\">읽을 수 있는 파일만 대상</p>",
+        "newText": "<p class=\"muted small\">같은 페이지 총수 안의 의미 평가</p>"
+      },
+      {
+        "fragment": "coverage",
+        "oldText": "<th>문서</th>",
+        "newText": "<th>페이지 / 경로</th>"
+      },
+      {
+        "fragment": "coverage",
+        "oldText": "<p class=\"notice\">선체 두께 측정은 경로가 비어 구조 커버리지에서 실패입니다. 의미 4/9의 9에는 넣지 않습니다.</p>",
+        "newText": "<p class=\"notice\">선체 두께 측정은 경로가 비어 확인 불가입니다. 구조와 의미의 같은 분모에 남기고, 평가됨이 아닌 확인 불가로 둡니다.</p>"
+      },
+      {
+        "fragment": "relationships",
+        "oldText": "제안은 승인 전까지 오버레이입니다.",
+        "newText": "제안은 승인 전까지 문서를 바꾸지 않습니다."
+      },
+      {
+        "fragment": "topics",
+        "oldText": "<article class=\"section card\"><p class=\"chip warn\">병합 제안</p>",
+        "newText": "<article class=\"section card pending-merge\"><p class=\"chip warn\">병합 제안</p>"
+      },
+      {
+        "fragment": "finding",
+        "oldText": "<h2>연결 오버레이</h2>",
+        "newText": "<h3>관계 제안</h3>"
+      },
+      {
+        "fragment": "finding",
+        "oldText": "<button class=\"button ghost\" type=\"button\" data-action=\"finding:undo\">승인 취소</button><button class=\"button\" type=\"button\" data-action=\"draft:create\">초안 만들기</button></div></div>",
+        "newText": "<button class=\"button ghost\" type=\"button\" data-action=\"finding:undo\">승인 취소</button></div><div class=\"next-step\"><p class=\"small\">초안 만들기는 별도 단계입니다. 승인이나 검토 완료가 아니며 게시하지 않습니다.</p><div class=\"row\"><button class=\"button\" type=\"button\" data-action=\"draft:create\">초안 만들기</button></div></div></div>"
+      },
+      {
+        "fragment": "draftPreview",
+        "oldText": "data-action=\"draft:publish\">발행하여 v4 만들기</button>",
+        "newText": "data-action=\"draft:publish\">검토한 초안 게시</button>"
+      },
+      {
+        "fragment": "scan",
+        "oldText": "<p class=\"muted\">진행 표시는 정비 개요의 진행 영역이 맡습니다. 이 창은 막대를 두지 않습니다.</p>",
+        "newText": "<p class=\"muted\">범위와 깊이를 고르고 검사를 시작합니다. 구조는 읽기와 연결 목록이고, 의미는 주제와 신선도 후보입니다.</p>"
+      },
+      {
+        "fragment": "scan",
+        "oldText": "<form class=\"form\"><label class=\"field\">프로젝트 범위<select id=\"scanScope\" name=\"scanScope\"><option value=\"both\">프로젝트 2곳</option><option value=\"yard\">해룡 작업 지식</option><option value=\"harbor\">근해 항로</option></select></label><label class=\"field\">깊이<select id=\"scanDepth\" name=\"scanDepth\"><option value=\"structural\">구조</option><option value=\"semantic\">의미</option></select></label><label class=\"field\">예산<input id=\"scanBudget\" name=\"scanBudget\" type=\"number\" value=\"40\" min=\"1\" max=\"200\"></label>",
+        "newText": "<form class=\"form\"><div class=\"pair\"><label class=\"field\">프로젝트 범위<select id=\"scanScope\" name=\"scanScope\"><option value=\"both\">프로젝트 2곳</option><option value=\"yard\">해룡 작업 지식</option><option value=\"harbor\">근해 항로</option></select></label><label class=\"field\">깊이<select id=\"scanDepth\" name=\"scanDepth\"><option value=\"structural\">구조</option><option value=\"semantic\">의미</option></select></label></div><label class=\"field\" id=\"scanBudgetField\">AI 호출 예산<input id=\"scanBudget\" name=\"scanBudget\" type=\"number\" value=\"40\" min=\"1\"><span class=\"small\">의미 깊이에서만 사용합니다. 구조 깊이는 AI를 호출하지 않습니다.</span></label>"
+      },
+      {
+        "fragment": "scan",
+        "oldText": "<p class=\"small\">구조는 파일 읽기와 링크 목록입니다. 의미는 주제와 신선도 후보입니다. 예산은 이번 실행의 문서 상한입니다.</p>",
+        "newText": "<p class=\"small\">AI 호출 예산은 의미 검사에만 적용됩니다.</p>"
+      },
+      {
+        "fragment": "archive",
+        "oldText": "data-action=\"lifecycle:unarchive:archived\">보관 해제</button>",
+        "newText": "data-action=\"lifecycle:unarchive:archived\">서재로 복원</button>"
+      },
+      {
+        "fragment": "trash",
+        "oldText": "data-action=\"lifecycle:restore:deleted1\">활성으로 복원</button>",
+        "newText": "data-action=\"lifecycle:restore:deleted1\">서재로 복원</button>"
+      },
+      {
+        "fragment": "import",
+        "oldText": "<header class=\"page-header\"><p class=\"eyebrow\">가져오기</p><h2>문서 또는 새 판</h2></header>",
+        "newText": "<header class=\"page-header\"><p class=\"muted\">샘플로 새 문서나 새 버전을 가져옵니다. 새 버전은 고른 기준 판 위에만 쌓입니다.</p></header>"
+      },
+      {
+        "fragment": "import",
+        "oldText": "<form class=\"form stack\"><div class=\"field\"><label for=\"importKind\">종류</label><select id=\"importKind\"><option value=\"newdoc\" selected>새 문서</option><option value=\"newversion\">새 버전</option></select></div><div class=\"field\"><label for=\"importTitle\">제목</label><input id=\"importTitle\" type=\"text\" value=\"분기 회의 메모\"></div>",
+        "newText": "<form class=\"form stack\"><div class=\"pair\"><div class=\"field\"><label for=\"importKind\">종류</label><select id=\"importKind\"><option value=\"newdoc\" selected>새 문서</option><option value=\"newversion\">새 버전</option></select></div><div class=\"field\"><label for=\"importTitle\">제목</label><input id=\"importTitle\" type=\"text\" value=\"분기 회의 메모\"></div></div>"
+      },
+      {
+        "fragment": "import",
+        "oldText": "<div class=\"field\"><label for=\"importBase\">",
+        "newText": "<div class=\"field\" id=\"importBaseWrap\"><label for=\"importBase\">"
+      },
+      {
+        "fragment": "import",
+        "oldText": "<p class=\"small muted\">샘플 선택은 이 한 곳입니다. 확장자 목록으로 거르지 않습니다.</p>",
+        "newText": "<p class=\"small muted\">파일, 폴더, ZIP은 모두 샘플입니다.</p>"
+      },
+      {
+        "fragment": "import",
+        "oldText": "받은 부분은 유지됩니다. 실제 모델 반영은 루트가 합니다.",
+        "newText": "받은 부분은 유지됩니다."
+      },
+      {
+        "fragment": "create",
+        "oldText": "<header class=\"page-header\"><p class=\"eyebrow\">만들기</p><h2>읽기 초안 요청</h2><p class=\"muted\">기억된 프로젝트와 공급자, 출처만 요약합니다. 백엔드 호출과 파일 쓰기는 없습니다.</p></header><article class=\"card stack\"><p class=\"row-meta\">프로젝트 작업 노트 · 공급자 Grok 샘플 · 출처 매핑된 프로젝트만</p></article>",
+        "newText": "<header class=\"page-header\"><p class=\"muted\">요청하면 초안만 준비합니다. 게시는 초안 검토에서 따로 합니다.</p><p id=\"createScopeSummary\" class=\"small muted\" role=\"status\"></p></header>"
+      }
+    ],
+    "notes": [
+      "This is an unapproved design correction. Screenshots were not available here and were not visually verified. Root owns adapters and browser checks.",
+      "Maintenance: keep one summary in the page-header muted line, which runtime already overwrites. The duplicate report header count slot is removed; do not write another overall count. Keep #scanStatus visible for running and completed. Report h1 stays for the runtime selector but is a subheading; root may set aria-level 2. Set aria-selected on the active tab.",
+      "Coverage: structure and meaning stay distinct and share one selected-page denominator: assessed + unchecked + unavailable. Replace stale counts. Rebuild each body cell with page title and path on the first line and document context subordinate; keep .row-title and .muted on the first two summary cards, plus project, structure, and meaning columns.",
+      "Finding: keep evidence article.card, proposal article.section, p.notice, and #findingDecision. Draft creation stays a separate next step and must not mean approved, reviewed, or published.",
+      "Draft: avoid a second title against .page-header h1 and a second status title. Do not remove action buttons appended inside #draftState. Keep replace, reject, and explicit publish distinct; a stale base still blocks publish.",
+      "Scan: structural depth disables or hides #scanBudget and shows the inline no-AI note; semantic enables it. Root may set data-scan-depth. Engine may remove max; do not add currency or a page cap. Engine overwrites the first p.small with the live budget explanation. Progress stays in maintenance #scanStatus.",
+      "Archive and trash: engine-built rows place metadata left and actions in .row or .row-end at the right, wrapping at 390px. Restore labels are 서재로 복원 or 보관함으로 복원, never 보관함로. Purge copy, full version and note effect, missing references, backup exclusion, and cancel autofocus stay unchanged. Purge or danger never uses primary blue.",
+      "Import: #importBase remains inside #importBaseWrap, hidden for newdoc and shown for newversion. Root sets data-import-kind and data-upload-state. Idle makes Start primary, paused makes Resume primary while disabled Start is not blue, completed makes Open primary. Keep every action present. Show the immutable captured target on resume and do not recapture. Dialog close, including Escape, refreshes the Home paused or running import entry. #importStatus and #importProgress stay live.",
+      "Create: fill empty #createScopeSummary from H.state.projectId and the current source mode, adding a sample-provider label only when that mode is selected. create:start prepares a draft; publish stays in draft review."
+    ]
+  },
+  "response_recovered_from": "grok export, one genuine ## Assistant section, after MCP timeout",
+  "recovered_at_utc": "2026-10-12T16:09:42.102Z",
+  "request_id_note": "The original JSON envelope was unavailable after MCP timeout; no request ID was invented.",
+  "correction_request": "Bounded review corrections to your R5 MANAGEMENT candidate. Do not call tools. Return only JSON {\"cssReplace\":[{\"old\":\"exact unique CSS substring from your previous css\",\"new\":\"replacement\"}],\"notes\":[\"brief\"]}. Preserve all other CSS/fragment edits unchanged. No new HTML or action changes.\n1 Remove the entire rule '#main[data-route=trash] button.button.danger,#appDialog.dialog button.button.danger{background:var(--soft);color:var(--ink);border:1px solid var(--line)}'. It escapes scope into Settings/Reader dialogs and removes the existing destructive-action distinction. Existing base danger colors and purge cancel default should remain.\n2 The state-primary import rule uses color:var(--canvas), which is dark in dark mode. Its foreground must be #fff on var(--blue).\n3 Restore consistent desktop route alignment and usable page-heading hierarchy. #main[data-route=maintenance]>#screen.content currently padding12px22px20px; use 24px36px40px (mobile can retain14px). Main page h1 currently1.35rem must be30px; report h1 currently1.05rem must be20px. Keep compact margins, counts and tabs so useful report content still begins much higher than before. Do not shrink the main page title to body scale.\n4 List rows currently padding8px0 (reports) and10px0 (archive/trash) put text flush against bordered container edges. Use12px16px for report rows,16px20px for archive/trash; preserve action-right and mobile behavior.\n5 Finding/draft inner .page-header h1 currently1.15rem; use22px for clear document identity without the former excessive title size.\nNo visual verification claims. Root has approved a small dynamic adapter, without MutationObserver or timer polling, to reflect real hidden/disabled controls, one appropriate primary and state metadata. Return only exact CSS substitutions.",
+  "correction_response": {
+    "cssReplace": [
+      {
+        "old": "#main[data-route=trash] button.button.danger,#appDialog.dialog button.button.danger{background:var(--soft);color:var(--ink);border:1px solid var(--line)}",
+        "new": ""
+      },
+      {
+        "old": "{background:var(--blue);color:var(--canvas);border-color:transparent}",
+        "new": "{background:var(--blue);color:#fff;border-color:transparent}"
+      },
+      {
+        "old": "#main[data-route=maintenance]>#screen.content{padding:12px 22px 20px}",
+        "new": "#main[data-route=maintenance]>#screen.content{padding:24px 36px 40px}"
+      },
+      {
+        "old": "#main[data-route=maintenance] .page-header h1{margin:0 0 2px;font-size:1.35rem;line-height:1.25}",
+        "new": "#main[data-route=maintenance] .page-header h1{margin:0 0 2px;font-size:30px;line-height:1.25}"
+      },
+      {
+        "old": "#main[data-route=maintenance] #reportBody .page-header h1{font-size:1.05rem;font-weight:650;line-height:1.3}",
+        "new": "#main[data-route=maintenance] #reportBody .page-header h1{font-size:20px;font-weight:650;line-height:1.3}"
+      },
+      {
+        "old": "#main[data-route=maintenance] #reportBody .list-row{padding:8px 0}",
+        "new": "#main[data-route=maintenance] #reportBody .list-row{padding:12px 16px}"
+      },
+      {
+        "old": "#main[data-route=archive]>#screen .list-row,#main[data-route=trash]>#screen .list-row{display:flex;justify-content:space-between;gap:12px;padding:10px 0}",
+        "new": "#main[data-route=archive]>#screen .list-row,#main[data-route=trash]>#screen .list-row{display:flex;justify-content:space-between;gap:12px;padding:16px 20px}"
+      },
+      {
+        "old": "#appDialog.dialog:has(#findingDecision) .page-header h1,#appDialog.dialog:has(#draftState) .page-header h1{margin:0;font-size:1.15rem;line-height:1.3}",
+        "new": "#appDialog.dialog:has(#findingDecision) .page-header h1,#appDialog.dialog:has(#draftState) .page-header h1{margin:0;font-size:22px;line-height:1.3}"
+      }
+    ],
+    "notes": [
+      "Danger override removed so existing destructive colors and purge cancel default stay inside their own scope.",
+      "Import state primary text is #fff on var(--blue). Maintenance desktop padding is 24px 36px 40px; the 699px rule still uses 14px sides. Main h1 is 30px, report h1 20px, finding and draft document h1 22px. Report rows are 12px 16px and archive/trash rows 16px 20px, with action-right and mobile wrap unchanged.",
+      "No visual verification. Root adapter may reflect real hidden or disabled controls, one primary, and state metadata without MutationObserver or timer polling. Other CSS and fragment edits stay as they were."
+    ]
+  },
+  "correction_request_id": "434a6e0d-6c23-49cf-bc0f-7ae325fea662",
+  "correction_session_id": "1769fc93-6bd8-41e8-bf04-018be5701b0f",
+  "correction_model_usage": {
+    "grok-4.7-build-fast": {
+      "inputTokens": 24948,
+      "outputTokens": 2742,
+      "cacheReadInputTokens": 33536,
+      "cacheCreationInputTokens": 0,
+      "modelCalls": 1,
+      "costUSD": 0.05651888
+    }
+  },
+  "outstanding_grok_process": false,
+  "thoughts_excluded": true,
+  "adapter": "prototype-management-r5.js",
+  "static_validation": {
+    "edit_count": 21,
+    "all_unique_matches": true,
+    "lost_ids_actions_controls": [],
+    "css_file_matches_applied": true,
+    "css_external_resources": false,
+    "adapter_sha256": "89e5b2797a3895fa578f6de29df6249890e0e95b430cbafaef13ad10d260481c",
+    "css_sha256": "4135e9b7f832dd2a0e2da85fdd292cf815ccf28e7b1f4878c336417dddb8b8c9",
+    "no_observer_or_polling": true,
+    "adapter_bytes": 15222,
+    "node_syntax_check": "passed"
+  },
+  "state_validation": {
+    "passed": [
+      "new-document base hidden and disabled",
+      "version base shown",
+      "captured upload target retained",
+      "paused resume is sole primary",
+      "structural budget hidden and disabled",
+      "semantic budget enabled with attempt-count explanation",
+      "selected project and source summary",
+      "stale draft publish remains disabled; rebase primary and status action retained",
+      "Home paused entry refreshed on dialog close",
+      "original hooks called"
+    ],
+    "calls": {
+      "after": 5,
+      "change": 3,
+      "summary": 1,
+      "lifecycle": 0
+    },
+    "extra_passed": [
+      "stale approved finding offers reassessment and disables draft creation",
+      "current approved finding makes separate draft creation primary"
+    ],
+    "harness": "Isolated DOM-control stubs executing the actual adapter. Domain actions for publish, purge and I/O were not invoked; real browser validation remains root-owned."
+  },
+  "integration_notes": [
+    "Apply applied.fragmentEdits to immutable grok-fragments.json RAW text using oldText/newText, before existing language normalizer.",
+    "Append grok-management-r5.css after established integration and R4 CSS.",
+    "Load prototype-management-r5.js after original core/reader/management/settings modules, before HR.start(); preserve other R5 adapter chaining.",
+    "The adapter wraps existing presentation hooks and schedules a Promise microtask after syncUploadSummary, which the original management module calls during job paints. No MutationObserver, interval, timeout, or polling was added.",
+    "Actual hidden and disabled attributes reflect new-document base and structural-mode budget; original captured upload snapshot is read only.",
+    "The native dialog close event refreshes the Home import entry without rerendering the page or disturbing the restored opener.",
+    "The adapter does not invoke publish, purge, real I/O, commit, push or deploy."
+  ],
+  "completed_at_utc": "2026-10-12T16:21:58.710Z"
+}

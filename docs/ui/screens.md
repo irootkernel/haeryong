@@ -2,6 +2,8 @@
 
 **All screens below are proposed.** Route/task mapping is in [information architecture](information-architecture.md). Every implementation must include loading, empty, failure, permission, disconnected and relevant conflict states, not just the happy path.
 
+The [R5 interactive concept](../design/prototype/README.md) is the current visual reference for these screens. Its [UI handoff](../design/prototype/HANDOFF.md) records baseline inputs and the sample states reviewed; the screen contracts and owning Task checks remain the implementation requirements.
+
 ## S01 Connect and device approval
 
 Show configured endpoint, connection security status, profile hint only if safely available, and Connect. Request pairing, show comparison code and time remaining, explain approval from the local CLI or another approved device, then wait. Do not display private library metadata before approval. Pending/expired/rejected states have distinct copy. An approved owner or local bootstrap can reject the exact request. Stop waiting ends local polling and discards its pending secret; it does not claim server cancellation or revoke an existing session. Approval returns to the exact internal version/page/query/fragment/region route. Untrusted device label never substitutes for comparison verification. An existing owner device can approve the new connection. Remember this device is on by default, with a temporary-session option. A remembered device reuses its session across reload, new tabs and ordinary browser restart. Show this connect screen only when a valid stored credential is absent, explicitly revoked, expired under an optional policy, or invalidated by restore. If browser storage is unavailable, explain the temporary session once.

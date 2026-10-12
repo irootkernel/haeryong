@@ -1,0 +1,2 @@
+/* Respect the closed navigation state at every viewport width. */
+#navBackdrop[hidden]{display:none!important}

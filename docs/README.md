@@ -16,8 +16,8 @@ Haeryong is a personal developer's AI-maintained, source-grounded knowledge wiki
 
 | Reader | Recommended path |
 | --- | --- |
-| Owner reviewing the proposal | [Review guide](REVIEW-GUIDE.md), [decision register](decisions.md), [UI overview](ui/README.md), [wireframes](ui/wireframes.md), [roadmap](roadmap.md) |
-| Implementing agent | [Execution protocol](execution-protocol.md), [requirements](requirements.md), [architecture](architecture.md), [contract index](contracts/README.md), current Epic and Task |
+| Owner reviewing the proposal | [Review guide](REVIEW-GUIDE.md), [decision register](decisions.md), [UI overview](ui/README.md), [R5 prototype](design/prototype/README.md), [wireframes](ui/wireframes.md), [roadmap](roadmap.md) |
+| Implementing agent | [Execution protocol](execution-protocol.md), [requirements](requirements.md), [architecture](architecture.md), [contract index](contracts/README.md), [UI handoff](design/prototype/HANDOFF.md), current Epic and Task |
 | Reviewer or release owner | [Traceability](testing/traceability.md), [acceptance catalog](testing/acceptance-catalog.md), [test strategy](testing/test-strategy.md), [release checklist](operations/release-checklist.md) |
 | Operator | [Deployment](operations/deployment.md), [configuration](contracts/configuration.md), [backup and recovery](operations/backup-recovery.md) |
 
@@ -49,12 +49,12 @@ Stage A requires the connected desktop and private remote reader, real source-gr
 | Product | [Requirements](requirements.md), [glossary](glossary.md), [decisions](decisions.md) |
 | Design | [Architecture](architecture.md), [data model](data-model.md), [ADRs](adr/README.md) |
 | Interfaces | [Schema registry](contracts/schema-registry.md), [Package](contracts/package.md), [Import workflow](contracts/import-workflow.md), [HTTP API](contracts/http-api.md), [authentication](contracts/authentication.md), [viewer protocol](contracts/viewer-protocol.md), [CLI](contracts/cli.md), [jobs/events](contracts/jobs-events.md), [AI adapter](contracts/ai-adapter.md), [source access](contracts/source-access.md), [configuration](contracts/configuration.md) |
-| UI | [Information architecture](ui/information-architecture.md), [screen specifications](ui/screens.md), [wireframes](ui/wireframes.md), [flows](ui/flows.md), [design system](ui/design-system.md) |
+| UI | [Design index](design/README.md), [R5 prototype](design/prototype/README.md), [implementation handoff](design/prototype/HANDOFF.md), [Information architecture](ui/information-architecture.md), [screen specifications](ui/screens.md), [wireframes](ui/wireframes.md), [flows](ui/flows.md), [design system](ui/design-system.md) |
 | Work | [Roadmap](roadmap.md), [Epic index](epics/README.md), [task index](tasks/README.md), [execution protocol](execution-protocol.md) |
 | Quality | [Knowledge quality](testing/knowledge-quality.md), [acceptance](testing/acceptance-catalog.md), [fixtures](testing/fixtures.md), [traceability](testing/traceability.md), [strategy](testing/test-strategy.md), [bundle validation](testing/bundle-validation.md) |
 | Operations | [Security](operations/security.md), [deployment](operations/deployment.md), [recovery](operations/backup-recovery.md), [observability](operations/observability.md), [release](operations/release-checklist.md) |
 
-Mermaid diagrams and layout tables are editable Markdown source, not generated application screenshots. Every task is initially `planned`; every implementation gate is initially `not_run`. Only documentation integrity checks recorded in the bundle-validation report were executed for this revision.
+Mermaid diagrams and layout tables are editable Markdown source, not generated application screenshots. Every task is initially `planned`; every implementation gate is initially `not_run`. Documentation integrity checks for specification 1.6.2 are recorded in the [bundle validation report](testing/bundle-validation.md). The separate 2026-10-12 [R5 interactive concept](design/prototype/README.md) and [UI handoff](design/prototype/HANDOFF.md) provide current UI baseline inputs with dated prototype review evidence. The visual design remains unapproved, and implementation Task and gate statuses are unchanged.
 
 ## Current owner revision
 

@@ -13,6 +13,8 @@ completion_requires: ["TASK-003-01","TASK-003-02","TASK-003-03","TASK-003-04","T
 
 Make multi-page result directories and useful html_js_v1 JavaScript readable in shared browser and independent Wails clients, preserving local URL behavior, on-demand files, separate host authority and practical page recovery.
 
+Visual reference inputs are the [R5 interactive concept](../design/prototype/README.md) and [UI handoff](../design/prototype/HANDOFF.md), which describe the current proposed layout, sample behavior, and review limits for the shared reader. The existing entry gate and completion requirements are unchanged.
+
 ## Entry gate
 
 Complete and review EPIC-002, including its passing exit gate, before starting this Epic. Apply the [execution protocol](../execution-protocol.md) and current [personal-tool amendment](../changes/2026-10-10-personal-tool-revision.md) and [directory-results amendment](../changes/2026-10-10-directory-results-revision.md). No task depends on an unimplemented future Epic to meet its stated exit.

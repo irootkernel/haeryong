@@ -1,0 +1,297 @@
+{
+  "artifact": "prototype.html",
+  "alias": "haeryong-prototype.html",
+  "revision": "r5-unapproved",
+  "design_approved": false,
+  "verification": "static artifact verification; not actual browser rendering",
+  "verified_at_utc": "2026-10-12T16:36:47.077746+00:00",
+  "result": "PASS",
+  "artifacts": [
+    {
+      "file": "prototype.html",
+      "bytes": 309429,
+      "sha256": "719567a66a51350b02f49c073f7103061d71b7e60c196b8209aa3c766b0e4f1a"
+    },
+    {
+      "file": "haeryong-prototype.html",
+      "bytes": 309429,
+      "sha256": "719567a66a51350b02f49c073f7103061d71b7e60c196b8209aa3c766b0e4f1a"
+    }
+  ],
+  "assembly_runs": [
+    {
+      "iteration": 1,
+      "command": "python assemble-prototype.py",
+      "exitCode": 0,
+      "stdout": {
+        "artifact": "prototype.html",
+        "bytes": 309429,
+        "fragments": 38
+      },
+      "bytes": 309429,
+      "sha256": "719567a66a51350b02f49c073f7103061d71b7e60c196b8209aa3c766b0e4f1a",
+      "aliasesByteIdentical": true
+    },
+    {
+      "iteration": 2,
+      "command": "python assemble-prototype.py",
+      "exitCode": 0,
+      "stdout": {
+        "artifact": "prototype.html",
+        "bytes": 309429,
+        "fragments": 38
+      },
+      "bytes": 309429,
+      "sha256": "719567a66a51350b02f49c073f7103061d71b7e60c196b8209aa3c766b0e4f1a",
+      "aliasesByteIdentical": true
+    }
+  ],
+  "regenerated_bytes_identical": true,
+  "regenerated_sha256_identical": true,
+  "javascript": {
+    "inline_script_count": 1,
+    "bytes": 256497,
+    "sha256": "14062c4fb7b3fa437e2ab8eecb5ca2e0859789823c1d2dc4589c276265c5465e",
+    "syntax_command": "node --check (extracted inline JavaScript passed via stdin)",
+    "node_version": "v24.19.0",
+    "syntax_exit": 0,
+    "syntax_stdout": "",
+    "syntax_stderr": "",
+    "external_script_count": 0
+  },
+  "csp": {
+    "value": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
+    "exactly_matches_previous_html": true,
+    "previous_html_sha256": "89842c069f34b2f2c3b8abd852a3e24f0d50dcd103f172beb60e5e49e4c09d8b",
+    "connect_src_none": true,
+    "default_src_none": true
+  },
+  "r5_applied_css": [
+    {
+      "record": "grok-product-r5.json",
+      "bytes": 4731,
+      "sha256": "912cba169b9d181ad871dfabd0912ea7cd73df898e7854d5e132c055bd13d8a7",
+      "exactTextPresentInFinalStyle": true,
+      "occurrences": 1,
+      "styleCharacterOffset": 28837
+    },
+    {
+      "record": "grok-management-r5.json",
+      "bytes": 8546,
+      "sha256": "513a0f8cfb2b1d16baf889ec2a48f2cad8063213da0cc1281a91fab8b2f67755",
+      "exactTextPresentInFinalStyle": true,
+      "occurrences": 1,
+      "styleCharacterOffset": 33569
+    },
+    {
+      "record": "grok-settings-r5.json",
+      "bytes": 4261,
+      "sha256": "08a69c8be4480064fddaf582b68b78aa28ddb49b87e64b44d48dbcda37ef0e32",
+      "exactTextPresentInFinalStyle": true,
+      "occurrences": 1,
+      "styleCharacterOffset": 42116
+    },
+    {
+      "record": "grok-context-r5.json",
+      "bytes": 2592,
+      "sha256": "50cbeef21fb77ab7133ce07ae50c1419b6350eb6d801f35db8baa5d01f16c381",
+      "exactTextPresentInFinalStyle": true,
+      "occurrences": 1,
+      "styleCharacterOffset": 46378
+    }
+  ],
+  "modules": [
+    {
+      "file": "prototype-core.js",
+      "sha256": "0cd70f58824bae344052cf3e044d0896f47a2a70a11b71efccda47847f731f38",
+      "exactSourceIncluded": true,
+      "scriptCharacterOffset": 49779
+    },
+    {
+      "file": "prototype-reader.js",
+      "sha256": "7bd71ea5b04083c35799800ad3ce3bc2f530071dfd9621739f7423224c926742",
+      "exactSourceIncluded": true,
+      "scriptCharacterOffset": 77180
+    },
+    {
+      "file": "prototype-management.js",
+      "sha256": "3094c656b1568c7f3430a2baa91b6fc95ad06148ac232d45647292c2fa41f6b0",
+      "exactSourceIncluded": true,
+      "scriptCharacterOffset": 110298
+    },
+    {
+      "file": "prototype-settings.js",
+      "sha256": "9e1c55b1fc1fd1e0e993f3bc9db02fe43c49a30c37563a12137200959be68d09",
+      "exactSourceIncluded": true,
+      "scriptCharacterOffset": 150583
+    },
+    {
+      "file": "prototype-product-r5.js",
+      "sha256": "b4248051050e9f2fca16061f0bea0704317151f186be0226cd1fd3ce3440f6f6",
+      "exactSourceIncluded": true,
+      "scriptCharacterOffset": 181419
+    },
+    {
+      "file": "prototype-management-r5.js",
+      "sha256": "89e5b2797a3895fa578f6de29df6249890e0e95b430cbafaef13ad10d260481c",
+      "exactSourceIncluded": true,
+      "scriptCharacterOffset": 187253
+    },
+    {
+      "file": "prototype-settings-r5.js",
+      "sha256": "b7957b9a546c9182293a47a2fa96ed42b6c73a38b246d9d073fc3e7111c097fe",
+      "exactSourceIncluded": true,
+      "scriptCharacterOffset": 201791
+    },
+    {
+      "file": "prototype-context-r5.js",
+      "sha256": "f4878dc769f85a89f914ab35e3538b810a1bb13486538843f3579400c5d30a41",
+      "exactSourceIncluded": true,
+      "scriptCharacterOffset": 219024
+    },
+    {
+      "file": "prototype-recovery-r5.js",
+      "sha256": "22937e6b6538e9af685856c1978fc34c99657c99eb3f3189cc2fb63e235df220",
+      "exactSourceIncluded": true,
+      "scriptCharacterOffset": 221517
+    }
+  ],
+  "direct_network_call_scan": {
+    "method": "Static pattern scan of the complete extracted inline JavaScript",
+    "total_matches": 0,
+    "checks": [
+      {
+        "name": "fetch",
+        "pattern": "\\bfetch\\s*\\(",
+        "matches": 0
+      },
+      {
+        "name": "request_constructors",
+        "pattern": "\\b(?:XMLHttpRequest|WebSocket|EventSource|WebTransport|RTCPeerConnection)\\s*\\(",
+        "matches": 0
+      },
+      {
+        "name": "send_beacon",
+        "pattern": "\\bsendBeacon\\s*\\(",
+        "matches": 0
+      },
+      {
+        "name": "request_helpers",
+        "pattern": "\\b(?:axios|jQuery|\\$)\\s*\\.\\s*(?:get|post|put|patch|delete|ajax|getJSON|request)\\s*\\(",
+        "matches": 0
+      },
+      {
+        "name": "http_request",
+        "pattern": "\\b(?:http|https)\\s*\\.\\s*(?:request|get)\\s*\\(",
+        "matches": 0
+      },
+      {
+        "name": "dynamic_import",
+        "pattern": "\\bimport\\s*\\(",
+        "matches": 0
+      },
+      {
+        "name": "worker_or_importscripts",
+        "pattern": "\\b(?:Worker|SharedWorker|importScripts)\\s*\\(",
+        "matches": 0
+      },
+      {
+        "name": "service_worker_registration",
+        "pattern": "\\bserviceWorker\\s*\\.\\s*register\\s*\\(",
+        "matches": 0
+      },
+      {
+        "name": "window_open",
+        "pattern": "\\bwindow\\s*\\.\\s*open\\s*\\(",
+        "matches": 0
+      },
+      {
+        "name": "location_navigation",
+        "pattern": "\\blocation\\s*\\.\\s*(?:assign|replace)\\s*\\(|\\blocation\\s*\\.\\s*href\\s*=",
+        "matches": 0
+      }
+    ]
+  },
+  "original_sources": [
+    {
+      "file": "prototype-core.js",
+      "sha256BeforeAssembly": "0cd70f58824bae344052cf3e044d0896f47a2a70a11b71efccda47847f731f38",
+      "sha256AfterAssembly": "0cd70f58824bae344052cf3e044d0896f47a2a70a11b71efccda47847f731f38",
+      "unchangedDuringFinalAssembly": true,
+      "priorCheckpoint": "recovery-r5-validation.json",
+      "priorCheckpointSha256": "0cd70f58824bae344052cf3e044d0896f47a2a70a11b71efccda47847f731f38",
+      "matchesPriorCheckpoint": true
+    },
+    {
+      "file": "prototype-reader.js",
+      "sha256BeforeAssembly": "7bd71ea5b04083c35799800ad3ce3bc2f530071dfd9621739f7423224c926742",
+      "sha256AfterAssembly": "7bd71ea5b04083c35799800ad3ce3bc2f530071dfd9621739f7423224c926742",
+      "unchangedDuringFinalAssembly": true,
+      "priorCheckpoint": "recovery-r5-validation.json",
+      "priorCheckpointSha256": "7bd71ea5b04083c35799800ad3ce3bc2f530071dfd9621739f7423224c926742",
+      "matchesPriorCheckpoint": true
+    },
+    {
+      "file": "prototype-management.js",
+      "sha256BeforeAssembly": "3094c656b1568c7f3430a2baa91b6fc95ad06148ac232d45647292c2fa41f6b0",
+      "sha256AfterAssembly": "3094c656b1568c7f3430a2baa91b6fc95ad06148ac232d45647292c2fa41f6b0",
+      "unchangedDuringFinalAssembly": true,
+      "priorCheckpoint": "recovery-r5-validation.json",
+      "priorCheckpointSha256": "3094c656b1568c7f3430a2baa91b6fc95ad06148ac232d45647292c2fa41f6b0",
+      "matchesPriorCheckpoint": true
+    },
+    {
+      "file": "prototype-settings.js",
+      "sha256BeforeAssembly": "9e1c55b1fc1fd1e0e993f3bc9db02fe43c49a30c37563a12137200959be68d09",
+      "sha256AfterAssembly": "9e1c55b1fc1fd1e0e993f3bc9db02fe43c49a30c37563a12137200959be68d09",
+      "unchangedDuringFinalAssembly": true,
+      "priorCheckpoint": "recovery-r5-validation.json",
+      "priorCheckpointSha256": "9e1c55b1fc1fd1e0e993f3bc9db02fe43c49a30c37563a12137200959be68d09",
+      "matchesPriorCheckpoint": true
+    },
+    {
+      "file": "grok-fragments.json",
+      "sha256BeforeAssembly": "d0c9a107008ea1c053df143cb5e3d375ed45986489d8f55ff0313487cbc974b7",
+      "sha256AfterAssembly": "d0c9a107008ea1c053df143cb5e3d375ed45986489d8f55ff0313487cbc974b7",
+      "unchangedDuringFinalAssembly": true,
+      "priorCheckpoint": null,
+      "priorCheckpointSha256": null,
+      "matchesPriorCheckpoint": null
+    }
+  ],
+  "assembly_inputs": {
+    "all_unchanged_during_verification": true,
+    "sha256": {
+      "prototype-core.js": "0cd70f58824bae344052cf3e044d0896f47a2a70a11b71efccda47847f731f38",
+      "prototype-reader.js": "7bd71ea5b04083c35799800ad3ce3bc2f530071dfd9621739f7423224c926742",
+      "prototype-management.js": "3094c656b1568c7f3430a2baa91b6fc95ad06148ac232d45647292c2fa41f6b0",
+      "prototype-settings.js": "9e1c55b1fc1fd1e0e993f3bc9db02fe43c49a30c37563a12137200959be68d09",
+      "grok-fragments.json": "d0c9a107008ea1c053df143cb5e3d375ed45986489d8f55ff0313487cbc974b7",
+      "prototype-product-r5.js": "b4248051050e9f2fca16061f0bea0704317151f186be0226cd1fd3ce3440f6f6",
+      "prototype-management-r5.js": "89e5b2797a3895fa578f6de29df6249890e0e95b430cbafaef13ad10d260481c",
+      "prototype-settings-r5.js": "b7957b9a546c9182293a47a2fa96ed42b6c73a38b246d9d073fc3e7111c097fe",
+      "prototype-context-r5.js": "f4878dc769f85a89f914ab35e3538b810a1bb13486538843f3579400c5d30a41",
+      "prototype-recovery-r5.js": "22937e6b6538e9af685856c1978fc34c99657c99eb3f3189cc2fb63e235df220",
+      "grok-product-r5.json": "1663c83c6b5768c94d730e022b0b2adbaa129bd5a55994d540104ff62c6bd775",
+      "grok-management-r5.json": "0fe39b82129cf4e6bdaacd7021bd0b6e6f89f81a791a4901f6642797a298d6a1",
+      "grok-settings-r5.json": "fd46eb2244c4db36f19cc112f89f1de0cc6156b23b51bde18b06931588cefac1",
+      "grok-context-r5.json": "f3dd6a98bc62eb43ed30fdffba9d1eb967b93af0d54959da376a4a57038a5630",
+      "grok-reader-r3.json": "c52e4c87f9c5cd143a71708264fc53df9bccd30d93e91e9c0baa77e96b785f2d",
+      "prototype-integration.css": "c67e91488102523c8469ad4063fa649a2317632bbb42feb20e7e13570526a4e4",
+      "prototype-r5-safety.css": "0f0fe8b69af55807d93fe9c795e7b7fcb93cb41f8504d21d3381bfbdfa91263e",
+      "assemble-prototype.py": "de3c9e7432184ed6682bca499db5f71bc39204008991b594827e2129d265f702"
+    }
+  },
+  "fragment_patch_validation": "Delegated to the assembler exact, unique match checks; no duplicate fragment patch test was run.",
+  "files_written": [
+    "prototype.html",
+    "haeryong-prototype.html",
+    "STATIC-R5.json"
+  ],
+  "limitations": [
+    "No actual browser render, responsive geometry, native keyboard interaction, or runtime end-to-end test was performed.",
+    "The direct-call scan covers the listed explicit API patterns; it is not a proof against arbitrary obfuscated or indirect code. The preserved CSP separately denies connections and external scripts.",
+    "Original module hashes also match the earlier recovery validation checkpoint. For grok-fragments.json, unchanged status is verified before versus after this final assembly; no earlier independent hash is asserted.",
+    "No packages were installed and no source file, assembler, remote Mac file, production artifact, commit, push, deploy, publish, or purge action was changed or executed."
+  ]
+}
