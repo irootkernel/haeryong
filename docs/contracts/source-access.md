@@ -1,0 +1,88 @@
+# Source access, snapshots and disclosure
+
+**Documentation baseline 1.6.0, proposed runtime v1.** **Inherited requirement:** exact source grounding from the owner's selected roots. **Proposed default:** `reference_only` retention with opt-in `selected_snapshot`. Project, source and provider selections are remembered rather than approved on every read. Identity, retained bytes, live availability and freshness remain separate facts.
+
+## Registry and authority
+
+A project registers logical repository/document identity independently from a host path. The owner selects canonical source roots, provider/disclosure use and an explanation-output destination. Record the selected actions so the daemon can recheck them automatically; a separate prompt or elevated grant for each read is not required. Changes that expand the selected source or provider disclosure show their impact for owner confirmation. A link, imported path or model-written citation does not expand the daemon's scope. The browser receives source identities and availability rather than an arbitrary filesystem interface.
+
+EPIC-004 owns the minimal approved reader, exact revision resolution, deterministic source-change observation and explicit checks of imported evidence before the full EPIC-006 Q&A/source integration. TASK-004-01 implements the check operation and history; TASK-004-05 enables its existing Evidence action in the shared UI. Before those capabilities ship, the action is unavailable without blocking ordinary reading. These operations use the same remembered source authority and exact-revision rules. Registering source identity alone does not prove that bytes are reachable or permit a provider submission. Configured mapping kinds git/files are distinct from captured source kinds git/snapshot; a files mapping produces a snapshot when selected bytes are actually captured.
+
+Haeryong may use source-reading functions such as `resolve_revision`, `list_paths_within_scope`, `read_file_at_revision`, `read_selected_snapshot`, `compare_revisions` and `locate_symbol`. These service functions check saved project/action scope and return typed evidence identities. A broker is an implementation option, not a mandatory replacement for normal provider tools. External agents use the owner's existing environment; managed adapters record their supported native permission mode and actual limits as described in [AI adapter](ai-adapter.md).
+
+Haeryong's own Git reader uses incremental cancellable operations and argument arrays, preferably direct object reads that preserve the requested revision and do not modify the checkout. Paginate large path inventories and stream selected objects instead of imposing a source file-size or file-count ceiling. Avoid invoking checkout filters, external diff/textconv or hooks merely to read evidence, and record the chosen Git/library behavior. Automatic fetch/pull is outside the baseline. This does not require disabling the owner's ordinary Git configuration, agent hooks or plugins globally, or proving containment of their unrestricted tools.
+
+## Identity and runtime availability
+
+Source metadata is optional when importing or viewing a result directory. Without a captured basis, retain and render the files with unknown/unverified source status. The fields below describe evidence when present; they are not mandatory packaging requirements for every HTML page or attachment. Displaying an imported source claim does not itself verify that claim.
+
+| Fact | Required meaning |
+| --- | --- |
+| Source identity | Stable logical repository/document ID plus object format and full revision, or an explicitly captured snapshot ID |
+| Author capture declaration | Immutable supplied `capture_status`: `verified`, `reference_only` or `unavailable`; not a service check, current access grant or proof that a claim is correct |
+| Service verification | A separate check outcome and timestamp under the [shared registry](schema-registry.md#source-and-assessment-views); never an overwrite of the author's declaration |
+| Runtime availability | `available`, `unavailable` or `denied` for this principal, action and exact target |
+| Bytes origin | `retained_snapshot`, `approved_source` or null when no bytes can be supplied |
+| Freshness | Assessment against a stated target and checked scope; inability to read source is not an outdated verdict |
+
+Resolve these fields independently. A missing checkout may coexist with available retained evidence. A known commit with missing objects remains the same source identity but is unavailable for that read. Revocation yields denied access without changing historical provenance. A changed source identity triggers reassessment within policy; it does not establish semantic outdatedness. Canonical enums and typed errors are recorded in [schema registry](schema-registry.md).
+
+## Source modes and captured bytes
+
+The registry owns mode precedence: explicit source_mode wins; otherwise historical intent uses pinned, and other intents use the remembered project default (pinned when absent). moving_target is explanatory intent, not an instruction to force current or perform source reads while listing. Explanation-only references identify exact stored explanation bytes separately from project-source citations; they do not establish observed_input or posthoc_verified project evidence.
+
+| Mode or retention | Capture | Meaning |
+| --- | --- | --- |
+| `pinned` | Package-recorded commit/snapshot identity | Explain that exact basis; missing bytes remain unavailable |
+| `current` | Resolve the owner-selected release/branch/working-copy target at request start | Explain the captured state without silently following a branch that moves during the response |
+| `selected_snapshot` retention | Explicitly approved selected file bytes plus path, digest and capture context | Evidence remains readable when the original checkout is unavailable |
+
+For Git record repository identity, object format, full commit ID, optional release label, relative file path and relevant symbol/line range. For uncommitted material capture selected file bytes or a reconstructible base plus full patch and metadata. A digest alone cannot reconstruct content. Multi-file working-copy reads are not an atomic whole-repository snapshot unless a verified capture mechanism provides that guarantee.
+
+Open approved content safely, capture the actual selected bytes incrementally, calculate their digest and issue a daemon-controlled read_id bound to target_set_id, exact repository/revision or snapshot identity, location and bytes_sha256. This identifies the captured bytes; a source-view read alone does not prove that a provider received them. When an adapter actually supplies those bytes to a provider, record an attempt-linked input observation with input_origin daemon_supplied. A native tool read may use input_origin native_observed only when supported telemetry identifies the actual bytes, exact revision/snapshot and relevant attempt; a reported path, HEAD value or tool-success label alone is insufficient. These observations record delivery/read evidence, not what the model understood. The [schema registry](schema-registry.md) defines the citation union and provider-attempt input observations.
+
+The [shared registry](schema-registry.md#source-and-assessment-views) owns the observed_input/posthoc_verified citation union. Actual input observation requires evidence of the exact bytes delivered in the producing attempt. Direct adapter-supplied excerpts and supported source-tool responses can establish this; exact native output may be correlated with a separately captured revision/snapshot when the correlation is proven. Merely making a captured directory available to the agent does not prove that every file entered its input, and telemetry need not contain a revision field if another verified record establishes that identity. If the actual input cannot be observed, use a later exact-target check or leave the claim unverified, without disabling the owner's normal tools.
+
+## Checking imported evidence
+
+An owner can run Check source evidence for an imported evidence item through the [HTTP verification operation](http-api.md#imported-evidence-verification). It reads the immutable declared target and location under remembered source authority, not today's HEAD, and records a separate verification result. GET evidence/history composes that result without starting another read or AI call. Raw import and viewing never wait for this action; a failed check does not discard the directory or rewrite authored metadata.
+
+The registry defines captured, matched, mismatch and unavailable outcomes. Expected digest/excerpt is optional. With no expectation, captured means only that the exact target was located and its bytes captured; it is not a comparison with unseen author output. With supplied expectations, compare the exact bounded bytes under the HTTP rules, without whitespace or Unicode normalization. Mismatch and unavailable do not qualify as service-verified citations. The author must not invent a quote or read_id to satisfy an admission rule.
+
+Acquire permitted existing/temporary object pins before checking, complete the check against those same bytes before cleanup, then persist checked_at, the applicable successful verified_at and allowed record/object references. No service can reconstruct already removed unretained bytes from a digest; report unavailable instead. Saved verification is not automatic permanent source retention and never backdates provider-input observation. Semantic support and actual assessment coverage remain independent. Optional package_evidence_ref links only an exact matching immutable evidence item.
+
+## Captured-byte lifetime
+
+Validate, render or submit the same captured bytes rather than verifying one path and reopening a potentially changed file. Retained content-object reads verify their expected digest before use. A large object may be streamed into pinned verified capture storage or checked against recorded chunk digests before release, without keeping the entire file in RAM. Current-source target capture remains at request acceptance; a later native read of a moved checkout cannot inherit that earlier target label without byte/revision evidence. Exact revision, byte digest, observation time and current authorization travel together; a filename or HEAD stamp is not a snapshot of uncommitted bytes.
+
+Current-source reads at a newer revision may have different paths or lines from the original package. Save them in the captured-read context of the question/job; never rewrite the old generated version metadata or present its historical evidence as if it described the new revision.
+
+Ephemeral request capture is not automatic durable source retention. Execution-temporary or retained bytes may receive active-job pins only when that lifetime is authorized by source policy; a pin or `reference_only` digest cannot reconstruct absent bytes. If a queued/resumed job cannot access its captured revision, it pauses or fails honestly rather than silently choosing current source. Apply approved cleanup after use while preserving required nonsecret audit/recovery identity. Persistent source bytes require `selected_snapshot` policy or another explicit source-retention decision.
+
+## Selected content and actual processing limits
+
+The daemon's source reader resolves paths within the selected canonical roots and checks the actual opened target. Report traversal outside the selected root, unreadable content and unsupported filesystem special objects with typed results. Do not reject ordinary files because they are large, binary or have an unfamiliar extension. Read selected ranges or stream the complete object as required, retaining exact capture identity. Use those captured bytes for digesting and evidence so a later reopen cannot silently change the answer's source. This service check does not claim to confine an external agent's OS access.
+
+A provider may support only some media types or a finite context/attachment size. Expose that actual capability, choose explicit relevant ranges or supported derived representations and record what was supplied. Unread or omitted portions are not verified evidence. A provider limitation does not reject import, remove an attachment, truncate stored source or prevent the viewer from opening the available result. Report unavailable processing or let the owner choose another provider/workflow when the request cannot be fulfilled.
+
+Haeryong's managed source collection does not deliberately include its live profile/bootstrap material or provider authentication stores as ordinary evidence. The selected collection/disclosure inventory stays visible and may be adjusted through remembered source choices; it does not require approval of every line or read. File-name heuristics cannot establish whether arbitrary source contains a secret. These source-disclosure rules do not silently filter files from an explicitly selected result directory. Submodules and linked repositories keep distinct identity and must fall within the selected roots.
+
+Automatically recheck current saved source/disclosure policy before new daemon reads, provider submissions and result application. This is a policy lookup, not an interactive approval request. A later scope expansion does not silently broaden a captured job. Already submitted material cannot be recalled from a provider; request cancellation where supported and record the limitation. Haeryong does not autonomously modify source repositories.
+
+## Remote source behavior
+
+The daemon can use only an approved host-side checkout, retained snapshot or explicitly implemented connector. A phone browser has no implicit access to a laptop repository. If the daemon is remote and the laptop is offline, saved explanations remain readable and available retained evidence may still answer pinned questions. A current-source request without the selected current target returns honest unavailable/denied evidence and `unable_to_verify` assessment where applicable; it does not silently substitute an older snapshot as current. Missing requested pinned/current evidence cannot become a verified empty target set or an unlabelled explanation-only answer.
+
+Automatic Git fetch/pull, cross-machine source synchronization and provider-token forwarding are outside the baseline. The selected source identity and the actual bytes origin are visible whenever evidence is used.
+
+## Retention and deletion
+
+Selected source snapshots are content objects governed by source/privacy policy and package/version references. An original payload file may also support a selected_snapshot record without becoming a mutable file. Plain export preserves original payload; separately retained additional snapshots remain opt-in. Restricting source availability changes the authorized evidence view, not published metadata or payload bytes. An explicit source-redaction/purge plan must identify every affected payload/version, record and active pin; it may make the affected complete version unavailable or include its document in an explicit existing lifecycle purge, but cannot silently remove one file and claim the original payload digest still describes a complete export. Shared references/pins prevent physical GC until their permitted lifetime or explicit coordinated cleanup ends. No new source-policy bypass is created merely because bytes also belong to payload. Ordinary diagnostic retention cannot remove active evidence. Repository deletion is never a side effect of Haeryong lifecycle operations. Backups and previously submitted provider data may retain historical copies under separate policies.
+
+An application-managed restore reconciles source/disclosure selections once in its recovery flow so an older backup does not silently revive revoked or expanded access. After the owner confirms the relevant restore impact, ordinary use and restart reuse those selections. See [backup and recovery](../operations/backup-recovery.md).
+
+## Focused source evidence
+
+G-AI remains `not_run` and closes against the entire [TASK-001-05 checklist](../tasks/EPIC-001/TASK-001-05.md#observable-completion-and-tests). The following source-reader cases guide feature/regression evidence, not an additional early closing list. Check selected text and binary files, a large streamed capture, an out-of-scope service read, a moved branch, missing retained/reference-only bytes, an unavailable remote checkout and remembered source selection. Check a provider's actual unsupported format/context outcome without dropping the stored file or claiming complete evidence coverage. Demonstrate exact captured revisions, same-byte digest/citation handling, current-policy rechecks and no Haeryong-initiated source modifications. Include daemon-supplied inputs, a genuinely observed native read when supported, and an unobserved native read followed by post-hoc target verification; the last case must not acquire an observed_input citation or alter original provenance. Record the source backend and provider's actual native permission/configuration limits rather than claiming a universal worker sandbox.
+
+The minimal EPIC-004 reader also verifies imported evidence without an AI call: exercise captured without expectations, matched with exact expectations, mismatch, unavailable and a later policy restriction. Check immutable author declarations and persisted history separately. It cannot close the later real-provider integration condition by itself. Normal use must not interrupt the owner with a new approval for each unchanged source read.
