@@ -1,0 +1,44 @@
+version: 4
+project:
+  name: "haeryong"
+  kind: "ui"
+providers:
+  grok:
+    model: "grok-4.7"
+    reasoning_effort: "high"
+  codex: {}
+execution:
+  workspace_access: "none"
+roles:
+  logic: {enabled: true, primary_provider: "grok"}
+  security: {enabled: true, primary_provider: "grok"}
+  maintainability: {enabled: true, primary_provider: "grok"}
+  product: {enabled: true, primary_provider: "grok"}
+  documentation: {enabled: true, primary_provider: "grok"}
+  testing: {enabled: true, primary_provider: "grok"}
+  artist:
+    enabled: true
+    primary_provider: "codex"
+    inputs:
+      task_path: "ux-ui-info.md"
+      design_spec_globs: ["design-specs/**/*.png", "design-specs/**/*.jpg", "design-specs/**/*.jpeg", "design-specs/**/*.webp"]
+review:
+  required_roles: ["logic"]
+  request_changes_on: ["high", "critical", "blocker"]
+validation:
+  evidence:
+    require_verified_for: ["high", "critical", "blocker"]
+  repair:
+    enabled: true
+    max_attempts: 1
+    same_provider: true
+  extraction:
+    enabled: true
+resources:
+  max_active_lanes: 7
+  primary_repair_attempts: 1
+  role_max_invocations: 2
+  run_max_invocations: 14
+ci:
+  fail_on_severity: ["high", "critical", "blocker"]
+  degraded_review_fails: true

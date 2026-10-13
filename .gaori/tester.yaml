@@ -1,0 +1,7 @@
+version: 2
+commands:
+  docs-integrity:
+    command: ["python3", "-B", "docs/testing/validate_docs.py"]
+    tags: [docs, validation]
+    parser: generic
+    timeout_sec: 120
