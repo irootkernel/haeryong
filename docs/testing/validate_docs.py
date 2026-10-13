@@ -24,6 +24,7 @@ except ImportError:
 
 SOURCE_HASH = "8f26fea2833cd3cc3312c1afadea74e042d1d895b079bfa1bdff9cc02cf563e5"
 TASK_RE = re.compile(r"\bTASK-\d{3}-\d{2}\b")
+PLANNING_STATUSES = {"planned", "ready", "in_progress", "blocked", "in_review", "done"}
 FENCES = re.compile(r"^```([^\n]*)\n(.*?)^```[ \t]*$", re.M | re.S)
 
 
@@ -65,7 +66,8 @@ def main() -> int:
         parser.error(f"Not a Haeryong checkout: {root}")
     md = sorted(docs.rglob("*.md"))
     inventory = sorted([p for p in md if p.name != "MANIFEST.md"] +
-                       [docs / "testing" / "validate_docs.py"])
+                       [docs / "testing" / "validate_docs.py",
+                        docs / "testing" / "test_validate_docs.py"])
     readme = (docs / "README.md").read_text(encoding="utf-8")
     version_match = re.search(r"\*\*Bundle version:\*\*\s+(\S+)", readme)
     version = version_match[1] if version_match else "unknown"
@@ -73,9 +75,9 @@ def main() -> int:
     prepared = prepared_match[1] if prepared_match else "unspecified"
     if args.manifest:
         print("# Documentation file manifest\n")
-        print(f"**Bundle:** {version}\n\n**Generated:** {prepared}\n")
+        print(f"**Bundle:** {version}\n\n**Edition prepared:** {prepared}\n")
         print(f"This inventory covers {len(inventory)} other files: all Markdown documents "
-              "and the read-only validation utility. Paths are relative to docs; sizes and "
+              "and Python documentation-check utilities. Paths are relative to docs; sizes and "
               "SHA-256 cover exact bytes. MANIFEST.md excludes itself. This is not runtime evidence.\n")
         print("| File | Bytes | SHA-256 |\n| --- | --- | --- |")
         for path in inventory:
@@ -109,7 +111,8 @@ def main() -> int:
                     ident = fm["id"]
                     check(ident not in records, "duplicate_id", ident)
                     records[ident] = {**fm, "_path": path, "_text": text}
-                    check(fm.get("status") == "planned", "planning_status", ident)
+                    check(isinstance(fm.get("status"), str) and fm["status"] in PLANNING_STATUSES,
+                          "planning_status", ident)
             except (yaml.YAMLError, IndexError) as exc:
                 check(False, "frontmatter", f"{rel}: {exc}")
         for lang, body in FENCES.findall(text):
@@ -156,11 +159,12 @@ def main() -> int:
             for a in record.get("acceptance", []):
                 check(a in known_a, "unknown_acceptance", [ident, a]); a_tasks[a].add(ident)
             for x in record.get("supplemental_tests", []): x_tasks[x].add(ident)
-            found = re.findall(r"^- \[ \] (T-\d{3}-\d{2}-\d{2}):", record["_text"], re.M)
-            check(bool(found), "missing_assertions", ident)
-            for assertion in found:
+            found = re.findall(r"^- \[([^\]]*)\] (T-\d{3}-\d{2}-\d{2}):", record["_text"], re.M)
+            check(any(marker in (" ", "x", "X") for marker, _ in found), "missing_assertions", ident)
+            for marker, assertion in found:
+                check(marker in (" ", "x", "X"), "invalid_assertion_marker", assertion)
                 check(assertion.startswith(ident.replace("TASK", "T") + "-"), "assertion_owner", assertion)
-            assertions += found
+                assertions.append(assertion)
     check(len(assertions) == len(set(assertions)), "duplicate_assertions", assertions)
     counts["task_assertions"] = len(assertions)
     for epic, record in epics.items():

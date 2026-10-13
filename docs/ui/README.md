@@ -1,12 +1,12 @@
 # UI proposal: a reader with inspectable context
 
-**Status:** Proposed product UI and behavior specification. The separate [R5 interactive concept](../design/prototype/README.md) supplies the current visual reference; its [UI handoff](../design/prototype/HANDOFF.md) records baseline inputs, differences, and review limits. The visual design remains unapproved. Delivery/action mappings follow the [1.4.0 review reconciliation](../changes/2026-10-11-opus-review-reconciliation.md). Basis: Revision 4 as amended by D-08/D-09: personal development, directory results with multiple HTML pages, personal review and first-class desktop/mobile browser use.
+**Status:** Proposed product UI and behavior specification. The [initial execution baseline](design-system.md#initial-execution-baseline) governs layout. The separate [R5 interactive concept](../design/prototype/README.md) is an unapproved visual input; its persistent tablet context column was not selected. The [UI handoff](../design/prototype/HANDOFF.md) records differences and review limits. Delivery/action mappings follow the [1.4.0 review reconciliation](../changes/2026-10-11-opus-review-reconciliation.md). Basis: Revision 4 as amended by D-08/D-09: personal development, directory results with multiple HTML pages, personal review and first-class desktop/mobile browser use.
 
 ## Brief
 
 The owner uses tools such as Codex, Claude or Grok to produce explanations of their work and source changes, then reads them in Haeryong, inspects evidence, revisits links and notices changes to previously reviewed material. Each result is a directory of any number of HTML pages and related files. Normal JavaScript supports charts, simulations and other useful interaction without per-script or per-library approval. The main job is reading and questioning, not watching agent terminals or managing a general project workflow.
 
-Choose a calm, text-first **reader workspace** with clear result and page navigation. Share one UI between browser and Wails. Propose React + TypeScript + Vite, CSS variables and small accessible semantic components; these frontend choices were not fixed in Revision 4.
+Choose a calm, text-first **reader workspace** with clear result and page navigation. Share one UI between browser and Wails. TASK-001-01 selects React + TypeScript + Vite, CSS variables and small semantic components as [the initial execution baseline](design-system.md#initial-execution-baseline); these frontend choices were not fixed in Revision 4. Their actual accessibility and cross-client behavior still require implementation proof.
 
 ## Primary layout
 

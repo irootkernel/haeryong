@@ -2,7 +2,7 @@
 id: "EPIC-001"
 type: "epic"
 title: "Value, contracts and critical-risk validation"
-status: "planned"
+status: "in_progress"
 depends_on: []
 completion_requires: ["TASK-001-01","TASK-001-02","TASK-001-03","TASK-001-04","TASK-001-05","TASK-001-07","TASK-001-06"]
 ---

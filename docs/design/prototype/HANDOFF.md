@@ -11,7 +11,7 @@ Use them to understand proposed information hierarchy, copy, screen composition 
 The [screen specifications](../../ui/screens.md), [flows](../../ui/flows.md), [route/action ownership](../../ui/information-architecture.md) and [contracts](../../contracts/README.md) remain the implementation references.
 The [schema registry](../../contracts/schema-registry.md) remains the canonical route/shared-state authority; prototype route strings are examples.
 
-The [v1.6.2 Status](../../README.md) already says to begin TASK-001-01 and follow existing dependencies.
+The [execution Status](../../README.md) directs implementation through the existing dependencies, beginning with TASK-001-01; that Task records the initial baseline choices.
 It explicitly says that an additional specification-only review round is not a prerequisite.
 This handoff adds no design-approval gate, changes no task status, grants no new implementation authorization and reopens no product scope.
 R5 remains unapproved; its presence does not establish owner approval of individual visual choices.
@@ -44,7 +44,7 @@ It identifies initial and later owners; it is not an alternative task sequence o
 
 | R5 surface | Existing UI specification | Existing implementation owner |
 | --- | --- | --- |
-| Global navigation, shell and context layout | [Design-system direction](../../ui/design-system.md#direction), [responsive behavior](../../ui/design-system.md#responsive-behavior), [core components](../../ui/design-system.md#core-component-contract) | [TASK-003-01](../../tasks/EPIC-003/TASK-003-01.md) shared shell/transports; [TASK-003-06](../../tasks/EPIC-003/TASK-003-06.md) responsive/cross-client verification |
+| Global navigation, shell and context layout | [Initial execution baseline](../../ui/design-system.md#initial-execution-baseline), [responsive behavior](../../ui/design-system.md#responsive-behavior), [core components](../../ui/design-system.md#core-component-contract) | [TASK-003-01](../../tasks/EPIC-003/TASK-003-01.md) shared shell/transports; [TASK-003-06](../../tasks/EPIC-003/TASK-003-06.md) responsive/cross-client verification |
 | Home, Library, Projects and empty results | [S02 Home](../../ui/screens.md#s02-home), [S03 Library](../../ui/screens.md#s03-library-and-project-view), [WF-01](../../ui/wireframes.md#wf-01-desktop-home), [WF-02](../../ui/wireframes.md#wf-02-library-with-explicit-filters) | [TASK-003-02](../../tasks/EPIC-003/TASK-003-02.md) shared browse/transfer UI; [TASK-004-02](../../tasks/EPIC-004/TASK-004-02.md) search; [TASK-005-01](../../tasks/EPIC-005/TASK-005-01.md) personal Review |
 | Reader, Files/Pages, preferred page and position | [S04 Reader](../../ui/screens.md#s04-reader), [reader preferences](../../ui/flows.md#reader-preferences-and-position), [WF-03](../../ui/wireframes.md#wf-03-desktop-reader) | [TASK-003-03](../../tasks/EPIC-003/TASK-003-03.md) multi-page Reader; [TASK-003-04](../../tasks/EPIC-003/TASK-003-04.md) exact version/evidence context |
 | Versions and exact comparison | [S05 Versions](../../ui/screens.md#s05-versions-and-changes) | [TASK-004-05](../../tasks/EPIC-004/TASK-004-05.md) progressive comparison; [TASK-005-01](../../tasks/EPIC-005/TASK-005-01.md) version-specific Review |
@@ -76,14 +76,14 @@ Use the linked screen/flow sections for full details; the following distinctions
 
 ## Reconcile visual proposals in the existing UI baseline review
 
-The [design-system proposal](../../ui/design-system.md) and R5 are not identical.
-R5 retains the R4 Reader layout adjustments described in [DESIGN-NOTES.md](DESIGN-NOTES.md); they are candidate choices, not silent amendments.
+The earlier design-system proposal and R5 were not identical; the [current design system](../../ui/design-system.md) records the initial execution selection.
+R5 retains the R4 Reader layout adjustments described in [DESIGN-NOTES.md](DESIGN-NOTES.md); they remain concept choices; [the initial execution baseline](../../ui/design-system.md#initial-execution-baseline) records the selected implementation values without approving the full R5 design.
 
-| Choice | Existing design-system proposal | R5 source choice | Existing follow-through |
+| Choice | Earlier design-system proposal (historical) | R5 source choice | Current follow-through |
 | --- | --- | --- | --- |
-| Wide context width | 352 px at the proposed wide breakpoint | 340 px | Record the chosen reading/context balance in TASK-001-01; verify actual content and panels in TASK-003-06. |
-| Reading typography | 16 px body, line-height 1.6 | 16 px default, line-height 1.7; preference controls | Record the initial baseline and rationale in TASK-001-01; inspect long real prose/code/tables in TASK-003-06. |
-| 768–1279 px layout | Compact navigation and overlay context with focus containment | Compact navigation with Reader/context columns; context width clamped between 320 and 340 px | Resolve overlay versus columns in TASK-001-01; verify readable width, overflow and focus behavior in TASK-003-06. |
+| Wide context width | 352 px at the proposed wide breakpoint | 340 px | TASK-001-01 selects 340 px in [the initial baseline](../../ui/design-system.md#initial-execution-baseline); TASK-003-06 verifies actual content and panels. |
+| Reading typography | 16 px body, line-height 1.6 | 16 px default, line-height 1.7; preference controls | TASK-001-01 selects 16 px / 1.7 in [the initial baseline](../../ui/design-system.md#initial-execution-baseline); TASK-003-06 inspects long real prose/code/tables. |
+| 768–1279 px layout | Compact navigation and overlay context with focus containment | Compact navigation with Reader/context columns; context width clamped between 320 and 340 px | TASK-001-01 selects a focus-contained overlay in [the initial baseline](../../ui/design-system.md#initial-execution-baseline); TASK-003-06 verifies readable width, overflow and focus. |
 
 [TASK-001-01](../../tasks/EPIC-001/TASK-001-01.md) already owns the shared frontend/layout baseline and UI review.
 [TASK-003-06](../../tasks/EPIC-003/TASK-003-06.md) owns responsive/cross-client implementation verification; [TASK-007-03](../../tasks/EPIC-007/TASK-007-03.md) later completes mobile/tablet workflow parity.

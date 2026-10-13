@@ -1,10 +1,10 @@
 # Documentation integrity report
 
-**Checked:** 2026-10-13 KST
+**Historical snapshot checked:** 2026-10-13 KST, before the EPIC-001 execution transition
 
 **Bundle:** 1.6.2, with the current R5 design prototype organized and linked for implementation handoff. D-10, product scope and the task sequence are unchanged.
 
-**Scope:** Canonical prototype source/reproduction integrity and read-only specification integrity checks. This is not an application, browser, provider, network or filesystem-durability test. All 61 Tasks and 10 Epics remain planned; G-STACK, G-AUTH, G-VIEW, G-AI, G-VALUE and G-CONTRACT remain not_run.
+**Scope of the historical snapshot:** Canonical prototype source/reproduction integrity and read-only specification integrity checks. This is not an application, browser, provider, network or filesystem-durability test. At that pre-transition snapshot all 61 Tasks and 10 Epics were planned; G-STACK, G-AUTH, G-VIEW, G-AI, G-VALUE and G-CONTRACT remain not_run.
 
 ## Reproduction
 
@@ -21,16 +21,16 @@ The validator performs no project writes. --root selects another checkout. --ski
 | Check | Result / meaning |
 | --- | --- |
 | Original source | Exact SHA-256 matches the preserved source constant; the complete verified value is recorded below. |
-| Markdown inventory | The canonical prototype contains five Markdown files, including the preserved original brief. The current checkout has 148 Markdown documents while the redundant dated folder remains; removing its four Markdown files yields 144. The validator reports the actual count at each run. No Epic or Task was added. |
+| Markdown inventory | The canonical prototype contains five Markdown files, including the preserved original brief. The recorded pre-transition checkout had 148 Markdown documents while the redundant dated folder remained; removing its four Markdown files would yield 144. The validator reports the actual count at each run. No Epic or Task was added. |
 | Review guide | README and REVIEW-GUIDE both identify 1.6.2; the existing validator checks their agreement. |
-| Execution records | 10 Epics, 61 Tasks, 71 frontmatter records; all still planned. |
+| Execution records | 10 Epics, 61 Tasks, 71 frontmatter records; all were planned at this historical snapshot. Current state belongs to canonical frontmatter. |
 | Requirement and acceptance coverage | R01-R40 and all 29 original C/M sentences remain covered; original acceptance text is preserved verbatim. |
 | Supplemental ownership | X01-X20 named roles match Task metadata, with collective requirement coverage; early contributions are not claimed as full scenarios. |
 | Assertions and graph | 207 distinct owning-prefix assertions; dependencies exist, membership agrees and the graph has no cycle or later-Epic prerequisite. These are test definitions, not executed product tests. |
 | Markdown and examples | Balanced fences/tables; YAML, JSON and JSONL examples parse. Relative file links and checked heading anchors resolve. Counts are emitted by each validator run rather than hard-coded into this report. |
 | Worked directory | Seven files, including three HTML pages, and three represented directories retain the recorded bytes/inventory. Eight local HTML link targets resolve. |
 | Whitespace | git diff --check for docs reports no findings. |
-| Final inventory | MANIFEST.md covers all remaining Markdown documents except itself, plus the read-only validator. Full validation compares each final size/hash and inventory membership. Regenerate the inventory after removing a document or directory. |
+| Final inventory | At this historical snapshot MANIFEST.md covered all remaining Markdown documents except itself, plus the read-only validator; current membership is defined by the current utility and documentation index. Full validation compares each final size/hash and inventory membership. Regenerate the inventory after removing a document or directory. |
 
 Exact preserved Revision 4 source SHA-256:
 
@@ -52,7 +52,7 @@ The [organization record](../design/prototype/ORGANIZATION.json) verifies that a
 
 The pre-organization full documentation check failed only because four existing dated-design Markdown files were absent from MANIFEST: one inventory mismatch and four missing size/hash entries. The intermediate check after source organization found 147 Markdown documents and no link, heading, syntax, ownership or dependency issues; its explicitly skipped manifest result was not treated as a final pass. MANIFEST is regenerated after this report and the remaining documentation edits, then the full command above is run with manifest checking enabled.
 
-R5 remains an unapproved concept using sample data. Its prior captures describe the old R3 HTML/JavaScript with temporary R4/R5 CSS previews, as qualified in the handoff. This organization did not load the complete R5 in a browser or rerun its interactions. The handoff records existing visual-proposal differences without introducing a new approval gate. The existing specification still starts at TASK-001-01; all implementation statuses and gates are unchanged.
+R5 remains an unapproved concept using sample data. Its prior captures describe the old R3 HTML/JavaScript with temporary R4/R5 CSS previews, as qualified in the handoff. This organization did not load the complete R5 in a browser or rerun its interactions. The handoff records existing visual-proposal differences without introducing a new approval gate. The organization snapshot preceded execution at TASK-001-01; it changed no implementation status or gate. Current frontmatter supersedes this historical planning snapshot.
 
 ## Redundant design-folder removal
 
@@ -64,7 +64,7 @@ This check prepares removal; physical deletion of `docs/design/2026-10-12-grok/`
 
 The input inspected for the preceding wording-cleanup patch is `reviews/2026-10-12-grok/follow-up-1.6.1.md`, SHA-256 `fb2bc462643c8f3e2672c000d02916f5fa9f9625f15c7fe772aa50dc5e59ad1c`. It remains unchanged. The pre-edit full check exited 1 with three broken links to two absent historical inputs: `review/grok-1/implementation-readiness.md` and `reviews/2026-10-12-grok/implementation-readiness.md`. Their original paths are now explicitly unavailable provenance, not working links. Neither file was recreated or replaced with this follow-up review. Earlier PASS records describe earlier file snapshots, not present availability. Historical Opus paths remain unavailable as already recorded.
 
-The REVIEW-GUIDE refresh and version check introduced in 1.6.1 are retained. Its version now matches this handoff. The validator utility is unchanged in 1.6.2; manifest generation continues to read the edition date from README. Link, guide-version and file-integrity checks remain enabled. No missing-source exemption or disabled check is used to obtain a clean result.
+The REVIEW-GUIDE refresh and version check introduced in 1.6.1 are retained. Its version now matches this handoff. At the wording-cleanup snapshot the validator utility was unchanged in 1.6.2; the inventory used README's edition date. TASK-001-01 subsequently admits the protocol planning vocabulary and checked assertions, and labels the inventory date as the edition preparation date. Link, guide-version and file-integrity checks remain enabled. No missing-source exemption or disabled check is used to obtain a clean result.
 
 ## Preserved semantic review scope
 

@@ -14,7 +14,7 @@ This is an implementation quality evaluation for Haeryong-generated/source-verif
 
 TASK-001-01 checks whether the intended provider/deployment is supported before expensive integration work and prepares one concrete reader question/comparison from already authorized existing material. Record expected source facts and current effort, or the exact unavailable prerequisite, plus benefit_observed, no_difference or not_available. Carry the latter two as predeclared risks into TASK-001-07; these are comparison observations, not additional gate statuses. This cheap checkpoint does not require a new model call, future UI, fixed trial duration or a G-VALUE pass. TASK-001-05 proves one real bounded cited question. TASK-001-07 then runs G-VALUE before TASK-001-06 freezes contracts.
 
-Use two real projects within the owner's configured source and disclosure scopes; reuse existing authorization without per-read approval. Mulgae and Haepari are candidate names for the owner to select during implementation, not inspected repositories or permission to submit their code. Select actual revisions and actual workflows before writing expected answers. A retry or approval scenario is suitable only if the selected source supports it.
+Use two real projects within the owner's configured source and disclosure scopes; reuse existing authorization without per-read approval. The owner selected Mulgae and Haepari at final reporting after approved validation. Exact committed revisions and disclosure scope remain unbound; the selection is not a claim that source bytes were inspected or permission to submit unspecified code. Select actual revisions and actual workflows before writing expected answers. A retry or approval scenario is suitable only if the selected source supports it.
 
 Start with 3–5 explanations containing roughly 20–30 material claims, including one explanation that can also be expressed well as ordinary Markdown or an ADR and one directory containing multiple linked HTML pages with nested assets. These are initial corpus-sizing proposals, not a statistical confidence claim, production accuracy promise or universal minimum. Expand the sample to resolve a concrete uncovered failure; do not report a percentage as proof of general correctness.
 
@@ -89,11 +89,28 @@ For relationship/theme and freshness work, predeclare the held-out candidate/cha
 
 Record the next repair's bounded work and stop/reconsideration condition before repeating a failed experiment. Routine prompt, UI, retrieval and contract corrections proceed within the current scope. If that attempt still fails the required reader outcome, no supported provider route is available, or the next alternative changes an owner direction, present the failed question, comparison, attempted repair and concrete alternatives to the owner. Do not force an indefinite retry loop, infer a scope waiver or impose a universal numeric advantage or fixed trial period.
 
+## Initial reader comparison
+
+TASK-001-01 predeclares this question for reuse in TASK-001-07: **After Mulgae reports an incomplete review, which exact recovery operation is supported, which accepted role results remain valid, and what happens if the source publication is unavailable? How does that differ from Haepari's approval boundary at its selected final-report revision?** This is a question, not a claim about either implementation.
+
+| Worksheet field | Initial state / required observable |
+| --- | --- |
+| Approved source target | Owner-selected Mulgae and Haepari final reports after approved validation; exact committed revisions and disclosure scope must be bound before reading/generation. |
+| Expected answer/evidence | Source-grounded recovery/approval decision points, preserved-versus-repeated work and honest unavailable behavior, each with exact revision/path/byte evidence. Expected implementation facts are unavailable until those snapshots are bound; do not invent names or semantics from a skill description. |
+| Existing comparison | Open the approved project's final report and Markdown/ADR, follow their referenced implementation and explain the same decision path. Existing explanations and current reader steps have not been inspected at the selected revisions. |
+| HTML interaction | An interactive recovery/approval branch walkthrough must reveal the evidence for each choice and distinguish known, inferred and unavailable inputs. It must answer the same question as the Markdown/ADR comparison. |
+| Observation | `not_available`: selected final-report revisions and corresponding existing explanations are missing. No reader timing, effort saving, owner preference or answer correctness is measured. |
+| Predeclared TASK-001-07 risk | The explanations may add no useful understanding beyond Markdown/ADR, or source/expected answers may remain unavailable. A dynamic diagram alone does not establish benefit. |
+| Next experiment | Bind both final-report commits, inspect their existing reports/Markdown/ADR within authorized source scope, and predeclare the material answers before generation. Compare the same question on both formats with a named independent source-capable evaluator. |
+| Reconsideration | Missing source blocks the consuming experiment. If the required answer/interaction fails, make one bounded evidence-backed repair; if it still fails or requires scope/billing change, present the actual results and alternatives to the owner. |
+
+This preliminary worksheet satisfies the explicit unavailable-input path only. It is neither G-VALUE evidence nor a substitute for TASK-001-05 real-provider proof. Agent-only evaluation must remain labelled, and owner usefulness stays unmeasured until observed.
+
 ## Progressive use checkpoints
 
 | Owning checkpoint | Concrete use at the delivered capability | Later evidence still required |
 | --- | --- | --- |
-| TASK-001-01 | Existing explanation/source versus Markdown/ADR question; expected facts and current friction | Actual provider, viewer and two-project G-VALUE proof |
+| TASK-001-01 | [Unavailable-input worksheet](#initial-reader-comparison), predeclared question and missing final-report revisions; expected implementation facts and friction remain unmeasured | Resolve the inputs, then perform actual provider, viewer and two-project G-VALUE proof |
 | TASK-001-04 / TASK-001-07 | Real script interaction on the spike harness, then the two-project generated/evidence-backed reader corpus | Production import, storage, notes, Q&A and remote workflows |
 | TASK-003-06 | Browser/Wails import, open a page, use its control, reopen exact content and download original files | Connected search/links, real personal records and private remote use |
 | TASK-004-06 | Find and reuse the answer in an existing explanation and follow its exact cross-project reference | Saved Q&A records and full lifecycle UI |

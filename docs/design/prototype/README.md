@@ -2,7 +2,7 @@
 
 **Current reference:** R5, an interactive concept with synthetic data. The design is not yet approved. This folder is the canonical location for the current prototype and its reproducible sources.
 
-**Development entry:** Begin [TASK-001-01](../../tasks/EPIC-001/TASK-001-01.md) under the existing specification. Use the prototype in that task's UI baseline review; this organization does not add a separate prerequisite or change task dependencies. See the [implementation handoff](HANDOFF.md) for screen ownership and remaining checks.
+**Development entry:** Continue from the earliest non-terminal task in the [task index](../../tasks/README.md). [TASK-001-01](../../tasks/EPIC-001/TASK-001-01.md) records the initial UI choices; use this unapproved prototype as an input, not as a passed implementation gate. This organization adds no separate prerequisite and changes no task dependency. See the [implementation handoff](HANDOFF.md) for screen ownership and remaining checks.
 
 ## Open and review
 
@@ -18,7 +18,7 @@ Open [prototype.html](prototype.html) in a browser. It is a single HTML file wit
 | [Recovery check record](recovery-r5-validation.json) | Inspect the limited recovery and dialog-state checks. |
 | [Canonical organization check](ORGANIZATION.json) | See the 34-file source identity check against the dated snapshot. |
 | [Local reproduction record](LOCAL-REPRODUCTION.json) | Verify the independent one-run rebuild and byte-identical R5 outputs. |
-| [Documentation integrity report](../../testing/bundle-validation.md) | See the current repository document/link/inventory verification. |
+| [Historical documentation integrity snapshot](../../testing/bundle-validation.md) | Inspect the pre-transition record. Run `python3 -B docs/testing/validate_docs.py` from the checkout root for current structural results. |
 
 ## Product coverage
 

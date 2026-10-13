@@ -1,6 +1,6 @@
 # Epic index
 
-All Epics remain planned. Apply the [personal-tool amendment](../changes/2026-10-10-personal-tool-revision.md) and [directory-results amendment](../changes/2026-10-10-directory-results-revision.md) to all gates; retained source-era security assumptions do not add requirements. Execute this explicit order; the next Epic begins only after the preceding required tasks and exit gate pass. Task counts vary by outcome.
+Canonical Epic frontmatter owns current planning state. Apply the [personal-tool amendment](../changes/2026-10-10-personal-tool-revision.md) and [directory-results amendment](../changes/2026-10-10-directory-results-revision.md) to all gates; retained source-era security assumptions do not add requirements. Execute this explicit order; the next Epic begins only after the preceding required tasks and exit gate pass. Task counts vary by outcome.
 
 The [R5 interactive concept](../design/prototype/README.md) and [UI handoff](../design/prototype/HANDOFF.md) are current visual baseline inputs for the UI work in this sequence. Their dated prototype review evidence leaves existing Epic dependencies and implementation gates unchanged.
 

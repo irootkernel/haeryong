@@ -43,4 +43,16 @@ Additional primary sources checked on 2026-10-11 for the follow-up corrections:
 | EXT-WEBKIT-STORAGE | [WebKit tracking prevention](https://webkit.org/tracking-prevention/) | Documents partitioned ephemeral third-party storage. Record actual embedding/site/storage behavior rather than promising identical persistence in all contexts. |
 | EXT-CODEX-LOGIN-EFFECTS | [Official Codex authentication](https://learn.chatgpt.com/docs/auth) | Forced login restrictions can log out mismatching active credentials. Managed invocation checks must not mutate shared owner login/configuration as an incidental billing-mode repair. No account or paid execution was tested. |
 
-No current commercial entitlement, stable Wails release number, package version pin, host availability, provider quota or installed toolchain was established. Exact choices and evidence are recorded during EPIC-001. Historical framework descriptions inside the unchanged Revision 4 source are historical source text, not new claims of current verification in this bundle.
+Those documentation checks established no commercial entitlement, stable Wails release number, package version pin, host availability, provider quota or installed toolchain. Exact choices and evidence are recorded during EPIC-001. Historical framework descriptions inside the unchanged Revision 4 source are historical source text, not new claims of current verification in this bundle.
+
+## Subscription eligibility preflight: 2026-10-13
+
+The owner selected ChatGPT subscription use for a personal Haeryong instance on the owner's Mac, with Wails and authenticated private browser clients on iPhone/Android. No commercial distribution, multi-user service, API billing or public exposure is selected. Codex app-server is the first local adapter candidate; account access has not been exercised.
+
+| Official source checked | Applicable fact / limit |
+| --- | --- |
+| [Codex authentication](https://learn.chatgpt.com/docs/auth) | ChatGPT login uses subscription access; API-key login uses usage-based access. These modes must not be silently substituted. |
+| [Codex App Server authentication](https://learn.chatgpt.com/docs/app-server#authentication) | Local/open-source integrations may continue; migration to Sign in with ChatGPT is recommended. Commercial or hosted services are not permitted through app-server auth. `account/read` exposes the actual account mode/plan; a working CLI alone proves neither entitlement nor supported deployment. |
+| [Sign in with ChatGPT plan usage](https://developers.openai.com/siwc/token-sharing-open-source) | Optional plan usage covers eligible Responses API calls for open-source/locally hosted apps. Paid/remotely hosted apps require a separate interest process. This is a possible supported alternative, not an approved adapter switch. |
+
+**Open deployment question:** Does this single-owner local Mac adapter with private remote reader clients fit the documented local-app route? The pages do not expressly classify that precise combination. Private tailnet access alone does not settle it. Before TASK-001-05 provider execution, establish supported applicability from official guidance for the actual construction or bring concrete supported alternatives to the owner. No API-billing fallback, token extraction, forced logout or shared-login rewrite is authorized. Actual account mode, quota, source permissions and exact cited-question behavior remain TASK-001-05 proof; this preflight does not pass G-AI.

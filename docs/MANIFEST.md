@@ -2,14 +2,14 @@
 
 **Bundle:** 1.6.2
 
-**Generated:** 2026-10-12
+**Edition prepared:** 2026-10-13
 
-This inventory covers 144 other files: all Markdown documents and the read-only validation utility. Paths are relative to docs; sizes and SHA-256 cover exact bytes. MANIFEST.md excludes itself. This is not runtime evidence.
+This inventory covers 145 other files: all Markdown documents and Python documentation-check utilities. Paths are relative to docs; sizes and SHA-256 cover exact bytes. MANIFEST.md excludes itself. This is not runtime evidence.
 
 | File | Bytes | SHA-256 |
 | --- | --- | --- |
-| `README.md` | 10336 | `9b6d282713d70a0b82dd1670fbc089c6d388176ff7a0479be852dfe38ad92474` |
-| `REVIEW-GUIDE.md` | 9560 | `c1bfed604f51ebc9b65270edbecfc98427304d854c62c8d9709717fbf812db70` |
+| `README.md` | 11998 | `73635f126427b5bfb6ca38a5233fe01edbd726628b228091dc098c1ac8684a47` |
+| `REVIEW-GUIDE.md` | 9949 | `df51cba51d8721d94c05b436c137bb6e149e59b11a8f133ee7fdde59ac4c83a1` |
 | `adr/ADR-001.md` | 2490 | `65dccb6cd173a18367d360760dcbc65643f9468aebf44412bfe2c6c942475ab9` |
 | `adr/ADR-002.md` | 2987 | `2128dae47cc03f55000633c89bc4e4d06419c91a414230a45fd7e45e8bac759b` |
 | `adr/ADR-003.md` | 2209 | `1278c58f5db8a3983669638c2672c10d4e4125be7d451e468bacc425db80ae2a` |
@@ -40,14 +40,14 @@ This inventory covers 144 other files: all Markdown documents and the read-only 
 | `contracts/source-access.md` | 17635 | `df7c9d9f155094f5f3a3583dce488e3ea47014dd6b335968901b2affd9ce206d` |
 | `contracts/viewer-protocol.md` | 30287 | `cfb807c08db729ed1ebce19fad407620f1c9dd7618ae463a78a86ba45d02ffa1` |
 | `data-model.md` | 32947 | `c68c52ad42878856793f6c512457945feba51d3a03f726a0de0788b4818b3bc6` |
-| `decisions.md` | 15888 | `b50beb0f5ed9acc96f2c10c62dec04af583eaeab1245dcbcf73c6a7a9b54244a` |
-| `design/README.md` | 1120 | `27c263339fff2d40442a32cbdfd4269f1723cbfdbbd4b420d8b49a33420a50b1` |
+| `decisions.md` | 17027 | `db39f6a0afceed2b7974450e5b1259dd7a1d64f9201663d83322dbc3f1c6283b` |
+| `design/README.md` | 1227 | `bd2d0adc8f8f465064d9d48389d39a53899620396f397391b9347c68463ba39b` |
 | `design/prototype/00-BRIEF.md` | 9764 | `6084d9a78102593ed75ef67beab587749d3476d60acba03eebd6254316b86f31` |
 | `design/prototype/DESIGN-NOTES.md` | 22750 | `4ec8e546421ea14cef86ac5543cd0f109c7175849f4d9c2de91bc5e7b23c49b4` |
-| `design/prototype/HANDOFF.md` | 18435 | `a93931a55d430e8e1a9194b2e679c035a7b0765b1ab1bd12073cad7784fd7cb3` |
-| `design/prototype/README.md` | 7240 | `b9407f3fc78b72202aef031e0bdc81a059eaf732201acd5cf968030c181c8b63` |
+| `design/prototype/HANDOFF.md` | 18929 | `3747034800efb9bf7937d00bd7ffa09b3a81bed8cee882bb4d28285bac8ea28c` |
+| `design/prototype/README.md` | 7429 | `f18fa06b03fadd44270df2dea4e3e3ee7e544ea8961d36475bf86566d77eaa6e` |
 | `design/prototype/REVIEW.md` | 28399 | `5b6f1bcffc6e03a3e7a5048675dbb85e04e3e1cd1c59a793d778f95235f36f8a` |
-| `epics/EPIC-001.md` | 3409 | `c4375f86e39fe372acf101fbe92e74f634b6656e448b9e3178c7c847d8841a5e` |
+| `epics/EPIC-001.md` | 3413 | `c6d01668f43b17496b47247b1aa0876cc3ff4b2f304c9e57a4997ee007133c3b` |
 | `epics/EPIC-002.md` | 3862 | `54823f4e447a8206b2b533838a9243aa597de70f846a396edab5de4580802d96` |
 | `epics/EPIC-003.md` | 3585 | `6c52384f373a4942492c488bf9a727cfd3c5a9ca3657a75f7061e6dc58256a33` |
 | `epics/EPIC-004.md` | 3208 | `d93b5461ce74fe99cdcd8079361d78f840db2320e57f565142cce2d1e1eb13bb` |
@@ -57,28 +57,28 @@ This inventory covers 144 other files: all Markdown documents and the read-only 
 | `epics/EPIC-008.md` | 3007 | `00b8004bd4dc3045413cc78af3e6fa68b9aeb5bf9f14989497ab961039ecf462` |
 | `epics/EPIC-009.md` | 2926 | `4d21ce32efda3c9a05794b1741332d64c9aebbfce5b9991ffa19f5465ca643b3` |
 | `epics/EPIC-010.md` | 3230 | `8b0d9599b8d6aae84e0095f529e949076cab977e0ab4b599c7f970d7fdad56ff` |
-| `epics/README.md` | 3481 | `a447a6ab4872a9eb5221d5b97b411873afadf071690ad8d200d0f088f8a82c53` |
+| `epics/README.md` | 3511 | `18eedd3dbda29a655f136591947173f64b4d107e32c87e99e9a78785e5505ec7` |
 | `examples/package-example.md` | 12479 | `01bcf8a022d02db4073d019407268b94d55a49e1f1687584704220f54b599e90` |
 | `examples/use-haeryong-skill.md` | 8534 | `8c0094121ef1634bbc85199fd4a9a81ec69113f84e9e1d4306fe119fbc1dae11` |
-| `execution-protocol.md` | 14387 | `ac576e75a6ac0844bf3ada0d579442c740ed37f47102a6d1dafd1a2c1fef4592` |
+| `execution-protocol.md` | 14966 | `6413e71b1be155d5fd8a45db2f54dd8ce2fee26d46b30e7d9a385b5708cb7f4b` |
 | `glossary.md` | 8311 | `67d60e7f03caa04681e618abcfb5518d05cf9c63b385aced1148235e34032b7b` |
 | `operations/backup-recovery.md` | 16939 | `4cf1bb67a7dbc79878beabc86120236c25bdd44532f257f64044d1635e5c1827` |
 | `operations/deployment.md` | 15673 | `39f2ca58e4a185846b48b35a02eec1b7f683d0d1a1c633d73d631e9e0bf99dd3` |
 | `operations/observability.md` | 8557 | `cb3b01ecdf60fe30b754e5ad2e6b6c774cac30aebe6671753d364893f2212bf3` |
 | `operations/release-checklist.md` | 11161 | `b10fc959860aef18a02af7fa9371ac26c637b866c5e48233d88a0a5ee9564801` |
 | `operations/security.md` | 12541 | `a5e5921f534ea550895635f3c64c30cb5d77d8e45cf9196b9fb592d39f0ccecb` |
-| `references.md` | 8791 | `a457bdd77fafc3a71f6ed25c8fcabe65332d993acb7d21ceaf4351fae9908936` |
+| `references.md` | 10868 | `a64d563f9c285ff4c41be6d14490d8f9e94e55ba5443f0e1a40adeb6180ad63e` |
 | `requirements.md` | 17390 | `3cd21d4c4f5c193f2e1dab97fde3d526e334620b6bcf068ff6e6e1eafffb7ed7` |
-| `roadmap.md` | 11542 | `0e3abc20a76e17e392eb0837f94e1997040fae4c053b35cbb2ee62a627a41f5f` |
-| `source-map.md` | 7893 | `b7dc8738188149fe3fd97b0d00d24b101ab1288d3017213fe745ce0b11d86907` |
+| `roadmap.md` | 11759 | `b1dc10e7a0121b914eaf53213e481359cc927c69cdadffad6d3efc6d93e13baf` |
+| `source-map.md` | 8927 | `97837192e2a6dcf8ebf555a40c2e4b2eca9a2b53fbab524c25f1864f669eb388` |
 | `sources/haeryong-concept-proposal-v4.md` | 85010 | `8f26fea2833cd3cc3312c1afadea74e042d1d895b079bfa1bdff9cc02cf563e5` |
-| `tasks/EPIC-001/TASK-001-01.md` | 3962 | `27e1e8bf184bc0d0d4ba667c2174142775167b2a23e5558ee61948d7609a6357` |
+| `tasks/EPIC-001/TASK-001-01.md` | 9869 | `51d4cfcf46f66f2d4b767484dd5f79f34728d00e51e580e08426d15dfdfc29b1` |
 | `tasks/EPIC-001/TASK-001-02.md` | 2815 | `639583da5416349693cd702a31463a95fcda6bafbf918f5fdc18785250c42643` |
 | `tasks/EPIC-001/TASK-001-03.md` | 3366 | `a3945a913a545eb7672fcd765abf9d75642aa59a25aec7c953a1ff44c062db27` |
 | `tasks/EPIC-001/TASK-001-04.md` | 7513 | `b93af11c3e1c8debe772e0cc4573b55a370b8f24922463f8b01bf66e36587462` |
 | `tasks/EPIC-001/TASK-001-05.md` | 4879 | `aaf8b190b1ef5c1cbc3ac0730c62f65014c30e2250cc9f4ae0c146ba5b8625f0` |
 | `tasks/EPIC-001/TASK-001-06.md` | 4574 | `807148889fdace5655b9b61304a117aeebb7dc69731da1094987c5bdf0b42334` |
-| `tasks/EPIC-001/TASK-001-07.md` | 6336 | `b7871b0380bad1a5ae2e1f0d8eb1a40ea5ab81b6ef294678a5379c08fb34ff9e` |
+| `tasks/EPIC-001/TASK-001-07.md` | 6779 | `dca918a4227a19ba33768c19b34e4340c01bfbf25e9162ab3f5241ffe9119a64` |
 | `tasks/EPIC-002/TASK-002-01.md` | 1640 | `7fc22f2245e492c793d68d816f2b0942ea9b17b970e5114da2a2637d5b8741e3` |
 | `tasks/EPIC-002/TASK-002-02.md` | 4256 | `ac1bd00ad693452b42ad478da4a19750f0ab930efa477f491ffaaffb580d86e0` |
 | `tasks/EPIC-002/TASK-002-03.md` | 3244 | `3802a3f7b45735e35f5bc6e4c960eae22842127edaa278ce93bb837f11d545e4` |
@@ -133,22 +133,23 @@ This inventory covers 144 other files: all Markdown documents and the read-only 
 | `tasks/EPIC-010/TASK-010-04.md` | 2971 | `9b9192c0ca1ff83be4b11a81348b66c944a760b6fe7b5d5aa67991b0ff0292db` |
 | `tasks/EPIC-010/TASK-010-05.md` | 2099 | `d684b0fae392c9a63eabd9b018e78740ebf9847aa4236c7ef3d9d71f8284a661` |
 | `tasks/EPIC-010/TASK-010-06.md` | 2708 | `950c177ac466fafff5f6c92eec37d0dfbcd351ca0970f74aa48bfc1cb517705f` |
-| `tasks/README.md` | 8833 | `007379ed84062cc50b6e2ea6aee8bbe461789d80fccf68839c6b939057cfce77` |
+| `tasks/README.md` | 9023 | `a4417c1ea6c369e0db6c9bfb542988d6078dcc001be1036d8b9d6ae2c5cd3a64` |
 | `templates/change-request.md` | 1021 | `d58815b0ffe13948bc908e60e3d2322400bd5e1cc32c8882e0989c8d56f7009e` |
 | `templates/decision-record.md` | 747 | `85220715762f1c175eb9797fc06a7bce5135ad46f05f5d6fa9bd16e37a33db9b` |
 | `templates/epic-gate.md` | 2139 | `9d7d8d8cd44cc29c4922645fed996bdc9b9794bb48a61eea706955ccec804e7b` |
 | `templates/task-evidence.md` | 2936 | `ed7a55607ee1f203c41d7667d28c80c5be756635a955ecbdd23fd095e5d39d83` |
 | `testing/acceptance-catalog.md` | 36308 | `272cd4bb81bed07954194d2d1506e01af9af88afaa7f10c7ddb12433ae39c62c` |
-| `testing/bundle-validation.md` | 9109 | `f677c3d56cc1fe4628a87b3a41553d3b69f2bdea9404200e30f23065bb056981` |
+| `testing/bundle-validation.md` | 9654 | `4788e2b5d3791b1a36b0f0c3b82a1e9538c1efaa38339129c1678355eca1af2f` |
 | `testing/contract-cases.md` | 20367 | `c8a71cc51749fd9e8d7cf392ae9151321a648dd364644677f25dfe68f9f074be` |
-| `testing/fixtures.md` | 24473 | `1202d959db5f91e99e79f4af0e46b2ab693c7c95db0dd13e86bcf118d8419760` |
-| `testing/knowledge-quality.md` | 20226 | `209e53eaa434280843023be49ff4a8faa694312207837c83dfc2e2189062579e` |
+| `testing/fixtures.md` | 24551 | `5788371a2d75206969e68eb38fb37911fad2d811eeaa419f2bd36634f19421ba` |
+| `testing/knowledge-quality.md` | 23192 | `a96dc684619fa767ef31b9b05986f5eba7facc5de85ae4f2aed7a5801d436cbf` |
 | `testing/test-strategy.md` | 15286 | `407cafb4a100e718e32308c38c50687cdc41623adcfc8f2ad1be915926998d71` |
+| `testing/test_validate_docs.py` | 5890 | `25f6cd98a1714306698fbed4d740ad331eb7292321fc772e654e0188cd8323e9` |
 | `testing/traceability.md` | 34441 | `9b634127367bc8caf1915a16ac01858522b6ff6ce74b3b3c0a10da1875ea361b` |
-| `testing/validate_docs.py` | 16746 | `dc1393a6c5972fd151ce3868142554cb91b70cfa5d3ee378e5374fc1d6a28e59` |
-| `ui/README.md` | 5276 | `dcaa89bb25504693dde4564e15de9a4da6c92d9afd3c0e4768f37691fbb52c08` |
-| `ui/design-system.md` | 6138 | `6173e578fa203493346604a34818ff99651ebc63ff0fbd550bfc9d38ae0a8579` |
+| `testing/validate_docs.py` | 17139 | `9a0fe45af68cb217f58c550694a9113ddf7c59a6e029048de936fd99c90d20a0` |
+| `ui/README.md` | 5532 | `d65dbcbe217e46508e5dd31d5656c582595818d52d3841971352a7b09df8d53e` |
+| `ui/design-system.md` | 8226 | `b1ac2c6674f98fe9bd98a387eb259e1b2931aabeb00948f1f0b1be222d2dfabc` |
 | `ui/flows.md` | 9121 | `23d7d4c2bc59a2230f466c5ba7f97353704831a5de5afb3e516cc19a0f6832c5` |
 | `ui/information-architecture.md` | 12092 | `6df455c2bc4de89a243b5d39aec7838b07949690886ab2d1d7ad079d91e282eb` |
 | `ui/screens.md` | 21807 | `4d5b9f1119dce07f91f37108f9264ce3c877c68d903038a36d43e2349beaeee9` |
-| `ui/wireframes.md` | 11238 | `aa020c2c8251bff056740998c32d8b8087430c4c0111965a65821928dd2728c7` |
+| `ui/wireframes.md` | 11380 | `87971b9ad8f9bd6f5efd0700d9f0f497977b8ca02ec172649756d2359eaf38cc` |

@@ -2,7 +2,7 @@
 
 **Eight low-fidelity proposals.** Titles, hashes, counts and findings are synthetic. The layout tables describe placement and behavior; they are not screenshots or a functioning app. See [screens](screens.md) and [information architecture](information-architecture.md) for authoritative interaction and route behavior. D-09 makes the result directory the library item and individual HTML files its pages.
 
-The separate [R5 interactive concept](../design/prototype/README.md) is the current visual reference alongside these editable proposals. The [UI handoff](../design/prototype/HANDOFF.md) records concept differences and the scope of its dated review evidence.
+The separate [R5 interactive concept](../design/prototype/README.md) is an unapproved visual input alongside these editable proposals. The [initial execution baseline](design-system.md#initial-execution-baseline) governs layout; the R5 persistent tablet context column was not selected. The [UI handoff](../design/prototype/HANDOFF.md) records differences and the scope of its dated review evidence.
 
 ## WF-01: Desktop Home
 

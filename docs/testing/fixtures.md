@@ -104,7 +104,7 @@ Search quality proposals in [the test strategy](test-strategy.md) are project ac
 
 ## Real-source knowledge corpus
 
-Follow [knowledge quality](knowledge-quality.md). TASK-001-07 generates the first real explanations after provider/source/viewer gates and before contract freeze. Proposed initial size is 3–5 explanations and 20–30 material claims across two approved real projects; these figures are not a quality guarantee. Mulgae/Haepari are candidate names only. Select actual revisions/workflows and approved source/disclosure scope first; include a Markdown/ADR comparison.
+Follow [knowledge quality](knowledge-quality.md). TASK-001-07 generates the first real explanations after provider/source/viewer gates and before contract freeze. Proposed initial size is 3–5 explanations and 20–30 material claims across two approved real projects; these figures are not a quality guarantee. Mulgae/Haepari are the owner-selected projects at their approved-validation final reports. Bind exact committed revisions, actual workflows and approved source/disclosure scope before consumption; include a Markdown/ADR comparison.
 
 Record expected reader answers and material source facts before tuning. Keep some questions/change cases held out. Separate citation/region resolution from supported/contradicted/uncertain claims and illustrative/observed/trace-backed behavior. Use direct, indirect, unrelated, historical, missing-source, thematic-only, rejected/pinned and partial-coverage cases.
 

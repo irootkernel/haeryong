@@ -1,8 +1,8 @@
 # Task execution index
 
-**This revision contains 61 planned task specifications across ten sequential Epics.** This is an inventory, not a required task count. Split/merge tasks by coherent outcomes while updating dependencies and traceability. The actual epic-handler format is checked in TASK-001-01.
+**This revision contains 61 task specifications across ten sequential Epics.** This is an inventory, not a required task count. Canonical Task frontmatter owns current planning state. Split/merge tasks by coherent outcomes while updating dependencies and traceability. [TASK-001-01](EPIC-001/TASK-001-01.md#inspected-handler-metadata-mapping) records the inspected epic-handler mapping.
 
-The [R5 interactive concept](../design/prototype/README.md) and [UI handoff](../design/prototype/HANDOFF.md) supply current UI baseline inputs for relevant Tasks, beginning with TASK-001-01. Prototype review records describe sample behavior; Task status, dependencies, and existing completion checks remain unchanged.
+The [R5 interactive concept](../design/prototype/README.md) and [UI handoff](../design/prototype/HANDOFF.md) supply UI baseline inputs. [TASK-001-01](EPIC-001/TASK-001-01.md) records the initial execution choices; prototype review records describe sample behavior and do not establish Task completion or product-gate results. Dependencies and completion requirements remain with the canonical Tasks.
 
 All task checks use the [D-08 personal-tool baseline](../changes/2026-10-10-personal-tool-revision.md), [D-09 directory-results baseline](../changes/2026-10-10-directory-results-revision.md) and [1.6.0 Grok reconciliation](../changes/2026-10-11-grok-reconciliation.md), including useful html_js_v1 JavaScript, unrestricted directory input/output, remembered one-owner access and D-10's approved extra private renderer-port experiment. The complete TASK-001-04 and TASK-001-05 checklists govern G-VIEW/G-AI; later product features do not become additional early closing conditions.
 
