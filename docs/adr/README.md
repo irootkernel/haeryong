@@ -1,6 +1,6 @@
 # Architecture decision records
 
-All records remain `proposed`; ADR-001 now identifies an executed stack/lifecycle slice without accepting its pending production/viewer details. Owner-established directions, including D-08 personal-developer speed/normal JavaScript and D-09 unrestricted directory results, are binding inputs; concrete mechanisms still need evidence.
+All records remain `proposed`; ADR-001 now identifies an executed stack/lifecycle slice without accepting its pending production/viewer details. ADR-005 records a completed, independently reviewed disposable authentication/private-ingress experiment; production delivery and G-AUTH acceptance remain outstanding. Owner-established directions, including D-08 personal-developer speed/normal JavaScript and D-09 unrestricted directory results, are binding inputs; concrete mechanisms still need evidence.
 
 | ID | Decision | Gate |
 | --- | --- | --- |

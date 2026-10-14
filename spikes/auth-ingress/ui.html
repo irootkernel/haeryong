@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>Haeryong pairing proof</title></head>
+<body><main><h1>Pairing proof</h1><p>Disposable authentication fixture. This does not establish G-AUTH.</p>
+<form id="connect"><label>Device label <input id="label" maxlength="128" value="Browser fixture"></label><label><input id="remember" type="checkbox" checked> Remember device</label><label>Optional expiry (seconds; 0 means until revoked) <input id="expiry" type="number" min="0" max="86400" value="0"></label><button>Connect device</button></form>
+<p id="comparison"></p><output id="state" aria-live="polite">Disconnected</output><output id="connection" aria-live="polite"></output><p><output id="device-check" aria-live="polite"></output></p>
+<button id="retry-connection" hidden>Retry connection</button><button id="check-reload" hidden>Check remembered reload</button>
+<section id="owner" hidden><h2>Connected owner</h2><button id="read">Read private fixture</button><button id="logout">Log out</button><output id="private" aria-live="polite"></output>
+<form id="approve"><h3>Compare the pending device's exact code</h3><label>Request ID <input id="request-id" required></label><label>Comparison code <input id="code" pattern="[0-9a-f]{8}" required></label><button name="decision" value="approved">Approve device</button><button name="decision" value="rejected">Reject device</button><output id="decision-result" aria-live="polite"></output></form>
+<button id="refresh-devices">Refresh devices</button><ul id="devices"></ul><output id="result" aria-live="polite"></output></section>
+</main><script>
+const key='haeryong.auth-ingress.v1';
+let bearer='',deviceID='',pending=null,timer=null,watcher=null,creating=false,deciding=false,connectionMessage='';
+const revoking=new Set();
+const state=document.querySelector('#state'), owner=document.querySelector('#owner');
+const result=document.querySelector('#result'), connection=document.querySelector('#connection'), decisionResult=document.querySelector('#decision-result');
+function safeReturn(value){try{const parsed=new URL(value||'/',location.origin);return parsed.origin===location.origin && ['/','/reader','/connect'].includes(parsed.pathname) ? parsed.pathname+parsed.search+parsed.hash : '/';}catch{return '/';}}
+function clearStored(expected){try{if(expected===undefined||localStorage.getItem(key)===expected)localStorage.removeItem(key);}catch{}}
+function connectAvailability(){document.querySelector('#connect button').disabled=creating||pending!==null||bearer!=='';}
+function disconnected(message){
+ bearer='';deviceID='';connectionMessage='';clearInterval(watcher);owner.hidden=true;document.querySelector('#connect').hidden=false;
+ document.querySelector('#private').textContent='';document.querySelector('#devices').replaceChildren();connection.textContent='';result.textContent='';decisionResult.textContent='';state.textContent=message;
+ document.querySelector('#device-check').textContent='';document.querySelector('#retry-connection').hidden=true;document.querySelector('#check-reload').hidden=true;connectAvailability();
+}
+async function api(path,body,authorized=false){
+ const credential=bearer,headers={'Content-Type':'application/json'};if(authorized)headers.Authorization='Bearer '+credential;
+ const response=await fetch(path,{method:body===undefined?'GET':'POST',headers,body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(5000)});
+ if(authorized&&credential!==bearer){const error=new Error('Previous device response ignored');error.stale=true;throw error;}
+ if(!response.ok){if(authorized&&response.status===401){clearStored(credential);disconnected('Device access stopped; connect again');void restore();}const detail=(await response.text()).trim();const error=new Error('HTTP '+response.status+(detail?': '+detail:''));error.status=response.status;error.retryAfter=Number(response.headers.get('Retry-After'))||0;if(error.retryAfter>0)error.message+='; wait '+error.retryAfter+' seconds before retrying';if(authorized&&bearer&&credential!==bearer)error.stale=true;throw error;}
+ const value=response.status===204?null:await response.json();
+ if(authorized&&credential!==bearer){const error=new Error('Previous device response ignored');error.stale=true;throw error;}
+ return value;
+}
+async function refreshDevices(){
+ const devices=await api('/devices',undefined,true);
+ const list=document.querySelector('#devices');list.replaceChildren();
+ for(const device of devices){
+  const item=document.createElement('li');item.textContent=device.label+' — '+device.id+(device.revoked?' (revoked)':device.expired?' (expired)':'')+(device.expires?' · expires '+new Date(device.expires/1000000).toISOString():' · until revoked');
+  if(!device.revoked){const button=document.createElement('button');button.textContent='Revoke '+device.label;button.setAttribute('aria-label',button.textContent+' — '+device.id);button.dataset.deviceId=device.id;button.disabled=revoking.has(device.id);button.onclick=async()=>{
+   if(revoking.has(device.id))return;revoking.add(device.id);button.disabled=true;
+   try{
+    await api('/devices/revoke',{ID:device.id},true);
+    button.dataset.confirmedRevoked='true';button.disabled=true;
+    if(device.id===deviceID){clearStored(bearer);disconnected('Logged out');}
+    else{result.textContent='Device revoked';button.disabled=true;try{await refreshDevices();}catch(error){if(!error.stale&&bearer)result.textContent='Device revoked. Device list unavailable: '+error.message+'. Use Refresh devices to retry.';}}
+   }
+   catch(error){if(!error.stale)result.textContent='Revocation not confirmed: '+error.message;}
+   finally{revoking.delete(device.id);for(const control of document.querySelectorAll('#devices button'))control.disabled=control.dataset.confirmedRevoked==='true'||revoking.has(control.dataset.deviceId);}
+  };item.append(button);}list.append(item);
+ }
+}
+async function connected(message){
+ connectionMessage=message;
+ const session=await api('/session',undefined,true);deviceID=session.id;
+ owner.hidden=false;document.querySelector('#connect').hidden=true;state.textContent=message;connection.textContent='';
+ const target=new URL(location.href).searchParams.get('return');
+ if(target!==null)history.replaceState(null,'',safeReturn(target));
+ document.querySelector('#retry-connection').hidden=true;connectAvailability();clearInterval(watcher);
+ watcher=setInterval(async()=>{try{await api('/session',undefined,true);connection.textContent=' Device access valid';}catch(error){if(bearer&&!error.stale)connection.textContent=' Service unavailable: '+error.message;}},3000);
+ try{await refreshDevices();}catch(error){if(bearer&&!error.stale)result.textContent='Device list unavailable: '+error.message+'. Use Refresh devices to retry.';}
+ if(!bearer)return;
+ if(new URL(location.href).searchParams.get('device-check')==='1')void checkDevice(message);
+}
+async function checkDevice(message){
+ const output=document.querySelector('#device-check'), markerKey=key+'.device-check';
+ try{
+  if(localStorage.getItem(key)!==bearer){output.textContent='Device check needs Remember device. Memory-only use remains available.';return;}
+  const prior=JSON.parse(localStorage.getItem(markerKey)||'null');
+  const phase=message==='Connected and remembered'?'connected':prior?.device===deviceID&&prior?.phase==='awaiting-reload'?'reloaded':'later-load';
+  const value=await api('/private/data',undefined,true);document.querySelector('#private').textContent=value.fixture;
+  const denied=await Promise.all(['/session','/private/data','/private/assets','/private/download','/private/events'].map(async path=>{
+   const response=await fetch(path,{credentials:'omit',signal:AbortSignal.timeout(5000)});return response.status===401;
+  }));
+  const observation={phase,remembered:localStorage.getItem(key)===bearer,remembered_ui:state.textContent==='Remembered connection',private_read:document.querySelector('#private').textContent==='synthetic private value',unpaired_denials:denied.every(Boolean)};
+  if(!observation.remembered||!observation.private_read||!observation.unpaired_denials||(phase==='reloaded'&&!observation.remembered_ui))throw new Error('device check did not pass');
+  await api('/private/device-proof',observation,true);
+  if(phase==='connected'){
+   localStorage.setItem(markerKey,JSON.stringify({device:deviceID,phase:'awaiting-reload'}));
+   output.textContent='Private access checked. Reloading once to check remembered access…';
+   setTimeout(()=>location.reload(),1000);
+  }else{
+   localStorage.setItem(markerKey,JSON.stringify({device:deviceID,phase:'checked'}));
+   output.textContent=phase==='reloaded'?'Device check passed. Observation stored in the local fixture.':'Remembered access checked. Reload check has not run on this visit.';
+   document.querySelector('#check-reload').hidden=phase==='reloaded';
+  }
+ }catch(error){if(!error.stale)output.textContent='Device check incomplete: '+error.message+(bearer?'. Reload to retry; your pairing is retained.':'. Connect device again.');}
+}
+async function restore(){
+ try{bearer=localStorage.getItem(key)||'';}catch{state.textContent='Storage unavailable; memory-only connection is available. Reload or close requires pairing again.';}
+ if(!bearer)return;
+ try{await connected('Remembered connection');}
+ catch(error){if(bearer&&!error.stale)retainedConnection(error);}
+}
+function retainedConnection(error){state.textContent='Service unavailable; credential retained: '+error.message+'. Use Retry connection; do not create another pairing.';document.querySelector('#retry-connection').hidden=false;connectAvailability();}
+function recoveryMessage(){try{if(localStorage.getItem(key)===bearer)return 'Remembered connection';}catch{}return connectionMessage.startsWith('Connected in memory only')?connectionMessage:'Connected in memory only. Reload or close requires pairing again.';}
+document.querySelector('#retry-connection').onclick=async()=>{try{await connected(recoveryMessage());}catch(error){if(bearer&&!error.stale)retainedConnection(error);}};
+window.addEventListener('storage',event=>{if(event.key===key&&event.newValue&&!bearer&&!pending&&!creating)void restore();});
+document.querySelector('#check-reload').onclick=()=>{try{localStorage.setItem(key+'.device-check',JSON.stringify({device:deviceID,phase:'awaiting-reload'}));location.reload();}catch(error){document.querySelector('#device-check').textContent='Reload check unavailable: '+error.message;}};
+function schedulePair(current,delay=2100){
+ clearTimeout(timer);if(pending===current&&!document.hidden)timer=setTimeout(()=>pollPair(current),Math.max(2100,delay));
+}
+async function pollPair(current){
+ if(pending!==current||current.polling||creating||document.hidden)return;
+ current.polling=true;let decision;
+ try{decision=await api('/pair/poll',{ID:current.ID,Secret:current.Secret});}
+ catch(error){
+  if(pending!==current)return;
+  if(error.status===403||error.status===400){pending=null;document.querySelector('#comparison').textContent='';state.textContent='Pairing request expired or unavailable. Connect device again.';connectAvailability();}
+  else{state.textContent='Connection interrupted; waiting to retry owner approval. Keep this page open.';schedulePair(current,(error.retryAfter||0)*1000);}
+  return;
+ }finally{current.polling=false;}
+ if(pending!==current)return;
+ if(decision.decision==='pending'){state.textContent='Waiting for owner approval';schedulePair(current);return;}
+ if(decision.decision!=='approved'){pending=null;document.querySelector('#comparison').textContent='';state.textContent='Request '+decision.decision+'. Connect device again.';connectAvailability();return;}
+ creating=true;
+ try{
+   const issued=await api('/pair/redeem',{ID:current.ID,Secret:current.Secret,LifetimeSeconds:current.lifetime});pending=null;document.querySelector('#comparison').textContent='';bearer=issued.token;
+   let message='Connected in memory only. Reload or close requires pairing again.';
+   if(current.remember){try{localStorage.setItem(key,bearer);message='Connected and remembered';}catch{message='Connected in memory only: storage unavailable. Reload or close requires pairing again.';}}
+   else clearStored();
+   await connected(message);
+ }catch(error){
+  if(error.stale)return;
+  if(bearer)retainedConnection(error);
+  else if(error.status===503){state.textContent='Store unavailable; approved request retained. Rechecking its state before another redemption.';schedulePair(current,(error.retryAfter||0)*1000);}
+  else{pending=null;document.querySelector('#comparison').textContent='';state.textContent='Could not confirm device connection: '+error.message+'. Connect device again; redemption is not repeated automatically. An unused device may already exist; revoke it after reconnecting.';}
+ }
+ finally{creating=false;connectAvailability();}
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&pending)schedulePair(pending);});
+document.querySelector('#connect').onsubmit=async event=>{
+ event.preventDefault();if(creating||pending||bearer)return;
+ try{const stored=localStorage.getItem(key);if(stored){bearer=stored;await connected('Remembered connection');return;}}catch(error){if(bearer){if(!error.stale)retainedConnection(error);return;}}
+ creating=true;connectAvailability();clearTimeout(timer);
+ const remember=document.querySelector('#remember').checked,lifetime=Number(document.querySelector('#expiry').value);
+ try{
+  const current=await api('/pair',{Label:document.querySelector('#label').value});current.remember=remember;current.lifetime=lifetime;pending=current;
+  document.querySelector('#comparison').textContent='Compare code '+current.Code+' for request '+current.ID+' ('+current.Label+', created '+new Date(current.Created/1000000).toISOString()+') using a trusted owner device or local bootstrap. Keep this page open: reload or close drops this request secret and needs a new code.';state.textContent='Waiting for owner approval';schedulePair(current);
+ }catch(error){state.textContent='Could not create pairing: '+error.message+(error.status===429?'':'. Connect device to retry.');}
+ finally{creating=false;connectAvailability();}
+};
+document.querySelector('#approve').onsubmit=async event=>{
+ event.preventDefault();if(deciding)return;deciding=true;const decision=event.submitter.value;for(const control of event.currentTarget.querySelectorAll('button'))control.disabled=true;
+ decisionResult.textContent='Saving exact decision…';
+ try{const accepted=await api('/pair/decision',{ID:document.querySelector('#request-id').value,Code:document.querySelector('#code').value,Decision:decision},true);decisionResult.textContent='Exact request '+decision+': '+accepted.Label+' (created '+new Date(accepted.Created/1000000).toISOString()+').'+(decision==='approved'?' The device appears after it finishes connecting. Use Refresh devices to see it.':'');}catch(error){if(!error.stale)decisionResult.textContent='Decision not confirmed: '+error.message+([429,503].includes(error.status)?'. Wait before retrying this same exact request.':'. Check the exact code and expiry; a prior decision may already be final.');}
+ finally{deciding=false;for(const control of document.querySelectorAll('#approve button'))control.disabled=false;}
+};
+document.querySelector('#refresh-devices').onclick=async()=>{try{await refreshDevices();if(bearer)result.textContent='Device list refreshed';}catch(error){if(!error.stale)result.textContent=error.message;}};
+document.querySelector('#read').onclick=async()=>{try{const value=await api('/private/data',undefined,true);document.querySelector('#private').textContent=value.fixture;}catch(error){if(!error.stale)result.textContent='Private read failed: '+error.message;}};
+document.querySelector('#logout').onclick=async()=>{const ending=bearer;try{await api('/devices/revoke',{ID:deviceID},true);clearStored(ending);disconnected('Logged out');}catch(error){if(!error.stale)result.textContent='Logout not confirmed: '+error.message;}};
+void restore();
+</script></body></html>

@@ -1,6 +1,6 @@
 # Deployment and local/remote operation
 
-**Planning runbook:** Haeryong commands below are to be implemented. No listener, service, firewall or tailnet was changed while preparing this bundle.
+**Planning runbook:** Product commands below remain to be implemented. The [executed fixture experiment](#executed-authentication-and-private-ingress-experiment) separately records its temporary listener and private foreground proxy; it does not establish a production installation.
 
 ## Proposed support tiers
 
@@ -71,7 +71,7 @@ Run the [TASK-001-04 closing checklist](../tasks/EPIC-001/TASK-001-04.md#observa
 
 Port allocation/reuse is an implementation result, not a port per stored document. Do not reassign an origin while an old client/Service Worker can control its new version; prove safe reuse or keep it unavailable for reassignment. Available endpoint resources may fail explicitly, but never become an HTML/file-count/storage quota, silent single-version fallback or false pass. Additional public exposure, custom domains or wildcard certificate operations still require an explicit owner decision. If this candidate fails, record the actual failed mapping and alternatives instead of repeating path-prefix-only experiments.
 
-After private HTTPS works, pair the remote browser through an existing owner device or local bootstrap. Requests without a valid owner session or its scoped content-delivery authority receive no library metadata/assets. G-AUTH remains `not_run` until a real second-device flow, remembered reconnect, Host/Origin handling and session revocation have recorded results.
+After private HTTPS works, pair the remote browser through an existing owner device or local bootstrap. Requests without a valid owner session or its scoped content-delivery authority receive no library metadata/assets. G-AUTH remains `not_run` until the required pairing flow, remembered reconnect, Host/Origin handling and session revocation have recorded results and the complete gate evidence is accepted.
 
 ## Large result directories and transfer
 
@@ -97,4 +97,17 @@ Application-managed restore invalidates restored owner/agent and content-deliver
 
 ## Executed stack experiment
 
-[The TASK-001-02 experiment](../testing/stack-spike.md) records the actual macOS ARM64 Wails/WebKit and Linux ARM64 headless combination, reproduction commands and lifetime observations. It is an isolated loopback fixture without owner authentication, service installation or private ingress. The declared macOS/Linux AMD64 release targets still require their advertised workflow checks; this record does not broaden tested support. TASK-001-03 owns the next authenticated private-route experiment.
+[The TASK-001-02 experiment](../testing/stack-spike.md) records the actual macOS ARM64 Wails/WebKit and Linux ARM64 headless combination, reproduction commands and lifetime observations. It is an isolated loopback fixture without owner authentication, service installation or private ingress. The declared macOS/Linux AMD64 release targets still require their advertised workflow checks; this record does not broaden tested support.
+
+## Executed authentication and private-ingress experiment
+
+[The TASK-001-03 experiment](../testing/auth-ingress-spike.md) records an executed
+disposable auth fixture, separate from the illustrative runbook ports above.
+Foreground tailnet-only HTTPS on 8451 forwards to loopback 9270 with exact
+trusted Host/Origin checks and header bearer authentication. Local Chrome and
+Aside Browser directly exercised the real private URL, remembered access and
+separate local/private client approval and revocation. Existing Serve/Funnel
+routes were preserved; this experiment added no public exposure. These are
+origin-separated clients on one host, not physical Safari evidence. Independent
+Task review and delegated Task acceptance are complete. G-AUTH remains `not_run`; the physical
+Safari renderer and streaming-download obligations remain TASK-001-04.
