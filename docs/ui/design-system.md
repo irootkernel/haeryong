@@ -8,7 +8,7 @@ The [R5 interactive concept](../design/prototype/README.md) provides a separate 
 
 ## Initial execution baseline
 
-TASK-001-01 selects React + TypeScript + Vite with CSS variables and semantic components for the shared browser/Wails host. Exact dependency versions await TASK-001-02. Preserve the text-first reader, result-level Files/Pages navigation, exact version/page context, and Evidence / Notes / Ask / Links panel. No framework choice restricts author HTML or ordinary scripts.
+TASK-001-01 selects React + TypeScript + Vite with CSS variables and semantic components for the shared browser/Wails host. [TASK-001-02's stack experiment](../testing/stack-spike.md) records the tested baseline: React/ReactDOM 19.3.0, TypeScript 7.0.2 and Vite 8.3.4. Preserve the text-first reader, result-level Files/Pages navigation, exact version/page context, and Evidence / Notes / Ask / Links panel. No framework choice restricts author HTML or ordinary scripts.
 
 | Choice | Initial selection and reason | Verification owner |
 | --- | --- | --- |

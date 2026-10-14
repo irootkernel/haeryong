@@ -1,6 +1,6 @@
 # Test strategy and evidence gates
 
-**Initial status:** Every application test and implementation gate is `not_run`. This revision is a specification change, not implementation evidence. Tests must run against the implementation produced by the assigned Tasks.
+**Current status:** [TASK-001-02 stack evidence](stack-spike.md) records G-STACK `pass` for the declared macOS/Linux ARM64 combination. G-AUTH, G-VIEW, G-AI, G-VALUE and G-CONTRACT remain `not_run`; Task completion still requires independent review. Written procedures do not pass gates. Tests must run against the implementation produced by the assigned Tasks.
 
 ## Current baseline and test effort
 

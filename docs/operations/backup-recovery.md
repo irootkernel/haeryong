@@ -16,7 +16,7 @@ When exporting or sharing, the owner may choose encryption using an established 
 4. Verify every required object and size/digest; record unavailable reference-only source separately. Flush required backup files and directory metadata, finalize the files/archive and manifest as one complete set using the chosen storage protocol, then release live pins. A flush, checksum or selected-encryption failure cannot produce a successful complete-set record.
 5. If interrupted, keep the set incomplete and resumable/cleanable. Never list it as a valid backup or expire the last complete set because a partial replacement exists.
 
-A checkpoint and copying one live DB file is not assumed to be a coherent backup. The exact SQLite driver API is verified under G-STACK. Storage-level snapshots may be an alternative only with documented coordinated semantics.
+A checkpoint and copying one live DB file is not assumed to be a coherent backup. [TASK-001-02](../testing/stack-spike.md) demonstrated SQL `VACUUM INTO` snapshot consistency through `database/sql`; it did not verify a driver backup API, object pins or filesystem flush ordering. Production DB-plus-content backup and restore remain EPIC-005 evidence. Storage-level snapshots may be an alternative only with documented coordinated semantics.
 
 ## Routine backup visibility
 
@@ -36,7 +36,7 @@ Before replacing a live profile, preserve an incrementally recorded nonsecret re
 
 ## Durability and integrity
 
-For publication, the intended ordering is staging write, file-data flush, immutable publish/rename, required directory-metadata flush, then the referencing DB transaction commit and success response. Use destination-local staging when an atomic rename is required. Record the actual filesystem/SQLite guarantees and tested durability settings in G-STACK; no software procedure can promise that storage hardware never loses acknowledged writes.
+For publication, the intended ordering is staging write, file-data flush, immutable publish/rename, required directory-metadata flush, then the referencing DB transaction commit and success response. Use destination-local staging when an atomic rename is required. Record filesystem publication guarantees in EPIC-002 and coherent backup/restore durability in EPIC-005; G-STACK records only the selected spike driver's measured SQLite settings and snapshot behavior. No software procedure can promise that storage hardware never loses acknowledged writes.
 
 On startup/recovery, detect missing or mismatched referenced objects and quarantine their use with an explicit damaged/unavailable result rather than returning unverified executable HTML or a half-published document. Before rendering or serving retained source, verify the requested object's actual bytes incrementally against its recorded digest, using immutable verified delivery storage or recorded chunk digests before release. Stream or range-read the same verified bytes without whole-file RAM buffering or a complete-directory read for each page. Object pins protect that delivery lifetime. File permissions reduce accidental modification but do not defeat a compromised OS owner who can rewrite the DB and objects.
 

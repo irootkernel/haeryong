@@ -1,6 +1,6 @@
 # Architecture decision records
 
-All records are `proposed`. Owner-established directions, including D-08 personal-developer speed/normal JavaScript and D-09 unrestricted directory results, are binding inputs; concrete mechanisms still need evidence.
+All records remain `proposed`; ADR-001 now identifies an executed stack/lifecycle slice without accepting its pending production/viewer details. Owner-established directions, including D-08 personal-developer speed/normal JavaScript and D-09 unrestricted directory results, are binding inputs; concrete mechanisms still need evidence.
 
 | ID | Decision | Gate |
 | --- | --- | --- |
