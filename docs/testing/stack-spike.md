@@ -5,7 +5,9 @@
 Use `git ls-tree -r 162dee14b25c5754b15ff567a77ada1874b4383d` for the exact delivered source, modules, lockfile and checker blobs; compare a checkout with `git rev-parse HEAD:spikes/stack`. **Evidence kind:** executed synthetic fixtures,
 real macOS Wails/WebKit and Chrome, and a real headless Linux ARM64 container.
 **G-STACK:** `pass` for this declared combination. Independent Task review and
-completion remain governed by the Task's canonical state. G-AUTH, G-VIEW,
+completion remain governed by the Task's canonical state. At this stack
+checkpoint the other gates were `not_run`; the subsequent
+[auth experiment](auth-ingress-spike.md) now records G-AUTH `pass`. G-VIEW,
 G-AI, G-VALUE and G-CONTRACT remain `not_run`.
 
 The [reproducible spike](../../spikes/stack/README.md) and tests are delivered in

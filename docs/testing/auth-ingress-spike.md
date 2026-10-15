@@ -1,7 +1,8 @@
 # TASK-001-03 authentication and private-ingress experiment
 
 **Execution date:** 2026-10-14 KST. **State:** completed disposable Task experiment.
-**G-AUTH:** `not_run`; the Task experiment is complete, while production renderer and download evidence remains outstanding.
+**G-AUTH:** `pass` for TASK-001-03's bounded one-owner authentication and actual private-HTTPS route checks. Production renderer/download delivery and physical-device support remain separate obligations.
+**Revalidation:** 2026-10-15 KST against the unchanged auth executable/checker source delivered at `a94b3ed7252cb8858acf0f2a552ed9e0762af75f`; Go race/build, local Chrome and real private-HTTPS Chrome checks passed again. The already-installed CLI resolved to `@playwright/cli` 0.1.22 and Playwright 1.64.0-alpha-1790635538000; the observed browser was Chrome 154.0.8037.100. No tool was installed or updated for this revalidation.
 The [runnable fixture](../../spikes/auth-ingress/README.md) is disposable and
 synthetic. This record does not claim a production authentication subsystem.
 
@@ -59,10 +60,10 @@ own tabs were closed. The existing user tab was preserved.
 These are two origin-separated clients on one host and a real private HTTPS
 route, not proof of another physical network peer. TASK-001-03 names a second
 test client and a real private route; the earlier physical-device blocking
-interpretation is corrected without changing that requirement. The separate
-physical Safari renderer requirement, including device-specific storage loss,
-write failure and optional Home Screen observations, remains TASK-001-04 and
-cannot be inferred from desktop browsers.
+interpretation is corrected without changing that requirement. The owner now
+prioritizes actual Android Chrome for TASK-001-04's physical renderer check; Safari remains a later platform-support obligation. Neither
+physical-device storage behavior nor optional Home Screen behavior can be
+inferred from these desktop browsers.
 The portable `check_private_browser.py` additionally passed against the corrected
 fixture on this actual HTTPS route. It checks a remote remembered reload,
 new tab and full browser restart, an initially unpaired local origin, exact
@@ -79,7 +80,7 @@ Only its own tabs and test credential were closed or revoked.
 The full native/renderer delivery, streaming content and origin mapping remain
 TASK-001-04; the fixture's authorized JSON endpoints do not prove those surfaces.
 
-## Task completion and remaining gate work
+## Task completion and gate boundary
 
 The selected independent reviews are complete. Logic, security, product,
 documentation and testing assessed the Task's three completion criteria and
@@ -97,9 +98,25 @@ later bytes. Full Go race/build, actual local Chrome, keyboard and private HTTPS
 checks passed on the unchanged executable source. Aside exercised that same
 delivered binary. Documentation integrity passed on the final records.
 
-G-AUTH remains `not_run`: production renderer/download delivery and the physical
-Safari obligations remain TASK-001-04. No future product-gate result is inferred
-from this disposable experiment. Runtime runner/reviewer records stay local.
+G-AUTH is `pass` for the closing criteria in TASK-001-03 and the decision register:
+one-time pairing, remembered reload/new-tab/browser/server restart, revocation,
+private HTTPS and rejection without valid bearer authority. The 2026-10-15
+revalidation ran the complete Go race suite and both portable browser checkers
+against the unchanged executable source. The actual HTTPS checker used normal
+certificate validation, trusted-client approval and cross-client revocation.
+Its private foreground route and fixture were stopped afterwards; existing
+Serve and Funnel configuration was restored exactly. No physical-peer result
+is claimed.
+
+The unchanged fixture page heading says "Disposable authentication fixture. This does not establish G-AUTH." Opening that page alone cannot establish a gate or production acceptance. The bounded pass instead comes from the owning Task's complete checks and their executed evidence; the page heading is not an automated verdict. Its executable bytes remain unchanged.
+
+The previous `not_run` record incorrectly made future production renderer,
+streaming-download and Safari proof prerequisites of G-AUTH. Those requirements
+are preserved under their canonical owners and do not enlarge this bounded
+authentication gate. G-VIEW remains `not_run`; full production authentication
+and acceptance scenarios remain with their implementing Tasks. Runtime
+runner/reviewer records stay local, and the current record correction receives
+its own review rather than claiming that historical reviews covered these bytes.
 
 ## First physical attempt and recovery correction
 

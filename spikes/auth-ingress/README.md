@@ -2,7 +2,8 @@
 
 This disposable one-owner fixture belongs to TASK-001-03. It uses synthetic
 private values and a separate SQLite database. It is not the production API,
-reader, download transport or a passed G-AUTH gate. Its short routes exercise
+reader or download transport. Its executed bounded authentication checks support
+G-AUTH; they do not establish later production delivery or physical-peer support. Its short routes exercise
 mechanisms; `/api/v1` and the shared schema remain production contracts.
 
 Use the Go 1.27.1 / modernc.org/sqlite v1.60.1 stack selected by
@@ -14,8 +15,10 @@ go build -o /absolute/private/scratch/auth-ingress-fixture ./cmd/fixture
 python3 -B check_browser.py --fixture-binary /absolute/private/scratch/auth-ingress-fixture --browser-cli /absolute/path/to/playwright-cli
 ```
 
-The browser checker requires the existing pinned CLI described in the stack
-record; it installs nothing. It creates private per-run registry, socket and
+The browser checker accepts an explicit already-installed CLI path and installs
+nothing. Record its resolved package and browser versions for each run; the
+[auth experiment record](../../docs/testing/auth-ingress-spike.md) distinguishes
+the current revalidation from the historical stack versions. It creates private per-run registry, socket and
 profile directories. Browser restart reuses only that run's profile. Successful
 cleanup removes the browser namespace; a cleanup failure keeps its recovery
 identity. Runtime data and result JSON stay in private scratch, outside Git.
@@ -88,8 +91,8 @@ control a physical peer or establish Safari support.
 3. Read the private fixture, reload, open a new tab, and close/reopen that browser
    on the same origin. Repeat through the real private HTTPS origin with a
    second test client. Changing origin does not transfer a pairing. A separate
-   physical peer is optional for this auth experiment; TASK-001-04 retains its
-   explicit physical Safari renderer requirement.
+   physical peer is optional for this auth experiment; TASK-001-04 owns the
+   separate physical renderer check, now prioritized on Android Chrome.
 4. Approve the second exact request from the already paired owner's form; a
    pending client cannot approve itself. Revoke the second device from the first
    device's list. Its private view must clear and future private requests fail.
@@ -186,6 +189,8 @@ snapshot and explicit invalidation; no product restore command exists here.
 See [the experiment record](../../docs/testing/auth-ingress-spike.md) for actual
 local Chrome and Aside private HTTPS observations and their same-host limit.
 Independent Task review and delegated Task acceptance are complete. The two
-final Low test-oracle corrections passed focused local checks. Full renderer/download delivery and
-physical Safari storage evidence remain TASK-001-04; this fixture does not
-close those gate obligations.
+final Low test-oracle corrections passed focused local checks. The unchanged
+fixture passed full Go race/build and both Chrome checkers again on 2026-10-15,
+supporting G-AUTH's bounded closing criteria. Full renderer/download delivery
+and the selected physical-device proof remain TASK-001-04; Safari remains a
+later platform-support obligation. This fixture does not close those obligations.
