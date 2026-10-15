@@ -1,6 +1,6 @@
 # Architecture decision records
 
-ADR-006 is accepted for the bounded [G-VIEW `pass`](../testing/viewer-spike.md); the other records remain `proposed`. ADR-001 identifies an executed stack/lifecycle slice without accepting its pending production/viewer details. ADR-005 records the completed, independently reviewed disposable authentication/private-ingress experiment and bounded [G-AUTH `pass`](../testing/auth-ingress-spike.md); the ADR remains `proposed`, while production API and renderer/download adoption remain pending. Owner-established directions, including D-08 personal-developer speed/normal JavaScript and D-09 unrestricted directory results, are binding inputs; concrete mechanisms still need evidence.
+ADR-006 is accepted for the bounded [G-VIEW `pass`](../testing/viewer-spike.md), and ADR-009 is accepted for the bounded [G-AI `pass`](../testing/provider-source-spike.md); the other records remain `proposed`. ADR-001 identifies an executed stack/lifecycle slice without accepting its pending production/viewer details. ADR-005 records the completed, independently reviewed disposable authentication/private-ingress experiment and bounded [G-AUTH `pass`](../testing/auth-ingress-spike.md); the ADR remains `proposed`, while production API and renderer/download adoption remain pending. Owner-established directions, including D-08 personal-developer speed/normal JavaScript and D-09 unrestricted directory results, are binding inputs; concrete mechanisms still need evidence.
 
 | ID | Decision | Gate |
 | --- | --- | --- |

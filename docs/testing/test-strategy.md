@@ -1,6 +1,6 @@
 # Test strategy and evidence gates
 
-**Current status:** [TASK-001-02 stack evidence](stack-spike.md) records G-STACK `pass` for the declared macOS/Linux ARM64 combination. [TASK-001-03 auth evidence](auth-ingress-spike.md) records G-AUTH `pass` for the bounded one-owner/private-HTTPS experiment. [TASK-001-04 viewer evidence](viewer-spike.md) records bounded G-VIEW `pass` after completed independent confirmation. G-AI, G-VALUE and G-CONTRACT remain `not_run`; Task completion still requires applicable independent review. Written procedures do not pass gates. Tests must run against the implementation produced by the assigned Tasks.
+**Current status:** [TASK-001-02 stack evidence](stack-spike.md) records G-STACK `pass` for the declared macOS/Linux ARM64 combination. [TASK-001-03 auth evidence](auth-ingress-spike.md) records G-AUTH `pass` for the bounded one-owner/private-HTTPS experiment. [TASK-001-04 viewer evidence](viewer-spike.md) records bounded G-VIEW `pass` after completed independent confirmation. [TASK-001-05 provider/source evidence](provider-source-spike.md) records bounded G-AI `pass`. G-VALUE and G-CONTRACT remain `not_run`; Task completion still requires applicable independent review. Written procedures do not pass gates. Tests must run against the implementation produced by the assigned Tasks.
 
 ## Current baseline and test effort
 
