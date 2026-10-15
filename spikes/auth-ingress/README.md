@@ -92,7 +92,9 @@ control a physical peer or establish Safari support.
    on the same origin. Repeat through the real private HTTPS origin with a
    second test client. Changing origin does not transfer a pairing. A separate
    physical peer is optional for this auth experiment; TASK-001-04 owns the
-   separate physical renderer check, now prioritized on Android Chrome.
+   separate renderer check. The current owner amendment selects an actual
+   agent-operated Aside private browser for that early gate; Android Chrome
+   and Safari remain later support/release obligations.
 4. Approve the second exact request from the already paired owner's form; a
    pending client cannot approve itself. Revoke the second device from the first
    device's list. Its private view must clear and future private requests fail.
@@ -192,5 +194,5 @@ Independent Task review and delegated Task acceptance are complete. The two
 final Low test-oracle corrections passed focused local checks. The unchanged
 fixture passed full Go race/build and both Chrome checkers again on 2026-10-15,
 supporting G-AUTH's bounded closing criteria. Full renderer/download delivery
-and the selected physical-device proof remain TASK-001-04; Safari remains a
-later platform-support obligation. This fixture does not close those obligations.
+and the selected actual Aside private-browser proof remain TASK-001-04;
+Android Chrome and Safari remain later platform-support obligations. This fixture does not close those obligations.

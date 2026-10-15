@@ -55,3 +55,14 @@ func Fixture(database, control string, hosts, origins map[string]bool) (http.Han
 	}
 	return browserHandler(s, bootstrap, hosts, origins, connectPage), s.db.Close, nil
 }
+
+// RestoreFixtureAuth exercises the existing disposable restore transaction.
+// Its caller must guard local-control authority; this exposes no HTTP route.
+func RestoreFixtureAuth(database string) error {
+	s, err := open(database)
+	if err != nil {
+		return err
+	}
+	defer s.db.Close()
+	return s.invalidateRestoredAuth()
+}

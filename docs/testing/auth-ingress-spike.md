@@ -60,8 +60,9 @@ own tabs were closed. The existing user tab was preserved.
 These are two origin-separated clients on one host and a real private HTTPS
 route, not proof of another physical network peer. TASK-001-03 names a second
 test client and a real private route; the earlier physical-device blocking
-interpretation is corrected without changing that requirement. The owner now
-prioritizes actual Android Chrome for TASK-001-04's physical renderer check; Safari remains a later platform-support obligation. Neither
+interpretation is corrected without changing that requirement. The subsequent [owner amendment](../decisions.md#owner-amendment-2026-10-15-agent-operated-private-browser-gate)
+selects agent-operated Aside private HTTPS renderer proof for TASK-001-04;
+Android Chrome and Safari remain later platform-support obligations. Neither
 physical-device storage behavior nor optional Home Screen behavior can be
 inferred from these desktop browsers.
 The portable `check_private_browser.py` additionally passed against the corrected
