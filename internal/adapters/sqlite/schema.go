@@ -35,4 +35,22 @@ CREATE TABLE device_sessions(session_id TEXT PRIMARY KEY,principal_id TEXT NOT N
 CREATE TABLE pairings(pairing_id TEXT PRIMARY KEY,device_label TEXT NOT NULL,origin TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,state TEXT NOT NULL CHECK(state IN ('pending','approved','rejected','expired')),revision INTEGER NOT NULL CHECK(revision>=1),secret_hash TEXT NOT NULL,code_hash TEXT NOT NULL,client_hash TEXT NOT NULL,auth_epoch TEXT NOT NULL,poll_after INTEGER NOT NULL,consumed INTEGER NOT NULL CHECK(consumed IN (0,1)));
 CREATE INDEX pairings_client_created ON pairings(client_hash,created_at);
 `,
+	`ALTER TABLE uploads ADD COLUMN originating_device_id TEXT;
+ALTER TABLE uploads ADD COLUMN created_at TEXT NOT NULL DEFAULT '';
+ALTER TABLE uploads ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+ALTER TABLE uploads ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE uploads ADD COLUMN seal_operation_id TEXT;
+ALTER TABLE uploads ADD COLUMN sealed_object_hash TEXT;
+ALTER TABLE jobs ADD COLUMN result BLOB;
+ALTER TABLE document_versions ADD COLUMN payload_sha256 TEXT NOT NULL DEFAULT '';
+ALTER TABLE document_versions ADD COLUMN manifest_sha256 TEXT NOT NULL DEFAULT '';
+ALTER TABLE document_versions ADD COLUMN supplied_metadata_hash TEXT;
+CREATE TABLE upload_entries(upload_id TEXT NOT NULL REFERENCES uploads(upload_id),relative_path TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('file','directory','symlink')),link_text TEXT NOT NULL DEFAULT '',expected_size INTEGER,final INTEGER NOT NULL CHECK(final IN (0,1)),PRIMARY KEY(upload_id,relative_path));
+CREATE TRIGGER upload_revision AFTER UPDATE OF state,checkpoint,error,seal_job_id,sealed_content_set_id,sealed_object_hash ON uploads
+WHEN old.state IS NOT new.state OR old.checkpoint IS NOT new.checkpoint OR old.error IS NOT new.error OR old.seal_job_id IS NOT new.seal_job_id OR old.sealed_content_set_id IS NOT new.sealed_content_set_id OR old.sealed_object_hash IS NOT new.sealed_object_hash
+BEGIN UPDATE uploads SET revision=old.revision+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE upload_id=new.upload_id; END;
+CREATE TABLE import_intents(job_id TEXT PRIMARY KEY REFERENCES jobs(job_id),value BLOB NOT NULL CHECK(json_valid(value)));
+CREATE TABLE metadata_indexes(index_id TEXT PRIMARY KEY,principal_id TEXT NOT NULL,metadata_hash TEXT NOT NULL REFERENCES content_objects(content_hash),content_set_id TEXT NOT NULL REFERENCES content_sets(content_set_id),job_id TEXT REFERENCES jobs(job_id),complete INTEGER NOT NULL DEFAULT 0 CHECK(complete IN(0,1)));
+CREATE TABLE import_metadata(job_id TEXT NOT NULL REFERENCES metadata_indexes(index_id) ON UPDATE CASCADE ON DELETE CASCADE,kind TEXT NOT NULL,item_id TEXT NOT NULL,value BLOB NOT NULL,PRIMARY KEY(job_id,kind,item_id));
+`,
 }

@@ -16,6 +16,7 @@ var (
 	ErrDeleting       = errors.New("object deletion is reserved")
 	ErrReconciliation = errors.New("operation reconciliation required")
 	ErrDenied         = errors.New("current authority denied")
+	ErrInvalidTarget  = errors.New("invalid action target")
 )
 
 type Object struct {
@@ -84,6 +85,7 @@ type Version struct {
 	Sequence                                                                       int64
 	DefaultPage                                                                    *string
 	Metadata                                                                       []byte
+	PayloadSHA, ManifestSHA, MetadataHash                                          string
 }
 type Entry struct {
 	ContentSetID, Path, Kind, Hash, LinkText string
@@ -113,6 +115,7 @@ type Configuration struct {
 
 type Job struct {
 	Revision          int64            `json:"revision"`
+	Result            json.RawMessage  `json:"result,omitempty"`
 	Scope             json.RawMessage  `json:"scope"`
 	ConfigRevision    int64            `json:"config_revision"`
 	Permissions       map[string]int64 `json:"permissions_revisions"`
@@ -133,11 +136,13 @@ type Checkpoint struct {
 	Complete        bool   `json:"complete_input"`
 }
 type Upload struct {
-	ID, PrincipalID, Purpose, InputMode, SelectionName string
-	Target                                             []byte
-	State                                              string
-	Checkpoint                                         Checkpoint
-	SealJobID, ContentSetID, Error                     string
+	ID, PrincipalID, Purpose, InputMode, SelectionName          string
+	Target                                                      []byte
+	State                                                       string
+	Checkpoint                                                  Checkpoint
+	SealJobID, ContentSetID, Error                              string
+	DeviceID, CreatedAt, UpdatedAt, SealOperationID, ObjectHash string
+	Revision                                                    int64
 }
 type UploadRange struct {
 	UploadID, Path string

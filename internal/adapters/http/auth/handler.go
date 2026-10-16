@@ -96,7 +96,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, header := range strings.Split(r.Header.Get("Access-Control-Request-Headers"), ",") {
 			switch strings.ToLower(strings.TrimSpace(header)) {
-			case "", "authorization", "content-type", "if-match", "idempotency-key", "last-event-id":
+			case "", "authorization", "content-type", "if-match", "idempotency-key", "last-event-id", "haeryong-upload-offset", "haeryong-upload-chunk-sha256", "haeryong-upload-length", "haeryong-upload-final":
 			default:
 				fail(w, r, session.ErrOrigin)
 				return
@@ -109,7 +109,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, If-Match, Idempotency-Key, Last-Event-ID")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, If-Match, Idempotency-Key, Last-Event-ID, Haeryong-Upload-Offset, Haeryong-Upload-Chunk-SHA256, Haeryong-Upload-Length, Haeryong-Upload-Final")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -267,8 +267,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.events(w, r, token)
 	default:
 		if h.protected != nil {
-			h.private(w, r, token, func() { h.protected.ServeHTTP(w, r) })
-			return
+			router, scoped := h.protected.(interface{ Handles(*http.Request) bool })
+			if !scoped || router.Handles(r) {
+				h.private(w, r, token, func() { h.protected.ServeHTTP(w, r) })
+				return
+			}
 		}
 		if futureCapability(r.Method, path) {
 			fail(w, r, errFeatureNotReady)
@@ -553,6 +556,7 @@ func fail(w http.ResponseWriter, r *http.Request, err error) {
 	}{
 		{session.ErrRequired, 401, "AUTH_REQUIRED"}, {session.ErrExpired, 401, "SESSION_EXPIRED"}, {session.ErrRevoked, 401, "SESSION_REVOKED"},
 		{session.ErrOrigin, 403, "ORIGIN_REJECTED"}, {session.ErrInvalid, 400, "INVALID_REQUEST"}, {session.ErrLimited, 429, "RATE_LIMITED"},
+		{domain.ErrInvalidTarget, 400, "INVALID_REQUEST"},
 		{session.ErrMissing, 428, "PRECONDITION_REQUIRED"}, {domain.ErrPrecondition, 412, "PRECONDITION_FAILED"}, {domain.ErrNotFound, 404, "NOT_FOUND"},
 		{domain.ErrDenied, 403, "FORBIDDEN"}, {domain.ErrConflict, 409, "OPERATION_CONFLICT"}, {domain.ErrTransition, 409, "INVALID_TRANSITION"},
 		{domain.ErrReconciliation, 409, "OPERATION_RECONCILIATION_REQUIRED"},

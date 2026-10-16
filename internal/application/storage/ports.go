@@ -29,6 +29,46 @@ type Store interface {
 // Each callback is a short serialized write transaction. Files are streamed and
 // synced before entry; only atomic publication/directory sync may run inside it.
 type WriteTx interface {
+	WorkJobs(int) ([]domain.Job, error)
+	StageEntry(domain.Entry) error
+	DraftTarget(string) (domain.DraftTarget, error)
+	AnnotationTarget(string) (domain.AnnotationTarget, error)
+	Page(string, string) (domain.Page, error)
+	Library() (domain.Library, error)
+	Upload(string) (domain.Upload, error)
+	Uploads(string, string, bool, int) ([]domain.Upload, error)
+	UploadEntries(string, string, int) ([]domain.UploadEntry, error)
+	Ranges(string, string, int64, int) ([]domain.UploadRange, error)
+	UploadPins(string, string, int) ([]domain.Pin, error)
+	UploadStats(string) (domain.UploadStats, error)
+	PutUploadEntry(domain.UploadEntry) error
+	TransferDigest(string) (string, error)
+	UploadComplete(string) error
+	TouchUpload(string, string) error
+	SetSealOperation(string, string) error
+	ContentSet(string) (string, bool, error)
+	Entries(string, string, int) ([]domain.Entry, error)
+	SealContentSetDigest(string, string) error
+	PutUploadObject(string, string) error
+	PutImportIntent(domain.ImportIntent) error
+	FinalizeImport(domain.ImportIntent, domain.Version) error
+	DiscardContentSet(string) error
+	PinContentSet(string, string) error
+	ReleaseOwnerPins(string, string) error
+	ImportIntent(string) (domain.ImportIntent, error)
+	SetJobResult(string, []byte) error
+	ConfigureJobScope(domain.Job) error
+	ReclaimAbandonedUpload(string) error
+	CreateMetadataIndex(domain.MetadataIndex) error
+	MetadataIndex(string) (domain.MetadataIndex, error)
+	CompleteMetadataIndex(string) error
+	ReleaseMetadataPreparation(string) error
+	LinkMetadataIndex(string, string) error
+	PutImportMetadata(string, string, string, []byte) error
+	ImportMetadata(string, string, string, int) ([]domain.Resource, error)
+	ValidateImportMetadata(string, string) (string, error)
+	PublishedVersion(string) (domain.Version, error)
+
 	Receipt(domain.OperationKey) (domain.Receipt, error)
 	Events(string, int64, int) ([]domain.Event, error)
 	EventHead() (string, int64, error)

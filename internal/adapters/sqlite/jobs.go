@@ -15,11 +15,12 @@ import (
 
 func job(ctx context.Context, q rowReader, id string) (domain.Job, error) {
 	j := domain.Job{ID: id}
-	var permissions []byte
-	err := q.QueryRowContext(ctx, "SELECT kind,state,attempt_generation,cancel_requested,coalesce(parent_id,''),coalesce(upload_id,''),error,scope,config_revision,permissions_revisions,coalesce(deadline,''),revision FROM jobs WHERE job_id=?", id).Scan(&j.Kind, &j.State, &j.AttemptGeneration, &j.CancelRequested, &j.ParentID, &j.UploadID, &j.Error, &j.Scope, &j.ConfigRevision, &permissions, &j.Deadline, &j.Revision)
+	var permissions, result []byte
+	err := q.QueryRowContext(ctx, "SELECT kind,state,attempt_generation,cancel_requested,coalesce(parent_id,''),coalesce(upload_id,''),error,scope,config_revision,permissions_revisions,coalesce(deadline,''),revision,result FROM jobs WHERE job_id=?", id).Scan(&j.Kind, &j.State, &j.AttemptGeneration, &j.CancelRequested, &j.ParentID, &j.UploadID, &j.Error, &j.Scope, &j.ConfigRevision, &permissions, &j.Deadline, &j.Revision, &result)
 	if err != nil {
 		return j, notFound(err)
 	}
+	j.Result = result
 	if err := json.Unmarshal(permissions, &j.Permissions); err != nil {
 		return j, err
 	}
@@ -120,6 +121,9 @@ func (t *writeTx) ConfirmStop(id string, generation int64) error {
 			return err
 		}
 	}
+	if err := t.stoppedOwnership(j); err != nil {
+		return err
+	}
 	if j.UploadID != "" {
 		if err := t.exec("UPDATE uploads SET state='open' WHERE upload_id=? AND state='sealing' AND seal_job_id=?", j.UploadID, id); err != nil {
 			return err
@@ -174,6 +178,9 @@ func (t *writeTx) FinishJob(id string, generation int64, failure string, apply f
 				return err
 			}
 		}
+		if err := t.stoppedOwnership(j); err != nil {
+			return err
+		}
 		return t.jobUpdated(id)
 	}
 	if apply != nil {
@@ -190,7 +197,7 @@ func (t *writeTx) FinishJob(id string, generation int64, failure string, apply f
 func upload(ctx context.Context, q rowReader, id string) (domain.Upload, error) {
 	u := domain.Upload{ID: id}
 	var checkpoint []byte
-	err := q.QueryRowContext(ctx, "SELECT principal_id,purpose,input_mode,selection_name,target,state,checkpoint,coalesce(seal_job_id,''),coalesce(sealed_content_set_id,''),error FROM uploads WHERE upload_id=?", id).Scan(&u.PrincipalID, &u.Purpose, &u.InputMode, &u.SelectionName, &u.Target, &u.State, &checkpoint, &u.SealJobID, &u.ContentSetID, &u.Error)
+	err := q.QueryRowContext(ctx, "SELECT principal_id,purpose,input_mode,selection_name,target,state,checkpoint,coalesce(seal_job_id,''),coalesce(sealed_content_set_id,''),error,coalesce(originating_device_id,''),created_at,updated_at,revision,coalesce(seal_operation_id,''),coalesce(sealed_object_hash,'') FROM uploads WHERE upload_id=?", id).Scan(&u.PrincipalID, &u.Purpose, &u.InputMode, &u.SelectionName, &u.Target, &u.State, &checkpoint, &u.SealJobID, &u.ContentSetID, &u.Error, &u.DeviceID, &u.CreatedAt, &u.UpdatedAt, &u.Revision, &u.SealOperationID, &u.ObjectHash)
 	if err != nil {
 		return u, notFound(err)
 	}
@@ -232,7 +239,7 @@ func (t *writeTx) CreateUpload(u domain.Upload) error {
 	default:
 		return errors.New("invalid upload purpose")
 	}
-	return t.exec("INSERT INTO uploads VALUES(?,?,?,?,?,?,'open',?,NULL,NULL,'')", u.ID, u.PrincipalID, u.Purpose, u.InputMode, u.SelectionName, u.Target, jsonBytes(u.Checkpoint))
+	return t.exec("INSERT INTO uploads(upload_id,principal_id,purpose,input_mode,selection_name,target,state,checkpoint,seal_job_id,sealed_content_set_id,error,originating_device_id,created_at,updated_at) VALUES(?,?,?,?,?,?,'open',?,NULL,NULL,'',?,?,?)", u.ID, u.PrincipalID, u.Purpose, u.InputMode, u.SelectionName, u.Target, jsonBytes(u.Checkpoint), nullable(u.DeviceID), u.CreatedAt, u.UpdatedAt)
 }
 func (t *writeTx) RecordRange(r domain.UploadRange, expectedGeneration int64, inventory string) (domain.Checkpoint, error) {
 	u, err := upload(t.ctx, t.tx, r.UploadID)
@@ -459,4 +466,26 @@ func (s *Store) recoverLocalJobs(ctx context.Context) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+func (t *writeTx) stoppedOwnership(j domain.Job) error {
+	switch j.Kind {
+	case "import":
+		if err := t.exec("DELETE FROM metadata_indexes WHERE job_id=?", j.ID); err != nil {
+			return err
+		}
+	case "upload_seal":
+		if err := t.DiscardContentSet(j.ID); err != nil {
+			return err
+		}
+	default:
+		return nil
+	}
+	if err := t.ReleaseOwnerPins("job", j.ID); err != nil {
+		return err
+	}
+	if j.UploadID != "" {
+		return t.ReclaimAbandonedUpload(j.UploadID)
+	}
+	return nil
 }

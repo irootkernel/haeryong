@@ -43,6 +43,7 @@ type Runner struct {
 	Storage      Storage
 	Endpoint     Endpoint
 	ProfileFault func(string) error
+	Work         func(context.Context) error
 }
 
 func (r Runner) Run(ctx context.Context, onReady func(Identity)) (result error) {
@@ -81,6 +82,14 @@ func (r Runner) Run(ctx context.Context, onReady func(Identity)) (result error) 
 	if err != nil {
 		return err
 	}
+	var workDone <-chan error
+	if r.Work != nil {
+		workCtx, stopWork := context.WithCancel(controlCtx)
+		done := make(chan error, 1)
+		workDone = done
+		go func() { done <- r.Work(workCtx); close(done) }()
+		defer func() { stopWork(); result = errors.Join(result, <-done) }()
+	}
 	// The adapter's shutdown is bounded; it owns any graceful-drain timeout.
 	defer func() { result = errors.Join(result, r.Endpoint.Close(context.Background())) }()
 	if err := writeJSON(filepath.Join(writer.Profile.DataDir, "runtime"), "endpoint.json", id); err != nil {
@@ -97,6 +106,9 @@ func (r Runner) Run(ctx context.Context, onReady func(Identity)) (result error) 
 	select {
 	case <-controlCtx.Done():
 		return nil
+	case err := <-workDone:
+		workDone = nil
+		return err
 	case err := <-r.Endpoint.Done():
 		return err
 	}

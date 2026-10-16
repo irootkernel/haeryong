@@ -217,7 +217,7 @@ func (t *writeTx) PutVersion(v domain.Version) error {
 	if v.Sequence != 0 {
 		sequence = v.Sequence
 	}
-	return t.exec("INSERT INTO document_versions VALUES(?,?,?,?,?,?,?,?,?,?)", v.ID, v.DocumentID, sequence, nullable(v.BaseVersionID), v.ContentSetID, v.Title, v.DefaultPage, v.ViewerProfile, v.SourceBasis, v.Metadata)
+	return t.exec("INSERT INTO document_versions(version_id,document_id,sequence,base_version_id,content_set_id,title_snapshot,default_page,viewer_profile,source_basis,metadata,payload_sha256,manifest_sha256,supplied_metadata_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", v.ID, v.DocumentID, sequence, nullable(v.BaseVersionID), v.ContentSetID, v.Title, v.DefaultPage, v.ViewerProfile, v.SourceBasis, v.Metadata, v.PayloadSHA, v.ManifestSHA, nullable(v.MetadataHash))
 }
 func (t *writeTx) PutPage(p domain.Page) error {
 	if err := t.mutableVersion(p.VersionID); err != nil {

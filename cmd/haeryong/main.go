@@ -17,9 +17,12 @@ import (
 	"syscall"
 	"time"
 
+	"haeryong.local/haeryong/internal/adapters/content/staging"
 	"haeryong.local/haeryong/internal/adapters/foundation"
+	httpimports "haeryong.local/haeryong/internal/adapters/http/imports"
 	"haeryong.local/haeryong/internal/adapters/localcontrol"
 	appauth "haeryong.local/haeryong/internal/application/auth"
+	importer "haeryong.local/haeryong/internal/application/import"
 	"haeryong.local/haeryong/internal/application/service"
 )
 
@@ -116,7 +119,7 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 	}
 	switch command {
 	case "version":
-		return emit(map[string]string{"binary": "development", "local_control_api": service.APIVersion, "product_api": "auth_foundation_v1", "package": "not_implemented", "skill": "not_implemented"})
+		return emit(map[string]string{"binary": "development", "local_control_api": service.APIVersion, "product_api": "import_foundation_v1", "package": "1.0", "skill": "not_implemented"})
 	case "init":
 		p, err := service.Initialize(opt.selection)
 		if err != nil {
@@ -127,14 +130,15 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 		var outputErr error
 		store := foundation.New(nil)
 		core := appauth.New(store)
+		imports := importer.New(store, core, store, staging.New())
 		endpoint := &localcontrol.HTTP{Auth: core, Product: func(origin string) (http.Handler, error) {
 			configuration, err := store.Configuration(ctx)
 			if err != nil {
 				return nil, err
 			}
-			return productHandler(core, origin, configuration.Value)
+			return productHandler(core, origin, configuration.Value, httpimports.New(imports))
 		}}
-		runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: store, Endpoint: endpoint}
+		runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: store, Endpoint: endpoint, Work: imports.Run}
 		err := runner.Run(ctx, func(id service.Identity) { outputErr = emit(id) })
 		return errors.Join(err, outputErr)
 	case "service status", "status", "doctor", "service stop":

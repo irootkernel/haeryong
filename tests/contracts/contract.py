@@ -551,7 +551,7 @@ class Model:
             target_copy = deepcopy(target)
             if purpose == 'result':
                 target_copy.setdefault('draft_id', None)
-            self.uploads[upload_id] = {'id': upload_id, 'purpose': purpose, 'target': target_copy, 'input_mode': body['input_mode'], 'selection_name': body.get('selection_name'), 'state': 'open', 'bytes': b'', 'checkpoint': {'generation': 1, 'inventory_sha256': digest(b''), 'accepted_bytes': '0', 'complete_input': False}, 'job': None, 'generation': 1, 'adopted': False, 'pins': {'staging': 1, 'adopted': 0, 'active_work': 0, 'recovery': 0}, 'available': True, 'normalization': {}}
+            self.uploads[upload_id] = {'id': upload_id, 'purpose': purpose, 'target': target_copy, 'input_mode': body['input_mode'], 'selection_name': body.get('selection_name'), 'state': 'open', 'bytes': b'', 'checkpoint': {'generation': 1, 'inventory_sha256': digest(b''), 'accepted_bytes': '0', 'complete_input': False}, 'job': None, 'generation': 1, 'adopted': False, 'pins': {'staging': 1, 'adopted': 0, 'active_work': 0, 'recovery': 0}, 'available': True, 'normalization': {}, 'revision': 1}
             return upload_id
         return self.request(key, '/uploads', body, effect, authority, scope)
 
@@ -562,6 +562,8 @@ class Model:
             fail('INVALID_TRANSITION')
         if checkpoint['accepted_bytes'] != str(len(raw)) or checkpoint['inventory_sha256'] != digest(raw):
             fail('HASH_MISMATCH')
+        if upload['bytes'] != raw or upload['checkpoint'] != checkpoint:
+            upload['revision'] += 1
         upload['bytes'], upload['checkpoint'] = raw, deepcopy(checkpoint)
 
     def complete(self, key, upload_id, checkpoint):
@@ -575,6 +577,7 @@ class Model:
             if upload['state'] == 'open':
                 job = str(uuid.uuid4())
                 upload['state'], upload['job'] = 'sealing', job
+                upload['revision'] += 1
                 upload['pins']['active_work'] = 1
                 self.jobs[job] = {'state': 'running', 'generation': upload['generation'], 'cancel': False}
             return {'status': 202, 'job_id': upload['job']}
@@ -589,9 +592,11 @@ class Model:
                 upload['pins']['active_work'] = 0
                 if upload['state'] != 'abandoned':
                     upload['state'] = 'open'
+                    upload['revision'] += 1
             return False
         job['state'] = 'completed' if success else 'failed'
         upload['state'] = 'sealed' if success else 'open'
+        upload['revision'] += 1
         upload['pins']['active_work'] = 0
         if success and upload['purpose'] in ('context', 'body', 'metadata'):
             object_id = upload.setdefault('object_id', str(uuid.uuid4()))
@@ -613,7 +618,9 @@ class Model:
         upload = self.uploads[upload_id]
         if upload['job'] and self.jobs[upload['job']]['state'] not in ('completed', 'failed', 'cancelled'):
             self.cancel(upload_id)
-        upload['state'] = 'abandoned'
+        if upload['state'] != 'abandoned':
+            upload['state'] = 'abandoned'
+            upload['revision'] += 1
 
     def resume(self, job_id):
         job = self.jobs[job_id]
@@ -723,6 +730,8 @@ class Model:
     def summary(self, upload_id, detail=False, authorized=True):
         upload = self.uploads[upload_id]
         value = {'upload_id': upload_id, 'originating_principal_id': '11111111-1111-4111-8111-111111111111', 'originating_device_id': None, 'purpose': upload['purpose'], 'input_mode': upload['input_mode'], 'selection_name': upload['selection_name'], 'target': deepcopy(upload['target']), 'state': upload['state'], 'byte_size': str(len(upload['bytes'])), 'staging_bytes': str(len(upload['bytes'])), 'created_at': '2026-10-16T00:00:00Z', 'updated_at': '2026-10-16T00:00:00Z', 'reusable': self.reusable(upload_id, authorized), 'unavailable_reason': None if self.reusable(upload_id, authorized) else 'authority_or_bytes_unavailable', 'pin_summary': deepcopy(upload['pins']), 'pins_url': '/uploads/' + upload_id + '/pins', 'detail_url': '/uploads/' + upload_id}
+        value['revision'] = upload['revision']
+        value['etag'] = '"upload-' + upload_id + '-' + digest(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')) + '"'
         if detail:
             object_ref = self.object_reference(upload_id) if self.reusable(upload_id, authorized) and 'object_id' in upload else None
             value.update({'checkpoint': upload['checkpoint'], 'ranges_url': '/uploads/' + upload_id + '/ranges', 'entries_url': '/uploads/' + upload_id + '/entries', 'error': None, 'seal_job_id': upload['job'], 'seal_operation_id': None, 'sealed_content_set_id': upload.get('content_set_id'), 'sealed_object_ref': object_ref})

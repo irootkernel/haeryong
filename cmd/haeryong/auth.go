@@ -16,7 +16,7 @@ import (
 	"haeryong.local/haeryong/internal/domain"
 )
 
-func productHandler(core *appauth.Service, local string, configuration []byte) (http.Handler, error) {
+func productHandler(core *appauth.Service, local string, configuration []byte, protected ...http.Handler) (http.Handler, error) {
 	var c struct {
 		Network struct {
 			RemoteEnabled bool     `json:"remote_enabled"`
@@ -54,7 +54,11 @@ func productHandler(core *appauth.Service, local string, configuration []byte) (
 		policy.Hosts = append(policy.Hosts, remote.Host)
 		policy.Origins = append(policy.Origins, *c.Network.External)
 	}
-	return httpauth.New(core, policy, nil)
+	var next http.Handler
+	if len(protected) > 0 {
+		next = protected[0]
+	}
+	return httpauth.New(core, policy, next)
 }
 func bootstrapCommand(ctx context.Context, opt options, emit func(any) error, input io.Reader) error {
 	if opt.endpoint != "" {

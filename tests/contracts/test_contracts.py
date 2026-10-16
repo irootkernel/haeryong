@@ -27,6 +27,27 @@ def checkpoint(raw=b'complete original bytes', generation=1):
 
 
 class Contracts(unittest.TestCase):
+    def test_Task00204_upload_validators_and_end_input_declaration(self):
+        upload = self.model.create(key(701), {'purpose': 'result', 'target': {'project_id': P, 'document_id': None}, 'input_mode': 'directory'})
+        before = self.model.summary(upload)
+        confirmed = {'generation': 4, 'inventory_sha256': c.digest(b'ledger'), 'accepted_bytes': '1048576', 'complete_input': False}
+        end_input = dict(confirmed, generation=confirmed['generation'] + 1, complete_input=True)
+        c.validate('checkpoint', confirmed)
+        c.validate('checkpoint', end_input)
+        self.assertFalse(confirmed['complete_input'])
+        self.assertEqual(end_input['accepted_bytes'], confirmed['accepted_bytes'])
+        self.assertEqual(end_input['inventory_sha256'], confirmed['inventory_sha256'])
+        self.assertEqual(before['revision'], 1)
+        for field in ('revision', 'etag'):
+            invalid = dict(before)
+            del invalid[field]
+            with self.assertRaises(c.ContractError):
+                c.validate('upload_summary', invalid)
+        self.model.abandon(upload)
+        after = self.model.summary(upload)
+        self.assertGreater(after['revision'], before['revision'])
+        self.assertNotEqual(after['etag'], before['etag'])
+
     def test_Task00203_selected_auth_control_shapes(self):
         c.validate('pairing_create', {'device_label': 'Remembered 기기'})
         c.validate('pairing_poll', {'polling_secret': 'a' * 64})
@@ -391,7 +412,7 @@ class Contracts(unittest.TestCase):
     def test_C5_01_summary_and_owner_recovery(self):
         upload, _ = self.staged()
         summary = self.model.summary(upload)
-        expected = {'upload_id', 'originating_principal_id', 'originating_device_id', 'purpose', 'input_mode', 'selection_name', 'target', 'state', 'byte_size', 'staging_bytes', 'created_at', 'updated_at', 'reusable', 'unavailable_reason', 'pin_summary', 'pins_url', 'detail_url'}
+        expected = {'upload_id', 'originating_principal_id', 'originating_device_id', 'purpose', 'input_mode', 'selection_name', 'target', 'state', 'byte_size', 'staging_bytes', 'created_at', 'updated_at', 'reusable', 'unavailable_reason', 'pin_summary', 'pins_url', 'detail_url', 'revision', 'etag'}
         self.assertEqual(set(summary), expected)
         self.assertNotIn('error', summary)
         self.assertTrue(summary['reusable'])

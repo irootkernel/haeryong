@@ -430,6 +430,9 @@ func (s *Service) Job(ctx context.Context, token, id string) (domain.Job, error)
 		}
 		var e error
 		out, e = tx.Job(id)
+		if e == nil {
+			e = visibleJob(tx, out)
+		}
 		return e
 	})
 	return out, err
@@ -441,8 +444,22 @@ func (s *Service) Jobs(ctx context.Context, token string) ([]domain.Job, error) 
 			return e
 		}
 		var e error
-		out, e = tx.Jobs()
-		return e
+		rows, e := tx.Jobs()
+		if e != nil {
+			return e
+		}
+		out = []domain.Job{}
+		for _, j := range rows {
+			e := visibleJob(tx, j)
+			if errors.Is(e, domain.ErrNotFound) {
+				continue
+			}
+			if e != nil {
+				return e
+			}
+			out = append(out, j)
+		}
+		return nil
 	})
 	return out, err
 }
@@ -458,6 +475,23 @@ func (s *Service) Events(ctx context.Context, token, epoch string, after int64) 
 			return e
 		}
 		for i, event := range out {
+			if event.ResourceKind == "job" {
+				job, err := tx.Job(event.ResourceID)
+				if err == nil {
+					err = visibleJob(tx, job)
+				}
+				if errors.Is(err, domain.ErrNotFound) {
+					out[i].ResourceKind = "library"
+					out[i].ResourceID = ""
+					out[i].Kind = "library.invalidated"
+					out[i].Body = nil
+					out[i].Revision = 0
+					continue
+				}
+				if err != nil {
+					return err
+				}
+			}
 			var target string
 			if event.ResourceKind == "document" {
 				target = "/api/v1/documents/" + event.ResourceID
@@ -540,7 +574,7 @@ func (a *Authority) AuthorizeWrite(ctx context.Context, tx app.WriteTx, r domain
 	if record.PrincipalID != r.Key.PrincipalID {
 		return domain.ErrDenied
 	}
-	return visibleTarget(tx, r.Target)
+	return visibleRequest(tx, r)
 }
 func (a *Authority) Filter(ctx context.Context, r domain.Request, response domain.Response) (domain.Response, error) {
 	if err := a.Authorize(ctx, r); err != nil {
@@ -555,12 +589,13 @@ func (a *Authority) Filter(ctx context.Context, r domain.Request, response domai
 				return err
 			}
 		}
-		if err := visibleTarget(tx, r.Target); err != nil {
+		if err := visibleRequest(tx, r); err != nil {
 			return err
 		}
 		var data struct {
 			DocumentID string          `json:"document_id"`
 			VersionID  string          `json:"version_id"`
+			JobID      string          `json:"job_id"`
 			Data       json.RawMessage `json:"data"`
 		}
 		if json.Unmarshal(response.Body, &data) != nil {
@@ -568,6 +603,15 @@ func (a *Authority) Filter(ctx context.Context, r domain.Request, response domai
 		}
 		if len(data.Data) > 0 {
 			_ = json.Unmarshal(data.Data, &data)
+		}
+		if data.JobID != "" {
+			job, err := tx.Job(data.JobID)
+			if err != nil {
+				return err
+			}
+			if err := visibleJob(tx, job); err != nil {
+				return err
+			}
 		}
 		if data.VersionID != "" {
 			if err := visibleTarget(tx, "/api/v1/versions/"+data.VersionID); err != nil {
@@ -653,6 +697,23 @@ func (s *Service) FilterEvent(ctx context.Context, token string, event domain.Ev
 			return domain.ErrPrecondition
 		}
 		target := ""
+		if event.ResourceKind == "job" {
+			job, err := tx.Job(event.ResourceID)
+			if err == nil {
+				err = visibleJob(tx, job)
+			}
+			if errors.Is(err, domain.ErrNotFound) {
+				event.ResourceKind = "library"
+				event.ResourceID = ""
+				event.Kind = "library.invalidated"
+				event.Body = nil
+				event.Revision = 0
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+		}
 		if event.ResourceKind == "document" {
 			target = "/api/v1/documents/" + event.ResourceID
 		}
@@ -677,3 +738,79 @@ func (s *Service) FilterEvent(ctx context.Context, token string, event domain.Ev
 }
 
 var pairingValidator = regexp.MustCompile(`^"pairing-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-r[1-9][0-9]*"$`)
+
+// AuthenticateWrite supplies current bearer checks inside a caller-owned typed
+// writer transaction without recursively acquiring the Store mutex.
+func (s *Service) AuthenticateWrite(ctx context.Context, tx app.WriteTx, token string) (domain.Session, error) {
+	return s.authenticateTx(tx, token, false)
+}
+
+// Upload receipt authority follows the saved action target, including replay.
+func visibleRequest(tx app.WriteTx, r domain.Request) error {
+	if err := visibleTarget(tx, r.Target); err != nil {
+		return err
+	}
+	parts := strings.Split(strings.Trim(strings.SplitN(r.Target, "?", 2)[0], "/"), "/")
+	if len(parts) < 3 || parts[0] != "api" || parts[1] != "v1" {
+		return nil
+	}
+	if parts[2] == "jobs" && len(parts) > 3 {
+		j, err := tx.Job(parts[3])
+		if err != nil {
+			return err
+		}
+		return visibleJob(tx, j)
+	}
+	if parts[2] == "uploads" {
+		if len(parts) > 3 {
+			u, err := tx.Upload(parts[3])
+			if err != nil {
+				return err
+			}
+			return visibleUploadTarget(tx, u.Target)
+		}
+		var b struct {
+			Target json.RawMessage `json:"target"`
+		}
+		if json.Unmarshal(r.Body, &b) != nil {
+			return sec.ErrInvalid
+		}
+		return visibleUploadTarget(tx, b.Target)
+	}
+	if parts[2] == "imports" || parts[2] == "packages" {
+		var b struct {
+			Target json.RawMessage `json:"target"`
+		}
+		if json.Unmarshal(r.Body, &b) == nil && len(b.Target) > 0 {
+			return visibleUploadTarget(tx, b.Target)
+		}
+	}
+	return nil
+}
+func visibleUploadTarget(tx app.WriteTx, raw []byte) error { return app.AuthorizeTarget(tx, raw) }
+
+func visibleJob(tx app.WriteTx, j domain.Job) error {
+	var scope struct {
+		Target json.RawMessage `json:"target"`
+	}
+	if json.Unmarshal(j.Scope, &scope) == nil && len(scope.Target) > 0 {
+		if err := visibleUploadTarget(tx, scope.Target); err != nil {
+			return err
+		}
+	}
+	var result struct {
+		DocumentID string `json:"document_id"`
+		VersionID  string `json:"version_id"`
+	}
+	if json.Unmarshal(j.Result, &result) == nil {
+		if result.DocumentID != "" {
+			if err := visibleTarget(tx, "/api/v1/documents/"+result.DocumentID); err != nil {
+				return err
+			}
+		}
+		if result.VersionID != "" {
+			return visibleTarget(tx, "/api/v1/versions/"+result.VersionID)
+		}
+	}
+	return nil
+}

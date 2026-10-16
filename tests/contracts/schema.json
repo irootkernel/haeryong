@@ -1506,6 +1506,14 @@
         "detail_url": {
           "type": "string",
           "minLength": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "^\"upload-[^\"]+\"$"
         }
       },
       "required": [
@@ -1525,7 +1533,9 @@
         "unavailable_reason",
         "pin_summary",
         "pins_url",
-        "detail_url"
+        "detail_url",
+        "revision",
+        "etag"
       ],
       "additionalProperties": false
     },
@@ -1721,6 +1731,18 @@
               "type": "null"
             }
           ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "^\"upload-[^\"]+\"$"
+        },
+        "transport_entry": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
@@ -1748,7 +1770,9 @@
         "seal_job_id",
         "seal_operation_id",
         "sealed_content_set_id",
-        "sealed_object_ref"
+        "sealed_object_ref",
+        "revision",
+        "etag"
       ],
       "additionalProperties": false
     },

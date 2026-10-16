@@ -26,7 +26,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaRevision = 3
+const SchemaRevision = 4
 
 type Boundary string
 
@@ -34,6 +34,7 @@ const (
 	BeforeMigrationCommit      Boundary = "migration_commit"
 	BeforeStorageDirectorySync Boundary = "storage_directory_sync"
 	BeforeCommit               Boundary = "transaction_commit"
+	BeforePublicationCommit    Boundary = "publication_commit"
 	BeforeSnapshotSync         Boundary = "snapshot_sync"
 	BeforeSnapshotObjectCopy   Boundary = "snapshot_object_copy"
 	BeforeSnapshotObjectSync   Boundary = "snapshot_object_sync"
@@ -158,6 +159,10 @@ func (s *Store) Prepare(ctx context.Context, p service.Profile) (state service.S
 		return state, nil, err
 	}
 	if _, err := s.health(ctx); err != nil {
+		return state, nil, err
+	}
+	// Only dead-call, unlinked validation preparations are reclaimed under the profile writer lock.
+	if _, err := s.db.ExecContext(ctx, "DELETE FROM object_pins WHERE (owner_kind='metadata_prepare' OR owner_kind='import_prepare') AND owner_id IN(SELECT index_id FROM metadata_indexes WHERE job_id IS NULL);DELETE FROM object_pins WHERE owner_kind='import' AND pin_id GLOB 'metadata-request:*';DELETE FROM metadata_indexes WHERE job_id IS NULL"); err != nil {
 		return state, nil, err
 	}
 	// Local work left running by a dead process is fenced before any new claim.
@@ -446,8 +451,9 @@ func (s *Store) health(ctx context.Context) (domain.Health, error) {
 }
 
 type writeTx struct {
-	tx  *sql.Tx
-	ctx context.Context
+	tx          *sql.Tx
+	ctx         context.Context
+	publication bool
 }
 
 func (s *Store) Write(ctx context.Context, fn func(app.WriteTx) error) error {
@@ -461,8 +467,14 @@ func (s *Store) Write(ctx context.Context, fn func(app.WriteTx) error) error {
 		return err
 	}
 	defer tx.Rollback()
-	if err := fn(&writeTx{tx: tx, ctx: ctx}); err != nil {
+	writer := &writeTx{tx: tx, ctx: ctx}
+	if err := fn(writer); err != nil {
 		return err
+	}
+	if writer.publication {
+		if err := s.boundary(BeforePublicationCommit); err != nil {
+			return err
+		}
 	}
 	if err := s.boundary(BeforeCommit); err != nil {
 		return err

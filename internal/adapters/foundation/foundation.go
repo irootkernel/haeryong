@@ -139,3 +139,36 @@ func (s *Store) Collect(ctx context.Context, object domain.Object) error {
 	}
 	return s.Write(ctx, func(tx app.WriteTx) error { return tx.FinishGC(reservation) })
 }
+
+// Put coordinates verified durable bytes with the caller's typed ledger update.
+// A rejected callback rolls back READY metadata and pins, retaining an orphan.
+func (s *Store) Put(ctx context.Context, input io.Reader, commit func(app.WriteTx, domain.Object) error) (domain.Object, error) {
+	staged, err := s.Objects.Stage(ctx, input)
+	if err != nil {
+		return domain.Object{}, err
+	}
+	var result domain.Object
+	_, err = s.Objects.Finalize(ctx, staged, func(o contentstore.Object, publish func() error) error {
+		return s.Write(ctx, func(tx app.WriteTx) error {
+			old, e := tx.Object(o.Hash)
+			if e != nil && !errors.Is(e, domain.ErrNotFound) {
+				return e
+			}
+			if e == nil && old.State == "deleting" {
+				return domain.ErrDeleting
+			}
+			if e := publish(); e != nil {
+				return e
+			}
+			result = domain.Object{Hash: o.Hash, Size: o.Size, State: "ready"}
+			if e := tx.PutDurableObject(result); e != nil {
+				return e
+			}
+			return commit(tx, result)
+		})
+	})
+	if err != nil {
+		return domain.Object{}, err
+	}
+	return result, nil
+}

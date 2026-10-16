@@ -23,7 +23,7 @@ func (s *Store) Version(ctx context.Context, id string) (domain.Version, error) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	v := domain.Version{ID: id}
-	err := s.db.QueryRowContext(ctx, "SELECT document_id,content_set_id,coalesce(base_version_id,''),title_snapshot,viewer_profile,source_basis,coalesce(sequence,0),default_page,metadata FROM document_versions WHERE version_id=?", id).Scan(&v.DocumentID, &v.ContentSetID, &v.BaseVersionID, &v.Title, &v.ViewerProfile, &v.SourceBasis, &v.Sequence, &v.DefaultPage, &v.Metadata)
+	err := s.db.QueryRowContext(ctx, "SELECT document_id,content_set_id,coalesce(base_version_id,''),title_snapshot,viewer_profile,source_basis,coalesce(sequence,0),default_page,metadata,payload_sha256,manifest_sha256,coalesce(supplied_metadata_hash,'') FROM document_versions WHERE version_id=?", id).Scan(&v.DocumentID, &v.ContentSetID, &v.BaseVersionID, &v.Title, &v.ViewerProfile, &v.SourceBasis, &v.Sequence, &v.DefaultPage, &v.Metadata, &v.PayloadSHA, &v.ManifestSHA, &v.MetadataHash)
 	return v, notFound(err)
 }
 func (s *Store) Page(ctx context.Context, version, path string) (domain.Page, error) {

@@ -23,6 +23,16 @@ type Authority interface {
 }
 
 func Execute(ctx context.Context, store Store, authority Authority, request domain.Request, normalize func() ([]byte, error), apply func(WriteTx, domain.Receipt) (domain.Response, error)) (domain.Response, error) {
+	return ExecuteNormalized(ctx, store, authority, request, func(tx WriteTx) ([]byte, error) {
+		if normalize == nil {
+			return nil, nil
+		}
+		return normalize()
+	}, apply)
+}
+
+// ExecuteNormalized captures defaults using the already-owned writer transaction.
+func ExecuteNormalized(ctx context.Context, store Store, authority Authority, request domain.Request, normalize func(WriteTx) ([]byte, error), apply func(WriteTx, domain.Receipt) (domain.Response, error)) (domain.Response, error) {
 	if authority == nil {
 		return domain.Response{}, domain.ErrDenied
 	}
@@ -34,7 +44,12 @@ func Execute(ctx context.Context, store Store, authority Authority, request doma
 		if err := authority.AuthorizeWrite(ctx, tx, request); err != nil {
 			return err
 		}
-		receipt, existing, err := tx.ReserveOperation(request, normalize)
+		receipt, existing, err := tx.ReserveOperation(request, func() ([]byte, error) {
+			if normalize == nil {
+				return nil, nil
+			}
+			return normalize(tx)
+		})
 		if err != nil {
 			return err
 		}
@@ -120,3 +135,50 @@ func jsonBytesPending(id string) []byte {
 }
 
 var operationID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// Replay checks an existing receipt under current authority without reserving new
+// work. Preparation use cases can avoid redoing fresh-admission verification.
+func Replay(ctx context.Context, store Store, authority Authority, request domain.Request) (domain.Response, bool, error) {
+	if authority == nil {
+		return domain.Response{}, false, domain.ErrDenied
+	}
+	if err := authority.Authorize(ctx, request); err != nil {
+		return domain.Response{}, false, err
+	}
+	var response domain.Response
+	found := false
+	err := store.Write(ctx, func(tx WriteTx) error {
+		if err := authority.AuthorizeWrite(ctx, tx, request); err != nil {
+			return err
+		}
+		receipt, err := tx.Receipt(request.Key)
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		found = true
+		fingerprint, err := Fingerprint(request, receipt.Normalization)
+		if err != nil {
+			return err
+		}
+		if fingerprint != receipt.Fingerprint {
+			return domain.ErrConflict
+		}
+		switch receipt.State {
+		case "completed", "failed":
+			response = *receipt.Response
+		case "reconciling":
+			return domain.ErrReconciliation
+		default:
+			response = domain.Response{Status: 202, Body: jsonBytesPending(request.Key.OperationID)}
+		}
+		return nil
+	})
+	if err != nil || !found {
+		return domain.Response{}, found, err
+	}
+	response, err = authority.Filter(ctx, request, response)
+	return response, true, err
+}

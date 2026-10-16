@@ -332,7 +332,7 @@ func TestReadySchemaTwoRecoveryIncludesExactImmutableCopies(t *testing.T) {
 			}
 			hash := staged.Object.Hash
 			objects.Close()
-			// Recreate the supported prior schema by removing only new empty auth tables
+			// Recreate the supported prior schema by removing only the labelled later additions
 			// from this labelled fixture; never mutate persisted migration source bytes.
 			priorSchemaTwo(t, s)
 			before, e := s.Health(ctx)
@@ -528,6 +528,15 @@ func TestSchemaTwoForeignKeyDamageCannotProduceCompleteRecoveryOrMigrate(t *test
 
 func priorSchemaTwo(t *testing.T, s *Store) {
 	t.Helper()
+	var version int
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version >= 4 {
+		if _, err := s.db.Exec("DROP TRIGGER upload_revision;DROP TABLE import_metadata; DROP TABLE metadata_indexes;DROP TABLE import_intents;DROP TABLE upload_entries;ALTER TABLE jobs DROP COLUMN result;ALTER TABLE uploads DROP COLUMN originating_device_id;ALTER TABLE uploads DROP COLUMN created_at;ALTER TABLE uploads DROP COLUMN updated_at;ALTER TABLE uploads DROP COLUMN revision;ALTER TABLE uploads DROP COLUMN seal_operation_id;ALTER TABLE uploads DROP COLUMN sealed_object_hash;ALTER TABLE document_versions DROP COLUMN payload_sha256;ALTER TABLE document_versions DROP COLUMN manifest_sha256;ALTER TABLE document_versions DROP COLUMN supplied_metadata_hash"); err != nil {
+			t.Fatal(err)
+		}
+	}
 	rows, err := s.db.Query("PRAGMA table_info(jobs)")
 	if err != nil {
 		t.Fatal(err)
@@ -555,7 +564,7 @@ func priorSchemaTwo(t *testing.T, s *Store) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.db.Exec("DROP TABLE pairings; DROP TABLE device_sessions; DROP TABLE auth_owner; DELETE FROM schema_migrations WHERE revision=3; UPDATE libraries SET schema_revision=2; PRAGMA user_version=2"); err != nil {
+	if _, err := s.db.Exec("DROP TABLE pairings; DROP TABLE device_sessions; DROP TABLE auth_owner; DELETE FROM schema_migrations WHERE revision>2; UPDATE libraries SET schema_revision=2; PRAGMA user_version=2"); err != nil {
 		t.Fatal(err)
 	}
 }
