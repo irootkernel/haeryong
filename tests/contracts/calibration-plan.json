@@ -1,0 +1,485 @@
+{
+  "schema": "haeryong.calibration-plan/v1",
+  "declared_before_execution": true,
+  "kind": "Synthetic engineering calibration on the selected real SQLite engine, not product search/API/UI or release certification",
+  "hardware_required": {
+    "model": "Mac17,9",
+    "physical_cores": 18,
+    "logical_cores": 18,
+    "memory_bytes": 68719476736,
+    "OS": "macOS 27.0.1",
+    "build": "26A434",
+    "architecture": "arm64"
+  },
+  "engine": {
+    "Go": "1.27.1",
+    "module": "modernc.org/sqlite",
+    "module_version": "v1.60.1",
+    "SQLite": "3.53.4",
+    "connection": "WAL/FULL/foreign_keys=ON/busy_timeout=5000; per-connection readback"
+  },
+  "dataset": {
+    "documents": 1000,
+    "versions": 5000,
+    "canonical_edges": 10000,
+    "versions_per_document": 5,
+    "topics": [
+      {
+        "id": 0,
+        "Korean": "검토",
+        "code": "reviewState"
+      },
+      {
+        "id": 1,
+        "Korean": "재시도",
+        "code": "retryFailed"
+      },
+      {
+        "id": 2,
+        "Korean": "승인",
+        "code": "approveDraft"
+      },
+      {
+        "id": 3,
+        "Korean": "검색",
+        "code": "searchIndex"
+      },
+      {
+        "id": 4,
+        "Korean": "취소",
+        "code": "cancelRequested"
+      },
+      {
+        "id": 5,
+        "Korean": "백업",
+        "code": "backupSnapshot"
+      },
+      {
+        "id": 6,
+        "Korean": "복원",
+        "code": "restoreEpoch"
+      },
+      {
+        "id": 7,
+        "Korean": "버전",
+        "code": "versionID"
+      },
+      {
+        "id": 8,
+        "Korean": "인용",
+        "code": "observedInput"
+      },
+      {
+        "id": 9,
+        "Korean": "출처",
+        "code": "source/path.go"
+      },
+      {
+        "id": 10,
+        "Korean": "권한",
+        "code": "permissionGeneration"
+      },
+      {
+        "id": 11,
+        "Korean": "임시",
+        "code": "staging_upload"
+      },
+      {
+        "id": 12,
+        "Korean": "연결",
+        "code": "rememberedSession"
+      },
+      {
+        "id": 13,
+        "Korean": "노트",
+        "code": "pageAnnotation"
+      },
+      {
+        "id": 14,
+        "Korean": "범위",
+        "code": "coverageSet"
+      },
+      {
+        "id": 15,
+        "Korean": "보존",
+        "code": "retentionPolicy"
+      },
+      {
+        "id": 16,
+        "Korean": "참조",
+        "code": "pinnedReference"
+      },
+      {
+        "id": 17,
+        "Korean": "작업",
+        "code": "jobAttempt"
+      },
+      {
+        "id": 18,
+        "Korean": "조정",
+        "code": "reconcileOnly"
+      },
+      {
+        "id": 19,
+        "Korean": "설정",
+        "code": "configRevision"
+      }
+    ],
+    "document_rule": "topic=(id-1)%20; every17th denied, every19th trash; synthetic title/body; latest sequence5; no private source",
+    "edges_rule": "10 directed edges per document to next10 modulo1000, distinct exact source/destination"
+  },
+  "queries": [
+    {
+      "id": "Q01",
+      "query": "검",
+      "relevant_topics": [
+        0,
+        3
+      ],
+      "kind": "short_Hangul"
+    },
+    {
+      "id": "Q02",
+      "query": "검토 reviewState",
+      "relevant_topics": [
+        0
+      ],
+      "kind": "mixed_identifier"
+    },
+    {
+      "id": "Q03",
+      "query": "재시도",
+      "relevant_topics": [
+        1
+      ],
+      "kind": "topical"
+    },
+    {
+      "id": "Q04",
+      "query": "retryFailed",
+      "relevant_topics": [
+        1
+      ],
+      "kind": "code_identifier_or_path"
+    },
+    {
+      "id": "Q05",
+      "query": "승인",
+      "relevant_topics": [
+        2
+      ],
+      "kind": "short_Hangul"
+    },
+    {
+      "id": "Q06",
+      "query": "approveDraft",
+      "relevant_topics": [
+        2
+      ],
+      "kind": "code_identifier_or_path"
+    },
+    {
+      "id": "Q07",
+      "query": "검색",
+      "relevant_topics": [
+        3
+      ],
+      "kind": "short_Hangul"
+    },
+    {
+      "id": "Q08",
+      "query": "searchIndex",
+      "relevant_topics": [
+        3
+      ],
+      "kind": "code_identifier_or_path"
+    },
+    {
+      "id": "Q09",
+      "query": "취소",
+      "relevant_topics": [
+        4
+      ],
+      "kind": "short_Hangul"
+    },
+    {
+      "id": "Q10",
+      "query": "cancelRequested",
+      "relevant_topics": [
+        4
+      ],
+      "kind": "code_identifier_or_path"
+    },
+    {
+      "id": "Q11",
+      "query": "백업",
+      "relevant_topics": [
+        5
+      ],
+      "kind": "short_Hangul"
+    },
+    {
+      "id": "Q12",
+      "query": "backupSnapshot",
+      "relevant_topics": [
+        5
+      ],
+      "kind": "code_identifier_or_path"
+    },
+    {
+      "id": "Q13",
+      "query": "복원",
+      "relevant_topics": [
+        6
+      ],
+      "kind": "short_Hangul"
+    },
+    {
+      "id": "Q14",
+      "query": "restoreEpoch",
+      "relevant_topics": [
+        6
+      ],
+      "kind": "code_identifier_or_path"
+    },
+    {
+      "id": "Q15",
+      "query": "버전",
+      "relevant_topics": [
+        7
+      ],
+      "kind": "short_Hangul"
+    },
+    {
+      "id": "Q16",
+      "query": "versionID",
+      "relevant_topics": [
+        7
+      ],
+      "kind": "code_identifier_or_path"
+    },
+    {
+      "id": "Q17",
+      "query": "인용",
+      "relevant_topics": [
+        8
+      ],
+      "kind": "short_Hangul"
+    },
+    {
+      "id": "Q18",
+      "query": "observedInput",
+      "relevant_topics": [
+        8
+      ],
+      "kind": "code_identifier_or_path"
+    },
+    {
+      "id": "Q19",
+      "query": "출처",
+      "relevant_topics": [
+        9
+      ],
+      "kind": "short_Hangul"
+    },
+    {
+      "id": "Q20",
+      "query": "source/path.go",
+      "relevant_topics": [
+        9
+      ],
+      "kind": "code_identifier_or_path"
+    },
+    {
+      "id": "Q21",
+      "query": "권한",
+      "relevant_topics": [
+        10
+      ],
+      "kind": "short_Hangul"
+    },
+    {
+      "id": "Q22",
+      "query": "권한 permissionGeneration",
+      "relevant_topics": [
+        10
+      ],
+      "kind": "mixed_identifier"
+    },
+    {
+      "id": "Q23",
+      "query": "임시",
+      "relevant_topics": [
+        11
+      ],
+      "kind": "short_Hangul"
+    },
+    {
+      "id": "Q24",
+      "query": "staging_upload",
+      "relevant_topics": [
+        11
+      ],
+      "kind": "code_identifier_or_path"
+    },
+    {
+      "id": "Q25",
+      "query": "연결",
+      "relevant_topics": [
+        12
+      ],
+      "kind": "short_Hangul"
+    },
+    {
+      "id": "Q26",
+      "query": "rememberedSession",
+      "relevant_topics": [
+        12
+      ],
+      "kind": "code_identifier_or_path"
+    },
+    {
+      "id": "Q27",
+      "query": "노트",
+      "relevant_topics": [
+        13
+      ],
+      "kind": "short_Hangul"
+    },
+    {
+      "id": "Q28",
+      "query": "pageAnnotation",
+      "relevant_topics": [
+        13
+      ],
+      "kind": "code_identifier_or_path"
+    },
+    {
+      "id": "Q29",
+      "query": "범",
+      "relevant_topics": [
+        14
+      ],
+      "kind": "short_Hangul"
+    },
+    {
+      "id": "Q30",
+      "query": "coverageSet",
+      "relevant_topics": [
+        14
+      ],
+      "kind": "code_identifier_or_path"
+    },
+    {
+      "id": "Q31",
+      "query": "보존",
+      "relevant_topics": [
+        15
+      ],
+      "kind": "short_Hangul"
+    },
+    {
+      "id": "Q32",
+      "query": "retentionPolicy",
+      "relevant_topics": [
+        15
+      ],
+      "kind": "code_identifier_or_path"
+    },
+    {
+      "id": "Q33",
+      "query": "참조",
+      "relevant_topics": [
+        16
+      ],
+      "kind": "short_Hangul"
+    },
+    {
+      "id": "Q34",
+      "query": "pinnedReference",
+      "relevant_topics": [
+        16
+      ],
+      "kind": "code_identifier_or_path"
+    },
+    {
+      "id": "Q35",
+      "query": "작업",
+      "relevant_topics": [
+        17
+      ],
+      "kind": "short_Hangul"
+    },
+    {
+      "id": "Q36",
+      "query": "jobAttempt",
+      "relevant_topics": [
+        17
+      ],
+      "kind": "code_identifier_or_path"
+    },
+    {
+      "id": "Q37",
+      "query": "조정",
+      "relevant_topics": [
+        18
+      ],
+      "kind": "short_Hangul"
+    },
+    {
+      "id": "Q38",
+      "query": "reconcileOnly",
+      "relevant_topics": [
+        18
+      ],
+      "kind": "code_identifier_or_path"
+    },
+    {
+      "id": "Q39",
+      "query": "설정",
+      "relevant_topics": [
+        19
+      ],
+      "kind": "short_Hangul"
+    },
+    {
+      "id": "Q40",
+      "query": "configRevision",
+      "relevant_topics": [
+        19
+      ],
+      "kind": "code_identifier_or_path"
+    }
+  ],
+  "search_candidate": "FTS5 trigram literal >=3 Unicode characters; direct authorized non-trash corpus instr fallback for1–2 characters. ASCII case folded, no spacing/camelCase rewrite; eligibility joins before ordering/snippets/LIMIT. Latest-version rows ranked by title literal presence then document id. This is a bounded literal candidate, not a production retrieval contract.",
+  "measurements": {
+    "cold": "Each operation opens a new SQLite connection with fresh SQLite page/prepared-statement cache; OS file cache is uncontrolled and likely warm. No OS-cache flush claim.",
+    "warm": "Same configured connection; five repetitions of40queries and200metadata pages after seed",
+    "metadata": "50-item authorized latest-version list with edge counts, SQL execution+row scan; excludes HTTP, UI, AI, download",
+    "search": "SQL lookup+top5 row scan, separate from metadata latency",
+    "percentiles": "Sorted observed samples, nearest-rank ceil(p*n)-1, milliseconds",
+    "memory": "Go Alloc/Sys and process maxRSS with platform unit; diagnostic, not production daemon footprint",
+    "idle": "Process user+system CPU delta / elapsed over250ms no-job interval before and after operations; runtime/connection fixture only",
+    "db_size": "Main SQLite database after WAL checkpoint/truncate, plus separately observed WAL bytes"
+  },
+  "decisions_before_run": {
+    "metadata_p95_300ms": "Adopt as INITIAL bounded engineering target only if cold and warm observed p95 <300ms; miss is a disclosed calibration limitation with TASK-010-04/owningfeature followup, not a releaseSLO or content cap",
+    "topical_top5_90percent": "Adopt as INITIAL bounded retrieval target if >=90% of all40declared queries have an eligible relevant result in top5; report every miss and owner TASK-004-02/TASK-010-04. Miss diagnostic-only for this fixture freeze, never pretend general relevance",
+    "privacy": "Zero denied/trash result leakage is REQUIRED independent invariant; failcheck blocks calibration, cannot trade off against ranking",
+    "concurrency": "3 simulated owner clients+1 configured background worker,20barrier rounds on4real SQLite connections: exactly1CAS win+3conflicts eachround, no lostwrites; REQUIRED",
+    "idle_memory": "Diagnostic-only measured fixture CPU/memory; no production threshold or continuously running model claim",
+    "attempt_deadline": "Pure fixture work budgets separate from content admission; no AI calls"
+  },
+  "later_owners": [
+    "TASK-004-02",
+    "TASK-010-04",
+    "TASK-002-02",
+    "TASK-002-04",
+    "TASK-002-05"
+  ],
+  "limits": [
+    "Synthetic data/queries and simulated clients; no physical-device result",
+    "No production importer/search/API/daemon, power-loss or cross-volume durability proof",
+    "No universal latency/relevance or owner usefulness guarantee"
+  ]
+}

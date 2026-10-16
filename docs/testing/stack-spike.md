@@ -7,8 +7,7 @@ real macOS Wails/WebKit and Chrome, and a real headless Linux ARM64 container.
 **G-STACK:** `pass` for this declared combination. Independent Task review and
 completion remain governed by the Task's canonical state. At this stack
 checkpoint the other gates were `not_run`; the subsequent
-[auth experiment](auth-ingress-spike.md) now records G-AUTH `pass`. G-VIEW,
-G-AI, G-VALUE and G-CONTRACT remain `not_run`.
+[auth experiment](auth-ingress-spike.md) subsequently recorded G-AUTH `pass`. At that historical stack/auth checkpoint, G-VIEW, G-AI, G-VALUE and G-CONTRACT were `not_run`. Current owning Tasks and gate states are indexed in [contract readiness](contract-freeze.md).
 
 The [reproducible spike](../../spikes/stack/README.md) and tests are delivered in
 the same Task commit as this record. Preparatory runs were validated after

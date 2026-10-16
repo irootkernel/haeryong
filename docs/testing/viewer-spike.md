@@ -527,7 +527,7 @@ the unchanged original fourteen criteria.
 | DELIVERABLE-EVIDENCE | Current required subset, all whole failures, partial rows, injected faults, unexecuted preparation and unusable visual evidence remain distinguishable. |
 | DELIVERABLE-ADR | ADR records the selected construction, new page lifetime and unresolved extra Back observation without platform or whole-pass claims. |
 | OWNER-BASELINE | Actual agent-operated Aside private HTTPS, primary Chrome and pinned Wails remain the early constructions; Android/Safari are untested later obligations. |
-| DEPENDENCIES | Task04 records done, five boxes checked and G-VIEW pass; EPIC-001 remains in_progress and Task05 then07 then06 remain planned. |
+| DEPENDENCIES | At the Task04 completion checkpoint: Task04 done, five boxes checked and G-VIEW pass; EPIC-001 in_progress and Task05 then07 then06 planned. Current states: [contract readiness](contract-freeze.md). |
 | UI-ACTION | Actual named recovery actions, logical-reader clicks/popups and prior desktop keyboard/middle-click observations retain exact applicable scope. |
 | AFFECTED-CHECKS | Fresh three-construction pathname/context/reload proof and current IR1/IR2 renewal/overlap/broken regressions; no unchanged slow-matrix repetition. |
 | FIDELITY/PRIVACY | Original failed reports are not rewritten; credentials and runtime identities remain private, and local evidence is not promoted as durable tracked proof. |
@@ -549,8 +549,7 @@ settled, the original Serve/Funnel configuration was restored exactly, and the
 owned listeners are absent. Private originals, source snapshots, state and
 binaries remain retained. There is no current live test URL. The complete Worker
 handoff, retained WORK and final frozen-finding independent confirmation support
-the bounded Task04 done/G-VIEW pass record. EPIC-001 remains in_progress;
-G-AI, G-VALUE and G-CONTRACT are not_run and Task05 then07 then06 remain planned.
+the bounded Task04 done/G-VIEW pass record. At that historical Task04 checkpoint EPIC-001 remained in_progress; G-AI, G-VALUE and G-CONTRACT were not_run and Task05 then07 then06 remained planned. Current states are indexed in [contract readiness](contract-freeze.md).
 
 
 ## Bounded closure and retained limits
@@ -579,6 +578,4 @@ carry remain unchanged.
 
 There is no production application release, promoted-evidence package, release
 notes enrollment or new hardening record. Runtime evidence remains private and
-local; no live test URL remains. EPIC-001 is still in progress with G-AI, G-VALUE
-and G-CONTRACT not_run. Its remaining Task order is05, then07, then06; none has
-formally started through this closure record.
+local; no live test URL remains. At this original Task04 closure checkpoint, EPIC-001 was in progress with G-AI, G-VALUE and G-CONTRACT not_run; its remaining Task order was05, then07, then06, none formally started by that record. [Contract readiness](contract-freeze.md) supplies current states without changing this historical proof.

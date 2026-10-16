@@ -1,0 +1,73 @@
+{
+  "schema": "haeryong.selected-contract-manifest/v1",
+  "contract_version": "1.0",
+  "runtime_schema_version": "1.0",
+  "api_major": "v1",
+  "documentation_baseline": "1.6.2",
+  "scope": "Selected executable fixture contract candidate, not product release/deployed compatibility",
+  "excluded": [
+    "self",
+    "status documents",
+    "README",
+    "derived docs/MANIFEST.md",
+    "private evidence",
+    "unselected future implementation"
+  ],
+  "files": [
+    {
+      "path": "docs/examples/package-example.md",
+      "bytes": 12479,
+      "sha256": "01bcf8a022d02db4073d019407268b94d55a49e1f1687584704220f54b599e90"
+    },
+    {
+      "path": "spikes/stack/calibration_test.go",
+      "bytes": 14988,
+      "sha256": "7ce899eaf67f3f9076d9aca5b558e4cbc8d34e1332adb9913ec2a3ce25407df8"
+    },
+    {
+      "path": "spikes/stack/go.mod",
+      "bytes": 524,
+      "sha256": "dd332d3a24ee15226754b60b0b611d75fb95a9e36df68aa2182cc0c40ff12187"
+    },
+    {
+      "path": "spikes/stack/go.sum",
+      "bytes": 4135,
+      "sha256": "3ca6de191cbcf41056b3b2c7abdcbe4b55c7ececa358c900df16bad0a700ee95"
+    },
+    {
+      "path": "tests/contracts/calibration-plan.json",
+      "bytes": 11457,
+      "sha256": "096bbd0a5620d13d6e854533dce382cc41a0f0e91a97e8f26f37e09671edc18f"
+    },
+    {
+      "path": "tests/contracts/cases.json",
+      "bytes": 23471,
+      "sha256": "e23dc16b47b8716407dfc02807b1436e347e56edd97a17fddbee2d71218a253e"
+    },
+    {
+      "path": "tests/contracts/config-default.json",
+      "bytes": 1275,
+      "sha256": "96288d822cefa6d4d92cb01b6935275e7e6fd73b43ac0f1ad64f2a4994b40a0f"
+    },
+    {
+      "path": "tests/contracts/contract.py",
+      "bytes": 41594,
+      "sha256": "2980bec3d57212692edfeefb79dcbf925cb08d5c36414b819e2028f5163272f5"
+    },
+    {
+      "path": "tests/contracts/run.py",
+      "bytes": 2029,
+      "sha256": "5ba92a76d78b1cfb5713e942c8ce705083d76f832effec8cd8fec8dff55270af"
+    },
+    {
+      "path": "tests/contracts/schema.json",
+      "bytes": 57466,
+      "sha256": "303bba86c1a6da6ff26e5b760148b6a1d9410c63118019a46b9d799fa4954f84"
+    },
+    {
+      "path": "tests/contracts/test_contracts.py",
+      "bytes": 47295,
+      "sha256": "0bc24ac972fff72bb607c3ae12fd12f7dd06d449f3689fc2e221e9d963371a0d"
+    }
+  ]
+}

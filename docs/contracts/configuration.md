@@ -1,6 +1,6 @@
 # Configuration and policy contract
 
-**Proposed schema v1, documentation baseline 1.6.0.** One daemon-owned validated effective configuration is stored as a revisioned record. Human-readable import/export uses strict YAML; HTTP uses JSON. Repository/package files cannot override it. Reject unknown fields, duplicate keys, unsafe YAML tags and expansion features. Shared enums are in the [wire registry](schema-registry.md).
+**Selected schema v1, documentation baseline 1.6.2; production authority remains unimplemented.** The selected machine field authority and strict executable fixtures are [tests/contracts](../../tests/contracts/README.md). One daemon-owned validated effective configuration is stored as a revisioned record. Human-readable import/export uses strict YAML; HTTP uses JSON. Repository/package files cannot override it. Reject unknown fields, duplicate keys, unsafe YAML tags and expansion features. Shared enums are in the [wire registry](schema-registry.md).
 
 ## Proposed initial configuration
 

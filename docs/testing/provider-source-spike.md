@@ -1,7 +1,7 @@
 # Provider and source experiment evidence
 
 **Gate:** G-AI — `pass` for the complete bounded TASK-001-05 closing list, with completed independent static confirmation.
-**Owner:** TASK-001-05, `done`. EPIC-001 remains in progress; TASK-001-07 then TASK-001-06 remain planned.
+**Owner:** TASK-001-05, `done`. At this Task05 completion checkpoint EPIC-001 remained in progress and TASK-001-07 then TASK-001-06 remained planned. [Contract readiness](contract-freeze.md) records current dependency/gate states; the original execution below is unchanged.
 **Construction:** local owner-only subscription adapter; Python is a disposable proof harness alongside the selected Go/Wails baseline.
 
 ## Eligibility and version

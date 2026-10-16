@@ -1,0 +1,379 @@
+{
+  "schema": "haeryong.contract-case-coverage/v1",
+  "kind": "Selected pure contract fixtures; original preparatory expected semantics retained, old gate/device snapshot superseded",
+  "cases": [
+    {
+      "id": "C1-01",
+      "setup_or_action": "Workflow has draft.write for exact draft D and no import.publish; stage result with target.draft_id=D.",
+      "expected_contract_result": "Preparation/replacement of D is permitted within current scope; direct POST /imports is denied, never publication by staging.",
+      "later_owner": "TASK-002-04/05; draft consumer TASK-008-06",
+      "test_prefix": "test_C1_01_"
+    },
+    {
+      "id": "C1-02",
+      "setup_or_action": "Replace ready draft D using upload bound to null or another draft, even as owner.",
+      "expected_contract_result": "INVALID_REQUEST; do not retarget the sealed handle, alter base, or change either draft history.",
+      "later_owner": "TASK-002-04/05; TASK-008-06",
+      "test_prefix": "test_C1_02_"
+    },
+    {
+      "id": "C1-03",
+      "setup_or_action": "Use context.write to stage a question/body action; or consume a body/metadata object under another action/operation.",
+      "expected_contract_result": "Existing action-specific authority and closed target are required. context.write is insufficient; wrong consumer cannot adopt.",
+      "later_owner": "TASK-002-05; actual note/question/generation consumer owners",
+      "test_prefix": "test_C1_03_"
+    },
+    {
+      "id": "C1-04",
+      "setup_or_action": "Stored context target has render R1; submit omitted/R2 query render. Also test explicit JSON-null tuple, empty/duplicate query fields and literal page null.",
+      "expected_contract_result": "Omission becomes null, never inherits R1. Exact tuple must match; wrong/empty/duplicate binding is INVALID_REQUEST. Literal page null names a file, not null sentinel.",
+      "later_owner": "TASK-002-05; durable adoption EPIC-005/006",
+      "test_prefix": "test_C1_04_"
+    },
+    {
+      "id": "C1-05",
+      "setup_or_action": "Try result/object or context/directory purpose-mode mismatch and unknown action variants/target fields.",
+      "expected_contract_result": "Reject before staging; result accepts directory/archive/file, other purposes require object. No generic upload-admin or publisher authority.",
+      "later_owner": "TASK-002-04/05",
+      "test_prefix": "test_C1_05_"
+    },
+    {
+      "id": "C2-01",
+      "setup_or_action": "One command final key I, upload-create U and seal S; intentionally reuse I on another route or omit/malformed required key.",
+      "expected_contract_result": "I/U/S are distinct persisted canonical UUID keys. Reusing a principal key for another route conflicts; missing key 428, malformed/quoted/multiple keys 400.",
+      "later_owner": "TASK-002-02 ledger; TASK-002-04/05 clients/API",
+      "test_prefix": "test_C2_01_"
+    },
+    {
+      "id": "C2-02",
+      "setup_or_action": "Lose create/seal/final response, including before final I has a server receipt.",
+      "expected_contract_result": "Recover original caller journal phase/target/base, preparation receipts and checkpoints. GET operations 404 never proves no work ran; no blind fresh ID.",
+      "later_owner": "TASK-002-02/04/05; restore/provider uncertainty later EPIC-005/006",
+      "test_prefix": "test_C2_02_"
+    },
+    {
+      "id": "C2-03",
+      "setup_or_action": "POST uploads key U carries target.operation_id Q for future body/metadata consumer; replay U with changed Q.",
+      "expected_contract_result": "U differs from Q and S; matching original target is valid. Changing Q under U is OPERATION_CONFLICT. Future consumer must match action/target/Q.",
+      "later_owner": "TASK-002-02/05; concrete consumers later",
+      "test_prefix": "test_C2_03_"
+    },
+    {
+      "id": "C2-04",
+      "setup_or_action": "Complete same active checkpoint with S1 and new S2, then use identical sealed checkpoint; try different checkpoint while sealing.",
+      "expected_contract_result": "S2 owns a completed 202 receipt linking the one existing upload_seal job. Sealed identical new request returns 200. Different active checkpoint is INVALID_TRANSITION; replay retains original response.",
+      "later_owner": "TASK-002-02 ledger; TASK-002-04 seal; TASK-002-05 HTTP",
+      "test_prefix": "test_C2_04_"
+    },
+    {
+      "id": "C2-05",
+      "setup_or_action": "Replay same import intent through a different sealed upload with equal payload/submitted metadata; then change title/base/explicit metadata under same I.",
+      "expected_contract_result": "Reuse once-captured normalization context for equivalent content, not upload transport ID/time. Changed semantic request returns OPERATION_CONFLICT; no saved default masks changed intent.",
+      "later_owner": "TASK-002-02/04",
+      "test_prefix": "test_C2_05_"
+    },
+    {
+      "id": "C3-01",
+      "setup_or_action": "POST imports with document_id omitted, null, existing D, or mismatching upload target.",
+      "expected_contract_result": "Omission is 400 INVALID_REQUEST; null is new-document intent with one allocated ID; existing D remains exact target. No server remembered-document fallback.",
+      "later_owner": "TASK-002-04/05",
+      "test_prefix": "test_C3_01_"
+    },
+    {
+      "id": "C3-02",
+      "setup_or_action": "Normal client captures base B before upload; another operation publishes C before import.",
+      "expected_contract_result": "VERSION_CONFLICT with no silent attachment to C. Keep reusable exact-target staging; deliberate changed base uses a new final operation.",
+      "later_owner": "TASK-002-04; UI TASK-003-02/03 and TASK-004-05",
+      "test_prefix": "test_C3_02_"
+    },
+    {
+      "id": "C3-03",
+      "setup_or_action": "Low-level API deliberately omits existing-document base; latest changes before and after first valid import reservation.",
+      "expected_contract_result": "Capture base once at POST imports reservation, not create/seal. Replays use saved base/omission markers; committed response replays before stale preconditions are reevaluated.",
+      "later_owner": "TASK-002-02/04/05",
+      "test_prefix": "test_C3_03_"
+    },
+    {
+      "id": "C3-04",
+      "setup_or_action": "Resolve explicit document/project/new-document versus remembered association; target is denied/missing.",
+      "expected_contract_result": "Only client launcher applies package precedence. Explicit project alone clears remembered document; new-document sends null; denied/missing selections never become new-document fallback.",
+      "later_owner": "TASK-002-05 CLI; TASK-003-02 shared UI",
+      "test_prefix": "test_C3_04_"
+    },
+    {
+      "id": "C3-05",
+      "setup_or_action": "Fresh operation/current base targets existing explicit version V with identical immutable metadata/payload, then changed bytes.",
+      "expected_contract_result": "Identical authorized version returns 200. Changed immutable bytes returns 409 IMMUTABLE_VERSION_CONFLICT, distinct from stale base/changed operation/hash mismatch.",
+      "later_owner": "TASK-002-04",
+      "test_prefix": "test_C3_05_"
+    },
+    {
+      "id": "C4-01",
+      "setup_or_action": "Cancel upload_seal before commit while worker still may finalize.",
+      "expected_contract_result": "Fence attempt; keep upload sealing until confirmed stop/reconciliation. Then cancelled job/open non-abandoned upload retains accepted bytes/checkpoints. New verification uses new key/job.",
+      "later_owner": "TASK-002-02 fencing; TASK-002-04 seal; TASK-002-05 API",
+      "test_prefix": "test_C4_01_"
+    },
+    {
+      "id": "C4-02",
+      "setup_or_action": "Seal commit wins before cancel.",
+      "expected_contract_result": "Keep job completed and upload sealed; report already completed. Cancel does not reverse seal/publication.",
+      "later_owner": "TASK-002-02/04",
+      "test_prefix": "test_C4_02_"
+    },
+    {
+      "id": "C4-03",
+      "setup_or_action": "Abandon while sealing.",
+      "expected_contract_result": "Atomically abandoned; fence writes/adoption/finalization, record cancel intent. Set job cancelled only after confirmed stop; retain active/recovery pins.",
+      "later_owner": "TASK-002-02/04/05",
+      "test_prefix": "test_C4_03_"
+    },
+    {
+      "id": "C4-04",
+      "setup_or_action": "Abandon already sealed/adopted staging.",
+      "expected_contract_result": "Prevent new reuse but retain adopted version/context and active/unknown pins. Completed seal job is not rewritten cancelled.",
+      "later_owner": "TASK-002-02/04; actual adopted records later EPIC-005/006",
+      "test_prefix": "test_C4_04_"
+    },
+    {
+      "id": "C4-05",
+      "setup_or_action": "Delayed failed seal result arrives after abandonment.",
+      "expected_contract_result": "Upload remains abandoned; late worker cannot reopen/finalize; settlement waits for confirmed worker stop.",
+      "later_owner": "TASK-002-02/04",
+      "test_prefix": "test_C4_05_"
+    },
+    {
+      "id": "C4-06",
+      "setup_or_action": "Crash during cancel/abandon; recover same persisted fence/upload/job.",
+      "expected_contract_result": "Reconcile coupled state before writes reopen or pins release. No early open; cancelled job never resumes. Idle/mobile/delivery loss does not abandon staging.",
+      "later_owner": "TASK-002-02/04; full restore EPIC-005",
+      "test_prefix": "test_C4_06_"
+    },
+    {
+      "id": "C5-01",
+      "setup_or_action": "Owner GET uploads list, including source credential loss.",
+      "expected_contract_result": "Cursor summary fields exactly from canonical table plus detail_url; no checkpoint/error/ranges in list. Current owner authority, not old bearer possession, permits discovery.",
+      "later_owner": "TASK-002-05; UI TASK-003-02",
+      "test_prefix": "test_C5_01_"
+    },
+    {
+      "id": "C5-02",
+      "setup_or_action": "Expand item or prepare Resume via detail_url.",
+      "expected_contract_result": "Detail adds checkpoint/ranges_url/entries_url/error and nullable seal job/operation/content/object fields. Pins/ranges/entries are cursor resources; absent list error is not verified success.",
+      "later_owner": "TASK-002-05; UI TASK-003-02",
+      "test_prefix": "test_C5_02_"
+    },
+    {
+      "id": "C5-03",
+      "setup_or_action": "Sealed staging loses bytes/current authority, or adoption transfers ownership; apply age-only cleanup.",
+      "expected_contract_result": "sealed is verification state, reusable additionally requires current authority and every byte available/pinnable. Preserve pins/adopted references; no new missing upload state or age-only abandonment.",
+      "later_owner": "TASK-002-02/04/05",
+      "test_prefix": "test_C5_03_"
+    }
+  ],
+  "supplemental_groups": [
+    {
+      "id": "SUP-PACKAGE",
+      "required": "Raw directory/ZIP/single-file, absent metadata/index, ordinary manifest.json, multiple HTML/Unicode pages, hidden/unknown files and represented empty directories are accepted. Explicit malformed metadata yields field-specific errors while preserving sealed payload.",
+      "proof_limit": "Do not claim actual importer/export/renderer executed.",
+      "test_prefix": "test_SUP_PACKAGE_"
+    },
+    {
+      "id": "SUP-INVENTORY",
+      "required": "Exact UTF-8 path order and canonical JSONL inventory bytes; decimal file-size strings, Unicode/case preservation, escaped controls, directories/symlinks, exact-first/unique canonical-equivalent lookup and ambiguity.",
+      "proof_limit": "Reuse example hashes only as declared doc fixtures until actual contract assertions run. Cross-volume/flush/rename behavior remains future runtime proof.",
+      "test_prefix": "test_SUP_INVENTORY_"
+    },
+    {
+      "id": "SUP-CONFIG",
+      "required": "Known strict YAML/JSON fields, unknown/duplicate keys/tags, mode-specific schedule combinations, exact trusted origins/ports, config vs permissions revision, plan/replay/confirmation and unchanged previous policy on invalid input.",
+      "proof_limit": "Operational defaults and selected renderer slots remain proposed; no global configuration is changed.",
+      "test_prefix": "test_SUP_CONFIG_"
+    },
+    {
+      "id": "SUP-CITATION",
+      "required": "Observed-input and posthoc citation union, immutable author evidence vs service verification, missing target/partial coverage, no invented successful empty source check.",
+      "proof_limit": "Await formal Task05/07 results before choosing actual adapter/input/evidence slots; pure examples do not establish real observation or semantic support.",
+      "test_prefix": "test_SUP_CITATION_"
+    },
+    {
+      "id": "SUP-COMPATIBILITY",
+      "required": "Runtime/API/doc versions are separate; required unknown state/authority/request fields fail safely, optional nonauthority response additions are directional, FEATURE_NOT_READY is honest.",
+      "proof_limit": "No deployed compatibility or production capability is established.",
+      "test_prefix": "test_SUP_COMPATIBILITY_"
+    }
+  ],
+  "source_owners": [
+    {
+      "subject": "C1-C5 exact transfer/import fields and coupling",
+      "authority": "docs/contracts/import-workflow.md",
+      "later_implementation": "TASK-001-06 pure schema fixtures; TASK-002-02/04/05 real ledger/import/API/CLI"
+    },
+    {
+      "subject": "Shared enums, identities, receipts, error mapping, browser routes",
+      "authority": "docs/contracts/schema-registry.md",
+      "later_implementation": "TASK-001-06 selected executable shapes; each owning feature implements its runtime"
+    },
+    {
+      "subject": "Authored directory/payload/path/inventory/metadata and export identity",
+      "authority": "docs/contracts/package.md",
+      "later_implementation": "TASK-002-04 importer; TASK-002-05 transport; TASK-003/005 delivered UI/export"
+    },
+    {
+      "subject": "Effective config/defaults/policy revisions and impact plan",
+      "authority": "docs/contracts/configuration.md",
+      "later_implementation": "TASK-002-05 authority; TASK-004-01/006-02 source/provider; TASK-009-01 operational UI"
+    },
+    {
+      "subject": "HTTP route/transport and composed response meanings",
+      "authority": "docs/contracts/http-api.md",
+      "later_implementation": "TASK-002-05 shared API plus feature-specific consumers"
+    },
+    {
+      "subject": "Content-delivery credentials and lifetime",
+      "authority": "docs/contracts/authentication.md",
+      "later_implementation": "Task03 bounded auth result; Task04 selected renderer evidence before Task06 config freeze"
+    },
+    {
+      "subject": "Page channel/context_ref/loader topology",
+      "authority": "docs/contracts/viewer-protocol.md",
+      "later_implementation": "Task04 actual spike; production TASK-003-03/05 and EPIC-005/006 adoption"
+    },
+    {
+      "subject": "Ordinary package and separate metadata example",
+      "authority": "docs/examples/package-example.md",
+      "later_implementation": "Task06 reconcile and execute schema/byte fixtures; no author manifest requirement"
+    },
+    {
+      "subject": "Product-owned draft skill example",
+      "authority": "docs/examples/use-haeryong-skill.md",
+      "later_implementation": "Task05/07 supported skill/provider proof; draft is not installed/executable"
+    },
+    {
+      "subject": "UI action ownership",
+      "authority": "docs/ui/information-architecture.md",
+      "later_implementation": "First UI owner per map; routes/bodies remain owned by registry/import/API"
+    },
+    {
+      "subject": "Performance/retrieval calibration",
+      "authority": "docs/testing/test-strategy.md",
+      "later_implementation": "Task06 calibration/adopted disposition; TASK-004-02 retrieval; TASK-010-04 repeated resource/performance evidence"
+    }
+  ],
+  "future_UI_actions": [
+    {
+      "action": "Request/poll/approve/reject pairing",
+      "contract": "POST /auth/pairings, /auth/pairings/{id}/poll, /approve and /reject. Stop waiting clears local pending UI/polling secret; the server request expires unless the owner rejects it",
+      "first_UI_owner": "TASK-002-03 shared auth; TASK-007-02 complete device UX",
+      "capability": "provisional/capability-disabled until implementing owner delivers"
+    },
+    {
+      "action": "List/revoke devices",
+      "contract": "GET /sessions; DELETE /session or /sessions/{id}",
+      "first_UI_owner": "TASK-007-02",
+      "capability": "provisional/capability-disabled until implementing owner delivers"
+    },
+    {
+      "action": "Import folder/ZIP/HTML or new version",
+      "contract": "New document is default; Existing document, new version selects a document and captures base_version_id before upload. Reader/Versions reuse this action with the exact document preselected. POST /uploads, GET /uploads/{id}, entry chunks, complete, then POST /imports use the [binding rules](../contracts/package.md#remembered-association-and-operation-base); retry preserves target/base and operation identity",
+      "first_UI_owner": "TASK-003-02 shared control; Reader TASK-003-03 and Versions TASK-004-05 mount it; native chooser TASK-003-05; private/mobile regression TASK-007-03",
+      "capability": "provisional/capability-disabled until implementing owner delivers"
+    },
+    {
+      "action": "Find/resume/abandon retained upload",
+      "contract": "Owner GET /uploads and GET /uploads/{id} expose actual bytes, activity, target, state and reusability in Settings/Storage; resume existing staging or POST /uploads/{id}/abandon. Reconcile accepted operation/job results before retrying",
+      "first_UI_owner": "TASK-002-05 service discovery; TASK-003-02 UI",
+      "capability": "provisional/capability-disabled until implementing owner delivers"
+    },
+    {
+      "action": "Check imported source evidence",
+      "contract": "POST /versions/{id}/source-evidence/{evidence_id}/verifications checks the exact authorized source; GET the same history and existing source-evidence view display the immutable author record plus service_verification",
+      "first_UI_owner": "TASK-003-04 presentation and disabled action; TASK-004-01 source check and enabled action",
+      "capability": "provisional/capability-disabled until implementing owner delivers"
+    },
+    {
+      "action": "Download original directory/files",
+      "contract": "GET /versions/{id}/package or /file?path=..., authenticated stream to the supported destination; personal-record portability is the labelled host-local CLI export path",
+      "first_UI_owner": "TASK-003-02 / TASK-003-05; CLI instructions TASK-005-05",
+      "capability": "provisional/capability-disabled until implementing owner delivers"
+    },
+    {
+      "action": "Open page / Continue",
+      "contract": "Exact page URL wins. Continue reads the version last-opened pointer; page navigation writes GET/PUT /versions/{id}/reading-position with page_path, page_query, page_fragment and opened",
+      "first_UI_owner": "TASK-003-03",
+      "capability": "provisional/capability-disabled until implementing owner delivers"
+    },
+    {
+      "action": "Choose preferred default page",
+      "contract": "GET/PUT /versions/{id}/reader-preference, default_page path or null, using that record's individual precondition. Does not republish or move the last-opened pointer",
+      "first_UI_owner": "TASK-003-03",
+      "capability": "provisional/capability-disabled until implementing owner delivers"
+    },
+    {
+      "action": "Save/restore this page's position",
+      "contract": "GET/PUT /versions/{id}/page-position?page={path}, page_query/page_fragment/position with the page record's own ETag. Never reuse the version pointer or another page's validator",
+      "first_UI_owner": "TASK-003-03; multi-device conflict TASK-007-04",
+      "capability": "provisional/capability-disabled until implementing owner delivers"
+    },
+    {
+      "action": "Review / Revisit / notes",
+      "contract": "Existing individual review, revisit and annotation GET/mutation routes; explicit owner actions and per-record ETags",
+      "first_UI_owner": "TASK-005-01 / TASK-005-02",
+      "capability": "provisional/capability-disabled until implementing owner delivers"
+    },
+    {
+      "action": "Ask / reopen saved answer",
+      "contract": "POST /versions/{id}/questions with the remembered/default or explicit source mode; GET version questions / GET /questions/{id} only reads saved history",
+      "first_UI_owner": "TASK-006-05",
+      "capability": "provisional/capability-disabled until implementing owner delivers"
+    },
+    {
+      "action": "Compare exact versions",
+      "contract": "Progressively merge two path-ordered GET /versions/{id}/files cursors plus metadata/file reads; show complete versus unfinished/unavailable diff scope",
+      "first_UI_owner": "TASK-004-05",
+      "capability": "provisional/capability-disabled until implementing owner delivers"
+    },
+    {
+      "action": "Approve/reject finding / undo overlay",
+      "contract": "POST /findings/{id}/decisions with its If-Match; POST /overlays/{id}/undo with current overlay validator",
+      "first_UI_owner": "TASK-008-05",
+      "capability": "provisional/capability-disabled until implementing owner delivers"
+    },
+    {
+      "action": "Create draft from finding",
+      "contract": "POST /generations with finding_id, expected_finding_revision, intent=draft and existing authorized generation scope. Never implicitly approves or publishes the finding",
+      "first_UI_owner": "TASK-008-06",
+      "capability": "provisional/capability-disabled until implementing owner delivers"
+    },
+    {
+      "action": "Request reassessment",
+      "contract": "POST /scans with finding_id and expected_finding_revision plus captured allowed scope/depth/target. A stale finding is not force-applied",
+      "first_UI_owner": "TASK-008-05",
+      "capability": "provisional/capability-disabled until implementing owner delivers"
+    },
+    {
+      "action": "Reject / replace / publish draft",
+      "contract": "PATCH /drafts/{id} with If-Match: action=reject for preparing/ready; action=replace plus sealed upload_id and optional metadata_ref for ready. Publish uses the separate POST /drafts/{id}/publish",
+      "first_UI_owner": "TASK-008-06",
+      "capability": "provisional/capability-disabled until implementing owner delivers"
+    },
+    {
+      "action": "Edit source/provider/default question mode",
+      "contract": "GET /configuration and project-scoped POST /configuration/plans (scope.kind=project, project_id), then existing plan commit; source_mode_default is pinned/current, initially pinned. Use remembered authorized choices, not a remote filesystem browser",
+      "first_UI_owner": "TASK-004-01 source settings; TASK-006-02 provider/source integration",
+      "capability": "provisional/capability-disabled until implementing owner delivers"
+    },
+    {
+      "action": "Operating policy / retention",
+      "contract": "Existing configuration read/plan/commit with current revision and explicit impact confirmation",
+      "first_UI_owner": "TASK-009-01",
+      "capability": "provisional/capability-disabled until implementing owner delivers"
+    },
+    {
+      "action": "Archive/trash/restore/purge",
+      "contract": "Document lifecycle plan then exact plan commit, with current revisions and explicit owner confirmation",
+      "first_UI_owner": "TASK-005-03 / TASK-005-04",
+      "capability": "provisional/capability-disabled until implementing owner delivers"
+    }
+  ]
+}

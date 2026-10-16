@@ -114,7 +114,7 @@ The unchanged fixture page heading says "Disposable authentication fixture. This
 The previous `not_run` record incorrectly made future production renderer,
 streaming-download and Safari proof prerequisites of G-AUTH. Those requirements
 are preserved under their canonical owners and do not enlarge this bounded
-authentication gate. G-VIEW remains `not_run`; full production authentication
+authentication gate. At that historical auth checkpoint G-VIEW was `not_run`; [contract readiness](contract-freeze.md) indexes current owning Task/gate states. Full production authentication
 and acceptance scenarios remain with their implementing Tasks. Runtime
 runner/reviewer records stay local, and the current record correction receives
 its own review rather than claiming that historical reviews covered these bytes.

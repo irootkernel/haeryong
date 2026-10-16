@@ -5,8 +5,10 @@ TASK-001-07 is `done`. The executed structural,
 semantic and required paired-reader checks, three fresh independent static
 reviews and the retained Judge EVIDENCE checkpoint are complete. Task07 closing
 authority follows the execution protocol; actual Master overall Epic acceptance
-is separate and is not claimed here. EPIC-001 stays `in_progress`; TASK-001-06 stays
-`planned` and G-CONTRACT stays `not_run`.
+is separate and is not claimed here. EPIC-001 stays `in_progress` for whole-Epic audit/validation and actual Master
+overall acceptance. TASK-001-06 completed after the verified Task07 commit;
+[contract readiness](contract-freeze.md) records bounded G-CONTRACT `pass` and
+owns the selected freeze and later production proof boundary.
 Only the [Task07 closing list](../tasks/EPIC-001/TASK-001-07.md#observable-completion-and-tests)
 closes this gate; structural validity and a completed generation do not.
 
@@ -288,13 +290,15 @@ states; this completion record and its private handoff qualify those states rath
 rewriting the old receipts. Runtime artifacts and complete review reports remain
 private; no promoted evidence package or release-note enrollment is claimed.
 
-Formal TASK-001-06 follows only the verified Task07 commit. G-CONTRACT and
-whole-Epic audit/actual Master acceptance remain
-open; this bounded result does not establish production or general quality.
+At the Task07 completion checkpoint, formal TASK-001-06 still required the
+verified Task07 commit; G-CONTRACT and whole-Epic audit/actual Master acceptance
+were open. The current [contract readiness record](contract-freeze.md) adds
+bounded G-CONTRACT `pass`; whole-Epic audit/actual Master acceptance remain open.
+This bounded result does not establish production or general quality.
 
-## Decisions for the next contract freeze
+## Decisions carried into the contract freeze
 
-TASK-001-06 must preserve the distinctions actually exercised here:
+The selected TASK-001-06 freeze preserves the distinctions actually exercised here:
 
 | Observed requirement | Contract consequence |
 | --- | --- |

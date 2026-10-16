@@ -1,6 +1,6 @@
 # Result-directory package contract
 
-**Current personal-tool baseline:** runtime schema_version "1.0" and viewer_profile "html_js_v1", documentation version 1.6.1. One AI result is a directory containing any number of HTML pages, supporting files and subdirectories. A logical document owns that directory's immutable versions. Ordinary author HTML and JavaScript remain separate from Haeryong's trusted credentials, library mutation API and native bridge. See [shared schemas](schema-registry.md), [viewer protocol](viewer-protocol.md) and the [worked example](../examples/package-example.md).
+**Current personal-tool baseline:** runtime schema_version "1.0" and viewer_profile "html_js_v1", documentation baseline 1.6.2. Selected executable fields and byte fixtures in the initial [G-CONTRACT freeze](../testing/contract-freeze.md) are delegated to [the machine contract](../../tests/contracts/README.md); this does not require an author manifest or declare a production implementation. One AI result is a directory containing any number of HTML pages, supporting files and subdirectories. A logical document owns that directory's immutable versions. Ordinary author HTML and JavaScript remain separate from Haeryong's trusted credentials, library mutation API and native bridge. See [shared schemas](schema-registry.md), [viewer protocol](viewer-protocol.md) and the [worked example](../examples/package-example.md).
 
 ## Accepted input and optional metadata
 
