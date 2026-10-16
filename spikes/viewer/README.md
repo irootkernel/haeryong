@@ -230,8 +230,10 @@ payload supplies next_location and a fresh announcement_id. The loaded announcem
 host.connect and viewer.ready share that identity and the complete page/query/
 fragment; current-source, port, generation and full binding checks remain active.
 This implementation wire is an internal disposable integration seam for Task06
-preparation, not a compulsory author SDK or new public management API. Task06
-remains planned and must reconcile actual mechanisms after Task05 and Task07.
+preparation, not a compulsory author SDK or new public management API. At this
+Task04 checkpoint, Task06 was planned to reconcile the actual mechanisms after
+Task05 and Task07. The [current contract record](../../docs/testing/contract-freeze.md)
+records the completed selected freeze and its production limits.
 
 `check_focus.py --pathname-only` and `?pathname_focus=1` retain the original whole
 checker, including every Back/Forward assertion. Its native query-only Back after
@@ -255,8 +257,11 @@ composed evidence, not three full whole-checker passes.
 The [current evidence record](../../docs/testing/viewer-spike.md#independent-review-ordinal-3-pathname-correction)
 preserves fourteen-criterion scope, failed originals, actual/injected distinctions,
 exact mechanism carry and visual/download limits. Runtime is settled, with no
-live test URL. Task04 records done and G-VIEW pass for the bounded construction;
-EPIC-001 remains in_progress and Task05 then07 then06 remain planned.
+live test URL. At that Task04 completion checkpoint, Task04 recorded done and
+G-VIEW pass for the bounded construction; EPIC-001 remained in_progress and
+Task05 then07 then06 were planned. The [current contract record](../../docs/testing/contract-freeze.md)
+records their subsequent completion; whole-Epic validation and actual Master
+overall acceptance remain separate.
 
 
 The final independent frozen confirmation approved the unchanged candidate in
