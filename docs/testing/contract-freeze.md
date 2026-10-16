@@ -3,8 +3,9 @@
 **Owner:** TASK-001-06, `done`. **G-CONTRACT:** bounded `pass` for the selected
 initial contract baseline after the verified TASK-001-07 commit, executed
 fixtures/calibration and completed review/correction evidence composition.
-EPIC-001 stays `in_progress`; whole-Epic audit/validation and actual Master
-overall acceptance remain. No application release or production capability is
+The [prepared Epic closeout](../epics/EPIC-001.md#prepared-closeout-record) records
+completed whole-Epic internal validation; it takes effect only when committed
+after actual Master overall acceptance. No application release or production capability is
 declared by this selected freeze.
 
 ## Authority and current gate composition
@@ -231,8 +232,10 @@ all seven findings map to the four corrected issues above. The binding/docs chec
 assembly; then-unchanged machine definitions, implementations, fixtures and
 calibration retained their exact original proof.
 No original required assertion or failure was silently waived or deferred.
-Whole-Epic audit/validation and actual Master overall acceptance remain separate
-later steps; member readiness passes alone do not close EPIC-001.
+At that original closure checkpoint, whole-Epic audit/validation and actual Master
+overall acceptance remained later steps. Member readiness passes alone do not
+close EPIC-001; the subsequent [prepared Epic closeout](../epics/EPIC-001.md#prepared-closeout-record)
+records completed internal validation and the separate acceptance boundary.
 
 ## Whole-Epic IR1 action-authority correction
 
@@ -259,6 +262,7 @@ measurement and provenance limits; no calibration or provider rerun occurred.
 The original member review negatives and four corrections above remain
 historical. The new whole-Epic source reports also remain unchanged and predate
 this local correction; direct current behavior proof does not imply another
-provider review of corrected bytes. Whole-Epic retained assessment, validation
-and actual Master overall acceptance remain separate from these executed
-contract fixtures.
+provider review of corrected bytes. The subsequent retained whole-Epic assessment and internal validation passed
+on the exact committed corrections. [The prepared Epic closeout](../epics/EPIC-001.md#prepared-closeout-record)
+indexes that composition; actual Master overall acceptance remains separate from
+these executed contract fixtures.

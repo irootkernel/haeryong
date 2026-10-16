@@ -5,8 +5,9 @@ TASK-001-07 is `done`. The executed structural,
 semantic and required paired-reader checks, three fresh independent static
 reviews and the retained Judge EVIDENCE checkpoint are complete. Task07 closing
 authority follows the execution protocol; actual Master overall Epic acceptance
-is separate and is not claimed here. EPIC-001 stays `in_progress` for whole-Epic audit/validation and actual Master
-overall acceptance. TASK-001-06 completed after the verified Task07 commit;
+is separate and is not claimed here. The [prepared Epic closeout](../epics/EPIC-001.md#prepared-closeout-record) records
+completed whole-Epic internal validation; its effect requires commitment after
+actual Master overall acceptance. TASK-001-06 completed after the verified Task07 commit;
 [contract readiness](contract-freeze.md) records bounded G-CONTRACT `pass` and
 owns the selected freeze and later production proof boundary.
 Only the [Task07 closing list](../tasks/EPIC-001/TASK-001-07.md#observable-completion-and-tests)
@@ -276,11 +277,12 @@ No local finding settlement or hardening change followed technical review.
 | 5. Honest historical scope and coverage in seeded cases | All nine declared cases preserve unavailable, partial, analogy and pinned scopes; `pass`. |
 | 6. Limits, held-out outcomes, selected candidates and canonical decision | H1–H4, actual native subscription/Aside choices, original failures, single repair and limits recorded; bounded recorded-corpus `pass`. |
 
-The current full Go race and focused implementation/source/native/Aside evidence
-remain applicable to the exact unchanged implementation, Skill and samples.
-Final assembly changes only lifecycle/status summaries and derived documentation
-inventory, with current documentation-integrity and focused metadata/binding/
-changed-line whitespace checks. The thirty preceding check records retain
+At the original Task07 closure, the full Go race and focused implementation/
+source/native/Aside evidence applied to its then-unchanged implementation, Skill
+and samples. That assembly changed only lifecycle/status summaries and derived
+documentation inventory, with documentation-integrity and focused metadata/
+binding/changed-line whitespace checks. The later shared auth-consumer correction
+and its current checks are recorded separately in [viewer evidence](viewer-spike.md#whole-epic-ir1-remembered-access-correction). The thirty preceding check records retain
 29 passes and one historical failed metadata binder with a passing successor;
 they are not thirty passes. Before technical review, F1's stale worksheet scope
 and F2's linked fixture-corpus statement were corrected as metadata, with both
@@ -293,7 +295,8 @@ private; no promoted evidence package or release-note enrollment is claimed.
 At the Task07 completion checkpoint, formal TASK-001-06 still required the
 verified Task07 commit; G-CONTRACT and whole-Epic audit/actual Master acceptance
 were open. The current [contract readiness record](contract-freeze.md) adds
-bounded G-CONTRACT `pass`; whole-Epic audit/actual Master acceptance remain open.
+bounded G-CONTRACT `pass`; the [prepared Epic closeout](../epics/EPIC-001.md#prepared-closeout-record)
+records completed internal validation and separate actual Master acceptance.
 This bounded result does not establish production or general quality.
 
 ## Decisions carried into the contract freeze
