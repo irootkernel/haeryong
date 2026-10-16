@@ -626,7 +626,7 @@ class Model:
     def adopt_object(self, upload_id, target, operation, authority='owner'):
         upload = self.uploads[upload_id]
         action = target.get('action')
-        required = 'context.write' if upload['purpose'] == 'context' else 'generation.request' if action == 'generation' else 'import.publish' if action == 'import' else 'draft.write' if action == 'draft_replace' else 'owner'
+        required = 'context.write' if upload['purpose'] == 'context' else 'generation.request' if action == 'generation' else 'source.read' if action == 'evidence_verification' else 'import.publish' if action == 'import' else 'draft.write' if action == 'draft_replace' else 'owner'
         self.authorize(authority, required)
         if not self.reusable(upload_id) or upload['target'] != target or (target.get('operation_id') is not None and target['operation_id'] != operation):
             fail(field='/target', reason='exact consumer binding required')

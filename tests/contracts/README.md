@@ -124,3 +124,24 @@ production recovery. SQLite CAS/rollback is actual temporary-database evidence;
 production storage/restore belongs to TASK-002-02/04/05 and EPIC-005. Real
 private/browser/native/provider proof remains in the original owning gate
 records and is not replaced by these fixtures.
+
+## Whole-Epic IR1 authority correction
+
+The first whole-Epic static review found an omitted C1-03 consumer branch after
+the original29-method pass. Body `evidence_verification` creation already used
+`source.read`; adoption now uses that same existing action scope, rather than
+requiring owner authority. Schema1.0/APIv1 and the11-entry digest domain remain
+unchanged. This is a recorded selected-model correction, not a new product
+authorization policy or release.
+
+The original C1-03 method now executes create, write, complete, settle and adopt
+with the declared source/version-read authority at creation and adoption. The
+existing seal model has no authority argument and remains a pure contract
+abstraction. Missing source-read authority is forbidden; mismatched operation,
+action, version or evidence targets produce the existing typed binding error
+when the caller otherwise has that action's authority. Every rejected branch
+compares the complete model state, including bytes and pins. The successful
+consumer adds exactly one adopted pin and retains the exact target and bytes.
+All29 current methods pass; the original passing methods and later failing
+baseline are separate evidence. Only model/test digest entries changed. No
+calibration, source-generation or provider execution was repeated.

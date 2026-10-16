@@ -22,10 +22,13 @@ owning checklists, not longer future product contracts, determine prior passes:
 | G-VALUE | bounded `pass`: full [Task07 closing list](../tasks/EPIC-001/TASK-001-07.md#observable-completion-and-tests), all six normative conditions, original12 criteria and [value record](knowledge-value-spike.md): released Mulgae/Gaori, real source-bound generation and all four paired readers. |
 | G-CONTRACT | bounded `pass`: all four Task06 assertions, selected schema/state fixtures, calibrated targets/current UI mappings, three-role technical review and supported local-correction/evidence composition below. |
 
-The selected contract baseline reuses unchanged implementation, Skill and sample
-bytes from verified Task07 commit `788c3c1854ace3aa6ad1de7e5d2d679f2a7e06a7`.
-Only the stack's opt-in calibration test is added. No new provider, browser,
-service, private route or physical-device execution is claimed by Task06.
+At the original Task06 freeze checkpoint, the selected contract baseline reused
+unchanged implementation, Skill and sample bytes from verified Task07 commit
+`788c3c1854ace3aa6ad1de7e5d2d679f2a7e06a7`. Only the stack's opt-in calibration
+test was added to the earlier spike implementation. No new provider, browser,
+service, private route or physical-device execution was claimed at that
+checkpoint. The later [viewer auth-consumer correction](viewer-spike.md#whole-epic-ir1-remembered-access-correction)
+records its affected code and actual bounded runtime proof separately.
 Historical checkpoint gate values remain historical, with current states owned
 by canonical Tasks and this record.
 
@@ -218,15 +221,44 @@ adoption, personal review mutation or installed production skill is inferred.
 The actual Task07 selected DOM Range followup is distinct from saved Ask;
 `state.selected_text` remained empty, and no saved context_ref/adoption occurred.
 
-The selected G-CONTRACT pass composes actual contract/calibration checks with
+At the original Task06 closure, the selected G-CONTRACT pass composed actual contract/calibration checks with
 the complete five preceding gate closing lists, one three-role static technical
 operation and independently supported local settlement. The roles covered
 correctness/state behavior, interfaces/compatibility and evidence/provenance;
 each assessed all14 original criteria and their compound parts. The source
 REQUEST_CHANGES reports remain unchanged, including their differing rows, and
-all seven findings map to the four corrected issues above. Current binding/docs
-checks cover only this status/record assembly; unchanged machine definitions,
-implementations, fixtures and calibration retain their exact original proof.
+all seven findings map to the four corrected issues above. The binding/docs checks at that checkpoint covered only its status/record
+assembly; then-unchanged machine definitions, implementations, fixtures and
+calibration retained their exact original proof.
 No original required assertion or failure was silently waived or deferred.
 Whole-Epic audit/validation and actual Master overall acceptance remain separate
 later steps; member readiness passes alone do not close EPIC-001.
+
+## Whole-Epic IR1 action-authority correction
+
+The first whole-Epic three-role static review returned REQUEST_CHANGES. Its
+evidence reviewer identified a C1-03 branch omitted from the genuine original
+29-method passes: a sealed evidence-verification body could be created with
+`source.read` but adoption incorrectly required owner authority. The canonical
+[consumer contract](../contracts/import-workflow.md#purpose-target-and-authority)
+already permits current source-read authority. The model now preserves that
+meaning at adoption; no schema, API or production permission policy changed.
+
+The extended original C1-03 method executes the actual model staging/seal/adopt
+chain. It proves scoped success, insufficient-scope denial, wrong operation,
+action and resource binding errors, unchanged complete state and pins on denial,
+and exactly one adopted-pin increment on success. The original-model baseline
+failed at the owner-only authorization guard; the corrected full29-method suite
+passes. Existing24 C1–C5 cases, five supplemental groups,11 source owners,19
+future actions and current control inventory retain their complete scope.
+Only model and test entries changed in the11-entry selected manifest; its
+version remains1.0 and its self/status exclusions remain. The unchanged
+calibration plan/helper/report and all40 query outcomes retain their original
+measurement and provenance limits; no calibration or provider rerun occurred.
+
+The original member review negatives and four corrections above remain
+historical. The new whole-Epic source reports also remain unchanged and predate
+this local correction; direct current behavior proof does not imply another
+provider review of corrected bytes. Whole-Epic retained assessment, validation
+and actual Master overall acceptance remain separate from these executed
+contract fixtures.

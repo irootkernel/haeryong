@@ -105,6 +105,43 @@ class Contracts(unittest.TestCase):
             fields = {'import': {'project_id': P, 'document_id': None}, 'draft_replace': {'draft_id': R}, 'generation': {'project_id': P, 'document_id': D}, 'annotation_edit': {'annotation_id': R}, 'evidence_verification': {'version_id': V, 'evidence_id': '근거'}}[action]
             c.validate('upload_create', {'purpose': purpose, 'input_mode': 'object', 'target': {'operation_id': self.newkey(), 'action': action, **fields}})
 
+        # Exercise the delegated source-read consumer through actual staging and seal.
+        operation = self.newkey()
+        target = {'operation_id': operation, 'action': 'evidence_verification',
+                  'version_id': V, 'evidence_id': '근거'}
+        body = {'purpose': 'body', 'input_mode': 'object', 'target': target}
+        scopes = {'version.read', 'source.read'}
+        for insufficient in ({'version.read'}, {'context.write'}, set()):
+            before = deepcopy(self.model.__dict__)
+            self.error('FORBIDDEN', self.model.create, self.newkey(), body, insufficient)
+            self.assertEqual(self.model.__dict__, before)
+        upload = self.model.create(self.newkey(), body, scopes)
+        raw = b'complete verification body'
+        cp = checkpoint(raw)
+        self.model.write(upload, raw, cp)
+        self.model.complete(self.newkey(), upload, cp)
+        self.assertTrue(self.model.settle(upload, 1))
+        for insufficient in ({'version.read'}, {'context.write'}, set()):
+            before = deepcopy(self.model.__dict__)
+            self.error('FORBIDDEN', self.model.adopt_object, upload, target, operation, insufficient)
+            self.assertEqual(self.model.__dict__, before)
+        for wrong, actual_operation, authority in [
+            (target, self.newkey(), scopes),
+            ({**target, 'version_id': OTHER}, operation, scopes),
+            ({**target, 'evidence_id': '다른 근거'}, operation, scopes),
+            ({**target, 'action': 'generation'}, operation, scopes | {'generation.request'}),
+        ]:
+            before = deepcopy(self.model.__dict__)
+            self.error('INVALID_REQUEST', self.model.adopt_object, upload, wrong,
+                       actual_operation, authority, field='/target')
+            self.assertEqual(self.model.__dict__, before)
+        before = deepcopy(self.model.uploads[upload])
+        self.assertEqual(self.model.adopt_object(upload, target, operation, scopes), c.digest(raw))
+        self.assertEqual(self.model.uploads[upload]['pins'], {**before['pins'], 'adopted': before['pins']['adopted'] + 1})
+        self.assertTrue(self.model.uploads[upload]['adopted'])
+        self.assertEqual(self.model.uploads[upload]['bytes'], before['bytes'])
+        self.assertEqual(self.model.uploads[upload]['target'], before['target'])
+
         self._metadata_identity_regression()
 
     def test_C1_04_context_missing_null_literal_and_query(self):
