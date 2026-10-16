@@ -12,6 +12,10 @@
 
 Haeryong is a personal developer's AI-maintained, source-grounded knowledge wiki. The owner uses tools such as Codex, Claude or Grok to produce readable explanations of their work, then uses Haeryong to read, interact, ask questions and keep review history. One result is a directory that can contain many HTML pages, nested folders and any supporting files. Haeryong imports the selected tree, generates its inventory, preserves its paths and renders pages on demand. Normal HTML, CSS and JavaScript are the default, including libraries, modules and external resources under ordinary browser rules. There is no Haeryong-imposed HTML/package size, file-count or directory-depth ceiling, mandatory author manifest, required index.html or file-extension allowlist. This bundle turns that workflow into implementation contracts, a proposed product UI, sequential work packages, and focused delivery checks. The immediate reading workflow works for ordinary AI output without source enrichment. Exact source evidence, Q&A and maintenance add value when available without making the raw directory harder to import. Specification prose is Markdown. The read-only documentation validator is a development utility; embedded code, JSON and configuration blocks remain specification examples, not existing Haeryong commands or deployed services.
 
+## Current implementation boundary
+
+EPIC-002 has started with [TASK-002-01](tasks/EPIC-002/TASK-002-01.md). The root Go module now supplies explicit profile initialization, a single-writer foreground daemon and authenticated local-control discovery/stop; [the implementation evidence](testing/profile-lifecycle.md) records executed checks and limits. Product storage readiness is explicitly pending TASK-002-02. This does not advance later Tasks, owner/browser authentication or the EPIC-002 exit gate. The existing spike and R5 qualifications remain unchanged.
+
 ## Start here
 
 | Reader | Recommended path |

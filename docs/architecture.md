@@ -24,7 +24,7 @@ The shared UI and both access paths belong to one Go daemon and library. Propose
 
 [TASK-001-02’s bounded spike](testing/stack-spike.md) executes the separate headless Go/SQLite and Wails modules with shared compiled React assets. The exact pins, lifecycle checks and search/backup limits are recorded there. Both fixture clients load the same ephemeral loopback HTTP URL. At that Task02 checkpoint, trusted Wails document-origin, API-path and credential-storage construction remained TASK-001-04 / G-VIEW work. The [completed viewer experiment](testing/viewer-spike.md) records the selected tested mechanisms; production application construction remains with its feature owners. The spike lives under `spikes/stack/`; the production layout below remains proposed. No authentication, durable jobs, production library or imported-renderer boundary is implemented by that spike.
 
-## Proposed repository layout
+## Repository layout and implementation boundary
 
 ```text
 haeryong/
@@ -47,7 +47,7 @@ haeryong/
   docs/                       # This execution specification
 ```
 
-The names are proposed targets, not an inspected repository. Enforce import direction with a build check: domain/application cannot import Wails, HTTP handlers, provider SDKs or SQLite. Use ports for clock, source reader, AI execution, content store, authorization and repositories. Avoid a service locator or universal plugin bus.
+TASK-002-01 introduces the root headless module, cmd/haeryong, internal/application/service and internal/adapters/localcontrol. The remaining names are proposed targets. The local-control adapter owns HTTP while the application exposes storage and endpoint ports. Enforce import direction with a build check: domain/application cannot import Wails, HTTP handlers, provider SDKs or SQLite. Use ports for clock, source reader, AI execution, content store, authorization and repositories. Avoid a service locator or universal plugin bus.
 
 ## Single writer and process lifecycle
 

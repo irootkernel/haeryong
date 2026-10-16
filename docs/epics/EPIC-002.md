@@ -2,7 +2,7 @@
 id: "EPIC-002"
 type: "epic"
 title: "Go service and storage foundation"
-status: "planned"
+status: "in_progress"
 depends_on: ["EPIC-001"]
 completion_requires: ["TASK-002-01","TASK-002-02","TASK-002-03","TASK-002-04","TASK-002-05","TASK-002-06"]
 ---
