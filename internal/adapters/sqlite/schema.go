@@ -1,0 +1,32 @@
+package sqlite
+
+// Each migration is immutable: persisted history verifies these exact bytes.
+var migrations = []string{
+	`CREATE TABLE schema_migrations(revision INTEGER PRIMARY KEY,checksum TEXT NOT NULL,applied_at TEXT NOT NULL);
+CREATE TABLE libraries(singleton INTEGER PRIMARY KEY CHECK(singleton=1),library_id TEXT NOT NULL UNIQUE,profile_id TEXT NOT NULL,schema_revision INTEGER NOT NULL,runtime_generation TEXT NOT NULL,stream_epoch TEXT NOT NULL,auth_epoch TEXT NOT NULL,unfiled_project_id TEXT NOT NULL);
+CREATE TABLE projects(project_id TEXT PRIMARY KEY,name TEXT NOT NULL,lifecycle TEXT NOT NULL CHECK(lifecycle IN ('active','archived')),revision INTEGER NOT NULL CHECK(revision>=1),permissions_revision INTEGER NOT NULL CHECK(permissions_revision>=1));
+CREATE TABLE config_revisions(config_revision INTEGER PRIMARY KEY CHECK(config_revision>=1),validated_json BLOB NOT NULL CHECK(json_valid(validated_json)),actor TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE resource_revisions(resource_kind TEXT NOT NULL,resource_id TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>=1),value BLOB,PRIMARY KEY(resource_kind,resource_id));
+CREATE TABLE events(sequence INTEGER PRIMARY KEY AUTOINCREMENT,stream_epoch TEXT NOT NULL,resource_kind TEXT NOT NULL,resource_id TEXT NOT NULL,kind TEXT NOT NULL,revision INTEGER NOT NULL,body BLOB);
+`,
+	`CREATE TABLE operation_receipts(principal_id TEXT NOT NULL,operation_id TEXT NOT NULL,request_fingerprint TEXT NOT NULL,original_request BLOB NOT NULL,normalization_context BLOB NOT NULL,state TEXT NOT NULL CHECK(state IN ('accepted','completed','failed','reconciling')),original_status INTEGER,result BLOB,CHECK((state IN ('accepted','reconciling') AND original_status IS NULL AND result IS NULL) OR (state IN ('completed','failed') AND original_status IS NOT NULL AND result IS NOT NULL)),PRIMARY KEY(principal_id,operation_id));
+CREATE TABLE content_objects(content_hash TEXT PRIMARY KEY,byte_size INTEGER NOT NULL CHECK(byte_size>=0),state TEXT NOT NULL CHECK(state IN ('ready','deleting')),gc_token TEXT);
+CREATE TABLE object_pins(pin_id TEXT PRIMARY KEY,owner_kind TEXT NOT NULL,owner_id TEXT NOT NULL,content_hash TEXT NOT NULL REFERENCES content_objects(content_hash));
+CREATE TABLE object_references(owner_kind TEXT NOT NULL,owner_id TEXT NOT NULL,content_hash TEXT NOT NULL REFERENCES content_objects(content_hash),PRIMARY KEY(owner_kind,owner_id,content_hash));
+CREATE TABLE content_sets(content_set_id TEXT PRIMARY KEY,payload_sha256 TEXT NOT NULL,sealed INTEGER NOT NULL CHECK(sealed IN (0,1)));
+CREATE TABLE version_entries(content_set_id TEXT NOT NULL REFERENCES content_sets(content_set_id),relative_path TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('file','directory','symlink')),content_hash TEXT REFERENCES content_objects(content_hash),byte_size INTEGER NOT NULL CHECK(byte_size>=0),exact_link_text TEXT,PRIMARY KEY(content_set_id,relative_path),CHECK((kind='file' AND content_hash IS NOT NULL) OR (kind!='file' AND content_hash IS NULL)));
+CREATE TABLE documents(document_id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(project_id),title TEXT NOT NULL,lifecycle TEXT NOT NULL CHECK(lifecycle IN ('active','archived','trash','purged')),latest_version_id TEXT REFERENCES document_versions(version_id) DEFERRABLE INITIALLY DEFERRED,revision INTEGER NOT NULL CHECK(revision>=1));
+CREATE TABLE document_versions(version_id TEXT PRIMARY KEY,document_id TEXT NOT NULL REFERENCES documents(document_id),sequence INTEGER CHECK(sequence>=1),base_version_id TEXT REFERENCES document_versions(version_id),content_set_id TEXT NOT NULL REFERENCES content_sets(content_set_id),title_snapshot TEXT NOT NULL,default_page TEXT,viewer_profile TEXT NOT NULL,source_basis TEXT NOT NULL,metadata BLOB,UNIQUE(document_id,sequence));
+CREATE TABLE version_pages(version_id TEXT NOT NULL REFERENCES document_versions(version_id),page_path TEXT NOT NULL,metadata BLOB,PRIMARY KEY(version_id,page_path));
+CREATE TABLE regions(version_id TEXT NOT NULL,page_path TEXT NOT NULL,region_id TEXT NOT NULL,metadata BLOB,PRIMARY KEY(version_id,page_path,region_id),FOREIGN KEY(version_id,page_path) REFERENCES version_pages(version_id,page_path));
+CREATE TABLE version_sources(version_id TEXT NOT NULL REFERENCES document_versions(version_id),source_id TEXT NOT NULL,metadata BLOB,PRIMARY KEY(version_id,source_id));
+CREATE TABLE evidence(version_id TEXT NOT NULL,evidence_id TEXT NOT NULL,source_id TEXT NOT NULL,metadata BLOB,PRIMARY KEY(version_id,evidence_id),FOREIGN KEY(version_id,source_id) REFERENCES version_sources(version_id,source_id));
+CREATE TABLE region_evidence(version_id TEXT NOT NULL,page_path TEXT NOT NULL,region_id TEXT NOT NULL,evidence_id TEXT NOT NULL,PRIMARY KEY(version_id,page_path,region_id,evidence_id),FOREIGN KEY(version_id,page_path,region_id) REFERENCES regions(version_id,page_path,region_id),FOREIGN KEY(version_id,evidence_id) REFERENCES evidence(version_id,evidence_id));
+CREATE TABLE jobs(job_id TEXT PRIMARY KEY,kind TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('queued','running','interrupted','reconciling','paused','cancelling','cancelled','completed','failed')),attempt_generation INTEGER NOT NULL CHECK(attempt_generation>=1),cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK(cancel_requested IN (0,1)),parent_id TEXT REFERENCES jobs(job_id),upload_id TEXT REFERENCES uploads(upload_id),error TEXT NOT NULL DEFAULT '',scope BLOB NOT NULL,config_revision INTEGER NOT NULL CHECK(config_revision>=1),permissions_revisions BLOB NOT NULL,deadline TEXT);
+CREATE TABLE uploads(upload_id TEXT PRIMARY KEY,principal_id TEXT NOT NULL,purpose TEXT NOT NULL,input_mode TEXT NOT NULL,selection_name TEXT NOT NULL,target BLOB NOT NULL,state TEXT NOT NULL CHECK(state IN ('open','sealing','sealed','abandoned')),checkpoint BLOB NOT NULL,seal_job_id TEXT REFERENCES jobs(job_id),sealed_content_set_id TEXT REFERENCES content_sets(content_set_id),error TEXT NOT NULL DEFAULT '');
+CREATE TABLE upload_ranges(upload_id TEXT NOT NULL REFERENCES uploads(upload_id),relative_path TEXT NOT NULL,range_offset INTEGER NOT NULL CHECK(range_offset>=0),byte_size INTEGER NOT NULL CHECK(byte_size>=0),content_hash TEXT NOT NULL,PRIMARY KEY(upload_id,relative_path,range_offset));
+CREATE INDEX pins_by_hash ON object_pins(content_hash);
+CREATE INDEX refs_by_hash ON object_references(content_hash);
+CREATE INDEX jobs_by_state ON jobs(state);
+`,
+}

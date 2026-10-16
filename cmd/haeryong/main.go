@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"haeryong.local/haeryong/internal/adapters/foundation"
 	"haeryong.local/haeryong/internal/adapters/localcontrol"
 	"haeryong.local/haeryong/internal/application/service"
 )
@@ -119,7 +120,7 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 		return emit(map[string]string{"library_id": p.LibraryID, "profile_id": p.ProfileID, "profile": p.Name, "data_dir": p.DataDir})
 	case "daemon run":
 		var outputErr error
-		runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: service.PendingStorage{}, Endpoint: &localcontrol.HTTP{}}
+		runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: foundation.New(nil), Endpoint: &localcontrol.HTTP{}}
 		err := runner.Run(ctx, func(id service.Identity) { outputErr = emit(id) })
 		return errors.Join(err, outputErr)
 	case "service status", "status", "doctor", "service stop":

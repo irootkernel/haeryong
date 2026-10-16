@@ -36,13 +36,14 @@ type Selection struct {
 }
 
 type Profile struct {
-	Format     int    `json:"format"`
-	LibraryID  string `json:"library_id"`
-	ProfileID  string `json:"profile_id"`
-	Name       string `json:"profile"`
-	DataDir    string `json:"data_dir"`
-	VolumeRoot string `json:"volume_root,omitempty"`
-	ControlKey string `json:"control_key"`
+	Format       int    `json:"format"`
+	StorageState string `json:"storage_state,omitempty"`
+	LibraryID    string `json:"library_id"`
+	ProfileID    string `json:"profile_id"`
+	Name         string `json:"profile"`
+	DataDir      string `json:"data_dir"`
+	VolumeRoot   string `json:"volume_root,omitempty"`
+	ControlKey   string `json:"control_key"`
 }
 
 type LockedProfile struct {
@@ -198,7 +199,7 @@ func Initialize(s Selection) (Profile, error) {
 	if err != nil {
 		return Profile{}, err
 	}
-	p := Profile{Format: 1, LibraryID: library, ProfileID: id, Name: s.Profile, DataDir: path, VolumeRoot: volume, ControlKey: key}
+	p := Profile{Format: 2, StorageState: "pending", LibraryID: library, ProfileID: id, Name: s.Profile, DataDir: path, VolumeRoot: volume, ControlKey: key}
 	for _, name := range []string{"runtime", "storage"} {
 		if err := os.Mkdir(filepath.Join(path, name), 0700); err != nil {
 			return Profile{}, err
@@ -233,7 +234,7 @@ func Load(s Selection) (Profile, error) {
 	if err := readJSON(filepath.Join(path, "profile.json"), &p); err != nil {
 		return Profile{}, err
 	}
-	if p.Format != 1 || p.Name != s.Profile || p.DataDir != path || !validID(p.LibraryID) || !validID(p.ProfileID) {
+	if ((p.Format != 1 || p.StorageState != "") && (p.Format != 2 || (p.StorageState != "pending" && p.StorageState != "ready"))) || p.Name != s.Profile || p.DataDir != path || !validID(p.LibraryID) || !validID(p.ProfileID) {
 		return Profile{}, errors.New("profile identity mismatch or unsupported format")
 	}
 	key, err := hex.DecodeString(p.ControlKey)
@@ -338,7 +339,9 @@ func readJSON(path string, target any) error {
 	return nil
 }
 
-func writeJSON(dir, name string, value any) error {
+func writeJSON(dir, name string, value any) error { return writeJSONWithFault(dir, name, value, nil) }
+
+func writeJSONWithFault(dir, name string, value any, fault func(string) error) error {
 	f, err := os.CreateTemp(dir, ".record-*")
 	if err != nil {
 		return err
@@ -349,6 +352,12 @@ func writeJSON(dir, name string, value any) error {
 		f.Close()
 		return err
 	}
+	if fault != nil {
+		if err := fault("profile_file_sync"); err != nil {
+			f.Close()
+			return err
+		}
+	}
 	if err := f.Sync(); err != nil {
 		f.Close()
 		return err
@@ -356,8 +365,18 @@ func writeJSON(dir, name string, value any) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
+	if fault != nil {
+		if err := fault("profile_rename"); err != nil {
+			return err
+		}
+	}
 	if err := os.Rename(temp, filepath.Join(dir, name)); err != nil {
 		return err
+	}
+	if fault != nil {
+		if err := fault("profile_directory_sync"); err != nil {
+			return err
+		}
 	}
 	return syncDir(dir)
 }
@@ -393,4 +412,40 @@ func WaitStopped(ctx context.Context, p Profile) error {
 		case <-tick.C:
 		}
 	}
+}
+
+// PrepareStorageBootstrap upgrades only the known empty legacy profile. The
+// marker lives outside storage, so loss of storage never becomes first-run init.
+func (p *LockedProfile) PrepareStorageBootstrap(fault func(string) error) error {
+	if p.Profile.Format == 2 {
+		return nil
+	}
+	entries, err := os.ReadDir(filepath.Join(p.Profile.DataDir, "storage"))
+	if err != nil {
+		return err
+	}
+	if len(entries) != 0 {
+		return errors.New("legacy profile has unexpected storage; recovery required")
+	}
+	next := p.Profile
+	next.Format = 2
+	next.StorageState = "pending"
+	if err := writeJSONWithFault(next.DataDir, "profile.json", next, fault); err != nil {
+		return err
+	}
+	p.Profile = next
+	return nil
+}
+func (p *LockedProfile) MarkStorageReady(fault func(string) error) error {
+	if p.Profile.StorageState == "ready" {
+		return nil
+	}
+	next := p.Profile
+	next.Format = 2
+	next.StorageState = "ready"
+	if err := writeJSONWithFault(next.DataDir, "profile.json", next, fault); err != nil {
+		return err
+	}
+	p.Profile = next
+	return nil
 }

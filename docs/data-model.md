@@ -1,6 +1,6 @@
 # Data model and transactional rules
 
-**Source:** Revision 4 storage/state separation. **Proposal:** logical schema v1, documentation baseline 1.6.1, clarified by [shared wire registry](contracts/schema-registry.md). EPIC-002 creates the common migrations and mutation foundations; this file is not an executed schema.
+**Source:** Revision 4 storage/state separation. **Proposal:** logical schema v1, documentation baseline 1.6.1, clarified by [shared wire registry](contracts/schema-registry.md). [TASK-002-02](testing/storage-foundation.md) implements and exercises the current storage/local-operation subset. This logical model also lists future feature-owned tables; it does not assert that all of them exist.
 
 ## Identifiers and common columns
 
@@ -112,4 +112,4 @@ The embedded DB lives on local storage; remote clients use the API. Restore rota
 
 ### Initial driver and retrieval selection
 
-[TASK-001-02](testing/stack-spike.md) selected modernc.org/sqlite v1.60.1 (engine 3.53.4) from actual macOS/Linux ARM64 WAL, restart and snapshot tests. Its fixture service uses one connection, WAL/FULL, foreign keys and a 5000 ms busy timeout. Production pool initialization and migrations remain EPIC-002 work. X09 selects unicode61 word/phrase candidates, trigram substring candidates for three or more characters, and a filtered authorized-corpus short-query fallback; measured spacing/camelCase limitations remain explicit. TASK-004-02 owns production indexing, pagination, ranking and tuning. This spike does not implement DB-plus-content backup, pins or power-loss recovery.
+[TASK-001-02](testing/stack-spike.md) selected modernc.org/sqlite v1.60.1 (engine 3.53.4) from actual macOS/Linux ARM64 WAL, restart and snapshot tests. Its fixture service uses one connection, WAL/FULL, foreign keys and a 5000 ms busy timeout. TASK-002-02 now applies and verifies these settings on initial and replacement connections and records real migrations; full backup/restore and production indexing remain with their feature owners. X09 selects unicode61 word/phrase candidates, trigram substring candidates for three or more characters, and a filtered authorized-corpus short-query fallback; measured spacing/camelCase limitations remain explicit. TASK-004-02 owns production indexing, pagination, ranking and tuning. This spike does not implement DB-plus-content backup, pins or power-loss recovery.

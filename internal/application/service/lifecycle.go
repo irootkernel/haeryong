@@ -19,12 +19,6 @@ type StorageState struct {
 	State string `json:"state"`
 }
 
-type PendingStorage struct{}
-
-func (PendingStorage) Prepare(context.Context, Profile) (StorageState, func() error, error) {
-	return StorageState{State: "pending_task_002_02"}, func() error { return nil }, nil
-}
-
 type Identity struct {
 	LibraryID    string       `json:"library_id"`
 	ProfileID    string       `json:"profile_id"`
@@ -44,10 +38,11 @@ type Endpoint interface {
 }
 
 type Runner struct {
-	Selection Selection
-	Port      int
-	Storage   Storage
-	Endpoint  Endpoint
+	Selection    Selection
+	Port         int
+	Storage      Storage
+	Endpoint     Endpoint
+	ProfileFault func(string) error
 }
 
 func (r Runner) Run(ctx context.Context, onReady func(Identity)) (result error) {
@@ -62,11 +57,19 @@ func (r Runner) Run(ctx context.Context, onReady func(Identity)) (result error) 
 	if r.Storage == nil || r.Endpoint == nil {
 		return errors.New("storage and endpoint required")
 	}
+	if err := writer.PrepareStorageBootstrap(r.ProfileFault); err != nil {
+		return err
+	}
 	storage, closeStorage, err := r.Storage.Prepare(ctx, writer.Profile)
 	if err != nil {
 		return err
 	}
 	defer func() { result = errors.Join(result, closeStorage()) }()
+	if storage.Ready {
+		if err := writer.MarkStorageReady(r.ProfileFault); err != nil {
+			return err
+		}
+	}
 	instance, err := NewID()
 	if err != nil {
 		return err

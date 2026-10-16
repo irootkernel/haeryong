@@ -160,7 +160,7 @@ func startDaemon(t *testing.T, s service.Selection, port int) *daemon {
 	case <-time.After(10 * time.Second):
 		t.Fatal("daemon readiness timed out")
 	}
-	if !d.id.ControlReady || d.id.Storage.Ready || d.id.Storage.State != "pending_task_002_02" {
+	if !d.id.ControlReady || !d.id.Storage.Ready || d.id.Storage.State != "ready" {
 		t.Fatalf("incorrect readiness: %+v", d.id)
 	}
 	return d
@@ -195,7 +195,7 @@ func TestExplicitInitializationAndAliasWriter(t *testing.T) {
 	aliasSelection.DataDir = alias
 	cli(t, 4, append([]string{"daemon", "run", "--port", fmt.Sprint(availablePort(t))}, profileArgs(aliasSelection)...)...)
 	actual, err := service.Load(aliasSelection)
-	if err != nil || actual != p {
+	if err != nil || actual.LibraryID != p.LibraryID || actual.ProfileID != p.ProfileID || actual.ControlKey != p.ControlKey || actual.DataDir != p.DataDir || actual.StorageState != "ready" {
 		t.Fatalf("alias did not resolve same profile: %v", err)
 	}
 	cli(t, 0, append([]string{"service", "stop"}, profileArgs(aliasSelection)...)...)

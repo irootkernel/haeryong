@@ -1,6 +1,6 @@
 # Deployment and local/remote operation
 
-**Planning runbook:** The initial foreground lifecycle and protected local-control subset is implemented by [TASK-002-01](../testing/profile-lifecycle.md). Storage, owner/browser sessions, OS service installation and other product commands below remain to be implemented. The [executed fixture experiment](#executed-authentication-and-private-ingress-experiment) separately records its temporary listener and private foreground proxy; it does not establish a production installation.
+**Planning runbook:** The initial foreground lifecycle and protected local-control subset is implemented by [TASK-002-01](../testing/profile-lifecycle.md). [TASK-002-02](../testing/storage-foundation.md) implements storage preparation and its fail-closed recovery boundary. Owner/browser sessions, OS service installation and other product commands below remain to be implemented. The [executed fixture experiment](#executed-authentication-and-private-ingress-experiment) separately records its temporary listener and private foreground proxy; it does not establish a production installation.
 
 ## Proposed support tiers
 

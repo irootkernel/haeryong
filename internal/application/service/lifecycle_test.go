@@ -163,7 +163,7 @@ func TestRunnerPortBoundaries(t *testing.T) {
 	s := testSelection(t)
 	for _, port := range []int{1, 1023, 1024, 9000, 9999, 65535, 65536} {
 		endpoint := &endpointStub{}
-		runner := Runner{Selection: s, Port: port, Storage: PendingStorage{}, Endpoint: endpoint}
+		runner := Runner{Selection: s, Port: port, Storage: pendingFixture{}, Endpoint: endpoint}
 		err := runner.Run(context.Background(), func(Identity) { endpoint.stop() })
 		if port < 1024 || port > 65535 {
 			if err == nil || !strings.Contains(err.Error(), "1024 and 65535") || endpoint.started {
@@ -173,4 +173,10 @@ func TestRunnerPortBoundaries(t *testing.T) {
 			t.Fatalf("valid port %d rejected: %v", port, err)
 		}
 	}
+}
+
+type pendingFixture struct{}
+
+func (pendingFixture) Prepare(context.Context, Profile) (StorageState, func() error, error) {
+	return StorageState{State: "fixture_pending"}, func() error { return nil }, nil
 }

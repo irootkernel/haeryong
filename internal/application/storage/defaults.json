@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0",
+  "network": {
+    "listener": {
+      "bind": "127.0.0.1",
+      "port": 9270
+    },
+    "remote_enabled": false,
+    "external_base_url": null,
+    "allowed_origins": [
+      "http://127.0.0.1:9270"
+    ]
+  },
+  "security": {
+    "remember_device_default": true,
+    "session_idle_seconds": null,
+    "session_absolute_seconds": null,
+    "pairing_expiry_seconds": 300
+  },
+  "maintenance": {
+    "schedule": {
+      "mode": "manual",
+      "interval_seconds": null,
+      "cron": null,
+      "timezone": "Asia/Seoul"
+    },
+    "scope": "selected_projects",
+    "project_ids": [],
+    "depth": "change_focused",
+    "missed_runs": "coalesce_one",
+    "max_concurrent_ai_jobs": 1,
+    "max_provider_attempts_per_run": 20,
+    "max_run_seconds": 1800,
+    "auto_apply": {
+      "backlink_index_repair": "auto",
+      "related_explanation": "propose",
+      "topic_assignment": "propose",
+      "freshness_assessment": "propose"
+    },
+    "content_generation": "propose"
+  },
+  "retention": {
+    "trash": "indefinite",
+    "backups": "indefinite",
+    "completed_job_detail": "indefinite",
+    "diagnostic_data": "indefinite",
+    "auto_purge_enabled": false
+  },
+  "source": {
+    "default_retention": "reference_only"
+  },
+  "projects": {}
+}

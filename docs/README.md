@@ -14,7 +14,7 @@ Haeryong is a personal developer's AI-maintained, source-grounded knowledge wiki
 
 ## Current implementation boundary
 
-EPIC-002 has started with [TASK-002-01](tasks/EPIC-002/TASK-002-01.md). The root Go module now supplies explicit profile initialization, a single-writer foreground daemon and authenticated local-control discovery/stop; [the implementation evidence](testing/profile-lifecycle.md) records executed checks and limits. Product storage readiness is explicitly pending TASK-002-02. This does not advance later Tasks, owner/browser authentication or the EPIC-002 exit gate. The existing spike and R5 qualifications remain unchanged.
+EPIC-002 has started with [TASK-002-01](tasks/EPIC-002/TASK-002-01.md). The root Go module now supplies explicit profile initialization, a single-writer foreground daemon and authenticated local-control discovery/stop; [the implementation evidence](testing/profile-lifecycle.md) records executed checks and limits. [TASK-002-02](tasks/EPIC-002/TASK-002-02.md) now supplies real profile/bootstrap, SQLite and immutable-object/local-operation foundations; [its evidence](testing/storage-foundation.md) records actual checks and current review limits. The daemon reports storage readiness only after durable bootstrap and reference verification. This does not advance later Tasks, owner/browser authentication or the EPIC-002 exit gate. The existing spike and R5 qualifications remain unchanged.
 
 ## Start here
 
