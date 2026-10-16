@@ -105,7 +105,7 @@ def validate(name, value, code='INVALID_REQUEST'):
     def walk(rule, data, at):
         allowed = {'$ref', 'anyOf', 'oneOf', 'type', 'properties', 'required',
                    'additionalProperties', 'items', 'enum', 'minLength',
-                   'minimum', 'maximum', 'pattern', 'format'}
+                   'minimum', 'maximum', 'maxLength', 'pattern', 'format'}
         assert set(rule) <= allowed, set(rule) - allowed
         if '$ref' in rule:
             return walk(SCHEMA['$defs'][rule['$ref'].split('/')[-1]], data, at)
@@ -153,6 +153,8 @@ def validate(name, value, code='INVALID_REQUEST'):
             for i, item in enumerate(data):
                 walk(rule['items'], item, at + '/' + str(i))
         if isinstance(data, str):
+            if len(data) > rule.get('maxLength', len(data)):
+                fail(code, at, 'control string too long')
             if len(data) < rule.get('minLength', 0):
                 fail(code, at, 'empty string')
             if 'pattern' in rule and not re.fullmatch(rule['pattern'], data):

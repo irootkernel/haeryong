@@ -27,6 +27,31 @@ def checkpoint(raw=b'complete original bytes', generation=1):
 
 
 class Contracts(unittest.TestCase):
+    def test_Task00203_selected_auth_control_shapes(self):
+        c.validate('pairing_create', {'device_label': 'Remembered 기기'})
+        c.validate('pairing_poll', {'polling_secret': 'a' * 64})
+        c.validate('pairing_decision', {'code': 'comparison', 'origin': 'http://127.0.0.1:9270'})
+        for body in ({}, {'code': None, 'origin': 'http://127.0.0.1:9270'},
+                     {'code': 'x', 'origin': 'null'},
+                     {'code': 'x', 'origin': 'http://127.0.0.1:9270', 'expected_state': 'pending'}):
+            with self.assertRaises(c.ContractError):
+                c.validate('pairing_decision', body)
+        with self.assertRaises(c.ContractError):
+            c.strict_json('{"code":"a","code":"b","origin":"http://127.0.0.1:9270"}')
+        with self.assertRaises(c.ContractError):
+            c.validate('pairing_create', {'device_label': 'x' * 129})
+        with self.assertRaises(c.ContractError):
+            c.validate('pairing_poll', {'polling_secret': None})
+        c.validate('pairing_list', {'items': [], 'next_cursor': None})
+        c.validate('device_session_list', {'items': [], 'next_cursor': None})
+        for shape in ('pairing_list', 'device_session_list'):
+            with self.assertRaises(c.ContractError):
+                c.validate(shape, [])
+            with self.assertRaises(c.ContractError):
+                c.validate(shape, {'items': []})
+        self.assertEqual(c.ERROR_HTTP['SESSION_REVOKED'], 401)
+        self.assertEqual(c.ERROR_HTTP['SERVICE_RECOVERING'], 503)
+
     def setUp(self):
         self.model = c.Model()
         self.next_key = 0

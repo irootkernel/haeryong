@@ -47,7 +47,7 @@ haeryong/
   docs/                       # This execution specification
 ```
 
-TASK-002-01 introduces the root headless module, cmd/haeryong, internal/application/service and internal/adapters/localcontrol. TASK-002-02 adds internal/domain, typed internal/application/storage ports and the sqlite, contentstore and foundation adapters, with [executed storage evidence](testing/storage-foundation.md). The remaining names are proposed targets. The local-control adapter owns HTTP while the application exposes storage and endpoint ports. Enforce import direction with a build check: domain/application cannot import Wails, HTTP handlers, provider SDKs or SQLite. Use ports for clock, source reader, AI execution, content store, authorization and repositories. Avoid a service locator or universal plugin bus.
+TASK-002-01 introduces the root headless module, cmd/haeryong, internal/application/service and internal/adapters/localcontrol. TASK-002-02 adds internal/domain, typed internal/application/storage ports and the sqlite, contentstore and foundation adapters, with [executed storage evidence](testing/storage-foundation.md). TASK-002-03 adds internal/security/session, typed internal/application/auth use cases and internal/adapters/http/auth, with protected local-control enrollment on the same listener. The remaining names are proposed targets. The local-control adapter owns HTTP while the application exposes storage and endpoint ports. Enforce import direction with a build check: domain/application cannot import Wails, HTTP handlers, provider SDKs or SQLite. Use ports for clock, source reader, AI execution, content store, authorization and repositories. Avoid a service locator or universal plugin bus.
 
 ## Single writer and process lifecycle
 

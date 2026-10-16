@@ -68,7 +68,7 @@ Haeryong's repository-local agent guidance is defined in this file.
 
 ### Repository Index and Authorities
 
-- Haeryong is a personal AI-maintained, source-grounded knowledge wiki for importing and reading complete result directories. The repository contains specifications, an R5 UI concept, executable spikes, and the initial headless profile/local-control service scaffold. Real SQLite/object storage and durable local-operation foundations are present. Sessions, result-directory import and product APIs remain with the ordered EPIC-002 Tasks.
+- Haeryong is a personal AI-maintained, source-grounded knowledge wiki for importing and reading complete result directories. The repository contains specifications, an R5 UI concept, executable spikes, and the initial headless profile/local-control service scaffold. Real SQLite/object storage and durable local-operation foundations are present. Owner bootstrap, remembered device sessions and the authenticated API foundation are present. Complete result-directory import and remaining product APIs stay with the ordered EPIC-002 Tasks.
 - Start with docs/README.md and docs/execution-protocol.md. Follow the authority order in docs/README.md: explicit owner decisions, the preserved Revision 4 as amended by current owner directions, then implementation proposals. Evidence gates require actual execution.
 - Use docs/decisions.md and docs/requirements.md for product direction, docs/architecture.md for architecture, and docs/contracts/README.md for interface navigation. docs/contracts/schema-registry.md owns shared route/state schemas.
 - docs/roadmap.md, docs/epics/README.md, and docs/tasks/README.md index delivery work. Follow explicit dependencies and the execution protocol.
@@ -76,7 +76,7 @@ Haeryong's repository-local agent guidance is defined in this file.
 - Documentation integrity command: python3 -B docs/testing/validate_docs.py. It requires Python 3 and PyYAML, writes no project files, and does not validate application behavior.
 - Prototype generation command: python3 -B docs/design/prototype/assemble-prototype.py. It rewrites prototype.html and generates haeryong-prototype.html in that directory. Change authoritative prototype inputs and regenerate together only within authorized prototype work.
 - Gaori command docs-integrity wraps the documentation integrity command with parser generic, tags docs and validation, and a 120-second timeout.
-- Headless build: go build ./cmd/haeryong; focused foundation checks: go test -race ./... and go vet ./.... The root module excludes the separately pinned spike and desktop modules. No production release entrypoint is established yet. Only the lifecycle commands documented in docs/testing/profile-lifecycle.md are implemented; docs/testing/storage-foundation.md records their real storage preparation and its limits. Remaining specification examples are not runnable product commands.
+- Headless build: go build ./cmd/haeryong; focused foundation checks: go test -race ./... and go vet ./.... The root module excludes the separately pinned spike and desktop modules. No production release entrypoint is established yet. Only the lifecycle commands documented in docs/testing/profile-lifecycle.md are implemented; docs/testing/storage-foundation.md records their real storage preparation and its limits. TASK-002-03 adds protected auth pairings/approve/reject and the bounded browser/session API documented in docs/testing/authenticated-sessions.md. Remaining specification examples are not runnable product commands.
 
 ### Commit Messages
 

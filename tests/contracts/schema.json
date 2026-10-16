@@ -2697,6 +2697,314 @@
         "project_id"
       ],
       "additionalProperties": false
+    },
+    "pairing_create": {
+      "type": "object",
+      "properties": {
+        "device_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "device_label"
+      ],
+      "additionalProperties": false
+    },
+    "pairing_poll": {
+      "type": "object",
+      "properties": {
+        "polling_secret": {
+          "type": "string",
+          "pattern": "[0-9a-f]{64}"
+        }
+      },
+      "required": [
+        "polling_secret"
+      ],
+      "additionalProperties": false
+    },
+    "pairing_decision": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "origin": {
+          "type": "string",
+          "format": "origin"
+        }
+      },
+      "required": [
+        "code",
+        "origin"
+      ],
+      "additionalProperties": false
+    },
+    "pairing": {
+      "type": "object",
+      "properties": {
+        "pairing_id": {
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+        },
+        "device_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "origin": {
+          "type": "string",
+          "format": "origin"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "utc-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "utc-time"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "approved",
+            "rejected",
+            "expired"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "\"pairing-[0-9a-f-]{36}-r[1-9][0-9]*\""
+        }
+      },
+      "required": [
+        "pairing_id",
+        "device_label",
+        "origin",
+        "created_at",
+        "expires_at",
+        "state",
+        "revision",
+        "etag"
+      ],
+      "additionalProperties": false
+    },
+    "pairing_created": {
+      "type": "object",
+      "properties": {
+        "pairing_id": {
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+        },
+        "device_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "origin": {
+          "type": "string",
+          "format": "origin"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "utc-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "utc-time"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "approved",
+            "rejected",
+            "expired"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "\"pairing-[0-9a-f-]{36}-r[1-9][0-9]*\""
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "polling_secret": {
+          "type": "string",
+          "pattern": "[0-9a-f]{64}"
+        }
+      },
+      "required": [
+        "pairing_id",
+        "device_label",
+        "origin",
+        "created_at",
+        "expires_at",
+        "state",
+        "revision",
+        "etag",
+        "code",
+        "polling_secret"
+      ],
+      "additionalProperties": false
+    },
+    "device_session": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+        },
+        "principal_id": {
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+        },
+        "library_id": {
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+        },
+        "scope": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "owner"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        "device_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "origin": {
+          "type": "string",
+          "format": "origin"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "utc-time"
+        },
+        "last_seen_at": {
+          "type": "string",
+          "format": "utc-time"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "utc-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "active",
+            "expired",
+            "revoked"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "\"session-[0-9a-f-]{36}-[0-9a-f]{64}\""
+        }
+      },
+      "required": [
+        "session_id",
+        "principal_id",
+        "library_id",
+        "scope",
+        "device_label",
+        "origin",
+        "created_at",
+        "last_seen_at",
+        "expires_at",
+        "state",
+        "revision",
+        "etag"
+      ],
+      "additionalProperties": false
+    },
+    "pairing_list": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pairing"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "device_session_list": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/device_session"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
     }
   },
   "error_http": {
@@ -2719,6 +3027,13 @@
     "HASH_MISMATCH": 422,
     "INVALID_EVIDENCE": 422,
     "FEATURE_NOT_READY": 503,
-    "OPERATION_RECONCILIATION_REQUIRED": 409
+    "OPERATION_RECONCILIATION_REQUIRED": 409,
+    "AUTH_REQUIRED": 401,
+    "SESSION_EXPIRED": 401,
+    "SESSION_REVOKED": 401,
+    "ORIGIN_REJECTED": 403,
+    "RATE_LIMITED": 429,
+    "SERVICE_RECOVERING": 503,
+    "CONTENT_INTEGRITY_ERROR": 503
   }
 }

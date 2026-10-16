@@ -29,6 +29,24 @@ type Store interface {
 // Each callback is a short serialized write transaction. Files are streamed and
 // synced before entry; only atomic publication/directory sync may run inside it.
 type WriteTx interface {
+	Receipt(domain.OperationKey) (domain.Receipt, error)
+	Events(string, int64, int) ([]domain.Event, error)
+	EventHead() (string, int64, error)
+	Document(string) (domain.Document, error)
+	Version(string) (domain.Version, error)
+	AuthState() (domain.AuthState, error)
+	SessionByHash(string) (domain.Session, error)
+	SessionByID(string) (domain.Session, error)
+	Sessions() ([]domain.Session, error)
+	PutSession(domain.Session) error
+	Pairing(string) (domain.Pairing, error)
+	Pairings(bool) ([]domain.Pairing, error)
+	PairingStats(string, int64, string) (int, int, error)
+	PutPairing(domain.Pairing) error
+	AuthAudit(string, string, string) error
+	Job(string) (domain.Job, error)
+	Jobs() ([]domain.Job, error)
+
 	Scope(string) (domain.ScopeState, error)
 	ReserveOperation(domain.Request, func() ([]byte, error)) (domain.Receipt, bool, error)
 	CompleteOperation(domain.OperationKey, domain.Response) error

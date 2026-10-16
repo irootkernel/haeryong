@@ -1,5 +1,5 @@
-// Haeryong is the headless local CLI and foreground daemon. Product API, browser
-// sessions and OS service installation have separate implementing Tasks.
+// Haeryong is the headless local CLI and foreground daemon. OS installation and
+// complete result-directory APIs retain their ordered implementing Tasks.
 package main
 
 import (
@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 
 	"haeryong.local/haeryong/internal/adapters/foundation"
 	"haeryong.local/haeryong/internal/adapters/localcontrol"
+	appauth "haeryong.local/haeryong/internal/application/auth"
 	"haeryong.local/haeryong/internal/application/service"
 )
 
@@ -109,9 +111,12 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 	if opt.endpoint != "" && (command == "init" || command == "daemon run") {
 		return invalid("initialization and daemon startup require local profile settings")
 	}
+	if len(opt.command) >= 2 && opt.command[0] == "auth" {
+		return bootstrapCommand(ctx, opt, emit, os.Stdin)
+	}
 	switch command {
 	case "version":
-		return emit(map[string]string{"binary": "development", "local_control_api": service.APIVersion, "product_api": "not_implemented", "package": "not_implemented", "skill": "not_implemented"})
+		return emit(map[string]string{"binary": "development", "local_control_api": service.APIVersion, "product_api": "auth_foundation_v1", "package": "not_implemented", "skill": "not_implemented"})
 	case "init":
 		p, err := service.Initialize(opt.selection)
 		if err != nil {
@@ -120,7 +125,16 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 		return emit(map[string]string{"library_id": p.LibraryID, "profile_id": p.ProfileID, "profile": p.Name, "data_dir": p.DataDir})
 	case "daemon run":
 		var outputErr error
-		runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: foundation.New(nil), Endpoint: &localcontrol.HTTP{}}
+		store := foundation.New(nil)
+		core := appauth.New(store)
+		endpoint := &localcontrol.HTTP{Auth: core, Product: func(origin string) (http.Handler, error) {
+			configuration, err := store.Configuration(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return productHandler(core, origin, configuration.Value)
+		}}
+		runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: store, Endpoint: endpoint}
 		err := runner.Run(ctx, func(id service.Identity) { outputErr = emit(id) })
 		return errors.Join(err, outputErr)
 	case "service status", "status", "doctor", "service stop":

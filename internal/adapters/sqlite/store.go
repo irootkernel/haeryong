@@ -26,7 +26,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaRevision = 2
+const SchemaRevision = 3
 
 type Boundary string
 
@@ -35,6 +35,8 @@ const (
 	BeforeStorageDirectorySync Boundary = "storage_directory_sync"
 	BeforeCommit               Boundary = "transaction_commit"
 	BeforeSnapshotSync         Boundary = "snapshot_sync"
+	BeforeSnapshotObjectCopy   Boundary = "snapshot_object_copy"
+	BeforeSnapshotObjectSync   Boundary = "snapshot_object_sync"
 )
 
 type Fault func(Boundary) error
@@ -159,9 +161,10 @@ func (s *Store) Prepare(ctx context.Context, p service.Profile) (state service.S
 		return state, nil, err
 	}
 	// Local work left running by a dead process is fenced before any new claim.
-	if _, err := db.ExecContext(ctx, "UPDATE jobs SET state='interrupted',attempt_generation=attempt_generation+1 WHERE state IN ('running','cancelling','reconciling') OR (state='paused' AND cancel_requested=1)"); err != nil {
+	if err := s.recoverLocalJobs(ctx); err != nil {
 		return state, nil, err
 	}
+
 	return service.StorageState{Ready: true, State: "ready"}, s.Close, nil
 }
 
@@ -269,6 +272,16 @@ func (s *Store) migrate(ctx context.Context, p service.Profile) error {
 				return err
 			}
 		}
+		if i == 2 {
+			owner, err := service.NewID()
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, "INSERT INTO auth_owner VALUES(1,?)", owner); err != nil {
+				return err
+			}
+		}
+
 		if _, err := tx.ExecContext(ctx, "INSERT INTO schema_migrations VALUES(?,?,?)", i+1, digest([]byte(migrations[i])), time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 			return err
 		}
@@ -286,9 +299,9 @@ func (s *Store) migrate(ctx context.Context, p service.Profile) error {
 }
 
 func (s *Store) recoverySnapshot(ctx context.Context, revision int) error {
-	// Schema 1 has no content-object tables/references. Its tested pre-migration
-	// recovery set is therefore the coherent SQLite snapshot and checksum record.
-	// Full production DB-plus-content backup remains TASK-005-04.
+	// Retain a coherent local recovery set before any supported state migration.
+	// Startup holds the exclusive profile writer lock throughout snapshot/copy.
+	// Full backup scheduling, restore and retention remain TASK-005-04/05.
 	id, err := service.NewID()
 	if err != nil {
 		return err
@@ -327,6 +340,16 @@ func (s *Store) recoverySnapshot(ctx context.Context, revision int) error {
 	if err := snapshot.QueryRowContext(ctx, "PRAGMA quick_check").Scan(&check); err != nil || check != "ok" {
 		return errors.New("premigration snapshot integrity failed")
 	}
+	foreignKeys, err := snapshot.QueryContext(ctx, "PRAGMA foreign_key_check")
+	if err != nil {
+		return err
+	}
+	damaged := foreignKeys.Next()
+	scanErr := foreignKeys.Err()
+	foreignCloseErr := foreignKeys.Close()
+	if damaged || scanErr != nil || foreignCloseErr != nil {
+		return errors.New("premigration snapshot foreign-key integrity failed")
+	}
 	if err := snapshot.QueryRowContext(ctx, "SELECT library_id,schema_revision FROM libraries").Scan(&identity, &recorded); err != nil || identity != s.profile.LibraryID || recorded != revision {
 		return errors.New("premigration snapshot identity failed")
 	}
@@ -340,7 +363,11 @@ func (s *Store) recoverySnapshot(ctx context.Context, revision int) error {
 	if err := errors.Join(copyErr, closeErr); err != nil {
 		return err
 	}
-	record, _ := json.Marshal(map[string]any{"library_id": identity, "schema_revision": revision, "sha256": hex.EncodeToString(hash.Sum(nil))})
+	objectDigest, objectCount, err := s.copyRecoveryObjects(ctx, snapshot, path, revision)
+	if err != nil {
+		return err
+	}
+	record, _ := json.Marshal(map[string]any{"complete": true, "library_id": identity, "schema_revision": revision, "sha256": hex.EncodeToString(hash.Sum(nil)), "objects_manifest_sha256": objectDigest, "object_count": objectCount})
 	meta, err := os.OpenFile(path+".json", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return err

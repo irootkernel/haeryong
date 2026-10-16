@@ -24,8 +24,8 @@ In the last column, `K` means a required Idempotency-Key; `N` means a named natu
 | POST /auth/pairings | bounded unauthenticated browser flow | Pending ID, display code and memory-held one-time polling secret | N |
 | GET /auth/pairings | owner or first local bootstrap | Bounded pending queue with IDs, requesting origin, creation/expiry and untrusted device labels; no polling secrets | - |
 | POST /auth/pairings/{id}/poll | polling secret in body, configured browser origin | pending/approved/rejected/expired; one approved redemption issues a revocable device bearer for the selected remembered/memory-only storage | N |
-| POST /auth/pairings/{id}/approve | first local bootstrap or existing owner session | Verify exact comparison code and requesting device/origin; approve only that request | K |
-| POST /auth/pairings/{id}/reject | first local bootstrap or existing owner session | Reject an unredeemed pending/approved request; polling returns rejected and issues no bearer | K |
+| POST /auth/pairings/{id}/approve | first local bootstrap or existing owner session + pairing If-Match | Body {code,origin}; verify exact comparison code and requesting device/origin; approve only that request | K |
+| POST /auth/pairings/{id}/reject | first local bootstrap or existing owner session + pairing If-Match | Body {code,origin}; reject an unredeemed pending/approved request; polling returns rejected and issues no bearer | K |
 | GET /session | authenticated | Owner/device/session identity, nullable expiry and current credential scope; no bearer secret echoed | - |
 | DELETE /session | current authenticated session | Revoke current session and streams; clear its remembered client credential | N |
 | GET /sessions | owner | Revocable device/session list, no raw secrets | - |
@@ -212,3 +212,9 @@ Both local and remote browser event delivery use fetch with Authorization and an
 [Jobs/events](jobs-events.md) defines stream_epoch/sequence replay, restore resync and invalidation for already displayed resources. New restrictive policy, trash, purge or access loss must invalidate a renderer even when normal subsequent resource reads/events are denied.
 
 The content-free shell serves routes from the [canonical route registry](schema-registry.md#browser-route-registry), including direct deep links. It checks session and capabilities before private metadata. Preserve exact internal version/page/region and encoded page_query/page_fragment through login; reject external/protocol-relative shell return routes. A local-only copied URL may use the configured loopback base but never makes that address canonical identity. An old client rechecks capabilities/runtime_generation and fails safely on incompatible contracts; it cannot migrate the DB.
+
+## Current owner-session implementation
+
+[TASK-002-03 evidence](../testing/authenticated-sessions.md) records the implemented pairing/session/device list/revocation, local job read/cancel, receipt reconciliation and authenticated SSE subset. The content-free trusted connect shell runs on the same listener. Private future feature routes remain authenticated but unavailable. Status currently reports the storage/identity foundation, not fabricated provider/backup capability. Pairing creation/polling/redemption and session revocation retain their natural identities; only approve/reject and job cancellation use K receipts here. DELETE session routes add no mandatory Idempotency-Key or If-Match.
+
+The selected auth request/response shapes and existing authentication error mappings are additive machine-contract selections. Mandatory individual If-Match on approve/reject is an owner-approved breaking requirement for clients that omitted that header; no earlier production auth API was delivered. The old G-AUTH spike's short routes remain historical experiment adapters and were not rewritten. Successful poll is the single-use redemption boundary; no new `/redeem` endpoint or wire `redeemed` state is introduced.

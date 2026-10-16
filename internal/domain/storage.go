@@ -1,7 +1,10 @@
 // Package domain defines SQL-free values for the current durable foundations.
 package domain
 
-import "errors"
+import (
+	"encoding/json"
+	"errors"
+)
 
 var (
 	ErrNotFound       = errors.New("record not found")
@@ -109,14 +112,19 @@ type Configuration struct {
 }
 
 type Job struct {
-	Scope                               []byte
-	ConfigRevision                      int64
-	Permissions                         map[string]int64
-	Deadline                            string
-	ID, Kind, State, ParentID, UploadID string
-	AttemptGeneration                   int64
-	CancelRequested                     bool
-	Error                               string
+	Revision          int64            `json:"revision"`
+	Scope             json.RawMessage  `json:"scope"`
+	ConfigRevision    int64            `json:"config_revision"`
+	Permissions       map[string]int64 `json:"permissions_revisions"`
+	Deadline          string           `json:"deadline"`
+	ID                string           `json:"job_id"`
+	Kind              string           `json:"kind"`
+	State             string           `json:"state"`
+	ParentID          string           `json:"parent_job_id"`
+	UploadID          string           `json:"upload_id"`
+	AttemptGeneration int64            `json:"attempt_generation"`
+	CancelRequested   bool             `json:"cancel_requested"`
+	Error             string           `json:"error"`
 }
 type Checkpoint struct {
 	Generation      int64  `json:"generation"`

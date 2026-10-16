@@ -17,8 +17,10 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	appauth "haeryong.local/haeryong/internal/application/auth"
 	"haeryong.local/haeryong/internal/application/service"
 )
 
@@ -28,9 +30,15 @@ const stopPath = "/local/v1/stop"
 
 // HTTP implements service.Endpoint. Its lifetime is independent of any desktop.
 type HTTP struct {
-	server   *http.Server
-	listener net.Listener
-	done     chan error
+	Auth           *appauth.Service
+	Product        func(string) (http.Handler, error)
+	server         *http.Server
+	listener       net.Listener
+	done           chan error
+	cancelRequests context.CancelFunc
+	requestMu      sync.Mutex
+	closing        bool
+	active         sync.WaitGroup
 }
 
 func signature(key, domain, nonce string, body []byte) string {
@@ -48,7 +56,7 @@ func requestProof(key, nonce, method, path, instance string) string {
 	return signature(key, "request", nonce, []byte(method+"\n"+path+"\n"+instance))
 }
 
-func (h *HTTP) Start(_ context.Context, p service.Profile, id service.Identity, port int, stop func()) (service.Identity, error) {
+func (h *HTTP) Start(ctx context.Context, p service.Profile, id service.Identity, port int, stop func()) (service.Identity, error) {
 	listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 	if err != nil {
 		return id, fmt.Errorf("configured listener unavailable (no fallback): %w", err)
@@ -91,19 +99,45 @@ func (h *HTTP) Start(_ context.Context, p service.Profile, id service.Identity, 
 	}
 	mux.HandleFunc(identityPath, func(w http.ResponseWriter, r *http.Request) { respond(w, r, http.MethodGet, nil) })
 	mux.HandleFunc(stopPath, func(w http.ResponseWriter, r *http.Request) { respond(w, r, http.MethodPost, stop) })
+	if id.Storage.Ready && h.Auth != nil {
+		h.mountBootstrap(mux, p, id)
+	}
+	var product http.Handler
+	if id.Storage.Ready && h.Product != nil {
+		product, err = h.Product(id.Endpoint)
+		if err != nil {
+			listener.Close()
+			return id, err
+		}
+	}
 	expectedHost := listener.Addr().String()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.requestMu.Lock()
+		if h.closing {
+			h.requestMu.Unlock()
+			w.WriteHeader(503)
+			return
+		}
+		h.active.Add(1)
+		h.requestMu.Unlock()
+		defer h.active.Done()
 		w.Header().Set("Cache-Control", "no-store")
 		// Control is not a browser API. Reject browser origins and alternate Host
 		// values even if they can reach loopback; no proxy/forwarded trust exists.
+		if product != nil && !strings.HasPrefix(r.URL.Path, "/local/v1") && r.URL.Path != livePath {
+			product.ServeHTTP(w, r)
+			return
+		}
 		if r.Host != expectedHost || r.Header.Get("Origin") != "" {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
 		mux.ServeHTTP(w, r)
 	})
+	requests, cancelRequests := context.WithCancel(ctx)
+	h.cancelRequests = cancelRequests
 	h.listener = listener
-	h.server = &http.Server{Handler: handler, ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, IdleTimeout: 5 * time.Second}
+	h.server = &http.Server{Handler: handler, BaseContext: func(net.Listener) context.Context { return requests }, ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, IdleTimeout: 5 * time.Second}
 	h.done = make(chan error, 1)
 	go func() {
 		err := h.server.Serve(listener)
@@ -117,12 +151,19 @@ func (h *HTTP) Start(_ context.Context, p service.Profile, id service.Identity, 
 
 func (h *HTTP) Done() <-chan error { return h.done }
 func (h *HTTP) Close(ctx context.Context) error {
+	h.requestMu.Lock()
+	h.closing = true
+	h.requestMu.Unlock()
+	if h.cancelRequests != nil {
+		h.cancelRequests()
+	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	err := h.server.Shutdown(ctx)
 	if err != nil {
 		err = errors.Join(err, h.server.Close())
 	}
+	h.active.Wait()
 	return err
 }
 

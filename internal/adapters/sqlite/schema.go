@@ -29,4 +29,10 @@ CREATE INDEX pins_by_hash ON object_pins(content_hash);
 CREATE INDEX refs_by_hash ON object_references(content_hash);
 CREATE INDEX jobs_by_state ON jobs(state);
 `,
+	`ALTER TABLE jobs ADD COLUMN revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>=1);
+CREATE TABLE auth_owner(singleton INTEGER PRIMARY KEY CHECK(singleton=1),principal_id TEXT NOT NULL UNIQUE);
+CREATE TABLE device_sessions(session_id TEXT PRIMARY KEY,principal_id TEXT NOT NULL REFERENCES auth_owner(principal_id),library_id TEXT NOT NULL,auth_epoch TEXT NOT NULL,token_hash TEXT NOT NULL UNIQUE,device_label TEXT NOT NULL,origin TEXT NOT NULL,created_at INTEGER NOT NULL,last_seen_at INTEGER NOT NULL,revoked INTEGER NOT NULL CHECK(revoked IN (0,1)),revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>=1));
+CREATE TABLE pairings(pairing_id TEXT PRIMARY KEY,device_label TEXT NOT NULL,origin TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,state TEXT NOT NULL CHECK(state IN ('pending','approved','rejected','expired')),revision INTEGER NOT NULL CHECK(revision>=1),secret_hash TEXT NOT NULL,code_hash TEXT NOT NULL,client_hash TEXT NOT NULL,auth_epoch TEXT NOT NULL,poll_after INTEGER NOT NULL,consumed INTEGER NOT NULL CHECK(consumed IN (0,1)));
+CREATE INDEX pairings_client_created ON pairings(client_hash,created_at);
+`,
 }

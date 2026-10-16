@@ -1,6 +1,6 @@
 # Data model and transactional rules
 
-**Source:** Revision 4 storage/state separation. **Proposal:** logical schema v1, documentation baseline 1.6.1, clarified by [shared wire registry](contracts/schema-registry.md). [TASK-002-02](testing/storage-foundation.md) implements and exercises the current storage/local-operation subset. This logical model also lists future feature-owned tables; it does not assert that all of them exist.
+**Source:** Revision 4 storage/state separation. **Proposal:** logical schema v1, documentation baseline 1.6.1, clarified by [shared wire registry](contracts/schema-registry.md). [TASK-002-02](testing/storage-foundation.md) implements and exercises the current storage/local-operation subset. TASK-002-03 adds schema revision 3 owner/session/pairing records and a verified DB-plus-required-object pre-migration recovery set; current auth evidence is [separate](testing/authenticated-sessions.md). This logical model also lists future feature-owned tables; it does not assert that all of them exist.
 
 ## Identifiers and common columns
 

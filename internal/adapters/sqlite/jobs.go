@@ -16,7 +16,7 @@ import (
 func job(ctx context.Context, q rowReader, id string) (domain.Job, error) {
 	j := domain.Job{ID: id}
 	var permissions []byte
-	err := q.QueryRowContext(ctx, "SELECT kind,state,attempt_generation,cancel_requested,coalesce(parent_id,''),coalesce(upload_id,''),error,scope,config_revision,permissions_revisions,coalesce(deadline,'') FROM jobs WHERE job_id=?", id).Scan(&j.Kind, &j.State, &j.AttemptGeneration, &j.CancelRequested, &j.ParentID, &j.UploadID, &j.Error, &j.Scope, &j.ConfigRevision, &permissions, &j.Deadline)
+	err := q.QueryRowContext(ctx, "SELECT kind,state,attempt_generation,cancel_requested,coalesce(parent_id,''),coalesce(upload_id,''),error,scope,config_revision,permissions_revisions,coalesce(deadline,''),revision FROM jobs WHERE job_id=?", id).Scan(&j.Kind, &j.State, &j.AttemptGeneration, &j.CancelRequested, &j.ParentID, &j.UploadID, &j.Error, &j.Scope, &j.ConfigRevision, &permissions, &j.Deadline, &j.Revision)
 	if err != nil {
 		return j, notFound(err)
 	}
@@ -56,7 +56,10 @@ func (t *writeTx) CreateJob(j domain.Job) error {
 			return err
 		}
 	}
-	return t.exec("INSERT INTO jobs VALUES(?,?,?,?,0,?,?,?,?,?,?,?)", j.ID, j.Kind, j.State, j.AttemptGeneration, nullable(j.ParentID), nullable(j.UploadID), j.Error, j.Scope, j.ConfigRevision, jsonBytes(j.Permissions), nullable(j.Deadline))
+	if err := t.exec("INSERT INTO jobs(job_id,kind,state,attempt_generation,cancel_requested,parent_id,upload_id,error,scope,config_revision,permissions_revisions,deadline) VALUES(?,?,?,?,0,?,?,?,?,?,?,?)", j.ID, j.Kind, j.State, j.AttemptGeneration, nullable(j.ParentID), nullable(j.UploadID), j.Error, j.Scope, j.ConfigRevision, jsonBytes(j.Permissions), nullable(j.Deadline)); err != nil {
+		return err
+	}
+	return t.jobUpdated(j.ID)
 }
 func (t *writeTx) ClaimJob(id string) (domain.Job, error) {
 	j, err := job(t.ctx, t.tx, id)
@@ -68,7 +71,11 @@ func (t *writeTx) ClaimJob(id string) (domain.Job, error) {
 	}
 	j.AttemptGeneration++
 	j.State = "running"
-	return j, t.exec("UPDATE jobs SET state='running',attempt_generation=? WHERE job_id=?", j.AttemptGeneration, id)
+	j.Revision++
+	if err := t.exec("UPDATE jobs SET state='running',attempt_generation=?,revision=revision+1 WHERE job_id=?", j.AttemptGeneration, id); err != nil {
+		return j, err
+	}
+	return j, t.jobUpdated(id)
 }
 func terminal(state string) bool {
 	return state == "completed" || state == "failed" || state == "cancelled"
@@ -85,16 +92,17 @@ func (t *writeTx) CancelJob(id string) (domain.Job, error) {
 	j.CancelRequested = true
 	j.AttemptGeneration++
 	j.State = "cancelling"
-	if err := t.exec("UPDATE jobs SET state='cancelling',cancel_requested=1,attempt_generation=? WHERE job_id=?", j.AttemptGeneration, id); err != nil {
+	j.Revision++
+	if err := t.exec("UPDATE jobs SET state='cancelling',cancel_requested=1,attempt_generation=?,revision=revision+1 WHERE job_id=?", j.AttemptGeneration, id); err != nil {
 		return j, err
 	}
 	if wasQueued {
 		if err := t.ConfirmStop(id, j.AttemptGeneration); err != nil {
 			return j, err
 		}
-		j.State = "cancelled"
+		return job(t.ctx, t.tx, id)
 	}
-	return j, nil
+	return j, t.jobUpdated(id)
 }
 func (t *writeTx) ConfirmStop(id string, generation int64) error {
 	j, err := job(t.ctx, t.tx, id)
@@ -104,8 +112,13 @@ func (t *writeTx) ConfirmStop(id string, generation int64) error {
 	if j.AttemptGeneration != generation || !j.CancelRequested || (j.State != "cancelling" && j.State != "interrupted" && j.State != "cancelled") {
 		return domain.ErrStaleWorker
 	}
-	if err := t.exec("UPDATE jobs SET state='cancelled' WHERE job_id=?", id); err != nil {
-		return err
+	if j.State != "cancelled" {
+		if err := t.exec("UPDATE jobs SET state='cancelled',revision=revision+1 WHERE job_id=?", id); err != nil {
+			return err
+		}
+		if err := t.jobUpdated(id); err != nil {
+			return err
+		}
 	}
 	if j.UploadID != "" {
 		if err := t.exec("UPDATE uploads SET state='open' WHERE upload_id=? AND state='sealing' AND seal_job_id=?", j.UploadID, id); err != nil {
@@ -128,7 +141,10 @@ func (t *writeTx) ReconcileJob(id string) error {
 	if j.CancelRequested {
 		return t.ConfirmStop(id, j.AttemptGeneration)
 	}
-	return t.exec("UPDATE jobs SET state='queued' WHERE job_id=?", id)
+	if err := t.exec("UPDATE jobs SET state='queued',revision=revision+1 WHERE job_id=?", id); err != nil {
+		return err
+	}
+	return t.jobUpdated(id)
 }
 func (t *writeTx) RetryJob(id, newID string) (domain.Job, error) {
 	old, err := job(t.ctx, t.tx, id)
@@ -138,7 +154,7 @@ func (t *writeTx) RetryJob(id, newID string) (domain.Job, error) {
 	if !terminal(old.State) || newID == id {
 		return domain.Job{}, domain.ErrTransition
 	}
-	next := domain.Job{ID: newID, Kind: old.Kind, ParentID: id, UploadID: old.UploadID, Scope: old.Scope, ConfigRevision: old.ConfigRevision, Permissions: old.Permissions, Deadline: old.Deadline, State: "queued", AttemptGeneration: 1}
+	next := domain.Job{ID: newID, Kind: old.Kind, ParentID: id, UploadID: old.UploadID, Scope: old.Scope, ConfigRevision: old.ConfigRevision, Permissions: old.Permissions, Deadline: old.Deadline, State: "queued", AttemptGeneration: 1, Revision: 1}
 	return next, t.CreateJob(next)
 }
 func (t *writeTx) FinishJob(id string, generation int64, failure string, apply func(app.WriteTx) error) error {
@@ -150,20 +166,25 @@ func (t *writeTx) FinishJob(id string, generation int64, failure string, apply f
 		return domain.ErrStaleWorker
 	}
 	if failure != "" {
-		if err := t.exec("UPDATE jobs SET state='failed',error=? WHERE job_id=?", failure, id); err != nil {
+		if err := t.exec("UPDATE jobs SET state='failed',error=?,revision=revision+1 WHERE job_id=?", failure, id); err != nil {
 			return err
 		}
 		if j.UploadID != "" {
-			return t.exec("UPDATE uploads SET state='open',error=? WHERE upload_id=? AND state='sealing' AND seal_job_id=?", failure, j.UploadID, id)
+			if err := t.exec("UPDATE uploads SET state='open',error=? WHERE upload_id=? AND state='sealing' AND seal_job_id=?", failure, j.UploadID, id); err != nil {
+				return err
+			}
 		}
-		return nil
+		return t.jobUpdated(id)
 	}
 	if apply != nil {
 		if err := apply(t); err != nil {
 			return err
 		}
 	}
-	return t.exec("UPDATE jobs SET state='completed' WHERE job_id=?", id)
+	if err := t.exec("UPDATE jobs SET state='completed',revision=revision+1 WHERE job_id=?", id); err != nil {
+		return err
+	}
+	return t.jobUpdated(id)
 }
 
 func upload(ctx context.Context, q rowReader, id string) (domain.Upload, error) {
@@ -402,4 +423,40 @@ func (t *writeTx) AdoptUploadObject(id, purpose string, target []byte, ref domai
 		return domain.ErrConflict
 	}
 	return t.Adopt(ref, pin)
+}
+
+func (t *writeTx) jobUpdated(id string) error {
+	j, err := job(t.ctx, t.tx, id)
+	if err != nil {
+		return err
+	}
+	return t.appendEvent("job", id, "job.updated", j.Revision, nil)
+}
+func (s *Store) recoverLocalJobs(ctx context.Context) error {
+	const needs = "state IN ('running','cancelling','reconciling') OR (state='paused' AND cancel_requested=1)"
+	var count int
+	if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM jobs WHERE "+needs).Scan(&count); err != nil {
+		return err
+	}
+	if count == 0 {
+		return nil
+	}
+	// Prepare already owns s.mu and the profile lock. Start the private SQL
+	// transaction here rather than recursively acquiring Store.Write's mutex.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	t := &writeTx{tx: tx, ctx: ctx}
+	if err := t.exec("INSERT INTO events(stream_epoch,resource_kind,resource_id,kind,revision,body) SELECT libraries.stream_epoch,'job',jobs.job_id,'job.updated',jobs.revision+1,NULL FROM jobs CROSS JOIN libraries WHERE libraries.singleton=1 AND (" + needs + ")"); err != nil {
+		return err
+	}
+	if err := t.exec("UPDATE jobs SET state='interrupted',attempt_generation=attempt_generation+1,revision=revision+1 WHERE " + needs); err != nil {
+		return err
+	}
+	if err := s.boundary(BeforeCommit); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

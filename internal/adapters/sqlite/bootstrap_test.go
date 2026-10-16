@@ -77,7 +77,7 @@ func TestBootstrapReopenIdentityAndSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if h.Engine != "3.53.4" || h.Journal != "wal" || h.Synchronous != 2 || h.ForeignKeys != 1 || h.BusyTimeout != 5000 || h.Library.ID != p.LibraryID || h.Library.SchemaRevision != 2 {
+	if h.Engine != "3.53.4" || h.Journal != "wal" || h.Synchronous != 2 || h.ForeignKeys != 1 || h.BusyTimeout != 5000 || h.Library.ID != p.LibraryID || h.Library.SchemaRevision != SchemaRevision {
 		t.Fatalf("unexpected health: %+v", h)
 	}
 	s.db.SetMaxIdleConns(0)
@@ -371,7 +371,7 @@ func TestMigrationRecoverySnapshotRetainedOnFailure(t *testing.T) {
 	}
 	ready := openStore(t, writer, nil)
 	h, err := ready.Health(ctx)
-	if err != nil || h.Library.SchemaRevision != 2 || !strings.HasPrefix(h.Library.ID, p.LibraryID) {
+	if err != nil || h.Library.SchemaRevision != SchemaRevision || !strings.HasPrefix(h.Library.ID, p.LibraryID) {
 		t.Fatalf("migration retry: %v %+v", err, h)
 	}
 }
