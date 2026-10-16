@@ -1,6 +1,6 @@
 # Architecture
 
-**Source:** Revision 4, Section 3, as amended by owner decisions D-08 and D-09 for personal developer use and directory results. **Elaboration:** proposed component boundaries and implementation layout, pending G-CONTRACT.
+**Source:** Revision 4, Section 3, as amended by owner decisions D-08 and D-09 for personal developer use and directory results. **Elaboration:** proposed production component boundaries and implementation layout; the selected evidence-backed contract baseline is recorded in [G-CONTRACT](testing/contract-freeze.md).
 
 ## Context and process boundary
 
@@ -22,7 +22,7 @@ The shared UI and both access paths belong to one Go daemon and library. Propose
 
 ## Executed stack boundary
 
-[TASK-001-02’s bounded spike](testing/stack-spike.md) executes the separate headless Go/SQLite and Wails modules with shared compiled React assets. The exact pins, lifecycle checks and search/backup limits are recorded there. Both fixture clients load the same ephemeral loopback HTTP URL; the trusted production Wails document origin, API path and credential storage remain TASK-001-04 / G-VIEW work. The spike lives under `spikes/stack/`; the production layout below remains proposed. No authentication, durable jobs, production library or imported-renderer boundary is implemented by that spike.
+[TASK-001-02’s bounded spike](testing/stack-spike.md) executes the separate headless Go/SQLite and Wails modules with shared compiled React assets. The exact pins, lifecycle checks and search/backup limits are recorded there. Both fixture clients load the same ephemeral loopback HTTP URL. At that Task02 checkpoint, trusted Wails document-origin, API-path and credential-storage construction remained TASK-001-04 / G-VIEW work. The [completed viewer experiment](testing/viewer-spike.md) records the selected tested mechanisms; production application construction remains with its feature owners. The spike lives under `spikes/stack/`; the production layout below remains proposed. No authentication, durable jobs, production library or imported-renderer boundary is implemented by that spike.
 
 ## Proposed repository layout
 

@@ -31,7 +31,7 @@ For a new document, base_version_id is null and --base-version is invalid. For a
 
 | Normalized service field | Rule |
 | --- | --- |
-| schema_version / viewer_profile | Supported runtime schema string and html_js_v1; the unfrozen baseline remains 1.0 |
+| schema_version / viewer_profile | Supported runtime schema string and html_js_v1; selected schema 1.0 is recorded in the bounded [G-CONTRACT freeze](../testing/contract-freeze.md), distinct from unimplemented production capabilities |
 | document | Service id, project_id, title and optional question; the request supplies an existing document_id or explicit null. Only null creates a new ID once. The project must match the sealed upload target; client-side association is resolved before transfer. |
 | version | Service id, nullable base_version_id, nullable source_intent and timestamps; immutable after publication |
 | source_basis | unverified or evidence_recorded; evidence_recorded means supplied evidence was recorded, not that every claim is true |

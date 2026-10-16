@@ -1,6 +1,6 @@
 # Import and transfer workflow
 
-**Documentation baseline 1.6.2; proposed, unfrozen API v1.** This is the single normative definition of upload purpose/target authorization, composite operation IDs, import request fields, sealing cancellation, and upload list/detail shapes. The [schema registry](schema-registry.md) owns shared enums and generic receipt/precondition rules; the [HTTP catalog](http-api.md) owns route availability. The [package contract](package.md) owns original bytes, path identity and optional author metadata. None of these transport fields is compulsory author-written packaging.
+**Documentation baseline 1.6.2; selected semantic fields and fixtures frozen in bounded [G-CONTRACT](../testing/contract-freeze.md), with unimplemented production API v1 routes still provisional.** This is the single normative definition of upload purpose/target authorization, composite operation IDs, import request fields, sealing cancellation, and upload list/detail shapes. The [schema registry](schema-registry.md) owns shared enums and generic receipt/precondition rules; the [HTTP catalog](http-api.md) owns route availability. The [package contract](package.md) owns original bytes, path identity and optional author metadata. None of these transport fields is compulsory author-written packaging.
 
 ## Purpose, target and authority
 

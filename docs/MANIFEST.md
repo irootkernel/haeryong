@@ -20,7 +20,7 @@ This inventory covers 152 other files: all Markdown documents and Python documen
 | `adr/ADR-008.md` | 2332 | `e79eee540f3f68f1e1e0d68a209f6c99231bded6e105f90f74d670bee0b5d63c` |
 | `adr/ADR-009.md` | 5383 | `d5d6f55d540a39828e2024a6dee6af16aef7b248e3568ed793e54bd2876cfdb8` |
 | `adr/README.md` | 1647 | `8b7a020b5736a8a280cc6ed216418d4871c56622950ceb4af424424c5fd9ea0e` |
-| `architecture.md` | 18164 | `d90fefafe9958da96745cb2fb23abc67eaad1c4fe221515ed3eb801db5ed4265` |
+| `architecture.md` | 18454 | `f0aad0c3d372be4115aa7b7f69785be2668e18bb5c1b54f632f445ef5387bb0f` |
 | `changes/2026-10-10-directory-results-revision.md` | 9748 | `423d076a7b143c92d9d7d83076f9fc5d860a1764b6690d815f962568efa6f5bc` |
 | `changes/2026-10-10-personal-tool-revision.md` | 9469 | `28711c0a7ad3b0a8b375cbd66fd240a680f08dac491af5a22b8b71403d19279b` |
 | `changes/2026-10-10-review-revision.md` | 10516 | `82ba1f73ce25c87a2d2d83a00d12fa4663a1d324906d3e0872f8ac774db649f4` |
@@ -33,9 +33,9 @@ This inventory covers 152 other files: all Markdown documents and Python documen
 | `contracts/cli.md` | 24712 | `72f0e6e640b605f71437cb7641324a5ae562ef14f3a58d6cde07f357e47b6369` |
 | `contracts/configuration.md` | 21775 | `a2465466348600e8ed65839e89224e72d65bd7105c14ad768bf6ec3cec02eece` |
 | `contracts/http-api.md` | 51512 | `124b2cd0fcca0c3360a7fdbf4db9b855a3cf113f5cf65f43329c0d64f34f26d9` |
-| `contracts/import-workflow.md` | 19887 | `28b25eecdaac75b8527ba45692df9bd84e88353ddbdffaa7a6d75cc1312c001f` |
+| `contracts/import-workflow.md` | 20024 | `60c6f7efe24f34dce3a1446678b4320eaf93111f306b258a638efe86a35ae544` |
 | `contracts/jobs-events.md` | 23182 | `4307ca9aea762c5bebd09e5af6583e3a7b53109d8a46329a9f291c868871a7af` |
-| `contracts/package.md` | 28208 | `61b0202a6b7d39dddd7aa5e4040796ab52214defb5ef90ec1ce76aa781e1dee3` |
+| `contracts/package.md` | 28325 | `e1e5d00bc5f725df31f4ba99b9a1a3be081c01cf28179c08ae7ca4075ea5d337` |
 | `contracts/schema-registry.md` | 50189 | `1fee8800b9275d2b95717ec76ed3bd734cdca81f527ab35a8b55b5a99119fa4a` |
 | `contracts/source-access.md` | 17699 | `fb02db27b1a9d2d8af91c1d897dff8eff2d8fc2889bc3d186f99a8f4147c89ae` |
 | `contracts/viewer-protocol.md` | 31201 | `fc18215d860a8c41952aaafcc8d929e69f3ac081bbd7f5eb79f2b462d98ef96d` |
@@ -68,7 +68,7 @@ This inventory covers 152 other files: all Markdown documents and Python documen
 | `operations/release-checklist.md` | 11391 | `dfe96a158914807648447e3adf6afbb0c7d3a6d64e8b08cda9676a8cc02ed9cd` |
 | `operations/security.md` | 12906 | `76a3c9b6fe37de4049e0e7ee263ec1ea9b05e8c481963a888c45dd874486d3b5` |
 | `references.md` | 12625 | `d410369697b93fcf53c70ce4c0b797671c7e783e4f10eb96309e121fb809a705` |
-| `requirements.md` | 17390 | `3cd21d4c4f5c193f2e1dab97fde3d526e334620b6bcf068ff6e6e1eafffb7ed7` |
+| `requirements.md` | 18205 | `adfbdd29d0a05fb8e227b4cb04aba2be5675b826fcd6eb8bcb3b2ff7d990af8c` |
 | `roadmap.md` | 13086 | `cd35aebac681191873c2c3cf4d29fafac7da481f116c4577bd0a699cc086a639` |
 | `source-map.md` | 9810 | `0160d1715f5f86b33e6bbaccd09147ed947b8b513dc1488de8fe25d11d71b681` |
 | `sources/haeryong-concept-proposal-v4.md` | 85010 | `8f26fea2833cd3cc3312c1afadea74e042d1d895b079bfa1bdff9cc02cf563e5` |
