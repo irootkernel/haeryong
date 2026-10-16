@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Gaori outcomes: command truth and evidence failures</title>
+<link rel='stylesheet' href='../assets/style.css'>
+<script type='module' src='../assets/gaori/illustrations.js'></script>
+</head>
+<body>
+<a class='skip' href='#main'>Skip to explanation</a>
+<header><p class='eyebrow'>Gaori · fixed-source explanation</p><nav aria-label='Gaori explanations'><a href='outcomes.html' aria-current='page'>Outcomes and artifacts</a><a href='lifecycle.html'>Waiting and reconciliation</a></nav></header>
+<main id='main'>
+<h1>A command failure and an evidence failure answer different questions</h1>
+<p class='question'>How do child-command failure, extraction failure, artifact failure, and parser miss differ? What happens when child exit 0 or child exit 7 is followed by the same extraction internal error? How does standalone summarize differ when no child was executed?</p>
+<p class='answer'>With successful artifact materialization, child 0 followed by an extraction internal error predicts <code>internal_error / 0 / degraded</code> in summary and status, with CLI exit <code>4</code>. Child 7 followed by that error predicts <code>failed / 7 / degraded</code>, with CLI exit <code>7</code>. Standalone summarize followed by an extraction internal error predicts <code>internal_error / 4 / degraded</code>, with CLI exit <code>4</code>; it has no authoritative child execution result. A parser miss follows a different evidence-quality branch. An artifact error can prevent completion of the artifact set.</p>
+<aside class='scope'><strong>Scope and limits.</strong> This explanation uses only the supplied excerpts from <code>gaori@393af5999bbbb30b5d11e2a17a2325c8cf1833b7</code>. Child-execution predictions assume an ordinary, unsignalled child completion; standalone summarize has no child execution. All scenarios assume otherwise valid configuration. No command, extraction, or artifact write was executed. The supplied excerpts do not establish actual artifact bytes, paths, hashes, timestamps, or runtime receipts.</aside>
+<nav class='contents' aria-label='Six material claims'><a href='#G01'>G01 · Child result</a><a href='#G02'>G02 · Child 0 plus extraction error</a><a href='#G03'>G03 · Child 7 plus extraction error</a><a href='#G04'>G04 · Artifact error</a><a href='#G05'>G05 · Parser miss</a><a href='#G06'>G06 · Reading degraded</a></nav>
+
+<section id='G01' class='claim' data-category='direct_source' aria-labelledby='title-G01'>
+<p class='label'>G01 · Direct source</p><h2 id='title-G01'>A nonzero child exit is a command result</h2>
+<p class='claim-text'>The shown wait classifier maps a successful child wait to passed with exit_code 0, and an ordinary unsignalled exec.ExitError to failed with the child's exit code.</p>
+<p>The classifier returns these results with a nil Gaori error. Its signalled branch instead records <code>killed</code> with a signal-derived code. Consequently, a command reporting failure is distinct from a failure to classify execution. <a href='#source-G-S01' data-haeryong-evidence='G-S01'>G-S01 · runner.go:250–269</a></p>
+</section>
+
+<section id='G02' class='claim' data-category='qualified_inference' aria-labelledby='title-G02'>
+<p class='label'>G02 · Qualified inference · conditional prediction</p><h2 id='title-G02'>Child 0: preserve the exit code, expose the pipeline error</h2>
+<p class='claim-text'>For child exit 0 followed by an extraction internal error, successful safe materialization predicts summary/status status internal_error, exit_code 0, extractor_status degraded, and Gaori CLI exit 4.</p>
+<p>This is a source-derived prediction, not an observed run. ADR-0002 explicitly specifies this combination: the successful command's code remains <code>0</code>, while Gaori's process reports the evidence-pipeline error as <code>4</code>. The materializer clears failure and warning collections before attempting its remaining work. <a href='#source-G-S15' data-haeryong-evidence='G-S15'>G-S15 · ADR-0002:45</a> <a href='#source-G-S04' data-haeryong-evidence='G-S04'>G-S04 · cli.go:577–587</a></p>
+<p>The sources describe empty collections; this explanation does not predict whether their serialized representation is <code>null</code> or <code>[]</code>. The relevant clone and bounding implementations are not supplied. An empty extracted failure collection does not establish a successful evidence pipeline.</p>
+</section>
+
+<section id='G03' class='claim' data-category='qualified_inference' aria-labelledby='title-G03'>
+<p class='label'>G03 · Qualified inference · conditional prediction</p><h2 id='title-G03'>Child 7: retain the failed command result</h2>
+<p class='claim-text'>For ordinary child exit 7 followed by the same extraction internal error, successful safe materialization predicts summary/status status failed, exit_code 7, extractor_status degraded, and Gaori CLI exit 7.</p>
+<p>The classifier supplies <code>failed / 7</code>; the extraction-error branch changes an executed result to <code>internal_error</code> only when its status was <code>passed</code>. ADR-0002 requires an already failed command's state and code to remain authoritative. Failure and warning collections are still cleared by the extraction-error branch. <a href='#source-G-S01' data-haeryong-evidence='G-S01'>G-S01 · runner.go:262–266</a> <a href='#source-G-S04' data-haeryong-evidence='G-S04'>G-S04 · cli.go:577–587</a> <a href='#source-G-S15' data-haeryong-evidence='G-S15'>G-S15 · ADR-0002:45</a></p>
+<p><strong>Standalone summarize · conditional prediction.</strong> With no child execution or authoritative command result to retain, an extraction internal error instead predicts summary/status <code>status=internal_error</code>, <code>exit_code=4</code>, and <code>extractor_status=degraded</code>, with Gaori CLI exit <code>4</code>, assuming safe materialization succeeds. The <code>materializationSummarizedRaw</code> branch explicitly sets the status and artifact exit code; <code>ExitCodeParserError</code> is <code>4</code>. Failure and warning collections are cleared, with the same serialization limit described in G02. These are source-derived fields, not a child exit or an observed artifact receipt. <a href='#source-G-S04' data-haeryong-evidence='G-S04'>G-S04 · cli.go:577–587</a> <a href='#source-G-S06' data-haeryong-evidence='G-S06'>G-S06 · errors.go:7–11</a> <a href='#source-G-S15' data-haeryong-evidence='G-S15'>G-S15 · ADR-0002:45</a> <a href='#source-G-S19' data-haeryong-evidence='G-S19'>G-S19 · architecture:622, 626</a></p>
+<table><caption>Illustration: the same extraction internal error, assuming safe materialization succeeds</caption><thead><tr><th scope='col'>Input / child exit</th><th scope='col'>Summary/status status</th><th scope='col'>Summary/status exit_code</th><th scope='col'>extractor_status</th><th scope='col'>Gaori CLI exit</th></tr></thead><tbody><tr><th scope='row'>0</th><td>internal_error</td><td>0</td><td>degraded</td><td>4</td></tr><tr><th scope='row'>7</th><td>failed</td><td>7</td><td>degraded</td><td>7</td></tr><tr><th scope='row'>Standalone summarize (no child execution)</th><td>internal_error</td><td>4</td><td>degraded</td><td>4</td></tr></tbody></table>
+<div class='illustration' data-illustration='outcomes'>
+<h3>Illustration: compare child execution and standalone summarize</h3>
+<p>This control computes a reading of the supplied sources. It never starts Gaori or creates artifacts. The normal branches assume that artifact materialization remains safe and succeeds. For parser-miss branches, assume no project rule matched.</p>
+<p id='outcomes-scenario-help'>Choose standalone summarize to illustrate extraction without child execution. In that scenario, the child exit selector is disabled and its retained value is not used. The other scenarios use the selected ordinary child exit code.</p>
+<fieldset><legend>Hypothetical inputs</legend><label for='evidence-branch'>Scenario</label><select id='evidence-branch' data-input='branch' aria-describedby='outcomes-scenario-help'><option value='internal'>Child execution, then extraction internal error</option><option value='miss'>Child execution, then specialized parser miss</option><option value='oversize'>Child execution, then summary JSON exceeds its write bound</option><option value='summarize-internal'>Standalone summarize, then extraction internal error (no child)</option></select><label for='child-exit'>Ordinary child exit code</label><select id='child-exit' data-input='child' aria-describedby='outcomes-scenario-help'><option value='0'>0</option><option value='7'>7</option></select></fieldset>
+<output class='prediction' data-output aria-live='polite' aria-atomic='true'>Illustration — not an observed execution. Child 0 plus an extraction internal error, assuming safe materialization succeeds: summary/status status=internal_error, exit_code=0, extractor_status=degraded; Gaori CLI exit=4. Failure and warning collections are cleared; their exact JSON array representation is not predicted.</output>
+<p>Basis: <a href='#source-G-S01' data-haeryong-evidence='G-S01'>G-S01</a>, <a href='#source-G-S04' data-haeryong-evidence='G-S04'>G-S04</a>, <a href='#source-G-S06' data-haeryong-evidence='G-S06'>G-S06</a>, <a href='#source-G-S07' data-haeryong-evidence='G-S07'>G-S07</a>, <a href='#source-G-S15' data-haeryong-evidence='G-S15'>G-S15</a>, <a href='#source-G-S19' data-haeryong-evidence='G-S19'>G-S19</a>.</p>
+<noscript><p>JavaScript is disabled. The initial prediction describes the default child-0 extraction-error scenario. The comparison table and claims G02–G06 explain every available branch, including standalone summarize without child execution.</p></noscript>
+</div>
+</section>
+
+<section id='G04' class='claim' data-category='direct_source' aria-labelledby='title-G04'>
+<p class='label'>G04 · Direct source</p><h2 id='title-G04'>Artifact failure interrupts materialization</h2>
+<p class='claim-text'>The shown summary JSON marshal and size rejections return artifact-error code 3, and a summary-write error makes the materializer return an error instead of a completed runResult.</p>
+<p>This differs from the extraction-error branch, which retains a result and attempts degraded artifacts. <code>WriteSummaryJSON</code> wraps marshal and size failures as <code>ExitCodeArtifactError</code>; the numeric constant is <code>3</code>. The caller returns immediately if summary JSON or Markdown writing fails. <a href='#source-G-S07' data-haeryong-evidence='G-S07'>G-S07 · artifacts.go:114–126</a> <a href='#source-G-S06' data-haeryong-evidence='G-S06'>G-S06 · errors.go:7–11</a> <a href='#source-G-S04' data-haeryong-evidence='G-S04'>G-S04 · cli.go:622–628</a></p>
+<p><strong>Coverage limit.</strong> The excerpts do not show the outer fatal-error CLI dispatch or all <code>writeArtifact</code> internals. Code <code>3</code> here identifies the explicit artifact-error classification, rather than an observed process exit or a guarantee about every write failure. JSON writing precedes Markdown writing in the shown code; a later error therefore does not establish that nothing was written. A complete, atomic artifact set is not established by these excerpts. G-S19 describes artifact-write failures as retaining fatal-error behavior. <a href='#source-G-S19' data-haeryong-evidence='G-S19'>G-S19 · architecture:626</a></p>
+</section>
+
+<section id='G05' class='claim' data-category='direct_source' aria-labelledby='title-G05'>
+<p class='label'>G05 · Direct source</p><h2 id='title-G05'>A specialized parser miss is not an internal error</h2>
+<p class='claim-text'>When no project rule matches, a specialized parser miss does not retry generic extraction: after a passing command it yields passed/0 with no_match and CLI exit 0; after an authoritative non-pass result it preserves that result with degraded extraction.</p>
+<p>For the ordinary child-7 case, the documented miss branch therefore predicts <code>failed / 7 / degraded</code> and CLI exit <code>7</code>. A missed failure span cannot turn a failing command into a pass. <a href='#source-G-S19' data-haeryong-evidence='G-S19'>G-S19 · architecture:607–614</a></p>
+</section>
+
+<section id='G06' class='claim' data-category='direct_source' aria-labelledby='title-G06'>
+<p class='label'>G06 · Direct source</p><h2 id='title-G06'>Degraded does not identify one cause</h2>
+<p class='claim-text'>extractor_status degraded alone does not establish an extraction internal error: bounded-tail extraction and evidence truncation can also produce degraded after a passing command while preserving passed/0 and CLI exit 0.</p>
+<p>Read command status, command exit code, extraction quality, and available diagnostics together. A bounded-tail scan can find useful evidence while omitting earlier evidence. The documented extraction-error diagnostic is bounded and configured-redaction-aware, goes to stderr, and is not added to the JSON schemas; this directory supplies no actual diagnostic. <a href='#source-G-S19' data-haeryong-evidence='G-S19'>G-S19 · architecture:601–603, 615–626</a></p>
+</section>
+
+<section class='sources' aria-labelledby='sources-title'><h2 id='sources-title'>Local source captures</h2><p>All captures below are supplied excerpts from repository <code>gaori</code> at commit <code>393af5999bbbb30b5d11e2a17a2325c8cf1833b7</code>. Each quote is contiguous within its labelled range and has no added line prefixes.</p>
+<article id='source-G-S01'><h3>G-S01 · Child wait classification</h3><p class='identity'><code>gaori@393af5999bbbb30b5d11e2a17a2325c8cf1833b7:internal/runner/runner.go:250–269</code></p><pre>func classifyWait(output model.RunOutput, err error) (model.RunOutput, error) {
+	if err == nil {
+		output.Status = model.RunStatusPassed
+		output.Metadata.ExitCode = 0
+		return output, nil
+	}
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &amp;exitErr) {
+		if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok &amp;&amp; ws.Signaled() {
+			output.Status = model.RunStatusKilled
+			output.Metadata.ExitCode = signalExitCode(ws.Signal())
+		} else {
+			output.Status = model.RunStatusFailed
+			output.Metadata.ExitCode = exitErr.ExitCode()
+		}
+		return output, nil
+	}
+
+	return model.RunOutput{}, model.NewGaoriError(model.ExitCodeParserError, "execute command", err)</pre></article>
+<article id='source-G-S04'><h3>G-S04 · Extraction handling and write errors</h3><p class='identity'><code>gaori@393af5999bbbb30b5d11e2a17a2325c8cf1833b7:internal/cli/cli.go:577–587</code></p><pre>	if extractionErr != nil {
+		runOutput.Failures = nil
+		runOutput.Warnings = nil
+		runOutput.ExtractorStatus = model.ExtractorStatusDegraded
+		if source == materializationSummarizedRaw {
+			runOutput.Status = model.RunStatusInternalErr
+			runOutput.Metadata.ExitCode = int(model.ExitCodeParserError)
+		} else if runOutput.Status == model.RunStatusPassed {
+			runOutput.Status = model.RunStatusInternalErr
+		}
+	}</pre><p>Same commit and path, lines 622–628</p><pre>	summarySHA, err := artifacts.WriteSummaryJSON(paths, summary)
+	if err != nil {
+		return runResult{}, err
+	}
+	if err := artifacts.WriteSummaryMarkdown(paths, summary); err != nil {
+		return runResult{}, err
+	}</pre></article>
+<article id='source-G-S06'><h3>G-S06 · Error-code constants</h3><p class='identity'><code>gaori@393af5999bbbb30b5d11e2a17a2325c8cf1833b7:internal/model/errors.go:7–11</code></p><pre>const (
+	ExitCodeConfigError   ErrorCode = 2
+	ExitCodeArtifactError ErrorCode = 3
+	ExitCodeParserError   ErrorCode = 4
+	ExitCodeTimeout       ErrorCode = 124</pre></article>
+<article id='source-G-S07'><h3>G-S07 · Summary JSON rejection</h3><p class='identity'><code>gaori@393af5999bbbb30b5d11e2a17a2325c8cf1833b7:internal/artifacts/artifacts.go:114–126</code></p><pre>func WriteSummaryJSON(paths model.ArtifactPaths, summary model.Summary) (string, error) {
+	data, err := marshalSummaryJSON(summary)
+	if err != nil {
+		return "", model.NewGaoriError(model.ExitCodeArtifactError, "marshal summary json", err)
+	}
+	written := append(data, '\n')
+	if len(written) &gt; safety.MaxSummaryBytes {
+		return "", model.NewGaoriError(model.ExitCodeArtifactError, "write summary json", fmt.Errorf("summary json exceeds %d bytes", safety.MaxSummaryBytes))
+	}
+	if err := writeArtifact(paths, paths.SummaryJSON, written, "write summary json"); err != nil {
+		return "", err
+	}
+	return SHA256(written), nil</pre></article>
+<article id='source-G-S15'><h3>G-S15 · Accepted command-authority decision</h3><p class='identity'><code>gaori@393af5999bbbb30b5d11e2a17a2325c8cf1833b7:docs/architecture-decision-records/README.md:45</code></p><pre>`internal_error` is reserved for a Gaori evidence-pipeline failure when no authoritative non-pass command result must be retained. If extraction fails after a command exited `0`, summary and status artifacts keep `exit_code: 0`, use `status: internal_error` and `extractor_status: degraded`, and the Gaori process exits `4`. If the command already failed, timed out, or was killed, that state and exit code remain authoritative. Standalone summarize has no authoritative execution result, so an extraction internal error uses `status: internal_error` and exit code `4` in its artifacts and exits `4`.</pre></article>
+<article id='source-G-S19'><h3>G-S19 · Extraction policy and outcome matrix</h3><p class='identity'><code>gaori@393af5999bbbb30b5d11e2a17a2325c8cf1833b7:docs/architecture/README.md:601–603</code></p><pre>- Execution and summarize logs larger than 256 KiB are extracted from at most the final 256 KiB, beginning at the first complete line in that window. Spans retain absolute line and byte offsets into the full raw log.
+- A bounded-tail scan always reports `extractor_status: degraded`, even when it finds useful evidence, because earlier evidence may have been omitted.
+- Failure or warning record truncation always reports `extractor_status: degraded`; command status and exit code remain authoritative.</pre><p>Same commit and path, lines 607–622</p><pre>- Parser or rule matches and misses never convert an authoritative non-pass result into pass.
+- Project rules run before the selected parser. When no rule matches, a specialized parser uses only its own patterns and never retries generic extraction.
+- Tagged ad-hoc runs may select that parser explicitly; configured runs continue to use only their configured parser.
+
+| Extraction outcome | Artifact status / exit code | Extractor status | Gaori CLI exit code |
+|---|---|---|---:|
+| Specialized parser miss after command pass | `passed` / `0` | `no_match` | `0` |
+| Specialized parser miss after command failure, timeout, or kill | original status / original exit code | `degraded` | original exit code |
+| Bounded-tail extraction after command pass | `passed` / `0` | `degraded` | `0` |
+| Bounded-tail extraction after command failure, timeout, or kill | original status / original exit code | `degraded` | original exit code |
+| Bounded-tail extraction during standalone summarize | inferred status / inferred exit code | `degraded` | `0` |
+| Evidence truncation after command pass | `passed` / `0` | `degraded` | `0` |
+| Evidence truncation after command failure, timeout, or kill | original status / original exit code | `degraded` | original exit code |
+| Extraction internal error after command pass | `internal_error` / `0` | `degraded` | `4` |
+| Extraction internal error after command failure, timeout, or kill | original status / original exit code | `degraded` | original exit code |
+| Extraction internal error during standalone summarize | `internal_error` / `4` | `degraded` | `4` |</pre><p>Same commit and path, line 626</p><pre>When extraction fails internally, Gaori preserves the raw log and writes empty failure/warning collections plus summary and status artifacts whenever those writes remain safe. The bounded, configured-redaction-aware diagnostic is emitted on stderr and is not added to the JSON schemas. Configuration, pre-execution, and artifact-write failures retain their existing fatal-error behavior.</pre></article>
+</section>
+</main>
+<footer><p>Complete authored file contents are supplied in the operator handoff. No files were written or imported, and no execution or personal review is claimed. These pages require no external resources.</p><a href='lifecycle.html'>Next: waiting, cancellation, and disconnected sessions →</a></footer>
+</body>
+</html>

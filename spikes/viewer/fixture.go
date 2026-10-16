@@ -39,11 +39,12 @@ var hostScript []byte
 //go:embed loader.js
 var loaderScript []byte
 
-//go:embed fixture.go corpus.go
+//go:embed fixture.go corpus.go knowledge.go
 var implementationSources embed.FS
 
 type Config struct {
 	State, Base, Remote        string
+	Knowledge                  string
 	Renderers, RemoteRenderers [2]string
 }
 type delivery struct {
@@ -73,6 +74,7 @@ type Observation struct {
 }
 type Fixture struct {
 	config         Config
+	knowledge      *knowledgeCorpus
 	auth           http.Handler
 	closeAuth      func() error
 	mu             sync.Mutex
@@ -140,7 +142,7 @@ func New(c Config) (*Fixture, error) {
 	implementation := append([]byte(nil), hostPage...)
 	implementation = append(implementation, hostScript...)
 	implementation = append(implementation, loaderScript...)
-	for _, name := range []string{"fixture.go", "corpus.go"} {
+	for _, name := range []string{"fixture.go", "corpus.go", "knowledge.go"} {
 		source, _ := implementationSources.ReadFile(name)
 		implementation = append(implementation, source...)
 	}
@@ -161,7 +163,15 @@ func New(c Config) (*Fixture, error) {
 		offset += n
 	}
 	f.contextDigest = hex.EncodeToString(hash.Sum(nil))
+	if e = f.loadKnowledge(); e != nil {
+		closeAuth()
+		return nil, e
+	}
 	if e = f.prepareCorpus(); e != nil {
+		closeAuth()
+		return nil, e
+	}
+	if e = f.bindKnowledge(); e != nil {
 		closeAuth()
 		return nil, e
 	}
@@ -386,7 +396,7 @@ func (f *Fixture) trusted(w http.ResponseWriter, r *http.Request) {
 		if remote {
 			origins = f.config.RemoteRenderers
 		}
-		reply(w, 200, map[string]any{"renderers": origins, "instance": f.instance, "implementation": f.implementation, "fixture_only": true, "versions": []string{"a", "b"}, "context_bytes": f.contextBytes, "context_digest": f.contextDigest, "attachment": f.inventories["a"]["attachment.bin"]})
+		reply(w, 200, map[string]any{"renderers": origins, "instance": f.instance, "implementation": f.implementation, "fixture_only": true, "versions": []string{"a", "b"}, "context_bytes": f.contextBytes, "context_digest": f.contextDigest, "attachment": f.inventories["a"]["attachment.bin"], "knowledge": f.knowledgeSummary()})
 	case "/viewer/deliver":
 		if r.Method != "POST" {
 			http.Error(w, "method", 405)
@@ -470,6 +480,8 @@ func (f *Fixture) trusted(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		reply(w, 200, map[string]any{"requests": f.observations, "reports": f.reports, "review": false, "delivery_leases": leases})
+	case "/viewer/knowledge":
+		f.knowledgeRead(w, r)
 	case "/viewer/page":
 		version := r.URL.Query().Get("version")
 		name := r.URL.Query().Get("path")

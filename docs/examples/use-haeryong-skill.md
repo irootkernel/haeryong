@@ -1,6 +1,6 @@
 # Haeryong skill draft
 
-**Status:** Product-owned instruction draft, documentation baseline 1.6.0, not installed or executable until its referenced CLI/API capabilities exist. Target implementation location: `skills/use-haeryong/SKILL.md`. Validate host-specific skill discovery conventions; do not assume a fixed global directory.
+**Status:** Product-owned production instruction draft, documentation baseline 1.6.0. The compatible repository-owned [prototype skill](../../skills/use-haeryong/SKILL.md) is implemented for the bounded [Task07 experiment](../testing/knowledge-value-spike.md); it does not claim the production CLI/API, search/import or personal-state capabilities described below exist. No global installation is performed. Validate host-specific skill discovery conventions; do not assume a fixed global directory.
 
 ## Purpose
 

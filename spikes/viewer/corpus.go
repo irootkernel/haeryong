@@ -24,6 +24,12 @@ type fileRecord struct {
 
 func (f *Fixture) prepareCorpus() error {
 	for _, version := range []string{"a", "b"} {
+		if f.knowledge != nil {
+			if e := f.prepareKnowledge(version); e != nil {
+				return e
+			}
+			continue
+		}
 		inventoryPath := filepath.Join(f.config.State, "inventory-"+version+".json")
 		if existing, e := os.ReadFile(inventoryPath); e == nil {
 			var inventory map[string]fileRecord

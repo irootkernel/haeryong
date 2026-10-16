@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Gaori lifecycle: terminal observations and uncertain completion</title>
+<link rel='stylesheet' href='../assets/style.css'>
+<script type='module' src='../assets/gaori/illustrations.js'></script>
+</head>
+<body>
+<a class='skip' href='#main'>Skip to explanation</a>
+<header><p class='eyebrow'>Gaori · fixed-source explanation</p><nav aria-label='Gaori explanations'><a href='outcomes.html'>Outcomes and artifacts</a><a href='lifecycle.html' aria-current='page'>Waiting and reconciliation</a></nav></header>
+<main id='main'>
+<h1>A finished invocation is terminal; a waiter ending is not</h1>
+<p class='question'>A waiter times out, cancel_run says accepted:true, or the MCP connection disappears. Which observation is terminal, when can the same invocation be awaited, and when is another start unsafe?</p>
+<p class='answer'>Inspect the invocation's <code>finished</code> phase and its final result or error. Wait expiry and cancellation acceptance do not establish completion. After an await request ends, the same ID may be awaited again in the surviving server session. After disconnection, reconcile the original command and final artifacts before retrying; another server cannot recover the old invocation.</p>
+<aside class='scope'><strong>Scope and limits.</strong> All Gaori facts concern supplied excerpts from <code>gaori@393af5999bbbb30b5d11e2a17a2325c8cf1833b7</code>. No server binding, invocation, cancellation, disconnect, or artifact inspection was performed. The controls below illustrate conditional readings of observations; they do not establish what happened to any real command.</aside>
+<nav class='contents' aria-label='Six material claims'><a href='#G07'>G07 · Terminal boundary</a><a href='#G08'>G08 · Revision wait expiry</a><a href='#G09'>G09 · Await request ends</a><a href='#G10'>G10 · Cancellation accepted</a><a href='#G11'>G11 · Session lost</a><a href='#G12'>G12 · Before another start</a></nav>
+
+<section id='G07' class='claim' data-category='direct_source' aria-labelledby='title-G07'>
+<p class='label'>G07 · Direct source</p><h2 id='title-G07'>Finished settles the invocation, not necessarily a passing check</h2>
+<p class='claim-text'>The shown finish method sets phase finished, records a result or error, and closes the completion event; terminal completion therefore does not by itself mean command success.</p>
+<p>A non-nil result supplies the finalized summary path; a Gaori error is stored separately. Inspect the final result or error rather than treating the lifecycle phase as a passing status. The accepted MCP decision also distinguishes a test failure carried in a successful exchange from a protocol failure. <a href='#source-G-S09' data-haeryong-evidence='G-S09'>G-S09 · mcp.go:94–106</a> <a href='#source-G-S16' data-haeryong-evidence='G-S16'>G-S16 · ADR-0012:262</a> See <a href='outcomes.html'>command and evidence outcomes</a> for interpretation of the final fields.</p>
+</section>
+
+<section id='G08' class='claim' data-category='direct_source' aria-labelledby='title-G08'>
+<p class='label'>G08 · Direct source</p><h2 id='title-G08'>A revision wait expiry is only an observation boundary</h2>
+<p class='claim-text'>When wait_run's timer expires, the shown implementation returns the current snapshot with changed:false; expiry alone neither establishes a finished phase nor creates a command timed_out result.</p>
+<p>Inspect the returned phase. A concurrent finish can already be visible in that snapshot, so <code>changed:false</code> is not proof that the invocation is still running either. The public tool describes a wait of up to 50 seconds without cancelling the run. With <code>after_revision</code> greater than the current revision, the implementation returns an input error rather than waiting. <a href='#source-G-S11' data-haeryong-evidence='G-S11'>G-S11 · mcp.go:241–267</a> <a href='#source-G-S13' data-haeryong-evidence='G-S13'>G-S13 · mcp.go:571</a></p>
+</section>
+
+<section id='G09' class='claim' data-category='direct_source' aria-labelledby='title-G09'>
+<p class='label'>G09 · Direct source</p><h2 id='title-G09'>Await can resume against the same surviving session</h2>
+<p class='claim-text'>Cancelling or timing out an await_run request ends only that waiter; the invocation keeps running and the same session-local ID may be awaited again while its original server session remains available.</p>
+<p><code>await_run</code> has no Gaori-owned timeout argument. It returns immediately for an already finished invocation, otherwise waiting for the completion event or the request context to end. A host deadline must cover command execution and expected evidence materialization if one uninterrupted wait is required. This does not authorize a new start when only the waiter ended. <a href='#source-G-S17' data-haeryong-evidence='G-S17'>G-S17 · ADR-0018:409–413</a> <a href='#source-G-S11' data-haeryong-evidence='G-S11'>G-S11 · mcp.go:270–289</a></p>
+</section>
+
+<section id='G10' class='claim' data-category='direct_source' aria-labelledby='title-G10'>
+<p class='label'>G10 · Direct source</p><h2 id='title-G10'>Accepted cancellation is a request receipt</h2>
+<p class='claim-text'>cancel_run accepted:true means that call recorded the first cancellation request for an unfinished invocation; it guarantees neither a killed final result nor stopped artifact materialization, so the caller must still wait for finished.</p>
+<p>The guard returns false for a finished invocation or an already recorded request. Thus <code>accepted:false</code> alone also does not distinguish those two situations. Read the snapshot and final outcome. <a href='#source-G-S10' data-haeryong-evidence='G-S10'>G-S10 · mcp.go:131–141</a> <a href='#source-G-S12' data-haeryong-evidence='G-S12'>G-S12 · mcp.go:338–340</a> <a href='#source-G-S13' data-haeryong-evidence='G-S13'>G-S13 · mcp.go:589</a></p>
+<div class='illustration' data-illustration='lifecycle'>
+<h3>Illustration: interpret an observation before acting</h3>
+<p>The terminal branch assumes an actually observed <code>finished</code> snapshot. Other branches deliberately lack that proof. Selecting a server condition does not perform reconnection or establish server identity.</p>
+<fieldset><legend>Hypothetical inputs</legend><label for='lifecycle-observation'>Latest observation</label><select id='lifecycle-observation' data-input='observation'><option value='wait'>wait_run expires with changed:false; phase not yet inspected</option><option value='await'>await_run request reaches its host deadline</option><option value='cancel'>cancel_run returns accepted:true</option><option value='finished'>A snapshot explicitly reports phase finished</option><option value='disconnect'>The MCP connection disappears</option></select><label for='lifecycle-session'>Availability of the original invocation registry</label><select id='lifecycle-session' data-input='session'><option value='same'>Original server session is known to remain available</option><option value='lost'>Original server is gone, replaced, or unverified</option></select></fieldset>
+<output class='prediction' data-output aria-live='polite' aria-atomic='true'>Illustration — not an observed execution. A wait expiry with changed:false does not settle command completion. Inspect the returned phase. If unfinished, the same invocation may be awaited in the known original server session; if finished, inspect its final result or error. Do not start a replacement merely because the waiter expired.</output>
+<p>Basis: <a href='#source-G-S09' data-haeryong-evidence='G-S09'>G-S09</a>, <a href='#source-G-S11' data-haeryong-evidence='G-S11'>G-S11</a>, <a href='#source-G-S12' data-haeryong-evidence='G-S12'>G-S12</a>, <a href='#source-G-S17' data-haeryong-evidence='G-S17'>G-S17</a>, <a href='#source-G-S18' data-haeryong-evidence='G-S18'>G-S18</a>.</p>
+<noscript><p>JavaScript is disabled. Claims G07–G12 explain the observations and the surviving-session condition.</p></noscript>
+</div>
+</section>
+
+<section id='G11' class='claim' data-category='direct_source' aria-labelledby='title-G11'>
+<p class='label'>G11 · Direct source</p><h2 id='title-G11'>Disconnection does not produce a recoverable durable job</h2>
+<p class='claim-text'>Gaori's live invocation registry belongs to one MCP server process and is not recovered after restart; completed on-disk list_runs entries carry no invocation ID and cannot be awaited as live invocations.</p>
+<p>The integration guide requires reconciliation of the command and final artifacts after a disconnect. Connection loss alone is not a terminal command result. The supplied shutdown description includes active-run cancellation and bounded artifact draining; it does not establish that every abrupt disconnection leaves a complete artifact set. Read-only finished evidence and live session operations have different identities. <a href='#source-G-S16' data-haeryong-evidence='G-S16'>G-S16 · ADR-0012:253–260</a> <a href='#source-G-S17' data-haeryong-evidence='G-S17'>G-S17 · ADR-0018:413</a> <a href='#source-G-S14' data-haeryong-evidence='G-S14'>G-S14 · mcp.go:637</a> <a href='#source-G-S18' data-haeryong-evidence='G-S18'>G-S18 · integration-guide.md:298</a></p>
+</section>
+
+<section id='G12' class='claim' data-category='qualified_inference' aria-labelledby='title-G12'>
+<p class='label'>G12 · Qualified inference</p><h2 id='title-G12'>Resolve the original outcome before a replacement start</h2>
+<p class='claim-text'>A waiter timeout, accepted cancellation, or disconnect alone is insufficient grounds for a replacement start: reconcile the original invocation, or its command and final artifacts, before deciding whether another execution is needed.</p>
+<p>The risk is an unresolved prior execution, not proof that duplication has already happened. The integration guide says to retain the original invocation or process identity after starting rather than rerun to switch transports, and to reconcile command and final artifacts before retrying after disconnection. A surviving correctly bound session permits awaiting the same ID. If that session is gone, a new server cannot restore that ID. Missing artifacts alone do not prove that the original command never executed. <a href='#source-G-S18' data-haeryong-evidence='G-S18'>G-S18 · integration-guide.md:298</a> <a href='#source-G-S17' data-haeryong-evidence='G-S17'>G-S17 · ADR-0018:411–413, 420</a></p>
+<p><strong>Pinned explanatory analogy.</strong> The prior Mulgae compose explanation similarly asks the reader to inspect the exact returned run before repeating an uncertain publication. Its precise target is <a href='#reference-prior-compose' data-haeryong-reference='prior-compose'>prior-compose · version m-repair1-d8dfa2c8a10c584c · recovery/compose.html · M11</a>, inventory <code>d8dfa2c8a10c584c19606cf76dd7de2dc6fed5b860a64b598751dbbb2f3930da</code>. This comparison concerns reasoning under outcome uncertainty only. It is not Gaori source proof, an established caller or dependency, or a statement about live prior state. The Gaori recommendation above rests on Gaori's own cited sources.</p>
+</section>
+
+<section class='references' aria-labelledby='references-title'><h2 id='references-title'>Pinned prior context</h2><article id='reference-prior-compose'><h3>prior-compose · immutable explanatory target</h3><dl><dt>Version</dt><dd><code>m-repair1-d8dfa2c8a10c584c</code></dd><dt>Inventory SHA256</dt><dd><code>d8dfa2c8a10c584c19606cf76dd7de2dc6fed5b860a64b598751dbbb2f3930da</code></dd><dt>Page and region</dt><dd><code>recovery/compose.html</code>, region <code>M11</code></dd><dt>Supplied region title</dt><dd>Reconcile uncertain publication by exact run identity</dd></dl><blockquote>After uncertain compose publication, inspect the exact returned composite run before repeating the mapping; do not blindly retry the mutation.</blockquote><p>The supplied inventory identity uses sorted relativepath rows, Python json sort_keys compact UTF-8 plus LF. It is an operator identity, not a Go directory digest. This local reference preserves the supplied target without inventing a host URL or substituting a latest version.</p></article></section>
+
+<section class='sources' aria-labelledby='sources-title'><h2 id='sources-title'>Local Gaori source captures</h2><p>All captures below are supplied excerpts from repository <code>gaori</code> at commit <code>393af5999bbbb30b5d11e2a17a2325c8cf1833b7</code>. Quotes have no added line prefixes. Where only part of integration-guide line 298 is shown, each block is an exact contiguous excerpt of that line.</p>
+<article id='source-G-S09'><h3>G-S09 · Completion boundary</h3><p class='identity'><code>gaori@393af5999bbbb30b5d11e2a17a2325c8cf1833b7:internal/cli/mcp.go:94–106</code></p><pre>func (i *mcpInvocation) finish(result *runResult, err error, redactor *safety.Redactor, repoRoot string) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.snapshot.Phase = mcpPhaseFinished
+	i.snapshot.Result = result
+	if result != nil {
+		i.finalizedSummaryPath = canonicalMCPPath(repoRoot, result.SummaryJSON)
+	}
+	if err != nil {
+		i.snapshot.Error = &amp;mcpRunError{ExitCode: model.ExitCodeFor(err), Message: safeMCPErrorMessage(err, redactor)}
+	}
+	i.bumpLocked()
+	close(i.done)</pre></article>
+<article id='source-G-S10'><h3>G-S10 · Cancellation request guard</h3><p class='identity'><code>gaori@393af5999bbbb30b5d11e2a17a2325c8cf1833b7:internal/cli/mcp.go:131–141</code></p><pre>func (i *mcpInvocation) requestCancel() bool {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.snapshot.Phase == mcpPhaseFinished || i.snapshot.CancellationRequested {
+		return false
+	}
+	i.snapshot.CancellationRequested = true
+	i.bumpLocked()
+	i.startGate.Cancel(i.cancel)
+	return true
+}</pre></article>
+<article id='source-G-S11'><h3>G-S11 · Wait and await behavior</h3><p class='identity'><code>gaori@393af5999bbbb30b5d11e2a17a2325c8cf1833b7:internal/cli/mcp.go:241–267</code></p><pre>	inv.mu.Lock()
+	current := inv.snapshot
+	if after &gt; current.Revision {
+		inv.mu.Unlock()
+		return mcpSnapshot{}, fmt.Errorf("after_revision %d exceeds current revision %d", after, current.Revision)
+	}
+	if current.Revision &gt; after || current.Phase == mcpPhaseFinished {
+		current.Changed = current.Revision &gt; after
+		inv.mu.Unlock()
+		return current, nil
+	}
+	changed := inv.changed
+	inv.mu.Unlock()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case &lt;-changed:
+		snapshot := inv.read()
+		snapshot.Changed = true
+		return snapshot, nil
+	case &lt;-timer.C:
+		snapshot := inv.read()
+		snapshot.Changed = false
+		return snapshot, nil
+	case &lt;-ctx.Done():
+		return mcpSnapshot{}, ctx.Err()
+	}</pre><p>Same commit and path, lines 270–289</p><pre>func (m *mcpManager) await(ctx context.Context, id string) (mcpSnapshot, error) {
+	inv, err := m.lookup(id)
+	if err != nil {
+		return mcpSnapshot{}, err
+	}
+	inv.mu.Lock()
+	if inv.snapshot.Phase == mcpPhaseFinished {
+		snapshot := inv.snapshot
+		snapshot.Changed = false
+		inv.mu.Unlock()
+		return snapshot, nil
+	}
+	done := inv.done
+	inv.mu.Unlock()
+	select {
+	case &lt;-done:
+		return inv.read(), nil
+	case &lt;-ctx.Done():
+		return mcpSnapshot{}, ctx.Err()
+	}</pre></article>
+<article id='source-G-S12'><h3>G-S12 · Meaning of accepted</h3><p class='identity'><code>gaori@393af5999bbbb30b5d11e2a17a2325c8cf1833b7:internal/cli/mcp.go:338–340</code></p><pre>type cancelOutput struct {
+	Accepted bool        `json:"accepted" jsonschema:"true only when this call records the first cancellation request for an unfinished invocation; it does not guarantee a killed final result or stop artifact materialization"`
+	Snapshot mcpSnapshot `json:"snapshot"`</pre></article>
+<article id='source-G-S13'><h3>G-S13 · Public lifecycle descriptions</h3><p class='identity'><code>gaori@393af5999bbbb30b5d11e2a17a2325c8cf1833b7:internal/cli/mcp.go:571</code></p><pre>Wait up to 50 seconds for a run revision change without cancelling the run.</pre><p>Same commit and path, line 589; contiguous description excerpt</p><pre>Record the first cancellation request for an unfinished Gaori invocation and return its current snapshot. accepted reports whether this call recorded that request; clients must wait for finished and use the final command result.</pre><p>Both blocks quote string contents within the supplied code lines.</p></article>
+<article id='source-G-S14'><h3>G-S14 · Finished evidence is not live invocation state</h3><p class='identity'><code>gaori@393af5999bbbb30b5d11e2a17a2325c8cf1833b7:internal/cli/mcp.go:637</code></p><pre>List completed standalone Gaori runs from redacted status artifacts, newest first. This is finished on-disk evidence, not session state: entries carry no invocation ID and cannot be waited on, cancelled, or passed to get_excerpt.</pre><p>Contiguous description excerpt within the supplied line.</p></article>
+<article id='source-G-S16'><h3>G-S16 · Accepted session-local boundary</h3><p class='identity'><code>gaori@393af5999bbbb30b5d11e2a17a2325c8cf1833b7:docs/architecture-decision-records/README.md:253–255</code></p><pre>Gaori will expose a STDIO-only MCP server with an in-memory invocation registry. A start operation returns immediately; get and revision-based wait operations expose `queued`, `executing`, `materializing`, and `finished` phases; explicit cancel and server shutdown cancel active child process groups. Wait expiry and cancellation affect only the wait request. Completed results reuse the existing command, extraction, redaction, and artifact contracts, and raw-log contents are never returned through MCP.
+
+This live channel is scoped to one MCP server process. It does not persist running state, recover invocations after restart, detach commands, listen on a network socket, or own workflow and acceptance state. ADR-0016 clarifies that this session-state boundary does not restrict read-only MCP access to already-materialized on-disk evidence. ADR-0005 remains the compatibility boundary for final filesystem watchers.</pre><p>The wait-request wording concerns cancellation of a waiter; explicit run cancellation is separately described in G-S12, G-S13, and G-S17.</p><p>Same commit and path, line 260</p><pre>- MCP clients must keep the server session alive for active runs and reconcile final artifacts after a disconnect.</pre><p>Same commit and path, line 262</p><pre>- A test failure is a successful MCP exchange containing a non-pass command result, not a protocol failure.</pre></article>
+<article id='source-G-S17'><h3>G-S17 · Accepted terminal-await decision</h3><p class='identity'><code>gaori@393af5999bbbb30b5d11e2a17a2325c8cf1833b7:docs/architecture-decision-records/README.md:409–413</code></p><pre>Gaori will add a read-only, idempotent `await_run` MCP tool that accepts only an invocation ID. It returns immediately with the existing terminal snapshot when the invocation is already `finished`; otherwise it waits on that invocation's immutable completion event until `finished` or until the tool request context ends. The tool adds no Gaori-owned timeout argument. Hosts that want one uninterrupted wait must configure their MCP tool deadline to cover the selected command timeout and expected local evidence materialization time.
+
+Cancelling or timing out the `await_run` request cancels only that waiter. The invocation keeps running and the same session-local ID may be awaited again. Only `cancel_run` or MCP server shutdown cancels the run context. `wait_run` remains the bounded revision/phase-observation interface; `await_run` is the terminal-only interface. Both return the same authoritative final command status and bounded redacted derived evidence, and neither changes artifact, watcher, or extractor semantics.
+
+Although `await_run` is annotated read-only, it is a live session-registry operation governed by ADR-0012, not the stateless finished-evidence read described by ADR-0016. It cannot address an invocation from another MCP server process or recover one after restart.</pre><p>Same commit and path, line 420</p><pre>- A host deadline can still end the waiter, but it cannot silently cancel the command; the caller reconciles the same invocation before retrying.</pre></article>
+<article id='source-G-S18'><h3>G-S18 · Original identity and disconnect reconciliation</h3><p class='identity'><code>gaori@393af5999bbbb30b5d11e2a17a2325c8cf1833b7:docs/integration-guide.md:298</code></p><p>Original-identity excerpt</p><pre>Once a run starts, retain its original invocation or process identity rather than rerunning it to switch transports. For a correctly bound MCP server, start a run, then call `await_run` with only the returned invocation ID when terminal completion is the next required event.</pre><p>Cancellation and shutdown excerpt, same line</p><pre>Use `cancel_run` only for explicit cancellation. Its `accepted: true` means that call recorded the first cancellation request for an unfinished invocation; it does not guarantee a `killed` final result or stop evidence materialization. Repeated requests and requests after `finished` return false, and every caller must wait for `finished` before consuming the authoritative status and exit code. This avoids OS process polling but does not create durable state. Closing stdin at a newline-delimited frame boundary cancels active runs with exit `0`: after every in-flight process-start gate resolves and cancellation is delivered, the server drains artifacts for at most three seconds. The gate wait prevents late child creation and is not part of that drain budget. A truncated final frame exits `4`, while SIGINT/SIGTERM use the same shutdown ordering and exit `130`/`143`.</pre><p>Disconnect excerpt, same line</p><pre>If the MCP server disconnects, reconcile the command and final artifacts before retrying; a new server cannot recover the old invocation ID.</pre><p>The shutdown exit numbers above describe the server shutdown paths in this excerpt; they are not reported child-command outcomes for a run in this directory.</p></article>
+</section>
+</main>
+<footer><p>Complete authored file contents are supplied in the operator handoff. No live state, imported record, completed cancellation, or actual reconciliation is claimed. These pages require no external resources.</p><a href='outcomes.html'>← Back to command and evidence outcomes</a></footer>
+</body>
+</html>

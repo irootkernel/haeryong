@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Mulgae recovery: compose without dropping selected roles</title>
+<link rel='stylesheet' href='../assets/style.css'>
+<script type='module' src='../assets/recovery.js'></script>
+</head>
+<body>
+<a class='skip' href='#main'>Skip to explanation</a>
+<header><p class='eyebrow'>Mulgae · fixed-source explanation</p><nav aria-label='Recovery explanations'><a href='inventory.html'>Inventory and retention</a><a href='compose.html' aria-current='page'>Compose and reconciliation</a></nav></header>
+<main id='main'>
+<h1>Compose every missing selected role</h1>
+<p class='question'>A valid Mulgae root has an accepted required role and a failed selected optional role. May compose omit the optional failure, replace the accepted role, or retry blindly after publication becomes uncertain? What changes when the retained source is missing?</p>
+<p class='answer'>No to all three shortcuts. The failed optional role still needs a committed rerun, the accepted root role remains in place, and uncertain publication requires inspection of the exact returned run. A missing required source blocks the source-validated path.</p>
+<aside class='scope'><strong>Source scope.</strong> All observations concern supplied excerpts from <code>mulgae@cef337cf927b820316f42a41f1441fbc653203f8</code>. The two-role scenario is hypothetical. No source was loaded from disk, and no composition, publication, provider call, or reconciliation was performed.</aside>
+<nav class='contents' aria-label='Claims on this page'><a href='#M07'>M07 · Root admission</a><a href='#M08'>M08 · Optional failure</a><a href='#M09'>M09 · Preserve acceptance</a><a href='#M10'>M10 · Recovery proof</a><a href='#M11'>M11 · Uncertain publication</a><a href='#M12'>M12 · Missing source</a></nav>
+
+<section id='M07' class='claim' aria-labelledby='title-M07'>
+<p class='label'>M07 · Direct source</p><h2 id='title-M07'>Select an exact ordinary root</h2>
+<p class='claim-text'>Compose requires an explicitly selected ordinary root, which may be a committed incomplete review or a verified failed-run recovery source.</p>
+<p>The root validator checks the expected run identity, ordinary review run type, incomplete coverage, valid target digest, policy and role set, session identity, and source reference. Its error wording says “committed incomplete ordinary review”; the ADR explicitly includes a verified recovery source as another root basis. This does not imply that a failed run acquired a final review. Recovery references use a run ID and manifest hash, never a synthetic review ID. <a href='#source-M-S06' data-haeryong-evidence='M-S06'>M-S06 · service.go:101–116</a> <a href='#source-M-S10' data-haeryong-evidence='M-S10'>M-S10 · ADR:48–59</a></p>
+</section>
+
+<section id='M08' class='claim' aria-labelledby='title-M08'>
+<p class='label'>M08 · Direct source</p><h2 id='title-M08'>A failed selected optional role cannot be omitted</h2>
+<p class='claim-text'>Compose requires a committed rerun for every missing selected role, including a failed optional role regardless of its required flag.</p>
+<p>The service constructs its missing-role set from <code>Outcome == &quot;failed&quot;</code> and <code>HasAttempt</code>, without checking <code>Required</code> in that selection. The number of admitted recoveries must match that set. This does not turn skipped or not-applicable roles into failed selected roles. <a href='#source-M-S05' data-haeryong-evidence='M-S05'>M-S05 · service.go:61–71, 94–96</a> <a href='#source-M-S10' data-haeryong-evidence='M-S10'>M-S10 · ADR:48–53</a></p>
+<p>For the stated two-role root, the accepted required role needs no replacement; the failed selected optional role needs one admissible committed rerun. Older artifacts remain readable, but an old mapping that omitted a failed role is rejected under the documented new-mapping rule. <a href='#source-M-S10' data-haeryong-evidence='M-S10'>M-S10 · ADR:79–81</a></p>
+<pre class='command'><code>mulgae compose --root-run r_... --recovery-run r_... --output json</code></pre>
+<p>This is the README's command template, not an executed operation or a generated run identity. <a href='#source-M-S09' data-haeryong-evidence='M-S09'>M-S09 · README.md:764–768</a></p>
+<div class='illustration' data-illustration='compose'>
+<h3>Illustration: vary the mapping and publication state</h3>
+<p>Assume the question's valid two-role root. A recovery selected below is a hypothetical committed rerun. All other validators remain conditions, not facts established by this control.</p>
+<fieldset><legend>Hypothetical inputs</legend>
+<label for='compose-source'>Required source availability</label>
+<select id='compose-source' data-input='source'><option value='present'>Root and required lineage sources available</option><option value='root-missing'>Retained root missing</option><option value='ancestor-missing'>Required intermediate lineage source missing</option></select>
+<label for='compose-mapping'>Selected recovery mapping</label>
+<select id='compose-mapping' data-input='mapping'><option value='all'>Recover the failed selected optional role</option><option value='omit'>Omit the failed optional role</option><option value='replace'>Select a rerun replacing the accepted required role</option><option value='mismatch'>Select an optional-role rerun with a different target digest</option></select>
+<label for='compose-publication'>Publication situation</label>
+<select id='compose-publication' data-input='publication'><option value='none'>No uncertain publication reported</option><option value='cli'>Prior CLI result says status_required</option><option value='mcp'>Prior MCP result says composite_publication_incomplete</option></select>
+</fieldset>
+<output class='prediction' aria-live='polite' aria-atomic='true' data-output>Illustration — not an observed execution. Recovering the one failed selected optional role satisfies this scenario's missing-role selection, provided the committed rerun passes all admission checks. The accepted required role remains from the root. This predicts neither successful publication nor a CI pass.</output>
+<p class='prediction-sources' data-illustration-sources>Basis: <a href='#source-M-S05' data-haeryong-evidence='M-S05'>M-S05</a>, <a href='#source-M-S06' data-haeryong-evidence='M-S06'>M-S06</a>, <a href='#source-M-S07' data-haeryong-evidence='M-S07'>M-S07</a>, <a href='#source-M-S10' data-haeryong-evidence='M-S10'>M-S10</a>.</p>
+<noscript><p>JavaScript is disabled. The initial prediction assumes the default inputs. Claims M09–M12 explain replacement, validation, uncertain publication, and missing sources.</p></noscript>
+</div>
+</section>
+
+<section id='M09' class='claim' aria-labelledby='title-M09'>
+<p class='label'>M09 · Direct source</p><h2 id='title-M09'>Preserve the accepted root role</h2>
+<p class='claim-text'>Compose rejects a recovery that would replace an accepted root role and builds unreplaced accepted roles from the root.</p>
+<p><code>admitRecovery</code> returns <code>CompositeRoleAlreadySatisfied</code> when the root role is accepted. In <code>buildResult</code>, the default source is the root; a recovery source is selected only for a role present in the admitted recovery map. Therefore the accepted required role in the question stays rooted in its original accepted result. <a href='#source-M-S06' data-haeryong-evidence='M-S06'>M-S06 · service.go:165–175</a> <a href='#source-M-S07' data-haeryong-evidence='M-S07'>M-S07 · service.go:320–328</a></p>
+</section>
+
+<section id='M10' class='claim' aria-labelledby='title-M10'>
+<p class='label'>M10 · Direct source</p><h2 id='title-M10'>A rerun label alone is insufficient</h2>
+<p class='claim-text'>Recovery admission validates target identity, report integrity, and transitive same-role lineage before accepting the recovery mapping.</p>
+<p>The recovery must be a one-role committed rerun with complete or degraded coverage, match the root target digest and session, and have an accepted terminal role result. “Degraded” is explicitly admitted here; it is not evidence of an unqualified clean review. <a href='#source-M-S06' data-haeryong-evidence='M-S06'>M-S06 · service.go:151–175</a></p>
+<p>The ADR bounds lineage to 128 links. At the root boundary, the source review identity or recovery hash must match, and the chain must end at the failed root-role attempt. The supplied code rejects missing intermediate sources. <a href='#source-M-S10' data-haeryong-evidence='M-S10'>M-S10 · ADR:48–53</a> <a href='#source-M-S06' data-haeryong-evidence='M-S06'>M-S06 · service.go:198–212, 221–224</a></p>
+<p>Report validation checks attempt and provider binding, digest format, positive declared length, Markdown content type, and safe path. The shown byte-length and byte-digest checks are conditional on bytes being present; this excerpt should not be described as unconditional verification of loaded report bytes. Other validator implementations and actual stored bytes are not supplied. <a href='#source-M-S08' data-haeryong-evidence='M-S08'>M-S08 · service.go:520–528</a></p>
+</section>
+
+<section id='M11' class='claim' aria-labelledby='title-M11'>
+<p class='label'>M11 · Direct source</p><h2 id='title-M11'>Reconcile uncertain publication by exact run identity</h2>
+<p class='claim-text'>After uncertain compose publication, inspect the exact returned composite run before repeating the mapping; do not blindly retry the mutation.</p>
+<p>The README calls the same exact mapping idempotent, but explicitly requires inspection when CLI publication returns <code>reconciliation_state: status_required</code>. For MCP, it documents <code>composite_publication_incomplete</code> with deterministic non-null <code>session_id</code> and <code>run_id</code>, and <code>retryable: false</code>. These are documented response properties, not values observed for this explanation. Idempotence does not erase the reconciliation step. <a href='#source-M-S09' data-haeryong-evidence='M-S09'>M-S09 · README.md:770–782</a></p>
+</section>
+
+<section id='M12' class='claim' aria-labelledby='title-M12'>
+<p class='label'>M12 · Qualified inference</p><h2 id='title-M12'>A missing required source blocks this composition path</h2>
+<p class='claim-text'>If the retained root or a required intermediate lineage source cannot be read, the shown compose path cannot establish an admissible composition from diagnostics alone.</p>
+<p>A root-read failure returns <code>CompositeValidationFailed</code> with <code>committed root is unavailable</code>. An intermediate lineage read failure returns <code>CompositeLineageMismatch</code> with <code>recovery lineage source is unavailable</code>. The inference is limited to sources this mapping actually needs; it does not say every unrelated missing artifact blocks every composition. <a href='#source-M-S05' data-haeryong-evidence='M-S05'>M-S05 · service.go:53–56</a> <a href='#source-M-S06' data-haeryong-evidence='M-S06'>M-S06 · service.go:221–224</a></p>
+<p>The README directs an authorized new review when a recovery source is missing. The ADR disallows promoting diagnostic logs into accepted results and treats a present invalid source as a fail-closed case. Neither substituting invented evidence nor reusing a matching-looking run ID supplies the missing proof. Any uncertain publication must still be reconciled as described in M11. <a href='#source-M-S09' data-haeryong-evidence='M-S09'>M-S09 · README.md:761–762</a> <a href='#source-M-S10' data-haeryong-evidence='M-S10'>M-S10 · ADR:74–77</a></p>
+</section>
+
+<section class='sources' aria-labelledby='source-heading'><h2 id='source-heading'>Local source captures</h2><p>Supplied source only, from repository <code>mulgae</code> at the exact revision below. Quotes are contiguous within each displayed range and have no added line prefixes.</p>
+<article id='source-M-S05'><h3>M-S05 · Missing-role selection and root-read failure</h3><p class='identity'><code>mulgae@cef337cf927b820316f42a41f1441fbc653203f8:internal/app/reviewcompose/service.go:53–56</code></p><pre>	root, err := service.sources.ReadCompositionSource(ctx, request.RootRunID)
+	if err != nil {
+		return Result{}, fail(domain.CompositeValidationFailed, &quot;committed root is unavailable&quot;, err)
+	}</pre><p>Lines 61–71</p><pre>	roles := make(map[domain.Role]Role, len(root.Roles))
+	missing := make(map[domain.Role]Role)
+	for _, role := range root.Roles {
+		roles[role.Name] = role
+		if role.Outcome == &quot;failed&quot; &amp;&amp; role.HasAttempt {
+			missing[role.Name] = role
+		}
+	}
+	if len(missing) == 0 {
+		return Result{}, fail(domain.CompositeRoleAlreadySatisfied, &quot;root has no missing selected role&quot;, nil)
+	}</pre><p>Lines 94–96</p><pre>	if len(recoveries) != len(missing) {
+		return Result{}, fail(domain.CompositeRecoveryIncomplete, &quot;selection does not recover every missing selected role&quot;, nil)
+	}</pre></article>
+<article id='source-M-S06'><h3>M-S06 · Root, recovery, and lineage validation</h3><p class='identity'><code>mulgae@cef337cf927b820316f42a41f1441fbc653203f8:internal/app/reviewcompose/service.go:101–116</code></p><pre>func validateRoot(root Source, expected domain.RunID) error {
+	if root.RunID != expected || root.RunType != domain.RunTypeReview || root.Coverage != domain.CoverageIncomplete {
+		return fail(domain.CompositeValidationFailed, &quot;root must be the exact committed incomplete ordinary review&quot;, nil)
+	}
+	if !validDigest(root.TargetSHA256) {
+		return fail(domain.CompositeTargetDigestInvalid, &quot;root target digest is invalid&quot;, nil)
+	}
+	if !root.Threshold.Valid() || len(root.Roles) == 0 || len(root.Roles) &gt; len(domain.FixedRoleOrder()) {
+		return fail(domain.CompositeValidationFailed, &quot;root policy or role set is invalid&quot;, nil)
+	}
+	if _, err := domain.ParseSessionID(root.SessionID.String()); err != nil {
+		return fail(domain.CompositeValidationFailed, &quot;root session identity is invalid&quot;, err)
+	}
+	if _, err := sourceReference(root.RunID, root.ReviewID, root.RecoveryManifestSHA256); err != nil {
+		return fail(domain.CompositeValidationFailed, &quot;root source identity is invalid&quot;, err)
+	}</pre><p>Lines 151–175</p><pre>func (service *Service) admitRecovery(ctx context.Context, root, recovery Source) (Role, error) {
+	if recovery.RunType != domain.RunTypeRerun ||
+		(recovery.Coverage != domain.CoverageComplete &amp;&amp; recovery.Coverage != domain.CoverageDegraded) || len(recovery.Roles) != 1 {
+		return Role{}, fail(domain.CompositeRecoveryIncomplete, &quot;recovery must be one complete committed rerun role&quot;, nil)
+	}
+	if !validDigest(recovery.TargetSHA256) {
+		return Role{}, fail(domain.CompositeTargetDigestInvalid, &quot;recovery target digest is invalid&quot;, nil)
+	}
+	if recovery.TargetSHA256 != root.TargetSHA256 {
+		return Role{}, fail(domain.CompositeTargetMismatch, &quot;recovery target does not match root target&quot;, nil)
+	}
+	if _, err := domain.ParseReviewID(recovery.ReviewID.String()); err != nil || recovery.SessionID != root.SessionID {
+		return Role{}, fail(domain.CompositeLineageMismatch, &quot;recovery session or review identity is invalid&quot;, err)
+	}
+	role := recovery.Roles[0]
+	rootRole, exists := findRole(root.Roles, role.Name)
+	if !exists {
+		return Role{}, fail(domain.CompositeRoleNotRequired, &quot;recovery role was not selected by the root&quot;, nil)
+	}
+	if accepted(rootRole) {
+		return Role{}, fail(domain.CompositeRoleAlreadySatisfied, &quot;recovery would replace an accepted root role&quot;, nil)
+	}
+	if !accepted(role) {
+		return Role{}, fail(domain.CompositeRecoveryIncomplete, &quot;recovery role has no accepted terminal result&quot;, nil)
+	}</pre><p>Lines 179–187</p><pre>	if _, err := acceptedReport(recovery, role); err != nil {
+		return Role{}, err
+	}
+	if err := validateFindings(recovery); err != nil {
+		return Role{}, err
+	}
+	if err := service.verifyLineage(ctx, root, recovery, role.Name); err != nil {
+		return Role{}, err
+	}</pre><p>Lines 198–212</p><pre>		if current.RunType != domain.RunTypeRerun || !current.HasSource || !current.HasSourceAttempt {
+			return fail(domain.CompositeLineageMismatch, &quot;recovery lineage is not a rerun chain&quot;, nil)
+		}
+		if current.SessionID != root.SessionID || current.TargetSHA256 != root.TargetSHA256 || len(current.Roles) != 1 || current.Roles[0].Name != role {
+			return fail(domain.CompositeLineageMismatch, &quot;recovery lineage changed session, target, or role&quot;, nil)
+		}
+		if current.SourceRunID == root.RunID {
+			if current.SourceReviewID != root.ReviewID || current.SourceRecoveryManifestSHA256 != root.RecoveryManifestSHA256 {
+				return fail(domain.CompositeLineageMismatch, &quot;recovery lineage root review does not match&quot;, nil)
+			}
+			rootRole, exists := findRole(root.Roles, role)
+			if !exists || accepted(rootRole) || !failedAttempt(root, role, current.SourceAttemptID) {
+				return fail(domain.CompositeLineageMismatch, &quot;recovery does not end at the failed root role attempt&quot;, nil)
+			}
+			return nil</pre><p>Lines 221–224</p><pre>		next, err := service.sources.ReadCompositionSource(ctx, current.SourceRunID)
+		if err != nil {
+			return fail(domain.CompositeLineageMismatch, &quot;recovery lineage source is unavailable&quot;, err)
+		}</pre></article>
+<article id='source-M-S07'><h3>M-S07 · Root roles remain the default source</h3><p class='identity'><code>mulgae@cef337cf927b820316f42a41f1441fbc653203f8:internal/app/reviewcompose/service.go:320–328</code></p><pre>		if !accepted(rootRole) {
+			if _, recovered := recoveries[roleName]; !recovered {
+				continue
+			}
+		}
+		source, kind, selectedRole := root, &quot;root&quot;, rootRole
+		if recovery, recovered := recoveries[roleName]; recovered {
+			source, kind, selectedRole = recovery, &quot;recovery&quot;, recovery.Roles[0]
+		}</pre></article>
+<article id='source-M-S08'><h3>M-S08 · Report checks</h3><p class='identity'><code>mulgae@cef337cf927b820316f42a41f1441fbc653203f8:internal/app/reviewcompose/service.go:520–528</code></p><pre>	if selected == nil || selected.AttemptID != role.AttemptID || selected.ProviderInstance != role.ProviderInstance || !validDigest(selected.SHA256) || selected.ByteLength &lt;= 0 || selected.ContentType != &quot;text/markdown&quot; || len(selected.Bytes) != 0 &amp;&amp; (len(selected.Bytes) != selected.ByteLength || !validRoleReportBytes(selected.Bytes, selected.SHA256)) {
+		return RoleReport{}, fail(domain.CompositeValidationFailed, &quot;accepted role report integrity is invalid&quot;, nil)
+	}
+	if _, err := domain.ParseAttemptID(role.AttemptID.String()); err != nil {
+		return RoleReport{}, fail(domain.CompositeValidationFailed, &quot;accepted role attempt identity is invalid&quot;, err)
+	}
+	if _, err := ports.NewSafeRelativePath(selected.Path); err != nil {
+		return RoleReport{}, fail(domain.CompositeValidationFailed, &quot;accepted role report path is invalid&quot;, err)
+	}</pre></article>
+<article id='source-M-S09'><h3>M-S09 · Compose and publication reconciliation</h3><p class='identity'><code>mulgae@cef337cf927b820316f42a41f1441fbc653203f8:README.md:761–782</code></p><pre>Accepted roles are retained. A missing recovery source requires a new review
+when authorized; old diagnostic-only runs cannot be recovered retrospectively.
+
+After every missing selected role has a committed rerun, combine the results:
+
+```bash
+mulgae compose --root-run r_... --recovery-run r_... --output json
+```
+
+The same exact mapping is idempotent. If publication returns
+`reconciliation_state: status_required`, inspect the returned composite
+`run_id`; do not blindly retry an uncertain mutation. Use `inspect` to obtain
+composite finding IDs and availability, then `read-finding`, `read-report`, or
+indexed `excerpt` for receipt-bound content. Attached MCP exposes the equivalent
+inspection and resources. Newly published composites retain copied evidence;
+historical composites can report it unavailable. Existing `status`, `report`,
+and redacted `export` behavior remains supported.
+
+The MCP `compose_review` equivalent reports an uncertain publication as
+`composite_publication_incomplete` with deterministic non-null `session_id`
+and `run_id` values and `retryable: false`; inspect that exact run before
+repeating the mapping.</pre></article>
+<article id='source-M-S10'><h3>M-S10 · Accepted recovery ADR</h3><p class='identity'><code>mulgae@cef337cf927b820316f42a41f1441fbc653203f8:docs/architecture-decision-records/composite-review-recovery.md</code></p><p>Lines 48–59</p><pre>`compose` requires an explicitly selected ordinary root and one committed
+rerun for every missing selected role, regardless of its `required` flag.
+The root may be a committed incomplete review or a verified recovery source.
+Trusted code checks target identity, report integrity, and transitive same-role
+lineage, bounded to 128 links, before recomputing the root policy. It preserves
+accepted root roles and rejects incomplete or ambiguous mappings.
+
+Recovery references use a run ID and manifest hash, never a synthetic review
+ID. Reruns derived from recovery use v2 run/final schemas; composites rooted in
+recovery use v2 composite schemas. Their deterministic identity includes the
+root recovery hash. Existing v1 reads and previously valid v1 composition
+identities remain unchanged.</pre><p>Lines 74–81</p><pre>There is no retrospective recovery of v0.1.19 diagnostic-only runs, promotion
+of logs into accepted results, or recovery after forced process termination or
+power loss. A missing manifest is unavailable; a present but invalid source
+fails closed. Operators must reconcile exact IDs before any retry.
+
+The selected-role rule also corrects v0.1.19 composition admission: new mappings
+must recover every selected role, including optional roles. Older artifacts
+remain readable, but an old mapping that omitted a failed role is rejected.</pre></article>
+</section>
+</main><footer><p>Authored directory contents are supplied in the handoff. No files were written, imported, published, or personally reviewed by a product workflow. No external dependencies are required.</p><a href='inventory.html'>← Back to inventory and retention</a></footer>
+</body>
+</html>

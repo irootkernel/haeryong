@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Mulgae recovery: inventory and retention</title>
+<link rel='stylesheet' href='../assets/style.css'>
+<script type='module' src='../assets/recovery.js'></script>
+</head>
+<body>
+<a class='skip' href='#main'>Skip to explanation</a>
+<header><p class='eyebrow'>Mulgae · fixed-source explanation</p><nav aria-label='Recovery explanations'><a href='inventory.html' aria-current='page'>Inventory and retention</a><a href='compose.html'>Compose and reconciliation</a></nav></header>
+<main id='main'>
+<h1>Recover roles from a proven source</h1>
+<p class='question'>After Mulgae reports an incomplete or unpublished review, which exact recovery operation is admitted, which accepted roles remain usable, and what evidence makes retention usable rather than diagnostic-only?</p>
+<p class='answer'>Inspect the exact run first. For an unpublished failure with available failed-run recovery, replay each returned retry attempt with <code>--replay exact</code>. Accepted role results remain retained. Preparation or diagnostics alone do not establish a replay source.</p>
+<aside class='scope'><strong>Source scope.</strong> This explanation uses only the supplied Mulgae excerpts at commit <code>cef337cf927b820316f42a41f1441fbc653203f8</code>. No commands, provider operations, retention, publication, or source validation were executed. Examples use placeholders, not run receipts. These excerpts do not establish the behavior of another revision.</aside>
+<nav class='contents' aria-label='Claims on this page'><a href='#M01'>M01 · Replay admission</a><a href='#M02'>M02 · Inventory meaning</a><a href='#M03'>M03 · Accepted attempts</a><a href='#M04'>M04 · Retention proof</a><a href='#M05'>M05 · Budget limits</a><a href='#M06'>M06 · Missing sources</a></nav>
+
+<section id='M01' class='claim' aria-labelledby='title-M01'>
+<p class='label'>M01 · Direct source</p><h2 id='title-M01'>Use the returned retry attempt, not an invented recovery action</h2>
+<p class='claim-text'>For a review that failed without a final result, the documented recovery path first inspects status or get_run and, when failed_run_recovery.available is true, uses each returned retry attempt with exact replay.</p>
+<pre class='command'><code>status --run r_... --output json
+mulgae rerun --run r_... --attempt a_... --replay exact --output json</code></pre>
+<p>The first line is the status invocation as written in the README; MCP <code>get_run</code> is its documented inspection alternative. Replace placeholders with the inspected run and its returned attempt IDs. This is documentation, not an instruction already carried out. <a href='#source-M-S09' data-haeryong-evidence='M-S09'>M-S09 · README.md:757–760</a></p>
+<p>The ADR also admits a committed review as a rerun source. An unpublished run instead needs its exact failed-run recovery source. Neither branch grants final-review publication authority. <a href='#source-M-S10' data-haeryong-evidence='M-S10'>M-S10 · ADR:42–46, 63–68</a></p>
+<div class='illustration' data-illustration='inventory'>
+<h3>Illustration: vary the source, attempt, and cleanup receipt</h3>
+<p>These selections are assumptions. The prediction explains an excerpted branch; it does not read status, validate a source, or execute a rerun.</p>
+<fieldset><legend>Hypothetical inputs</legend>
+<label for='inventory-source'>Source available to the operator</label>
+<select id='inventory-source' data-input='source'><option value='retained'>Available verified failed-run recovery</option><option value='committed'>Committed incomplete review</option><option value='missing'>Missing retained recovery source</option><option value='diagnostic'>Historical diagnostic-only run</option></select>
+<label for='inventory-role'>Attempt selection</label>
+<select id='inventory-role' data-input='role'><option value='failed'>Returned retry-listed failed role attempt</option><option value='accepted'>Accepted role with a succeeded attempt</option></select>
+<label for='inventory-proof'>Retention stage, for the failed-run branch</label>
+<select id='inventory-proof' data-input='proof'><option value='verified'>Assume verified source installed after retention checks</option><option value='prepared'>Preparation only; no installed source established</option></select>
+<label for='inventory-cleanup'>Hypothetical workspace cleanup receipt, for the failed-run branch</label>
+<select id='inventory-cleanup' data-input='cleanup' aria-describedby='inventory-cleanup-help'><option value='matching'>Receipt matches workspace completion evidence</option><option value='mismatched'>Receipt does not match workspace completion evidence</option></select>
+<p id='inventory-cleanup-help'>A mismatch models an alternative retention failure before installation and overrides the assumed verified source above; it does not invalidate an earlier immutable source. With preparation only, the receipt prediction is conditional on later reaching the comparison. A matching receipt alone proves neither persistence nor recovery availability. These retention inputs do not apply to committed, missing, or diagnostic-only sources. <a href='#source-M-S03' data-haeryong-evidence='M-S03'>M-S03</a> <a href='#source-M-S10' data-haeryong-evidence='M-S10'>M-S10</a></p>
+</fieldset>
+<output class='prediction' aria-live='polite' aria-atomic='true' data-output>Illustration — not an observed execution. With available verified failed-run recovery and a returned retry attempt, the documented next operation is exact replay of that run/attempt. A matching cleanup receipt alone does not establish availability; verified installation remains a separate assumption. Actual admission still depends on the real source and runtime checks.</output>
+<p class='prediction-sources' data-illustration-sources>Basis: <a href='#source-M-S03' data-haeryong-evidence='M-S03'>M-S03</a>, <a href='#source-M-S09' data-haeryong-evidence='M-S09'>M-S09</a>, <a href='#source-M-S10' data-haeryong-evidence='M-S10'>M-S10</a>.</p>
+<noscript><p>JavaScript is disabled. The initial prediction assumes the default inputs. A mismatched cleanup receipt would refuse retention before persistence if that comparison is reached; preparation alone provides no replay authority. Claims M03–M06 explain accepted attempts, retention checks, budget limits, and missing sources.</p></noscript>
+</div>
+</section>
+
+<section id='M02' class='claim' aria-labelledby='title-M02'>
+<p class='label'>M02 · Qualified inference</p><h2 id='title-M02'>Treat the status list as an inventory, not a compose verdict</h2>
+<p class='claim-text'>The status inventory alone is insufficient to establish that a role satisfies compose's accepted-role and report-integrity checks.</p>
+<p><code>Snapshot.Status()</code> places entries with outcome <code>failed</code> in <code>retry_attempts</code> and every other role entry in <code>accepted_roles</code>. That is the literal classification in the supplied function. <a href='#source-M-S01' data-haeryong-evidence='M-S01'>M-S01 · status.go:30–35</a></p>
+<p>Compose uses a narrower predicate: outcome <code>completed</code> or <code>degraded</code>, an attempt binding, and a nonblank provider instance. Its report validator checks additional identity and integrity fields. Inferring final compose admissibility from the status array would skip those checks. This distinction does not establish which additional outcomes the unseen recovery-document validator permits. <a href='#source-M-S08' data-haeryong-evidence='M-S08'>M-S08 · service.go:520–528, 540–542</a></p>
+</section>
+
+<section id='M03' class='claim' aria-labelledby='title-M03'>
+<p class='label'>M03 · Direct source</p><h2 id='title-M03'>Accepted recovery results are retained, not replacement targets</h2>
+<p class='claim-text'>Recovery-source rerun rejects an attempt whose state is succeeded, protecting the accepted role from replacement through that path.</p>
+<p>The source loader matches the requested attempt ID and returns <code>recovery rerun cannot replace an accepted role</code> for <code>AttemptSucceeded</code>. The README separately states that accepted roles are retained. <a href='#source-M-S02' data-haeryong-evidence='M-S02'>M-S02 · recovery_source.go:27–33</a> <a href='#source-M-S09' data-haeryong-evidence='M-S09'>M-S09 · README.md:761–762</a></p>
+<p>Retained usefulness is conditional: the ADR requires proof of inputs, output, and cleanup. Recovery availability does not itself provide final-review findings, report, or export access; those still require a committed final review. See <a href='compose.html#M09'>preservation during compose</a>. <a href='#source-M-S10' data-haeryong-evidence='M-S10'>M-S10 · ADR:7–10, 63–68</a></p>
+</section>
+
+<section id='M04' class='claim' aria-labelledby='title-M04'>
+<p class='label'>M04 · Direct source</p><h2 id='title-M04'>A retained source needs evidence and successful cleanup</h2>
+<p class='claim-text'>Preparation alone grants no replay authority; retention requires provider termination, target revalidation, and workspace release before publication installs the recovery manifest last.</p>
+<p>The immutable source binds the captured target and archive, selected roles' initial prompts, role/provider assignments, threshold, attempts, accepted reports, findings, and verified evidence. Runtime diagnostics alone are not this proof. Security, configuration, artifact, missing-input, cleanup, and persistence failures deny recovery. <a href='#source-M-S10' data-haeryong-evidence='M-S10'>M-S10 · ADR:7–28</a></p>
+<p>The supplied retention implementation constructs workspace completion evidence, releases the workspace, rejects a mismatched cleanup receipt, and later calls <code>PersistFailedRunRecovery</code>. These are source observations, not evidence that any particular run completed them. Successful retention also leaves the original failed execution authoritative; it grants neither a successful review nor CI pass. <a href='#source-M-S03' data-haeryong-evidence='M-S03'>M-S03 · failed_run_recovery.go:50–63, 68–74</a> <a href='#source-M-S10' data-haeryong-evidence='M-S10'>M-S10 · ADR:23–28</a></p>
+<p>If execution reaches the receipt comparison after workspace release returns without error, a mismatch returns <code>recovery unavailable: recovery_cleanup_receipt_invalid</code> before persistence. This retention refusal precedes any replay attempt selection through the source it would have installed. A matching receipt only passes that comparison: later diagnostics, context, and persistence can still fail. Earlier failures may prevent reaching the comparison, and independently failing mandatory cleanup can affect the final failure class and exit; the illustration does not predict one overall exit. <a href='#source-M-S03' data-haeryong-evidence='M-S03'>M-S03 · failed_run_recovery.go:50–74</a> <a href='#source-M-S10' data-haeryong-evidence='M-S10'>M-S10 · ADR:20–28</a></p>
+</section>
+
+<section id='M05' class='claim' aria-labelledby='title-M05'>
+<p class='label'>M05 · Direct source</p><h2 id='title-M05'>The retention budget is cooperative</h2>
+<p class='claim-text'>Retention shares one cooperative ten-minute budget with caller cancellation detached, but the ADR does not promise an overall return within ten minutes.</p>
+<p>The deadline is not refreshed per stage. Preparation, sealing, diagnostics, provider drain, workspace release, and persistence share the remaining budget. Mandatory cleanup after retention failure or timeout may extend the overall return; an arbitrary blocking kernel filesystem call is not interrupted by this cooperative budget. Retention is synchronous, with no abandoned background writer or operator timeout knob. <a href='#source-M-S10' data-haeryong-evidence='M-S10'>M-S10 · ADR:30–40</a></p>
+</section>
+
+<section id='M06' class='claim' aria-labelledby='title-M06'>
+<p class='label'>M06 · Direct source</p><h2 id='title-M06'>Missing retention cannot be reconstructed from diagnostics</h2>
+<p class='claim-text'>A missing recovery source requires a new review when authorized; historical diagnostic-only runs cannot be recovered retrospectively.</p>
+<p>The ADR distinguishes a missing manifest, which is unavailable, from a present but invalid source, which fails closed. It excludes promotion of logs into accepted results and recovery after forced process termination or power loss. Operators must reconcile exact IDs before any retry. This explanation neither authorizes nor starts a new review. <a href='#source-M-S09' data-haeryong-evidence='M-S09'>M-S09 · README.md:761–762</a> <a href='#source-M-S10' data-haeryong-evidence='M-S10'>M-S10 · ADR:74–77</a></p>
+<p>For the effect on a root or a required lineage source, continue to <a href='compose.html#M12'>missing sources during compose</a>.</p>
+</section>
+
+<section class='sources' aria-labelledby='source-heading'><h2 id='source-heading'>Local source captures</h2><p>All captures below are supplied excerpts from repository <code>mulgae</code> at the exact commit shown. Quotes have no added line-number prefixes. Displayed ranges identify the quoted source lines, not a fresh file read.</p>
+<article id='source-M-S01'><h3>M-S01 · Status inventory</h3><p class='identity'><code>mulgae@cef337cf927b820316f42a41f1441fbc653203f8:internal/app/recovery/status.go:30–35</code></p><pre>	for _, role := range snapshot.document.Roles {
+		if role.Outcome == &quot;failed&quot; {
+			status.RetryAttempts = append(status.RetryAttempts, RetryAttempt{role.Role, role.AttemptID})
+		} else {
+			status.AcceptedRoles = append(status.AcceptedRoles, role.Role)
+		}</pre></article>
+<article id='source-M-S02'><h3>M-S02 · Recovery replay guard</h3><p class='identity'><code>mulgae@cef337cf927b820316f42a41f1441fbc653203f8:internal/app/rerun/recovery_source.go:27–33</code></p><pre>	for _, attempt := range document.Attempts {
+		if attempt.AttemptID != attemptID.String() {
+			continue
+		}
+		if attempt.State == domain.AttemptSucceeded {
+			return SourceAttempt{}, fmt.Errorf(&quot;recovery rerun cannot replace an accepted role&quot;)
+		}</pre></article>
+<article id='source-M-S03'><h3>M-S03 · Workspace proof and persistence</h3><p class='identity'><code>mulgae@cef337cf927b820316f42a41f1441fbc653203f8:internal/app/reviewrun/failed_run_recovery.go:50–63</code></p><pre>	completion, err := ports.NewWorkspaceCompletionEvidence(lease.WorkspaceSnapshotIdentity(), result.RunID().String(), cleanup.ProviderTerminalReceipt())
+	if err != nil {
+		return fmt.Errorf(&quot;recovery unavailable: recovery_cleanup_failed: %w&quot;, err)
+	}
+	if err := cleanup.observeRetention(ctx, domain.DiagnosticWorkspaceCleanupStarted, &quot;workspace&quot;, &quot;cleanup&quot;); err != nil {
+		return fmt.Errorf(&quot;recovery unavailable: recovery_diagnostics_failed: %w&quot;, err)
+	}
+	receipt, err := lease.Release(completion)
+	if err != nil {
+		return fmt.Errorf(&quot;recovery unavailable: recovery_cleanup_failed: %w&quot;, err)
+	}
+	if !workspaceReceiptMatchesCompletion(receipt, completion) {
+		return fmt.Errorf(&quot;recovery unavailable: recovery_cleanup_receipt_invalid&quot;)
+	}</pre><p>Lines 64–67</p><pre>	cleanup.setWorkspaceDrained()
+	if err := cleanup.observeRetention(ctx, domain.DiagnosticWorkspaceCleanupCompleted, &quot;workspace&quot;, &quot;cleanup&quot;); err != nil {
+		return fmt.Errorf(&quot;recovery unavailable: recovery_diagnostics_failed: %w&quot;, err)
+	}</pre><p>Lines 68–74</p><pre>	if err := ctx.Err(); err != nil {
+		return fmt.Errorf(&quot;recovery unavailable: recovery_storage_failed: %w&quot;, err)
+	}
+	if _, err := committer.PersistFailedRunRecovery(ctx, root, snapshot, receipt); err != nil {
+		return fmt.Errorf(&quot;recovery unavailable: recovery_storage_failed: %w&quot;, err)
+	}
+	return nil</pre></article>
+<article id='source-M-S08'><h3>M-S08 · Compose acceptance is separately validated</h3><p class='identity'><code>mulgae@cef337cf927b820316f42a41f1441fbc653203f8:internal/app/reviewcompose/service.go:520–528</code></p><pre>	if selected == nil || selected.AttemptID != role.AttemptID || selected.ProviderInstance != role.ProviderInstance || !validDigest(selected.SHA256) || selected.ByteLength &lt;= 0 || selected.ContentType != &quot;text/markdown&quot; || len(selected.Bytes) != 0 &amp;&amp; (len(selected.Bytes) != selected.ByteLength || !validRoleReportBytes(selected.Bytes, selected.SHA256)) {
+		return RoleReport{}, fail(domain.CompositeValidationFailed, &quot;accepted role report integrity is invalid&quot;, nil)
+	}
+	if _, err := domain.ParseAttemptID(role.AttemptID.String()); err != nil {
+		return RoleReport{}, fail(domain.CompositeValidationFailed, &quot;accepted role attempt identity is invalid&quot;, err)
+	}
+	if _, err := ports.NewSafeRelativePath(selected.Path); err != nil {
+		return RoleReport{}, fail(domain.CompositeValidationFailed, &quot;accepted role report path is invalid&quot;, err)
+	}</pre><p>Lines 540–542</p><pre>func accepted(role Role) bool {
+	return (role.Outcome == &quot;completed&quot; || role.Outcome == &quot;degraded&quot;) &amp;&amp; role.HasAttempt &amp;&amp; strings.TrimSpace(role.ProviderInstance) != &quot;&quot;
+}</pre></article>
+<article id='source-M-S09'><h3>M-S09 · Operator recovery path</h3><p class='identity'><code>mulgae@cef337cf927b820316f42a41f1441fbc653203f8:README.md:757–762</code></p><pre>If a review failed without publishing a final result, inspect
+`status --run r_... --output json` or MCP `get_run` first. When
+`failed_run_recovery.available` is true, use each returned retry attempt with
+`mulgae rerun --run r_... --attempt a_... --replay exact --output json`.
+Accepted roles are retained. A missing recovery source requires a new review
+when authorized; old diagnostic-only runs cannot be recovered retrospectively.</pre></article>
+<article id='source-M-S10'><h3>M-S10 · Accepted recovery ADR</h3><p class='identity'><code>mulgae@cef337cf927b820316f42a41f1441fbc653203f8:docs/architecture-decision-records/composite-review-recovery.md</code></p><p>Lines 7–28</p><pre>A multi-role review can commit with incomplete coverage, or stop without a
+final review after an internal error or cancellation. Accepted role results
+should remain usable when Mulgae can prove their inputs, output, and cleanup.
+Runtime diagnostics alone do not provide that proof.
+
+## Decision
+
+Mulgae retains failed ordinary reviews and failed reruns in a separate,
+immutable `mulgae-run-recovery.v1` source. It freezes every selected role's
+initial prompt before dispatch, including roles cancelled while queued. The
+source binds the captured target and archive, role/provider assignments,
+threshold, attempts, accepted reports, findings, and verified evidence.
+
+Preparation grants no replay authority. Provider termination, target
+revalidation, and workspace release must succeed before publication installs
+the recovery manifest last. Security, configuration, artifact, missing-input,
+cleanup, and persistence failures deny recovery. A retention or persistence
+refusal preserves the original execution failure and exit; it cannot turn the
+failed run into a successful or publishable review. If mandatory provider drain,
+abort, or workspace cleanup independently fails, that failure remains in the
+normal operational precedence and may determine the final failure class and
+exit. Recovery never grants final-review publication or CI pass.</pre><p>Lines 30–40</p><pre>Failed-run retention uses one cooperative ten-minute budget created before
+preparation. Caller cancellation is detached so a cancelled review can still be
+retained, but the deadline is not refreshed per stage. Preparation, sealing,
+retention diagnostics, provider drain, workspace release, and persistence share
+that remaining budget. Retention drain keeps the shared context and clips each
+attempt to one minute. Mandatory cleanup after retention failure or timeout
+still uses the ordinary detached one-minute drain policy and may make the
+overall return exceed ten minutes. The budget is cooperative; it does not
+interrupt an arbitrary blocking kernel filesystem call. Retention stays
+synchronous: there is no abandoned background writer and no operator timeout
+knob.</pre><p>Lines 42–46</p><pre>`rerun --run ... --attempt ...` accepts either a committed review or an exact
+failed-run recovery source. It rejects attempts to replace an accepted role in
+a recovery source. A failed rerun may retain another recovery source under the
+same rules, with its exact parent and source attempt. No provider substitution
+or unconditional internal-error retry is introduced.</pre><p>Lines 63–68</p><pre>`failed_run_recovery` first appeared in CLI command-result v7. The contracts
+specification defines the current CLI envelope version. CLI status and MCP
+`get_run` expose recovery availability, source identity, accepted roles, retry
+attempts, and an unavailable reason.
+Publication recovery actions remain separate from role replay admission.
+Findings, report, and export still require a committed final review.</pre><p>Lines 74–77</p><pre>There is no retrospective recovery of v0.1.19 diagnostic-only runs, promotion
+of logs into accepted results, or recovery after forced process termination or
+power loss. A missing manifest is unavailable; a present but invalid source
+fails closed. Operators must reconcile exact IDs before any retry.</pre></article>
+</section>
+</main><footer><p>Authored from supplied source text only. Local HTML, CSS, and JavaScript; no external dependencies or management authority.</p><a href='compose.html'>Next: compose and uncertain publication →</a></footer>
+</body>
+</html>

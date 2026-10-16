@@ -19,8 +19,9 @@ func main() {
 	b := flag.String("renderer-b", "http://127.0.0.1:9273", "Renderer B origin")
 	remoteA := flag.String("remote-a", "", "Exact private renderer A origin")
 	remoteB := flag.String("remote-b", "", "Exact private renderer B origin")
+	knowledge := flag.String("knowledge", "", "Optional operator-only immutable Task07 corpus/sidecar JSON")
 	flag.Parse()
-	fixture, err := viewer.New(viewer.Config{State: *root, Base: *base, Remote: *remote, Renderers: [2]string{*a, *b}, RemoteRenderers: [2]string{*remoteA, *remoteB}})
+	fixture, err := viewer.New(viewer.Config{State: *root, Knowledge: *knowledge, Base: *base, Remote: *remote, Renderers: [2]string{*a, *b}, RemoteRenderers: [2]string{*remoteA, *remoteB}})
 	if err != nil {
 		log.Fatal(err)
 	}
