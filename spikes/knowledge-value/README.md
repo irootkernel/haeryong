@@ -2,8 +2,10 @@
 
 This disposable Task07 adapter displays two complete generated result directories
 through the existing authenticated viewer. It is not the production library,
-import service, Ask, Notes or Review. G-VALUE remains `not_run` until the complete
-[Task07 closing list](../../docs/tasks/EPIC-001/TASK-001-07.md) is established.
+import service, Ask, Notes or Review. G-VALUE records bounded `pass` for the
+complete [Task07 closing list](../../docs/tasks/EPIC-001/TASK-001-07.md);
+[the canonical value record](../../docs/testing/knowledge-value-spike.md) retains
+the recorded corpus, original failures, single repair and evaluation limits.
 
 The repository-owned [generation skill](../../skills/use-haeryong/SKILL.md) uses
 ordinary multi-page HTML/CSS/JavaScript. The sample directories retain the actual
