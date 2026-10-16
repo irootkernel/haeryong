@@ -69,7 +69,7 @@ This inventory covers 152 other files: all Markdown documents and Python documen
 | `operations/security.md` | 12906 | `76a3c9b6fe37de4049e0e7ee263ec1ea9b05e8c481963a888c45dd874486d3b5` |
 | `references.md` | 12625 | `d410369697b93fcf53c70ce4c0b797671c7e783e4f10eb96309e121fb809a705` |
 | `requirements.md` | 18205 | `adfbdd29d0a05fb8e227b4cb04aba2be5675b826fcd6eb8bcb3b2ff7d990af8c` |
-| `roadmap.md` | 13411 | `637494f786e08d394c669d838e8ce7cb65ca56af934c328182e8f7dd0031c846` |
+| `roadmap.md` | 13371 | `9f7595fcc8ce429497cc3ad571a6748a6f4de1116b5f011bc051f96ba5bddda7` |
 | `source-map.md` | 9900 | `4448ffb707363c7a221730b1e4dee9b58cf3946f51af38f232d8d39af39480fa` |
 | `sources/haeryong-concept-proposal-v4.md` | 85010 | `8f26fea2833cd3cc3312c1afadea74e042d1d895b079bfa1bdff9cc02cf563e5` |
 | `tasks/EPIC-001/TASK-001-01.md` | 10659 | `1e3d041efe651f83db9c31441fb0316e141ac6da7f6eb03d8bd5e17e22be0647` |
