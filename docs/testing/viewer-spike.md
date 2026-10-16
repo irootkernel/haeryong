@@ -579,3 +579,67 @@ carry remain unchanged.
 There is no production application release, promoted-evidence package, release
 notes enrollment or new hardening record. Runtime evidence remains private and
 local; no live test URL remains. At this original Task04 closure checkpoint, EPIC-001 was in progress with G-AI, G-VALUE and G-CONTRACT not_run; its remaining Task order was05, then07, then06, none formally started by that record. [Contract readiness](contract-freeze.md) supplies current states without changing this historical proof.
+
+## Whole-Epic IR1 remembered-access correction
+
+The first whole-Epic static correctness review found a delivered auth-consumer
+seam defect after the original bounded Task04 closure: initial browser session
+errors removed the remembered bearer, viewer authorization converted the real
+auth handler's503 to401, and native saved-session startup fell through to pairing
+on every non200/transport error. This is the existing remembered-session
+requirement, not an additional early product gate or a changed authority model.
+
+The original host.js baseline failed the browser503 and transport retention
+cases; seven other direct cases passed. Corrected actual host.js passes all nine
+deterministic VM cases, including native transport, connected unavailable and
+origin403 preservation, and definite401 disposal. Actual Go handler tests fault
+and restore only the owned disposable SQLite sessions table. They preserve
+503/Retry-After2 and the same valid session, renderer cookie and handoff, exercise
+concurrent single-use retry, and reject late context/stream adoption without
+false credential invalidation. A failed new context allocation is removed so a
+restored retry creates real storage. Native startup's five direct cases preserve
+the saved file and avoid pairing except after definitive401. The affected viewer
+package race checks and current viewer/pinned-native builds pass. Native linking
+retains duplicate-library/deployment-target warnings; it does not establish the
+remaining platform release matrix.
+
+Streaming failures stop additional protected bytes and preserve an honest
+interruption reason. Once HTTP headers have been sent, no retroactive503 status
+is claimed. Context receiver state remains temporary. The original native guard,
+registered dispatch, loader, ordinary authored runtime and exact version/context
+fences retain their separate proof and unchanged source regions. Current
+behavior checks do not relabel earlier static source reports as reviews of
+corrected bytes, erase the original extra Back failure, or establish physical
+Android/Safari/StageA support.
+
+Root then exercised the corrected built fixture through actual desktop Aside on
+private HTTPS, using a real disposable auth-database query failure rather than
+browser interception. Connected503 retained the same bearer and mounted view;
+reload/session503 retained the stored credential without another pairing. After
+table restoration, the same credential returned200 and enabled actual pointer
+Reload, Close and Reopen. Retry budget5 produced10 units from the earlier8.
+Real self-revocation then returned401, removed the bearer, disposed all views and
+disabled protected actions. Outage, recovered and revoked screenshots show
+readable states without clipping or an error overlay in this bounded flow.
+
+The same current native binary exited1 with a truthful503 error before creating
+an app during the outage; saved-session bytes and pairing counts stayed equal.
+After restoration it reused that exact file, exited0 and passed the three focused
+UI rows: exact-selection Close/Reopen, visible broken-page/reset, and explicit
+run/truthful confirmation. A fresh guard was installed and both actual
+WindowClosing delivery closures returned204. This is not a full guard, navigation
+or native-matrix rerun. The saved native session was prepared through the owned
+pairing flow, not observed as native pairing.
+
+These actual observations used desktop Chromium153 at1440x900 on macOS27.0.1,
+not physical Android, Safari or a second device. Initial keyboard activation was
+unconfirmed; only the subsequent pointer result is counted. In-page observers
+captured their controlled warning and no unexpected application errors during
+subsequent actions; unavailable browser console APIs and an unobserved console
+callback probe prevent a full DevTools-console claim. An initial one-shot tab
+closed before redemption; the complete flow used a persistent session. Rejected
+absolute screenshot paths were replaced by tool-owned captures and exact copies.
+Owned processes exited, all three listeners disappeared, the sessions table was
+restored, and the entire previous Serve/Funnel configuration matched exactly;
+unrelated existing routes remained. Earlier failed matrices and platform limits
+remain unchanged.

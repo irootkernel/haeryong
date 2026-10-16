@@ -239,15 +239,29 @@ func (f *Fixture) Close() error {
 func bearer(r *http.Request) string {
 	return strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 }
-func (f *Fixture) owner(t string) bool {
+func (f *Fixture) ownerStatus(t string) (int, string) {
 	if t == "" {
-		return false
+		return http.StatusUnauthorized, ""
 	}
 	r := httptest.NewRequest("GET", f.config.Base+"/session", nil)
 	r.Header.Set("Authorization", "Bearer "+t)
 	w := httptest.NewRecorder()
 	f.auth.ServeHTTP(w, r)
-	return w.Code == 200
+	return w.Code, w.Header().Get("Retry-After")
+}
+func ownerFailure(w http.ResponseWriter, code int, retryAfter string) {
+	if retryAfter != "" {
+		w.Header().Set("Retry-After", retryAfter)
+	}
+	http.Error(w, "owner authorization failed", code)
+}
+func (f *Fixture) requireOwner(w http.ResponseWriter, token string) bool {
+	code, retryAfter := f.ownerStatus(token)
+	if code == http.StatusOK {
+		return true
+	}
+	ownerFailure(w, code, retryAfter)
+	return false
 }
 func reply(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -320,8 +334,7 @@ func (f *Fixture) trusted(w http.ResponseWriter, r *http.Request) {
 		f.auth.ServeHTTP(w, r)
 		return
 	}
-	if !f.owner(bearer(r)) {
-		http.Error(w, "not authorized", 401)
+	if !f.requireOwner(w, bearer(r)) {
 		return
 	}
 	if r.Method != "GET" && supplied == "" && r.Header.Get("X-Native-Proxy") != "1" {
@@ -546,12 +559,24 @@ func (f *Fixture) render(w http.ResponseWriter, r *http.Request, version string)
 		f.mu.Lock()
 		h, ok := f.handoffs[key]
 		d := f.deliveries[h.DeliveryID]
-		delete(f.handoffs, key)
 		f.mu.Unlock()
-		if !ok || d == nil || d.Version != version || d.Origin != expected || time.Now().After(h.Expires) || subtle.ConstantTimeCompare([]byte(h.SecretHash), []byte(digest([]byte(token)))) != 1 || !f.owner(d.Owner) {
+		if !ok || d == nil || d.Version != version || d.Origin != expected || time.Now().After(h.Expires) || subtle.ConstantTimeCompare([]byte(h.SecretHash), []byte(digest([]byte(token)))) != 1 {
 			http.Error(w, "handoff denied", 403)
 			return
 		}
+		if !f.requireOwner(w, d.Owner) {
+			return
+		}
+		// Auth I/O leaves the one-use handle intact; consume only the same live entry.
+		f.mu.Lock()
+		current, active := f.handoffs[key]
+		if !active || current != h || f.deliveries[h.DeliveryID] != d || time.Now().After(h.Expires) {
+			f.mu.Unlock()
+			http.Error(w, "handoff denied", 403)
+			return
+		}
+		delete(f.handoffs, key)
+		f.mu.Unlock()
 		http.SetCookie(w, &http.Cookie{Name: "hy_view_" + version + "_" + d.ID, Value: d.ID + "." + token, Path: "/", HttpOnly: true, Secure: strings.HasPrefix(expected, "https:"), SameSite: http.SameSiteStrictMode})
 		page := h.Page
 		if !strings.HasPrefix(page, "/") {
@@ -596,9 +621,16 @@ func (f *Fixture) render(w http.ResponseWriter, r *http.Request, version string)
 			owner = candidate.Owner
 		}
 		f.mu.Unlock()
-		if valid && f.owner(owner) {
-			d = candidate
-			break
+		if valid {
+			code, retryAfter := f.ownerStatus(owner)
+			if code == http.StatusOK {
+				d = candidate
+				break
+			}
+			if code != http.StatusUnauthorized {
+				ownerFailure(w, code, retryAfter)
+				return
+			}
 		}
 		http.SetCookie(w, &http.Cookie{Name: cookie.Name, Path: "/", MaxAge: -1, HttpOnly: true, Secure: strings.HasPrefix(expected, "https:"), SameSite: http.SameSiteStrictMode})
 	}
@@ -712,8 +744,11 @@ func (f *Fixture) download(w http.ResponseWriter, r *http.Request) {
 		version = d.Version
 	}
 	f.mu.Unlock()
-	if !valid || !f.owner(owner) {
+	if !valid {
 		http.Error(w, "download denied", 401)
+		return
+	}
+	if !f.requireOwner(w, owner) {
 		return
 	}
 	if r.Host != originHost(d.Origin) {
@@ -746,8 +781,11 @@ type deliveryWriter struct {
 }
 
 func (w *deliveryWriter) Write(b []byte) (int, error) {
-	if !w.fixture.owner(w.delivery.Owner) {
-		w.failure = "owner access ended during stream"
+	if code, _ := w.fixture.ownerStatus(w.delivery.Owner); code != http.StatusOK {
+		w.failure = "owner authentication unavailable during stream"
+		if code == http.StatusUnauthorized {
+			w.failure = "owner access ended during stream"
+		}
 		return 0, errors.New(w.failure)
 	}
 	w.fixture.mu.Lock()
@@ -763,8 +801,11 @@ func (w *deliveryWriter) Write(b []byte) (int, error) {
 	if w.delivery.Delay > 0 {
 		time.Sleep(w.delivery.Delay)
 	}
-	if !w.fixture.owner(w.delivery.Owner) {
-		w.failure = "owner access ended during stream"
+	if code, _ := w.fixture.ownerStatus(w.delivery.Owner); code != http.StatusOK {
+		w.failure = "owner authentication unavailable during stream"
+		if code == http.StatusUnauthorized {
+			w.failure = "owner access ended during stream"
+		}
 		return 0, errors.New(w.failure)
 	}
 	w.fixture.mu.Lock()
@@ -827,8 +868,15 @@ func (f *Fixture) context(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "binding", 409)
 		return
 	}
-	if !f.owner(bearer(r)) {
-		http.Error(w, "owner access ended", 401)
+	if !f.requireOwner(w, bearer(r)) {
+		if created {
+			t.Deleted = true
+			f.mu.Lock()
+			if f.contexts[id] == t {
+				delete(f.contexts, id)
+			}
+			f.mu.Unlock()
+		}
 		return
 	}
 	switch r.Method {
@@ -870,8 +918,7 @@ func (f *Fixture) context(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "chunk transport", 413)
 			return
 		}
-		if !f.owner(bearer(r)) {
-			http.Error(w, "owner access ended", 401)
+		if !f.requireOwner(w, bearer(r)) {
 			return
 		}
 		if digest(b) != r.Header.Get("X-Bytes-SHA256") {
@@ -983,8 +1030,7 @@ func (f *Fixture) context(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "digest or text validation", 409)
 			return
 		}
-		if !f.owner(bearer(r)) {
-			http.Error(w, "owner access ended", 401)
+		if !f.requireOwner(w, bearer(r)) {
 			return
 		}
 		t.Sealed = true

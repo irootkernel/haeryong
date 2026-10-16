@@ -195,6 +195,33 @@ func (w *firstByteWriter) Write(b []byte) (int, error) {
 	}
 	return w.Writer.Write(b)
 }
+func nativeSession(base, state string) (string, error) {
+	var e error
+	token := ""
+	tokenPath := filepath.Join(state, "native-session")
+	if saved, readErr := os.ReadFile(tokenPath); readErr == nil {
+		request, _ := http.NewRequest("GET", base+"/session", nil)
+		request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(saved)))
+		response, requestErr := http.DefaultClient.Do(request)
+		if requestErr != nil {
+			return "", fmt.Errorf("native remembered session unavailable; retry startup: %w", requestErr)
+		}
+		response.Body.Close()
+		if response.StatusCode == http.StatusOK {
+			token = strings.TrimSpace(string(saved))
+		} else if response.StatusCode != http.StatusUnauthorized {
+			return "", fmt.Errorf("native remembered session HTTP %d; retry startup, saved session retained", response.StatusCode)
+		}
+	}
+	if token == "" {
+		token, e = pair(base)
+		if e == nil {
+			e = os.WriteFile(tokenPath, []byte(token), 0600)
+		}
+	}
+	return token, e
+}
+
 func main() {
 	base := flag.String("base", "http://127.0.0.1:9270", "Exact trusted loopback origin")
 	state := flag.String("state", "", "Owned private output directory")
@@ -210,25 +237,7 @@ func main() {
 	if e != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.Port() == "" || u.Path != "" || se != nil || !info.IsDir() || info.Mode().Perm() != 0700 {
 		log.Fatal("exact loopback origin and private state required")
 	}
-	token := ""
-	tokenPath := filepath.Join(*state, "native-session")
-	if saved, readErr := os.ReadFile(tokenPath); readErr == nil {
-		request, _ := http.NewRequest("GET", *base+"/session", nil)
-		request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(saved)))
-		response, requestErr := http.DefaultClient.Do(request)
-		if requestErr == nil {
-			response.Body.Close()
-			if response.StatusCode == 200 {
-				token = strings.TrimSpace(string(saved))
-			}
-		}
-	}
-	if token == "" {
-		token, e = pair(*base)
-		if e == nil {
-			e = os.WriteFile(tokenPath, []byte(token), 0600)
-		}
-	}
+	token, e := nativeSession(*base, *state)
 	if e != nil {
 		log.Fatal(e)
 	}

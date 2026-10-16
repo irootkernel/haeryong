@@ -2,6 +2,7 @@ package viewer
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -326,7 +327,7 @@ func TestViewerAuthorityAndIntegrity(t *testing.T) {
 		if next.inventories["a"]["attachment.bin"] != f.inventories["a"]["attachment.bin"] {
 			t.Fatal("immutable snapshot changed on restart")
 		}
-		if !next.owner(token) {
+		if code, _ := next.ownerStatus(token); code != 200 {
 			t.Fatal("normal restart rotated owner session")
 		}
 		if len(next.deliveries) != 0 {
@@ -508,7 +509,7 @@ func TestProtectedStreamAndResourceRestore(t *testing.T) {
 	if w := request(t, host, f.config.Base, "POST", "/viewer/restore-fixture", local, "", nil, nil); w.Code != 204 {
 		t.Fatal("local restore failed", w.Code)
 	}
-	if f.owner(token) {
+	if code, _ := f.ownerStatus(token); code != 401 {
 		t.Fatal("restore retained remembered owner")
 	}
 	for _, delivery := range f.deliveries {
@@ -518,5 +519,205 @@ func TestProtectedStreamAndResourceRestore(t *testing.T) {
 	}
 	if w := request(t, host, f.config.Base, "POST", "/viewer/deliver", token, f.config.Base, []byte(`{"Version":"a"}`), nil); w.Code != 401 {
 		t.Fatal("restored owner still reads", w.Code)
+	}
+}
+
+// Fault the real disposable auth store without changing credentials or handler policy.
+func authQueryOutage(t *testing.T, f *Fixture) func() {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(f.config.State, "auth.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec("ALTER TABLE sessions RENAME TO held_sessions"); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	restored := false
+	restore := func() {
+		if restored {
+			return
+		}
+		if _, err := db.Exec("ALTER TABLE held_sessions RENAME TO sessions"); err != nil {
+			t.Fatal(err)
+		}
+		restored = true
+		if err := db.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(restore)
+	return restore
+}
+func unavailableFixture(t *testing.T) (*Fixture, string) {
+	t.Helper()
+	f, err := New(Config{State: ownedState(t), Base: "http://127.0.0.1:9270", Renderers: [2]string{"http://127.0.0.1:9272", "http://127.0.0.1:9273"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.Close() })
+	return f, fixtureOwner(t, f)
+}
+func expectOwnerUnavailable(t *testing.T, w *httptest.ResponseRecorder) {
+	t.Helper()
+	if w.Code != 503 || w.Header().Get("Retry-After") != "2" {
+		t.Fatal("unavailable lost status/retry", w.Code, w.Header())
+	}
+}
+func TestOwnerUnavailablePreservesDeliveryCredentials(t *testing.T) {
+	f, token := unavailableFixture(t)
+	host := http.HandlerFunc(f.trusted)
+	renderer := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { f.render(w, r, "a") })
+	issue := func() map[string]any {
+		return object(t, request(t, host, f.config.Base, "POST", "/viewer/deliver", token, f.config.Base, []byte(`{"Version":"a"}`), nil))
+	}
+	first := issue()
+	handoff := func(d map[string]any) *httptest.ResponseRecorder {
+		fields := url.Values{"handoff": {d["handoff"].(string)}, "credential": {d["credential"].(string)}}
+		return request(t, renderer, f.config.Renderers[0], "POST", "/__handoff", "", f.config.Base, []byte(fields.Encode()), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+	}
+	established := handoff(first)
+	if established.Code != 200 {
+		t.Fatal(established.Code)
+	}
+	cookie := established.Result().Cookies()[0]
+	pending := issue()
+	download := object(t, request(t, host, f.config.Base, "POST", "/viewer/download-issue", token, f.config.Base, []byte(`{"Version":"a"}`), nil))
+	before := len(f.deliveries)
+	restore := authQueryOutage(t, f)
+	expectOwnerUnavailable(t, request(t, host, f.config.Base, "GET", "/viewer/config", token, f.config.Base, nil, nil))
+	expectOwnerUnavailable(t, request(t, host, f.config.Base, "POST", "/viewer/deliver", token, f.config.Base, []byte(`{"Version":"a"}`), nil))
+	if len(f.deliveries) != before {
+		t.Fatal("unavailable minted delivery")
+	}
+	denied := request(t, host, f.config.Base, "GET", "/viewer/config", token, "http://wrong.example", nil, nil)
+	if denied.Code != 403 {
+		t.Fatal("origin guard changed", denied.Code)
+	}
+	read := request(t, renderer, f.config.Renderers[0], "GET", "/data.json", "", f.config.Renderers[0], nil, map[string]string{"Cookie": cookie.Name + "=" + cookie.Value, "Sec-Fetch-Site": "same-origin"})
+	expectOwnerUnavailable(t, read)
+	if len(read.Result().Cookies()) != 0 {
+		t.Fatal("unavailable expired valid cookie")
+	}
+	expectOwnerUnavailable(t, handoff(pending))
+	if _, ok := f.handoffs[pending["handoff"].(string)]; !ok {
+		t.Fatal("unavailable consumed handoff")
+	}
+	expectOwnerUnavailable(t, request(t, host, f.config.Base, "GET", "/viewer/download?id="+download["id"].(string), "", "", nil, map[string]string{"Authorization": "Delivery " + download["credential"].(string)}))
+	d := f.deliveries[download["id"].(string)]
+	writer := &deliveryWriter{ResponseWriter: httptest.NewRecorder(), fixture: f, delivery: d}
+	if n, e := writer.Write([]byte("no unauthorized bytes")); n != 0 || e == nil || !strings.Contains(writer.failure, "unavailable") || d.Closed {
+		t.Fatal("stream outage invalidated owner", n, e, writer.failure)
+	}
+	restore()
+	if code, _ := f.ownerStatus(token); code != 200 {
+		t.Fatal("remembered owner not restored", code)
+	}
+	read = request(t, renderer, f.config.Renderers[0], "GET", "/data.json", "", f.config.Renderers[0], nil, map[string]string{"Cookie": cookie.Name + "=" + cookie.Value, "Sec-Fetch-Site": "same-origin"})
+	if read.Code != 200 {
+		t.Fatal("same cookie not recovered", read.Code)
+	}
+	// Two retries race on the same one-use handle after the real outage is restored.
+	results := make(chan int, 2)
+	for i := 0; i < 2; i++ {
+		go func() { results <- handoff(pending).Code }()
+	}
+	counts := map[int]int{}
+	counts[<-results]++
+	counts[<-results]++
+	if counts[200] != 1 || counts[403] != 1 {
+		t.Fatal("handoff no longer single use", counts)
+	}
+}
+func TestOwnerUnavailableLateContextChecks(t *testing.T) {
+	f, token := unavailableFixture(t)
+	host := http.HandlerFunc(f.trusted)
+	headers := map[string]string{"X-Page-Binding": "same-page", "Content-Type": "text/plain"}
+	original := f.auth
+	call := func(method string, body []byte) *httptest.ResponseRecorder {
+		h := map[string]string{}
+		for k, v := range headers {
+			h[k] = v
+		}
+		h["X-Bytes-SHA256"] = digest(body)
+		return request(t, host, f.config.Base, method, "/viewer/context?id=late&offset=0", token, f.config.Base, body, h)
+	}
+	faultAt := func(at int) func() {
+		calls := 0
+		restore := func() {}
+		f.auth = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/session" {
+				calls++
+				if calls == at {
+					restore = authQueryOutage(t, f)
+				}
+			}
+			original.ServeHTTP(w, r)
+		})
+		return func() { f.auth = original; restore() }
+	}
+	reset := faultAt(2)
+	expectOwnerUnavailable(t, call("POST", nil))
+	if f.contexts["late"] != nil {
+		t.Fatal("failed initial check left phantom context")
+	}
+	files, _ := filepath.Glob(filepath.Join(f.config.State, "context-*"))
+	if len(files) != 0 {
+		t.Fatal("failed initial check created file")
+	}
+	reset()
+	if w := call("POST", nil); w.Code != 201 {
+		t.Fatal("retry reused phantom initialization", w.Code)
+	}
+	transfer := f.contexts["late"]
+	raw := []byte("exact context")
+	reset = faultAt(3)
+	expectOwnerUnavailable(t, call("PUT", raw))
+	b, e := os.ReadFile(transfer.File)
+	if e != nil || len(b) != 0 || transfer.Offset != 0 || transfer.Sealed || transfer.Ref != "" {
+		t.Fatal("late PUT adopted bytes", e)
+	}
+	reset()
+	if w := call("PUT", raw); w.Code != 200 {
+		t.Fatal("exact PUT retry failed", w.Code)
+	}
+	reset = faultAt(3)
+	expectOwnerUnavailable(t, call("PATCH", raw))
+	b, e = os.ReadFile(transfer.File)
+	if e != nil || !bytes.Equal(b, raw) || transfer.Sealed || transfer.Ref != "" || transfer.Digest != "" {
+		t.Fatal("late seal adopted context", e)
+	}
+	reset()
+	if w := call("PATCH", raw); w.Code != 200 || !transfer.Sealed {
+		t.Fatal("exact seal retry failed", w.Code)
+	}
+}
+func TestOwnerUnavailableLateStreamCheck(t *testing.T) {
+	f, token := unavailableFixture(t)
+	original := f.auth
+	calls := 0
+	restore := func() {}
+	f.auth = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 2 {
+			restore = authQueryOutage(t, f)
+		}
+		original.ServeHTTP(w, r)
+	})
+	recorder := httptest.NewRecorder()
+	delivery := &delivery{Owner: token, Expires: time.Now().Add(time.Minute)}
+	writer := &deliveryWriter{ResponseWriter: recorder, fixture: f, delivery: delivery}
+	n, err := writer.Write([]byte("exact bytes"))
+	f.auth = original
+	restore()
+	if n != 0 || err == nil || !strings.Contains(writer.failure, "unavailable") || writer.bytes != 0 || recorder.Body.Len() != 0 || delivery.Closed {
+		t.Fatal("late outage leaked bytes or invalidated delivery", n, err)
+	}
+	if n, err = writer.Write([]byte("exact bytes")); n != len("exact bytes") || err != nil {
+		t.Fatal("stream retry not recoverable", n, err)
+	}
+	delivery.Owner = "invalid-session"
+	if n, err = writer.Write([]byte("denied")); n != 0 || err == nil || !strings.Contains(writer.failure, "access ended") {
+		t.Fatal("definitive denial not fenced", n, err)
 	}
 }

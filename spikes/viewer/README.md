@@ -272,3 +272,39 @@ unknown Back-after-reload observation. There is no release, promoted evidence or
 hardening deferral. The browser driver exit zero is distinct from the unrecorded
 separate numeric Chrome-process exit; actual native normal zero and two-grant
 window-closing results are retained. Runtime and owned private routes are settled.
+
+## Whole-Epic remembered-access correction
+
+The first whole-Epic static review found that retryable authentication failures
+were treated as ended sessions by viewer consumers and native startup. Current
+authorization now retains the real handler's unavailable status and Retry-After
+instead of converting it to401. Existing host/origin403 boundaries remain.
+A valid renderer cookie, one-use handoff or remembered bearer is retained during
+an outage; successful handoff consumption still has one atomic winner.
+
+Late context checks preserve exact bytes and reject adoption during unavailable
+authority. A new context whose late initial check fails is removed before a
+retry can mistake it for initialized storage. Streaming stops before further
+bytes on unavailable or denied authority; an already-started response cannot
+change its HTTP status and records a distinct interruption reason. Native
+startup reuses a saved valid session, permits pairing after definite401, and
+returns a retryable error without changing the saved file on transport/other
+HTTP failure. Native guard, registered dispatch and proxy boundaries are
+unchanged.
+
+Direct Go tests use the real disposable auth-store query failure and restoration,
+including cookie/handoff retention, concurrent single-use retries, late context
+checks and both streaming guards. `test_host_auth.cjs` executes the complete
+actual host.js in a deterministic VM boundary; its nine cases distinguish
+503/transport/403 from definite401. Original browser503/transport branches fail
+that test; corrected branches pass. Native startup has five status/transport/
+saved-file cases. These are direct fixture tests; actual private-browser/native
+observations are recorded in the [viewer evidence](../../docs/testing/viewer-spike.md).
+No original whole-matrix failure or earlier review verdict is rewritten.
+
+The current [viewer evidence record](../../docs/testing/viewer-spike.md#whole-epic-ir1-remembered-access-correction)
+also records actual private-HTTPS Aside503/reload/restoration with the same
+credential, real401 revocation, and native outage/restoration using unchanged
+saved-session bytes. The actual three-row native check and pointer interaction
+are bounded; physical Android/Safari, keyboard activation and full browser-console
+coverage are not established by this correction.
