@@ -282,6 +282,10 @@ func TestRejectSymlinkHardlinkAndStagingSubstitution(t *testing.T) {
 				if err := os.WriteFile(path, []byte("exact bytes"), 0644); err != nil {
 					t.Fatal(err)
 				}
+				// Establish the unsafe mode even when the caller uses a private umask.
+				if err := os.Chmod(path, 0644); err != nil {
+					t.Fatal(err)
+				}
 			}
 			ready := false
 			_, err := s.Finalize(context.Background(), staged, func(_ Object, publish func() error) error {

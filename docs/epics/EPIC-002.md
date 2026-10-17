@@ -2,7 +2,7 @@
 id: "EPIC-002"
 type: "epic"
 title: "Go service and storage foundation"
-status: "in_progress"
+status: "done"
 depends_on: ["EPIC-001"]
 completion_requires: ["TASK-002-01","TASK-002-02","TASK-002-03","TASK-002-04","TASK-002-05","TASK-002-06"]
 ---
@@ -47,3 +47,5 @@ C02, M05, M06, M08, M09, M10, M11, M16, M17, M20. See [traceability](../testing/
 ## Handoff
 
 Runnable headless service and explicit local job/receipt/status/event APIs, current migrations and pin ownership. EPIC-005 can implement backup/export without waiting for the EPIC-006 provider coordinator. Use the [Epic gate template](../templates/epic-gate.md) as an index to actual artifacts and identify the exact next task.
+
+The [foundation handoff](../testing/epic-002-foundation-gate.md) indexes current accepted member commits and Task06 execution. Its exit decision is pass for the headless foundation after current native gates, all member Tasks and independent technical/Task/Epic assessments are approved; later reader, provider, remote-device and release obligations remain with their implementing owners.

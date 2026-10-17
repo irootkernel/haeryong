@@ -4,11 +4,11 @@
 
 **Edition prepared:** 2026-10-13
 
-This inventory covers 157 other files: all Markdown documents and Python documentation-check utilities. Paths are relative to docs; sizes and SHA-256 cover exact bytes. MANIFEST.md excludes itself. This is not runtime evidence.
+This inventory covers 159 other files: all Markdown documents and Python documentation-check utilities. Paths are relative to docs; sizes and SHA-256 cover exact bytes. MANIFEST.md excludes itself. This is not runtime evidence.
 
 | File | Bytes | SHA-256 |
 | --- | --- | --- |
-| `README.md` | 15969 | `ae9529a350b9b4571ee8dec3894045b9b3c230a234b6ecd0c87868d36242b01b` |
+| `README.md` | 16560 | `c5a383e317dfefd8ef19e71d10014e6e6d2792c833bffb0f05a26d1e6a3d20d8` |
 | `REVIEW-GUIDE.md` | 10105 | `8035dd9c431b7e6abc7adde3b2ae7824df2a97df3ef7b3ca7ce020e3cb0094ad` |
 | `adr/ADR-001.md` | 3239 | `02f3818c7843969ca3aa081fb252983d92f886904383d84d331a49eca57f9987` |
 | `adr/ADR-002.md` | 2987 | `2128dae47cc03f55000633c89bc4e4d06419c91a414230a45fd7e45e8bac759b` |
@@ -48,7 +48,7 @@ This inventory covers 157 other files: all Markdown documents and Python documen
 | `design/prototype/README.md` | 7429 | `f18fa06b03fadd44270df2dea4e3e3ee7e544ea8961d36475bf86566d77eaa6e` |
 | `design/prototype/REVIEW.md` | 28399 | `5b6f1bcffc6e03a3e7a5048675dbb85e04e3e1cd1c59a793d778f95235f36f8a` |
 | `epics/EPIC-001.md` | 9746 | `1aa1d353df3206f87dc7183ed7b7ea276bdf934bfd036f5036a6a55ec758bb62` |
-| `epics/EPIC-002.md` | 3866 | `5661b3ac78b659fb2295e78992e5c0b1f7bc64229eb29ddb7defb38349ce3e12` |
+| `epics/EPIC-002.md` | 4249 | `e56e88d789577c192c37a1ab94f866d881f153f71660f59ea8b4de6619ed958d` |
 | `epics/EPIC-003.md` | 3585 | `6c52384f373a4942492c488bf9a727cfd3c5a9ca3657a75f7061e6dc58256a33` |
 | `epics/EPIC-004.md` | 3208 | `d93b5461ce74fe99cdcd8079361d78f840db2320e57f565142cce2d1e1eb13bb` |
 | `epics/EPIC-005.md` | 3208 | `d7a3f48cf743d7aa7e89efe11baafcb706eebeaab6609a8a5df5c2bbfe28fbf0` |
@@ -69,7 +69,7 @@ This inventory covers 157 other files: all Markdown documents and Python documen
 | `operations/security.md` | 12906 | `76a3c9b6fe37de4049e0e7ee263ec1ea9b05e8c481963a888c45dd874486d3b5` |
 | `references.md` | 12625 | `d410369697b93fcf53c70ce4c0b797671c7e783e4f10eb96309e121fb809a705` |
 | `requirements.md` | 18205 | `adfbdd29d0a05fb8e227b4cb04aba2be5675b826fcd6eb8bcb3b2ff7d990af8c` |
-| `roadmap.md` | 13371 | `9f7595fcc8ce429497cc3ad571a6748a6f4de1116b5f011bc051f96ba5bddda7` |
+| `roadmap.md` | 13389 | `3d245abb921afa59f367865ac3bc80889e1d8c03940b9e1ce0e782ae58fc861f` |
 | `source-map.md` | 9900 | `4448ffb707363c7a221730b1e4dee9b58cf3946f51af38f232d8d39af39480fa` |
 | `sources/haeryong-concept-proposal-v4.md` | 85010 | `8f26fea2833cd3cc3312c1afadea74e042d1d895b079bfa1bdff9cc02cf563e5` |
 | `tasks/EPIC-001/TASK-001-01.md` | 10659 | `1e3d041efe651f83db9c31441fb0316e141ac6da7f6eb03d8bd5e17e22be0647` |
@@ -84,7 +84,7 @@ This inventory covers 157 other files: all Markdown documents and Python documen
 | `tasks/EPIC-002/TASK-002-03.md` | 4227 | `ae609c7108558f0e1121581ed41fdac09c8aaa0bf6a02dd2f74d5d260e8256c8` |
 | `tasks/EPIC-002/TASK-002-04.md` | 6527 | `4c1c458da27cf0d2944405b6526cf9799e7ec92aa7028b32781c3c02ee19906c` |
 | `tasks/EPIC-002/TASK-002-05.md` | 4716 | `7fa8d2287f391e084bacda8195da50f766bcfb636cbde0fe3f4c383df75e1d11` |
-| `tasks/EPIC-002/TASK-002-06.md` | 2620 | `6e08ceb6857e061163c1a520fd833a225a27884fce9adfa92d96db388af46e9d` |
+| `tasks/EPIC-002/TASK-002-06.md` | 2865 | `aa80e50e0fc3b8bfd8aab6f159eca0f919962834498160a28bc0353f268d5b76` |
 | `tasks/EPIC-003/TASK-003-01.md` | 1611 | `e75ad63351555e1d1aa65e09d4d176acc6d31ae384ec2e6154653ceee6bc66fb` |
 | `tasks/EPIC-003/TASK-003-02.md` | 5576 | `0ddccb11d7f8d4360ca7e862547ca79f01f01ae271f8ed225c3fa3cd490da116` |
 | `tasks/EPIC-003/TASK-003-03.md` | 6038 | `b7df70e6c1578b98bf38e58e4a865e87d62ab570fc6b26590e3b276fc8ea886b` |
@@ -146,7 +146,9 @@ This inventory covers 157 other files: all Markdown documents and Python documen
 | `testing/contract-cases.md` | 20706 | `a35d5d88cd4295a88a5c578a3c2c6dad32684ea374cb53eb733932b1e3c32b8d` |
 | `testing/contract-freeze.md` | 20707 | `8de4e1701a044078341ca7285cc54481a2f3218cb0bed7017b6ae601c608385b` |
 | `testing/contract-ui-actions.md` | 13666 | `4e311bf258322f68fc2670431c341fe5920cda8f6b158d9aef6e5c60c60f0917` |
+| `testing/epic-002-foundation-gate.md` | 4875 | `cdcbc0aa872cb81e6858db2c2e3937f15008aec72872a2441e7657bb349cdfab` |
 | `testing/fixtures.md` | 24872 | `78dc4f6d9c56b19f978a8278fa6e4f7d4a351af0d4359d7667e7cdc74b839bcf` |
+| `testing/foundation-recovery.md` | 11781 | `3d33044d2ddb46a14e57a99776e0efedce1aad55be54df2b288bbb18e3427eef` |
 | `testing/knowledge-quality.md` | 23697 | `85bd94b1680cf48a230e640564beafda2174bfee8a1be49ed2dd7fc59159d555` |
 | `testing/knowledge-value-spike.md` | 24626 | `0ad6dd2f6c1f52478447911e5444af04dba711d8dee70ac456d8a70298560f2e` |
 | `testing/profile-lifecycle.md` | 19813 | `0cd99bbae086f1a461dfbe547490c5fae91b6a7482c983b88c45843e9f83bf27` |

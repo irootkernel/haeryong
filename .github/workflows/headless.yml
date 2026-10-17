@@ -1,0 +1,40 @@
+name: Headless foundation
+
+# Configuration only until an authorized actor dispatches it on suitable runners.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  headless:
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [macOS, Linux]
+    # Required labels/preconditions, not a claim that runners are registered.
+    runs-on: [self-hosted, '${{ matrix.os }}', ARM64]
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run existing native offline gates
+        id: checks
+        run: bash tests/integration/foundation/check-headless.sh
+      - name: Retain structured nonsensitive fixture reports
+        if: always() && steps.checks.outputs.artifacts != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: headless-${{ matrix.os }}-ARM64
+          if-no-files-found: error
+          path: |
+            ${{ steps.checks.outputs.artifacts }}/environment.json
+            ${{ steps.checks.outputs.artifacts }}/contracts.json
+            ${{ steps.checks.outputs.artifacts }}/f12.json
+            ${{ steps.checks.outputs.artifacts }}/f12-http.json
+            ${{ steps.checks.outputs.artifacts }}/f12.json.failure.json
+            ${{ steps.checks.outputs.artifacts }}/cross-volume.json
+            ${{ steps.checks.outputs.artifacts }}/crash-boundaries.jsonl
+            ${{ steps.checks.outputs.artifacts }}/real-inputs.json
