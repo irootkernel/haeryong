@@ -27,6 +27,40 @@ def checkpoint(raw=b'complete original bytes', generation=1):
 
 
 class Contracts(unittest.TestCase):
+    def test_Task00205_selected_query_lists_and_staging_accounting(self):
+        project = {'project_id': P, 'name': 'Unfiled', 'lifecycle': 'active',
+                   'revision': 1, 'permissions_revision': 1,
+                   'updated_at': '2026-10-16T20:00:00.000000000Z', 'etag': '"opaque-project"'}
+        document = {'document_id': D, 'project_id': P, 'title': 'ordinary',
+                    'lifecycle': 'active', 'latest_version_id': V, 'revision': 1,
+                    'updated_at': project['updated_at'],
+                    'versions_url': '/api/v1/documents/' + D + '/versions', 'etag': '"opaque-document"'}
+        version = {'version_id': V, 'document_id': D, 'sequence': 1,
+                   'base_version_id': None, 'title_snapshot': 'ordinary',
+                   'default_page': None, 'viewer_profile': 'html_js_v1',
+                   'source_basis': 'unverified', 'payload_sha256': 'a' * 64,
+                   'manifest_sha256': 'b' * 64, 'supplied_metadata_sha256': None,
+                   'manifest_url': '/api/v1/versions/' + V + '/metadata',
+                   'supplied_metadata_url': None, 'files_url': '/api/v1/versions/' + V + '/files',
+                   'render_bootstrap_url': '/api/v1/versions/' + V + '/render-bootstrap', 'etag': '"opaque-version"'}
+        file = {'path': 'literal\\u2028.html', 'kind': 'file', 'byte_size': '41943040',
+                'bytes_sha256': 'c' * 64, 'media_type': 'application/octet-stream',
+                'preview': 'download', 'file_url': '/api/v1/versions/' + V + '/file?path=literal', 'etag': '"opaque-file"'}
+        for name, item in [('query_project', project), ('query_document', document),
+                           ('query_version', version), ('query_file', file)]:
+            c.validate(name, item)
+            c.validate(name + '_list', {'items': [item], 'next_cursor': None})
+            with self.assertRaises(c.ContractError):
+                c.validate(name + '_list', [item])
+            invalid = dict(item); del invalid['etag']
+            with self.assertRaises(c.ContractError):
+                c.validate(name, invalid)
+        c.validate('staging_summary', {'staging_bytes': '0', 'pending_upload_count': 0,
+                                      'pending_uploads_url': '/api/v1/uploads'})
+        with self.assertRaises(c.ContractError):
+            c.validate('staging_summary', {'staging_bytes': 0, 'pending_upload_count': 0,
+                                          'pending_uploads_url': '/api/v1/uploads'})
+
     def test_Task00204_upload_validators_and_end_input_declaration(self):
         upload = self.model.create(key(701), {'purpose': 'result', 'target': {'project_id': P, 'document_id': None}, 'input_mode': 'directory'})
         before = self.model.summary(upload)

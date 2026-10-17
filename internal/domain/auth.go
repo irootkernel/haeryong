@@ -4,7 +4,11 @@ import "time"
 
 // Private verifier fields never serialize into API responses or operation receipts.
 type CredentialScope struct {
-	Kind string `json:"kind"`
+	Kind       string   `json:"kind"`
+	Actions    []string `json:"actions,omitempty"`
+	ProjectIDs []string `json:"project_ids,omitempty"`
+	DraftIDs   []string `json:"draft_ids,omitempty"`
+	VersionIDs []string `json:"version_ids,omitempty"`
 }
 
 type Session struct {
@@ -60,4 +64,27 @@ type AuthSettings struct {
 type AuthState struct {
 	LibraryID, OwnerID, AuthEpoch string
 	Settings                      AuthSettings
+}
+
+// WorkflowPrincipal is the stable authorization binding, independently of any
+// credential's lifetime. Issuance/UI is a future capability.
+type WorkflowPrincipal struct {
+	ID        string
+	BindingID string
+	Active    bool
+	Scope     CredentialScope
+	Revision  int64
+}
+type ScopedCredential struct {
+	ID             string
+	PrincipalID    string
+	TokenHash      string
+	AuthEpoch      string
+	Scope          CredentialScope
+	Permissions    map[string]int64
+	ConfigRevision int64
+	CreatedAt      time.Time
+	ExpiresAt      *time.Time
+	Revoked        bool
+	Revision       int64
 }

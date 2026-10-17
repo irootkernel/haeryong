@@ -44,6 +44,7 @@ type Runner struct {
 	Endpoint     Endpoint
 	ProfileFault func(string) error
 	Work         func(context.Context) error
+	ListenerPort func(context.Context) (int, error)
 }
 
 func (r Runner) Run(ctx context.Context, onReady func(Identity)) (result error) {
@@ -69,6 +70,15 @@ func (r Runner) Run(ctx context.Context, onReady func(Identity)) (result error) 
 	if storage.Ready {
 		if err := writer.MarkStorageReady(r.ProfileFault); err != nil {
 			return err
+		}
+	}
+	if r.ListenerPort != nil {
+		r.Port, err = r.ListenerPort(ctx)
+		if err != nil {
+			return err
+		}
+		if r.Port < 1024 || r.Port > 65535 {
+			return errors.New("configured listener port must be between 1024 and 65535")
 		}
 	}
 	instance, err := NewID()

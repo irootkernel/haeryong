@@ -139,3 +139,45 @@ func AuthorizeTarget(tx WriteTx, raw []byte) error {
 	}
 	return nil
 }
+
+// TargetProject resolves the actual project of indirect version/draft/note
+// targets for captured permission generations and current scope checks.
+func TargetProject(tx WriteTx, raw []byte) (string, error) {
+	var target struct {
+		ProjectID    string  `json:"project_id"`
+		DocumentID   *string `json:"document_id"`
+		VersionID    string  `json:"version_id"`
+		DraftID      *string `json:"draft_id"`
+		AnnotationID string  `json:"annotation_id"`
+	}
+	if json.Unmarshal(raw, &target) != nil {
+		return "", domain.ErrInvalidTarget
+	}
+	if target.ProjectID != "" {
+		return target.ProjectID, nil
+	}
+	if target.DraftID != nil {
+		draft, e := tx.DraftTarget(*target.DraftID)
+		return draft.ProjectID, e
+	}
+	if target.AnnotationID != "" {
+		annotation, e := tx.AnnotationTarget(target.AnnotationID)
+		if e != nil {
+			return "", e
+		}
+		target.VersionID = annotation.VersionID
+	}
+	if target.VersionID != "" {
+		version, e := tx.PublishedVersion(target.VersionID)
+		if e != nil {
+			return "", e
+		}
+		id := version.DocumentID
+		target.DocumentID = &id
+	}
+	if target.DocumentID != nil {
+		document, e := tx.Document(*target.DocumentID)
+		return document.ProjectID, e
+	}
+	return "", nil
+}

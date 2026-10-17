@@ -115,15 +115,16 @@ fetch('/api/v1/auth/pairings/arbitrary/approve',{method:'POST',mode:'no-cors',he
 	server.BaseContext = func(net.Listener) context.Context { return ctx }
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
-	json.NewEncoder(os.Stdout).Encode(map[string]any{"fixture": "task00203-production-auth", "endpoint": local, "peer_endpoint": remote, "pid": os.Getpid()})
+	json.NewEncoder(os.Stdout).Encode(map[string]any{"fixture": "task00205-production-auth-settings", "endpoint": local, "peer_endpoint": remote, "pid": os.Getpid()})
 	go func() {
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
 			var input struct {
-				Action  string `json:"action"`
-				ID      string `json:"pairing_id"`
-				Code    string `json:"code"`
-				Seconds int64  `json:"seconds"`
+				Action   string `json:"action"`
+				ID       string `json:"pairing_id"`
+				Code     string `json:"code"`
+				Seconds  int64  `json:"seconds"`
+				Remember *bool  `json:"remember"`
 			}
 			err := json.Unmarshal(scanner.Bytes(), &input)
 			if err == nil {
@@ -149,7 +150,7 @@ fetch('/api/v1/auth/pairings/arbitrary/approve',{method:'POST',mode:'no-cors',he
 					if err == nil && !found {
 						err = domain.ErrNotFound
 					}
-				case "expiry":
+				case "expiry", "remember_default":
 					config, e := store.Configuration(context.Background())
 					err = e
 					if err == nil {
@@ -157,12 +158,20 @@ fetch('/api/v1/auth/pairings/arbitrary/approve',{method:'POST',mode:'no-cors',he
 						err = json.Unmarshal(config.Value, &data)
 						if err == nil {
 							security := data["security"].(map[string]any)
-							if input.Seconds == 0 {
+							if input.Action == "remember_default" {
+								if input.Remember == nil {
+									err = errors.New("remember bool required")
+								} else {
+									security["remember_device_default"] = *input.Remember
+								}
+							} else if input.Seconds == 0 {
 								security["session_absolute_seconds"] = nil
 							} else {
 								security["session_absolute_seconds"] = input.Seconds
 							}
-							config.Value, err = json.Marshal(data)
+							if err == nil {
+								config.Value, err = json.Marshal(data)
+							}
 							config.Actor = "browser-harness"
 							if err == nil {
 								err = store.Write(context.Background(), func(tx storage.WriteTx) error { return tx.SetConfiguration(config, config.Revision) })

@@ -87,7 +87,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if origin != "" {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Vary", "Origin")
-		w.Header().Set("Access-Control-Expose-Headers", "ETag, Retry-After")
+		w.Header().Set("Access-Control-Expose-Headers", "ETag, Retry-After, Repr-Digest, Content-Digest, Content-Range, Accept-Ranges, Haeryong-Requested-Path, Haeryong-Resolved-Path")
 	}
 	if r.Method == http.MethodOptions && strings.HasPrefix(r.URL.Path, "/api/v1/") {
 		if origin == "" {
@@ -96,20 +96,20 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, header := range strings.Split(r.Header.Get("Access-Control-Request-Headers"), ",") {
 			switch strings.ToLower(strings.TrimSpace(header)) {
-			case "", "authorization", "content-type", "if-match", "idempotency-key", "last-event-id", "haeryong-upload-offset", "haeryong-upload-chunk-sha256", "haeryong-upload-length", "haeryong-upload-final":
+			case "", "authorization", "content-type", "if-match", "idempotency-key", "last-event-id", "range", "if-range", "if-none-match", "haeryong-upload-offset", "haeryong-upload-chunk-sha256", "haeryong-upload-length", "haeryong-upload-final":
 			default:
 				fail(w, r, session.ErrOrigin)
 				return
 			}
 		}
 		switch r.Header.Get("Access-Control-Request-Method") {
-		case "GET", "POST", "PUT", "PATCH", "DELETE":
+		case "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE":
 		default:
 			fail(w, r, session.ErrOrigin)
 			return
 		}
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, If-Match, Idempotency-Key, Last-Event-ID, Haeryong-Upload-Offset, Haeryong-Upload-Chunk-SHA256, Haeryong-Upload-Length, Haeryong-Upload-Final")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, PATCH, DELETE")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, If-Match, Idempotency-Key, Last-Event-ID, Range, If-Range, If-None-Match, Haeryong-Upload-Offset, Haeryong-Upload-Chunk-SHA256, Haeryong-Upload-Length, Haeryong-Upload-Final")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -261,10 +261,18 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		value, err := h.core.CancelJob(r.Context(), token, parts[1], r.Header.Get("Idempotency-Key"))
 		durable(w, r, value, err)
 	case path == "status" && r.Method == http.MethodGet:
+		if route, ok := h.protected.(interface{ Handles(*http.Request) bool }); ok && route.Handles(r) {
+			h.private(w, r, token, func() { h.protected.ServeHTTP(w, r) })
+			return
+		}
 		value, err := h.core.Health(r.Context(), token)
 		h.private(w, r, token, func() { respond(w, r, 200, value, err) })
 	case path == "events" && r.Method == http.MethodGet:
-		h.events(w, r, token)
+		if r.URL.Query().Get("transport") == "poll" {
+			h.pollEvents(w, r, token)
+		} else {
+			h.events(w, r, token)
+		}
 	default:
 		if h.protected != nil {
 			router, scoped := h.protected.(interface{ Handles(*http.Request) bool })
@@ -591,7 +599,7 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request, token string) {
 		fail(w, r, session.ErrUnavailable)
 		return
 	}
-	health, err := h.core.Health(r.Context(), token)
+	identity, err := h.core.Authenticate(r.Context(), token)
 	if err != nil {
 		fail(w, r, err)
 		return
@@ -601,43 +609,7 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request, token string) {
 		fail(w, r, err)
 		return
 	}
-	epoch := r.URL.Query().Get("stream_epoch")
-	after := int64(0)
-	resync := ""
-	if len(r.Header.Values("Last-Event-ID")) > 1 {
-		resync = "malformed_cursor"
-	}
-	if cursor := r.Header.Get("Last-Event-ID"); cursor != "" {
-		parts := strings.Split(cursor, ":")
-		if len(parts) != 2 || !uuidPattern.MatchString(parts[0]) {
-			resync = "malformed_cursor"
-		} else {
-			epoch = parts[0]
-			after, err = strconv.ParseInt(parts[1], 10, 64)
-			if err != nil || after < 0 || strconv.FormatInt(after, 10) != parts[1] {
-				resync = "malformed_cursor"
-			}
-		}
-	}
-	if value := r.URL.Query().Get("after"); value != "" {
-		after, err = strconv.ParseInt(value, 10, 64)
-		if err != nil || after < 0 {
-			resync = "malformed_cursor"
-		}
-	}
-	if epoch == "" {
-		epoch = currentEpoch
-	}
-	if epoch != currentEpoch {
-		resync = "epoch_changed"
-	}
-	if after > head {
-		resync = "future_cursor"
-	}
-	if resync != "" {
-		epoch = currentEpoch
-		after = head
-	}
+	epoch, after, resync := eventCursor(r, currentEpoch, head)
 	if _, err := h.core.Events(r.Context(), token, epoch, after); err != nil {
 		fail(w, r, err)
 		return
@@ -692,6 +664,15 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request, token string) {
 		if err != nil {
 			return
 		}
+
+		if !continuousEvents(events, after) {
+			current, head, e := h.core.EventHead(r.Context(), token)
+			if e != nil {
+				return
+			}
+			_ = write("resync.required", fmt.Sprintf("%s:%d", current, head), map[string]any{"reason": "sequence_gap", "stream_epoch": current, "head": strconv.FormatInt(head, 10), "resume_cursor": fmt.Sprintf("%s:%d", current, head)})
+			return
+		}
 		for _, event := range events {
 			event, err = h.core.FilterEvent(r.Context(), token, event)
 			if err != nil {
@@ -707,7 +688,7 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request, token string) {
 			if !strings.Contains(kind, ".") {
 				kind = "resource.invalidated"
 			}
-			data := map[string]any{"library_id": health.Library.ID, "stream_epoch": event.StreamEpoch, "sequence": strconv.FormatInt(event.Sequence, 10), "type": kind, "resource": map[string]any{"type": event.ResourceKind, "id": event.ResourceID}, "revision": event.Revision}
+			data := map[string]any{"library_id": identity.LibraryID, "stream_epoch": event.StreamEpoch, "sequence": strconv.FormatInt(event.Sequence, 10), "type": kind, "resource": map[string]any{"type": event.ResourceKind, "id": event.ResourceID}, "revision": event.Revision}
 			if event.ResourceKind == "library" && kind == "library.invalidated" {
 				data["resource"] = nil
 			}
@@ -717,4 +698,122 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request, token string) {
 			after = event.Sequence
 		}
 	}
+}
+
+// eventCursor is shared by SSE and polling. Resync publishes the current head,
+// never an acknowledgement that the client has saved unsent local work.
+func eventCursor(r *http.Request, currentEpoch string, head int64) (string, int64, string) {
+	var err error
+	epoch := r.URL.Query().Get("stream_epoch")
+	after := int64(0)
+	resync := ""
+	if len(r.Header.Values("Last-Event-ID")) > 1 {
+		resync = "malformed_cursor"
+	}
+	if cursor := r.Header.Get("Last-Event-ID"); cursor != "" {
+		parts := strings.Split(cursor, ":")
+		if len(parts) != 2 || !uuidPattern.MatchString(parts[0]) {
+			resync = "malformed_cursor"
+		} else {
+			epoch = parts[0]
+			after, err = strconv.ParseInt(parts[1], 10, 64)
+			if err != nil || after < 0 || strconv.FormatInt(after, 10) != parts[1] {
+				resync = "malformed_cursor"
+			}
+		}
+	}
+	if value := r.URL.Query().Get("after"); value != "" {
+		after, err = strconv.ParseInt(value, 10, 64)
+		if err != nil || after < 0 {
+			resync = "malformed_cursor"
+		}
+	}
+	if epoch == "" {
+		epoch = currentEpoch
+	}
+	if epoch != currentEpoch {
+		resync = "epoch_changed"
+	}
+	if after > head {
+		resync = "future_cursor"
+	}
+	if resync != "" {
+		epoch = currentEpoch
+		after = head
+	}
+	return epoch, after, resync
+}
+func eventWire(library string, event domain.Event) map[string]any {
+	kind := event.Kind
+	if kind == "configuration.changed" {
+		kind = "policy.changed"
+	}
+	if !strings.Contains(kind, ".") {
+		kind = "resource.invalidated"
+	}
+	data := map[string]any{"library_id": library, "stream_epoch": event.StreamEpoch, "sequence": strconv.FormatInt(event.Sequence, 10), "type": kind, "resource": map[string]any{"type": event.ResourceKind, "id": event.ResourceID}, "revision": event.Revision}
+	if event.ResourceKind == "library" && kind == "library.invalidated" {
+		data["resource"] = nil
+	}
+	return data
+}
+
+// Validate the complete retained batch before emitting any domain item or
+// advancing its cursor. A missing interior sequence also requires fresh state.
+func continuousEvents(events []domain.Event, after int64) bool {
+	for _, event := range events {
+		if event.Sequence <= after || event.Sequence-after != 1 {
+			return false
+		}
+		after = event.Sequence
+	}
+	return true
+}
+func (h *handler) pollEvents(w http.ResponseWriter, r *http.Request, token string) {
+	for key, values := range r.URL.Query() {
+		if len(values) != 1 || (key != "transport" && key != "stream_epoch" && key != "after") {
+			fail(w, r, session.ErrInvalid)
+			return
+		}
+	}
+	identity, e := h.core.Authenticate(r.Context(), token)
+	if e != nil {
+		fail(w, r, e)
+		return
+	}
+	epoch, head, e := h.core.EventHead(r.Context(), token)
+	if e != nil {
+		fail(w, r, e)
+		return
+	}
+	current, after, reason := eventCursor(r, epoch, head)
+	events, e := h.core.Events(r.Context(), token, current, after)
+	if e != nil {
+		fail(w, r, e)
+		return
+	}
+	if !continuousEvents(events, after) {
+		reason = "sequence_gap"
+		after = head
+		events = nil
+	}
+	items := []map[string]any{}
+	if reason == "" {
+		for _, event := range events {
+			event, e = h.core.FilterEvent(r.Context(), token, event)
+			if e != nil {
+				fail(w, r, e)
+				return
+			}
+			items = append(items, eventWire(identity.LibraryID, event))
+			after = event.Sequence
+		}
+	}
+	var resync any
+	if reason != "" {
+		resync = map[string]any{"type": "resync.required", "reason": reason, "stream_epoch": epoch, "head": strconv.FormatInt(head, 10), "resume_cursor": fmt.Sprintf("%s:%d", epoch, head)}
+	}
+	h.private(w, r, token, func() {
+		respond(w, r, 200, map[string]any{"items": items, "stream_epoch": epoch, "head": strconv.FormatInt(head, 10), "next_cursor": fmt.Sprintf("%s:%d", epoch, after), "resync": resync}, nil)
+	})
 }

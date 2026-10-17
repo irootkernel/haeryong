@@ -1,0 +1,596 @@
+{
+  "$defs": {
+    "config": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "enum": [
+            "1.0"
+          ]
+        },
+        "network": {
+          "type": "object",
+          "properties": {
+            "listener": {
+              "type": "object",
+              "properties": {
+                "bind": {
+                  "enum": [
+                    "127.0.0.1"
+                  ]
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 1024,
+                  "maximum": 65535
+                }
+              },
+              "required": [
+                "bind",
+                "port"
+              ],
+              "additionalProperties": false
+            },
+            "remote_enabled": {
+              "type": "boolean"
+            },
+            "external_base_url": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "https-origin"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "allowed_origins": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "origin"
+              }
+            },
+            "renderer_mappings": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/renderer_mapping"
+              }
+            }
+          },
+          "required": [
+            "listener",
+            "remote_enabled",
+            "external_base_url",
+            "allowed_origins"
+          ],
+          "additionalProperties": false
+        },
+        "security": {
+          "type": "object",
+          "properties": {
+            "remember_device_default": {
+              "type": "boolean"
+            },
+            "session_idle_seconds": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "session_absolute_seconds": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pairing_expiry_seconds": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "remember_device_default",
+            "session_idle_seconds",
+            "session_absolute_seconds",
+            "pairing_expiry_seconds"
+          ],
+          "additionalProperties": false
+        },
+        "maintenance": {
+          "$ref": "#/$defs/maintenance"
+        },
+        "retention": {
+          "type": "object",
+          "properties": {
+            "trash": {
+              "type": "string",
+              "pattern": "^(indefinite|[1-9][0-9]*[smhdw])$"
+            },
+            "backups": {
+              "type": "string",
+              "pattern": "^(indefinite|[1-9][0-9]*[smhdw])$"
+            },
+            "completed_job_detail": {
+              "type": "string",
+              "pattern": "^(indefinite|[1-9][0-9]*[smhdw])$"
+            },
+            "diagnostic_data": {
+              "type": "string",
+              "pattern": "^(indefinite|[1-9][0-9]*[smhdw])$"
+            },
+            "auto_purge_enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "trash",
+            "backups",
+            "completed_job_detail",
+            "diagnostic_data",
+            "auto_purge_enabled"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "default_retention": {
+              "enum": [
+                "reference_only",
+                "selected_snapshot"
+              ]
+            }
+          },
+          "required": [
+            "default_retention"
+          ],
+          "additionalProperties": false
+        },
+        "projects": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/project_settings"
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "network",
+        "security",
+        "maintenance",
+        "retention",
+        "source",
+        "projects"
+      ],
+      "additionalProperties": false
+    },
+    "project_settings": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lifecycle": {
+          "enum": [
+            "active",
+            "archived"
+          ]
+        },
+        "source_mode_default": {
+          "enum": [
+            "pinned",
+            "current"
+          ]
+        },
+        "provider_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "output_destination": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source_mapping"
+          }
+        },
+        "post_work_scan_enabled": {
+          "type": "boolean"
+        },
+        "maintenance": {
+          "$ref": "#/$defs/maintenance_override"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "maintenance_override": {
+      "type": "object",
+      "properties": {
+        "schedule": {
+          "$ref": "#/$defs/schedule_override"
+        },
+        "scope": {
+          "enum": [
+            "selected_projects",
+            "all_allowed_projects"
+          ]
+        },
+        "project_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "depth": {
+          "enum": [
+            "change_focused",
+            "full_scope",
+            "deep_semantic"
+          ]
+        },
+        "missed_runs": {
+          "enum": [
+            "coalesce_one"
+          ]
+        },
+        "max_concurrent_ai_jobs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_provider_attempts_per_run": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_run_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "auto_apply": {
+          "type": "object",
+          "properties": {
+            "backlink_index_repair": {
+              "enum": [
+                "disabled",
+                "propose",
+                "auto"
+              ]
+            },
+            "related_explanation": {
+              "enum": [
+                "disabled",
+                "propose",
+                "auto"
+              ]
+            },
+            "topic_assignment": {
+              "enum": [
+                "disabled",
+                "propose",
+                "auto"
+              ]
+            },
+            "freshness_assessment": {
+              "enum": [
+                "disabled",
+                "propose",
+                "auto"
+              ]
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "content_generation": {
+          "enum": [
+            "disabled",
+            "propose",
+            "draft"
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "schedule_override": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "manual",
+            "interval",
+            "calendar"
+          ]
+        },
+        "interval_seconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 60
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cron": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "source_mapping": {
+      "type": "object",
+      "properties": {
+        "source_id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": [
+            "git",
+            "files"
+          ]
+        },
+        "root_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repo_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retention_mode": {
+          "enum": [
+            "reference_only",
+            "selected_snapshot"
+          ]
+        },
+        "provider_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "source_id",
+        "kind",
+        "root_path",
+        "repo_id",
+        "retention_mode",
+        "provider_ids"
+      ],
+      "additionalProperties": false
+    },
+    "maintenance": {
+      "type": "object",
+      "properties": {
+        "schedule": {
+          "$ref": "#/$defs/schedule"
+        },
+        "scope": {
+          "enum": [
+            "selected_projects",
+            "all_allowed_projects"
+          ]
+        },
+        "project_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "depth": {
+          "enum": [
+            "change_focused",
+            "full_scope",
+            "deep_semantic"
+          ]
+        },
+        "missed_runs": {
+          "enum": [
+            "coalesce_one"
+          ]
+        },
+        "max_concurrent_ai_jobs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_provider_attempts_per_run": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_run_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "auto_apply": {
+          "type": "object",
+          "properties": {
+            "backlink_index_repair": {
+              "enum": [
+                "disabled",
+                "propose",
+                "auto"
+              ]
+            },
+            "related_explanation": {
+              "enum": [
+                "disabled",
+                "propose",
+                "auto"
+              ]
+            },
+            "topic_assignment": {
+              "enum": [
+                "disabled",
+                "propose",
+                "auto"
+              ]
+            },
+            "freshness_assessment": {
+              "enum": [
+                "disabled",
+                "propose",
+                "auto"
+              ]
+            }
+          },
+          "required": [
+            "backlink_index_repair",
+            "related_explanation",
+            "topic_assignment",
+            "freshness_assessment"
+          ],
+          "additionalProperties": false
+        },
+        "content_generation": {
+          "enum": [
+            "disabled",
+            "propose",
+            "draft"
+          ]
+        }
+      },
+      "required": [
+        "schedule",
+        "scope",
+        "project_ids",
+        "depth",
+        "missed_runs",
+        "max_concurrent_ai_jobs",
+        "max_provider_attempts_per_run",
+        "max_run_seconds",
+        "auto_apply",
+        "content_generation"
+      ],
+      "additionalProperties": false
+    },
+    "schedule": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "manual",
+            "interval",
+            "calendar"
+          ]
+        },
+        "interval_seconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 60
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cron": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "mode",
+        "interval_seconds",
+        "cron",
+        "timezone"
+      ],
+      "additionalProperties": false
+    },
+    "renderer_mapping": {
+      "type": "object",
+      "properties": {
+        "origin": {
+          "type": "string",
+          "format": "https-origin"
+        },
+        "upstream": {
+          "type": "string",
+          "format": "loopback-origin"
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "reassignable": {
+          "enum": [
+            false
+          ]
+        }
+      },
+      "required": [
+        "origin",
+        "upstream",
+        "version_id",
+        "reassignable"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -53,7 +53,11 @@ func (s *Service) request(ctx context.Context, token, key, method, target string
 	return domain.Request{Key: domain.OperationKey{PrincipalID: a.PrincipalID, OperationID: key}, Method: method, Target: target, Body: encoded(body)}, nil
 }
 func (s *Service) current(ctx context.Context, tx app.WriteTx, token string, u domain.Upload) error {
-	r := domain.Request{Key: domain.OperationKey{PrincipalID: u.PrincipalID}, Method: "GET", Target: "/api/v1/uploads/" + u.ID}
+	actor, e := s.Auth.AuthenticateWrite(ctx, tx, token)
+	if e != nil {
+		return e
+	}
+	r := domain.Request{Key: domain.OperationKey{PrincipalID: actor.PrincipalID}, Method: "GET", Target: "/api/v1/uploads/" + u.ID}
 	if e := s.Auth.Authority(token).AuthorizeWrite(ctx, tx, r); e != nil {
 		return e
 	}
@@ -270,11 +274,16 @@ func (s *Service) Complete(ctx context.Context, token, id, key string, cp domain
 				if e != nil {
 					return response, e
 				}
-				scope := encoded(map[string]any{"principal_id": u.PrincipalID, "auth_epoch": l.AuthEpoch, "purpose": u.Purpose, "target": json.RawMessage(u.Target)})
+				record, e := s.Auth.AuthenticateWrite(ctx, tx, token)
+				if e != nil {
+					return response, e
+				}
+				scope := encoded(map[string]any{"principal_id": record.PrincipalID, "auth_epoch": l.AuthEpoch, "purpose": u.Purpose, "target": json.RawMessage(u.Target), "credential_scope": record.Scope})
 				j.Scope = scope
-				var target map[string]any
-				_ = json.Unmarshal(u.Target, &target)
-				project, _ := target["project_id"].(string)
+				project, e := app.TargetProject(tx, u.Target)
+				if e != nil {
+					return response, e
+				}
 				current, e := tx.Scope(project)
 				if e != nil {
 					return response, e
@@ -366,12 +375,16 @@ func (s *Service) Uploads(ctx context.Context, token string, q UploadQuery) (Pag
 		if e != nil {
 			return e
 		}
-		rows, e := tx.Uploads(q.Cursor, q.State, q.Unadopted, 64)
+		principal := record.PrincipalID
+		if record.Scope.Kind == "owner" {
+			principal = ""
+		}
+		rows, e := tx.AuthorizedUploads(principal, q.Cursor, q.State, q.Unadopted, 64, record.Scope)
 		if e != nil {
 			return e
 		}
 		for _, u := range rows {
-			if record.PrincipalID != u.PrincipalID {
+			if record.Scope.Kind != "owner" && record.PrincipalID != u.PrincipalID {
 				continue
 			}
 			if e := targetAuthority(tx, u.Purpose, u.Target); e != nil {

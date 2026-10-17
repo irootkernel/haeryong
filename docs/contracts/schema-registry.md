@@ -239,3 +239,19 @@ Closed control JSON rejects unknown, duplicate, missing and null required fields
 ## Selected current upload shapes (TASK-002-04)
 
 Upload summary/detail now require independent positive integer revision and a strong etag, alongside the frozen purpose/target/checkpoint fields. Detail may include transport_entry for the generated single opaque transfer entry; omitted selection_name is represented as null. These are additive selections on the previously provisional production response shape; strict clients must accept the selected fields. No content-size/count/depth restriction or additional authored manifest is introduced. The exact machine forms live in tests/contracts/schema.json, with [actual backend evidence](../testing/atomic-import.md). The application metadata-schema.json is the selected author-metadata definition subset of that machine authority, not a second schema owner.
+
+## Selected current query and configuration shapes (TASK-002-05)
+
+These additive selections make previously provisional production read shapes concrete. Existing author metadata, request fields, operation identities, enums, schema1.0 and APIv1 are unchanged. Strict response fixtures now include these selected fields; adding a validator does not add a K or If-Match obligation to natural operations. The single machine definitions are `query_project`, `query_document`, `query_version`, `query_file`, their `*_list` forms, `render_bootstrap`, `configuration_view` and `staging_summary` in tests/contracts/schema.json. Production HTTP/CLI/SQLite regressions complement the pure selected-shape fixture; the fixture does not prove production execution.
+
+| View | Selected fields |
+| --- | --- |
+| Project | project_id, name, lifecycle, revision, permissions_revision, updated_at, etag |
+| Document | document_id, project_id, title, lifecycle, nullable latest_version_id, revision, updated_at, versions_url, etag |
+| Version | version_id, document_id, sequence, nullable base_version_id, title_snapshot, nullable default_page, viewer_profile, source_basis, payload_sha256, manifest_sha256, nullable supplied_metadata_sha256, manifest_url, nullable supplied_metadata_url, files_url, render_bootstrap_url, etag |
+| File entry | path, kind, decimal byte_size, preview, file_url, etag; regular files add bytes_sha256/media_type, links add link_target, directories add files_url |
+| Render bootstrap | version_id, viewer_profile, nullable default_page/selected_page/requested_page/navigation_path/selected_file_url, files_url, delivery=authenticated_attachment, renderer_available=false |
+| Configuration | config_revision, etag, configuration (the selected effective config shape) |
+| Status staging | decimal staging_bytes, nonnegative pending_upload_count, pending_uploads_url |
+
+Lists retain data.items and nullable data.next_cursor. Version manifests hold full generated authored metadata; compact version summaries do not omit metadata from that stream. Independent mutable revision is distinct from timestamps, immutable sequences and auth/project access generations. Current config plans expose plan_id, base_config_revision, expires_at, scope, normalized_changes, affected_permissions_revisions and impact; internal effective policy/principal ownership are not credential-bearing public fields.

@@ -52,5 +52,20 @@ BEGIN UPDATE uploads SET revision=old.revision+1,updated_at=strftime('%Y-%m-%dT%
 CREATE TABLE import_intents(job_id TEXT PRIMARY KEY REFERENCES jobs(job_id),value BLOB NOT NULL CHECK(json_valid(value)));
 CREATE TABLE metadata_indexes(index_id TEXT PRIMARY KEY,principal_id TEXT NOT NULL,metadata_hash TEXT NOT NULL REFERENCES content_objects(content_hash),content_set_id TEXT NOT NULL REFERENCES content_sets(content_set_id),job_id TEXT REFERENCES jobs(job_id),complete INTEGER NOT NULL DEFAULT 0 CHECK(complete IN(0,1)));
 CREATE TABLE import_metadata(job_id TEXT NOT NULL REFERENCES metadata_indexes(index_id) ON UPDATE CASCADE ON DELETE CASCADE,kind TEXT NOT NULL,item_id TEXT NOT NULL,value BLOB NOT NULL,PRIMARY KEY(job_id,kind,item_id));
+`, `ALTER TABLE projects ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+ALTER TABLE documents ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+UPDATE projects SET updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now');
+UPDATE documents SET updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now');
+CREATE TRIGGER project_created AFTER INSERT ON projects WHEN new.updated_at='' BEGIN UPDATE projects SET updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE project_id=new.project_id; END;
+CREATE TRIGGER document_created AFTER INSERT ON documents WHEN new.updated_at='' BEGIN UPDATE documents SET updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE document_id=new.document_id; END;
+CREATE TRIGGER project_updated AFTER UPDATE OF name,lifecycle,revision,permissions_revision ON projects
+WHEN old.name IS NOT new.name OR old.lifecycle IS NOT new.lifecycle OR old.revision IS NOT new.revision OR old.permissions_revision IS NOT new.permissions_revision
+BEGIN UPDATE projects SET updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE project_id=new.project_id; END;
+CREATE TRIGGER document_updated AFTER UPDATE OF title,lifecycle,latest_version_id,revision ON documents
+WHEN old.title IS NOT new.title OR old.lifecycle IS NOT new.lifecycle OR old.latest_version_id IS NOT new.latest_version_id OR old.revision IS NOT new.revision
+BEGIN UPDATE documents SET updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE document_id=new.document_id; END;
+CREATE TABLE workflow_principals(principal_id TEXT PRIMARY KEY,binding_id TEXT NOT NULL UNIQUE,active INTEGER NOT NULL CHECK(active IN(0,1)),scope BLOB NOT NULL CHECK(json_valid(scope)),revision INTEGER NOT NULL CHECK(revision>=1));
+CREATE TABLE scoped_credentials(credential_id TEXT PRIMARY KEY,principal_id TEXT NOT NULL REFERENCES workflow_principals(principal_id),token_hash TEXT NOT NULL UNIQUE,auth_epoch TEXT NOT NULL,scope BLOB NOT NULL CHECK(json_valid(scope)),permissions BLOB NOT NULL CHECK(json_valid(permissions)),config_revision INTEGER NOT NULL CHECK(config_revision>=1),created_at INTEGER NOT NULL,expires_at INTEGER,revoked INTEGER NOT NULL CHECK(revoked IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=1));
+CREATE TABLE configuration_plans(plan_id TEXT PRIMARY KEY,principal_id TEXT NOT NULL,base_revision INTEGER NOT NULL CHECK(base_revision>=1),expires_at TEXT NOT NULL,value BLOB NOT NULL CHECK(json_valid(value)));
 `,
 }

@@ -14,15 +14,21 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
+	"haeryong.local/haeryong/internal/adapters/configpath"
 	"haeryong.local/haeryong/internal/adapters/content/staging"
 	"haeryong.local/haeryong/internal/adapters/foundation"
+	httpconfig "haeryong.local/haeryong/internal/adapters/http/configuration"
 	httpimports "haeryong.local/haeryong/internal/adapters/http/imports"
+	httpv1 "haeryong.local/haeryong/internal/adapters/http/v1"
 	"haeryong.local/haeryong/internal/adapters/localcontrol"
 	appauth "haeryong.local/haeryong/internal/application/auth"
+	appconfig "haeryong.local/haeryong/internal/application/configuration"
 	importer "haeryong.local/haeryong/internal/application/import"
+	"haeryong.local/haeryong/internal/application/query"
 	"haeryong.local/haeryong/internal/application/service"
 )
 
@@ -33,6 +39,8 @@ type options struct {
 	endpoint     string
 	json         bool
 	command      []string
+	flags        map[string]string
+	noInput      bool
 }
 type commandError struct {
 	code int
@@ -40,6 +48,7 @@ type commandError struct {
 }
 
 func (e commandError) Error() string { return e.err.Error() }
+func (e commandError) Unwrap() error { return e.err }
 func invalid(s string) error         { return commandError{2, errors.New(s)} }
 
 type envelope struct {
@@ -53,7 +62,7 @@ type errorBody struct {
 }
 
 func parse(args []string) (options, error) {
-	opt := options{selection: service.Selection{Profile: "default"}, port: service.DefaultPort}
+	opt := options{selection: service.Selection{Profile: "default"}, port: service.DefaultPort, flags: map[string]string{}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if !strings.HasPrefix(arg, "--") {
@@ -61,17 +70,21 @@ func parse(args []string) (options, error) {
 			continue
 		}
 		key, value, equals := strings.Cut(arg, "=")
-		if key == "--json" || key == "--no-input" {
+		if key == "--json" || key == "--no-input" || key == "--new-document" || key == "--resolve-link" || key == "--confirmed" || key == "--unadopted" {
 			if equals {
 				return opt, invalid("boolean flags do not accept a value")
 			}
 			if key == "--json" {
 				opt.json = true
+			} else if key == "--no-input" {
+				opt.noInput = true
+			} else {
+				opt.flags[strings.TrimPrefix(key, "--")] = "true"
 			}
 			continue
 		}
 		switch key {
-		case "--profile", "--data-dir", "--volume-root", "--port", "--endpoint":
+		case "--profile", "--data-dir", "--volume-root", "--port", "--endpoint", "--credential", "--client-dir", "--operation-id", "--project", "--document", "--base-version", "--metadata", "--version", "--path", "--output", "--input", "--state", "--cursor", "--limit", "--directory", "--kind", "--file", "--format", "--expected-config-revision", "--scope":
 		default:
 			return opt, invalid("unsupported flag: " + key)
 		}
@@ -94,6 +107,12 @@ func parse(args []string) (options, error) {
 			opt.selection.VolumeRoot = value
 		case "--endpoint":
 			opt.endpoint = value
+		default:
+			flag := strings.TrimPrefix(key, "--")
+			if _, exists := opt.flags[flag]; exists {
+				return opt, invalid("duplicate flag: " + key)
+			}
+			opt.flags[flag] = value
 		case "--port":
 			port, err := strconv.Atoi(value)
 			if err != nil || port < 1024 || port > 65535 {
@@ -114,12 +133,27 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 	if opt.endpoint != "" && (command == "init" || command == "daemon run") {
 		return invalid("initialization and daemon startup require local profile settings")
 	}
+	if len(opt.command) >= 2 && opt.command[0] == "auth" && opt.command[1] == "connect" {
+		if e := validateCommandFlags(opt); e != nil {
+			return e
+		}
+		return connectCommand(ctx, opt, emit)
+	}
+	if len(opt.command) >= 2 && opt.command[0] == "auth" && opt.command[1] == "grant" {
+		return commandError{5, errors.New("FEATURE_NOT_READY: workflow credential issuance")}
+	}
+	if isProductCommand(opt) {
+		if e := validateCommandFlags(opt); e != nil {
+			return e
+		}
+		return productCommand(ctx, opt, emit)
+	}
 	if len(opt.command) >= 2 && opt.command[0] == "auth" {
 		return bootstrapCommand(ctx, opt, emit, os.Stdin)
 	}
 	switch command {
 	case "version":
-		return emit(map[string]string{"binary": "development", "local_control_api": service.APIVersion, "product_api": "import_foundation_v1", "package": "1.0", "skill": "not_implemented"})
+		return emit(map[string]string{"binary": "development", "local_control_api": service.APIVersion, "product_api": "query_cli_configuration_v1", "package": "1.0", "skill": "not_implemented"})
 	case "init":
 		p, err := service.Initialize(opt.selection)
 		if err != nil {
@@ -127,20 +161,61 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 		}
 		return emit(map[string]string{"library_id": p.LibraryID, "profile_id": p.ProfileID, "profile": p.Name, "data_dir": p.DataDir})
 	case "daemon run":
-		var outputErr error
-		store := foundation.New(nil)
-		core := appauth.New(store)
-		imports := importer.New(store, core, store, staging.New())
-		endpoint := &localcontrol.HTTP{Auth: core, Product: func(origin string) (http.Handler, error) {
-			configuration, err := store.Configuration(ctx)
-			if err != nil {
-				return nil, err
+		for {
+			var outputErr error
+			store := foundation.New(nil)
+			core := appauth.New(store)
+			imports := importer.New(store, core, store, staging.New())
+			configurationCore := appconfig.New(store, core, configpath.Resolver{})
+			queries := query.New(store, core, store)
+			runCtx, cancelRun := context.WithCancel(ctx)
+			var restart atomic.Bool
+			configurationCore.Restart = func() { restart.Store(true); cancelRun() }
+			endpoint := &localcontrol.HTTP{Auth: core, Product: func(origin string) (http.Handler, error) {
+				configurationCore.RuntimeEndpoint = origin
+				configurationCore.ListenerOverride = opt.portSelected
+				configuration, err := store.Configuration(runCtx)
+				if err != nil {
+					return nil, err
+				}
+				return productHandler(core, origin, configuration.Value, productRoutes{httpimports.New(imports), httpv1.New(queries), httpconfig.New(configurationCore)})
+			}}
+			runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: store, Endpoint: endpoint, Work: imports.Run, ListenerPort: func(ctx context.Context) (int, error) {
+				configuration, e := store.Configuration(ctx)
+				if e != nil {
+					return 0, e
+				}
+				parsed, e := appconfig.Decode(strings.NewReader(string(configuration.Value)), "json")
+				if e != nil {
+					return 0, e
+				}
+				if e = appconfig.Validate(parsed); e != nil {
+					return 0, e
+				}
+				if opt.portSelected {
+					return opt.port, nil
+				}
+				var value struct {
+					Network struct {
+						Listener struct {
+							Port int `json:"port"`
+						} `json:"listener"`
+					} `json:"network"`
+				}
+				if e = json.Unmarshal(configuration.Value, &value); e != nil {
+					return 0, e
+				}
+				return value.Network.Listener.Port, nil
+			}}
+			err := runner.Run(runCtx, func(id service.Identity) { outputErr = emit(id) })
+			cancelRun()
+			if err != nil || outputErr != nil {
+				return errors.Join(err, outputErr)
 			}
-			return productHandler(core, origin, configuration.Value, httpimports.New(imports))
-		}}
-		runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: store, Endpoint: endpoint, Work: imports.Run}
-		err := runner.Run(ctx, func(id service.Identity) { outputErr = emit(id) })
-		return errors.Join(err, outputErr)
+			if !restart.Load() || ctx.Err() != nil {
+				return nil
+			}
+		}
 	case "service status", "status", "doctor", "service stop":
 		p, err := service.Load(opt.selection)
 		if err != nil {
@@ -211,10 +286,22 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			code = 4
 		}
 	}
-	if opt.json {
-		json.NewEncoder(stdout).Encode(envelope{Error: &errorBody{Code: map[int]string{2: "INVALID_INPUT", 3: "DENIED", 4: "CONFLICT", 5: "UNAVAILABLE"}[code], Message: err.Error()}, RequestID: requestID})
+	var recorded *recordedCommandError
+	var data any
+	if errors.As(err, &recorded) {
+		data = map[string]any{"operation_id": recorded.operation, "original_status": recorded.status}
 	}
-	fmt.Fprintln(stderr, err)
+	var emitted error
+	if opt.json {
+		emitted = json.NewEncoder(stdout).Encode(envelope{Data: data, Error: &errorBody{Code: map[int]string{2: "INVALID_INPUT", 3: "DENIED", 4: "CONFLICT", 5: "UNAVAILABLE", 6: "RECONCILIATION_REQUIRED"}[code], Message: err.Error()}, RequestID: requestID})
+	}
+	_, diagnosticError := fmt.Fprintln(stderr, err)
+	if recorded != nil && emitted == nil && diagnosticError == nil && recorded.acknowledge != nil {
+		if e := recorded.acknowledge(); e != nil {
+			fmt.Fprintln(stderr, e)
+			return 5
+		}
+	}
 	return code
 }
 

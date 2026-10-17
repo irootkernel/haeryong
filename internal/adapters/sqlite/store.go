@@ -26,7 +26,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaRevision = 4
+const SchemaRevision = 5
 
 type Boundary string
 

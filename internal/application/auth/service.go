@@ -94,7 +94,7 @@ func (s *Service) authenticateTx(tx app.WriteTx, token string, touch bool) (doma
 	}
 	record, err := tx.SessionByHash(sec.Verifier("session", token))
 	if errors.Is(err, domain.ErrNotFound) {
-		return record, sec.ErrRequired
+		return s.scoped(tx, token, state)
 	}
 	if err != nil {
 		return record, err
@@ -207,8 +207,10 @@ func (s *Service) pairings(ctx context.Context, token string, bootstrap bool) ([
 	out := []domain.Pairing{}
 	err := s.Store.Write(ctx, func(tx app.WriteTx) error {
 		if !bootstrap {
-			if _, e := s.authenticateTx(tx, token, true); e != nil {
+			if record, e := s.authenticateTx(tx, token, true); e != nil {
 				return e
+			} else if record.Scope.Kind != "owner" {
+				return domain.ErrDenied
 			}
 		}
 		state, e := tx.AuthState()
@@ -308,8 +310,10 @@ func (s *Service) decide(ctx context.Context, token string, d domain.PairingDeci
 func (s *Service) Sessions(ctx context.Context, token string) ([]domain.Session, error) {
 	out := []domain.Session{}
 	err := s.Store.Write(ctx, func(tx app.WriteTx) error {
-		if _, e := s.authenticateTx(tx, token, true); e != nil {
+		if record, e := s.authenticateTx(tx, token, true); e != nil {
 			return e
+		} else if record.Scope.Kind != "owner" {
+			return domain.ErrDenied
 		}
 		a, e := tx.AuthState()
 		if e != nil {
@@ -336,6 +340,9 @@ func (s *Service) Revoke(ctx context.Context, token, id string) (domain.Session,
 		actor, e := s.authenticateTx(tx, token, true)
 		if e != nil {
 			return e
+		}
+		if actor.Scope.Kind != "owner" {
+			return domain.ErrDenied
 		}
 		if id == "" {
 			id = actor.ID
@@ -395,8 +402,10 @@ func (s *Service) Guard(ctx context.Context, token string, fn func() error) erro
 	return err
 }
 func (s *Service) Health(ctx context.Context, token string) (domain.Health, error) {
-	if _, err := s.Authenticate(ctx, token); err != nil {
+	if record, err := s.Authenticate(ctx, token); err != nil {
 		return domain.Health{}, err
+	} else if record.Scope.Kind != "owner" {
+		return domain.Health{}, domain.ErrDenied
 	}
 	return s.Store.Health(ctx)
 }
@@ -408,7 +417,13 @@ func (s *Service) Operation(ctx context.Context, token, id string) (domain.Recei
 			return e
 		}
 		out, e = tx.Receipt(domain.OperationKey{PrincipalID: a.PrincipalID, OperationID: id})
-		return e
+		if e != nil {
+			return e
+		}
+		if e = authorizeScope(tx, a, out.Original); e != nil {
+			return e
+		}
+		return visibleRequest(tx, out.Original)
 	})
 	if err != nil {
 		return out, err
@@ -425,10 +440,13 @@ func (s *Service) Operation(ctx context.Context, token, id string) (domain.Recei
 func (s *Service) Job(ctx context.Context, token, id string) (domain.Job, error) {
 	var out domain.Job
 	err := s.Store.Write(ctx, func(tx app.WriteTx) error {
-		if _, e := s.authenticateTx(tx, token, true); e != nil {
+		record, e := s.authenticateTx(tx, token, true)
+		if e != nil {
 			return e
 		}
-		var e error
+		if e := authorizeScope(tx, record, domain.Request{Method: "GET", Target: "/api/v1/jobs/" + id}); e != nil {
+			return e
+		}
 		out, e = tx.Job(id)
 		if e == nil {
 			e = visibleJob(tx, out)
@@ -440,17 +458,27 @@ func (s *Service) Job(ctx context.Context, token, id string) (domain.Job, error)
 func (s *Service) Jobs(ctx context.Context, token string) ([]domain.Job, error) {
 	var out []domain.Job
 	err := s.Store.Write(ctx, func(tx app.WriteTx) error {
-		if _, e := s.authenticateTx(tx, token, true); e != nil {
+		record, e := s.authenticateTx(tx, token, true)
+		if e != nil {
 			return e
 		}
-		var e error
+		if e = authorizeScope(tx, record, domain.Request{Method: "GET", Target: "/api/v1/jobs"}); e != nil {
+			return e
+		}
 		rows, e := tx.Jobs()
 		if e != nil {
 			return e
 		}
 		out = []domain.Job{}
 		for _, j := range rows {
-			e := visibleJob(tx, j)
+			e := authorizeScope(tx, record, domain.Request{Method: "GET", Target: "/api/v1/jobs/" + j.ID})
+			if errors.Is(e, domain.ErrNotFound) || errors.Is(e, domain.ErrDenied) {
+				continue
+			}
+			if e != nil {
+				return e
+			}
+			e = visibleJob(tx, j)
 			if errors.Is(e, domain.ErrNotFound) {
 				continue
 			}
@@ -466,15 +494,27 @@ func (s *Service) Jobs(ctx context.Context, token string) ([]domain.Job, error) 
 func (s *Service) Events(ctx context.Context, token, epoch string, after int64) ([]domain.Event, error) {
 	var out []domain.Event
 	err := s.Store.Write(ctx, func(tx app.WriteTx) error {
-		if _, e := s.authenticateTx(tx, token, false); e != nil {
+		record, e := s.authenticateTx(tx, token, false)
+		if e != nil {
 			return e
 		}
-		var e error
 		out, e = tx.Events(epoch, after, 64)
 		if e != nil {
 			return e
 		}
 		for i, event := range out {
+			if record.Scope.Kind != "owner" {
+				target := "/api/v1/" + event.ResourceKind + "s/" + event.ResourceID
+				e := authorizeScope(tx, record, domain.Request{Method: "GET", Target: target})
+				if errors.Is(e, domain.ErrDenied) || errors.Is(e, domain.ErrNotFound) {
+					out[i] = domain.Event{StreamEpoch: event.StreamEpoch, Sequence: event.Sequence, ResourceKind: "library", Kind: "library.invalidated"}
+					continue
+				}
+				if e != nil {
+					return e
+				}
+			}
+
 			if event.ResourceKind == "job" {
 				job, err := tx.Job(event.ResourceID)
 				if err == nil {
@@ -574,6 +614,9 @@ func (a *Authority) AuthorizeWrite(ctx context.Context, tx app.WriteTx, r domain
 	if record.PrincipalID != r.Key.PrincipalID {
 		return domain.ErrDenied
 	}
+	if err := authorizeScope(tx, record, r); err != nil {
+		return err
+	}
 	return visibleRequest(tx, r)
 }
 func (a *Authority) Filter(ctx context.Context, r domain.Request, response domain.Response) (domain.Response, error) {
@@ -585,7 +628,11 @@ func (a *Authority) Filter(ctx context.Context, r domain.Request, response domai
 	// are checked as well, including responses from linked domain operations.
 	err := a.Service.Store.Write(ctx, func(tx app.WriteTx) error {
 		if !a.Bootstrap {
-			if _, err := a.Service.authenticateTx(tx, a.Token, false); err != nil {
+			record, err := a.Service.authenticateTx(tx, a.Token, false)
+			if err != nil {
+				return err
+			}
+			if err := authorizeScope(tx, record, r); err != nil {
 				return err
 			}
 		}
@@ -686,7 +733,8 @@ func (s *Service) EventHead(ctx context.Context, token string) (string, int64, e
 // batch is a cursor convenience, not a grant lasting until the batch is drained.
 func (s *Service) FilterEvent(ctx context.Context, token string, event domain.Event) (domain.Event, error) {
 	err := s.Store.Write(ctx, func(tx app.WriteTx) error {
-		if _, e := s.authenticateTx(tx, token, false); e != nil {
+		record, e := s.authenticateTx(tx, token, false)
+		if e != nil {
 			return e
 		}
 		epoch, _, e := tx.EventHead()
@@ -695,6 +743,17 @@ func (s *Service) FilterEvent(ctx context.Context, token string, event domain.Ev
 		}
 		if event.StreamEpoch != epoch {
 			return domain.ErrPrecondition
+		}
+		if record.Scope.Kind != "owner" {
+			target := "/api/v1/" + event.ResourceKind + "s/" + event.ResourceID
+			e := authorizeScope(tx, record, domain.Request{Method: "GET", Target: target})
+			if errors.Is(e, domain.ErrDenied) || errors.Is(e, domain.ErrNotFound) {
+				event = domain.Event{StreamEpoch: event.StreamEpoch, Sequence: event.Sequence, ResourceKind: "library", Kind: "library.invalidated"}
+				return nil
+			}
+			if e != nil {
+				return e
+			}
 		}
 		target := ""
 		if event.ResourceKind == "job" {

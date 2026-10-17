@@ -16,6 +16,9 @@ import (
 
 const bufferSize = 64 * 1024
 
+// ErrIntegrity distinguishes verified bytes that do not match their immutable identity.
+var ErrIntegrity = errors.New("object digest or size mismatch")
+
 type Object struct {
 	Hash string
 	Size int64
@@ -231,7 +234,7 @@ func (s *Store) VerifiedRead(ctx context.Context, object Object, consume func(io
 	actual, copyErr := copyObject(ctx, source, delivery, s.fail)
 	err = errors.Join(copyErr, source.Close())
 	if err == nil && actual != object {
-		err = errors.New("object digest or size mismatch")
+		err = ErrIntegrity
 	}
 	if err == nil {
 		_, err = delivery.Seek(0, io.SeekStart)
@@ -286,7 +289,7 @@ func (s *Store) verify(ctx context.Context, name string, expected Object) error 
 	}
 	actual, readErr := copyObject(ctx, f, io.Discard, nil)
 	if actual != expected && readErr == nil {
-		readErr = errors.New("object digest or size mismatch")
+		readErr = ErrIntegrity
 	}
 	return errors.Join(readErr, f.Close())
 }

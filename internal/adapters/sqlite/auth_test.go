@@ -532,6 +532,11 @@ func priorSchemaTwo(t *testing.T, s *Store) {
 	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatal(err)
 	}
+	if version >= 5 {
+		if _, err := s.db.Exec("DROP TABLE configuration_plans;DROP TABLE scoped_credentials;DROP TABLE workflow_principals;DROP TRIGGER project_created;DROP TRIGGER document_created;DROP TRIGGER project_updated;DROP TRIGGER document_updated;ALTER TABLE projects DROP COLUMN updated_at;ALTER TABLE documents DROP COLUMN updated_at"); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if version >= 4 {
 		if _, err := s.db.Exec("DROP TRIGGER upload_revision;DROP TABLE import_metadata; DROP TABLE metadata_indexes;DROP TABLE import_intents;DROP TABLE upload_entries;ALTER TABLE jobs DROP COLUMN result;ALTER TABLE uploads DROP COLUMN originating_device_id;ALTER TABLE uploads DROP COLUMN created_at;ALTER TABLE uploads DROP COLUMN updated_at;ALTER TABLE uploads DROP COLUMN revision;ALTER TABLE uploads DROP COLUMN seal_operation_id;ALTER TABLE uploads DROP COLUMN sealed_object_hash;ALTER TABLE document_versions DROP COLUMN payload_sha256;ALTER TABLE document_versions DROP COLUMN manifest_sha256;ALTER TABLE document_versions DROP COLUMN supplied_metadata_hash"); err != nil {
 			t.Fatal(err)

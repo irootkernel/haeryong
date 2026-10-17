@@ -1,4 +1,4 @@
-"""Actual browser proof of TASK-002-03 production HTTP/auth plus real SQLite.
+"""Actual browser proof of TASK-002-05 settings and production HTTP/auth/SQLite.
 
 Two loopback-origin contexts are synthetic local/remote clients, not private
 ingress, physical-device, Wails or complete renderer proof. Never print secrets.
@@ -21,11 +21,12 @@ parser.add_argument('--receipt', type=Path)
 args = parser.parse_args()
 volume = Path('/Volumes/RootKernel')
 base = volume / 'tmp' if os.path.ismount(volume) and os.access(volume, os.W_OK) else Path(tempfile.gettempdir())
-runtime = Path(tempfile.mkdtemp(prefix='haeryong-task003-browser-', dir=base))
+runtime = Path(tempfile.mkdtemp(prefix='haeryong-task005-browser-', dir=base))
 profile = runtime / 'browser-profile'
 session = 'hauth' + uuid.uuid4().hex[:10]
 env = os.environ | {'TMPDIR': str(runtime), 'PLAYWRIGHT_DAEMON_SESSION_DIR': str(runtime / 'registry'), 'PLAYWRIGHT_DAEMON_SOCKETS_DIR': str(runtime / 'sockets')}
-browser = [str(args.browser_cli.resolve(strict=True)), '-s=' + session]
+browser_cli = args.browser_cli.resolve(strict=True)
+browser = (['bash'] if browser_cli.suffix == '.sh' else []) + [str(browser_cli), '--session=' + session]
 binary = str(args.fixture_binary.resolve(strict=True))
 server = None
 opened = False
@@ -49,7 +50,7 @@ def start(port=0):
     global server
     server = subprocess.Popen([binary, '--directory', str(runtime), '--port', str(port)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     value = json.loads(server.stdout.readline())
-    assert value['fixture'] == 'task00203-production-auth' and value['pid'] == server.pid
+    assert value['fixture'] == 'task00205-production-auth-settings' and value['pid'] == server.pid
     return value
 
 def control(value):
@@ -67,14 +68,15 @@ def pair(label, page='page', remember=True):
     value = script('''async (page) => {
       const target=PAGE;
       await target.locator('#label').fill(LABEL);
-      await target.locator('#remember').setChecked(REMEMBER);
+      const remember=REMEMBER;
+      if(remember!==null)await target.locator('#remember').setChecked(remember);
       const created=target.waitForResponse(response=>response.url().endsWith('/api/v1/auth/pairings')&&response.request().method()==='POST');
       await target.getByRole('button',{name:'Connect device',exact:true}).click();
       const value=(await(await created).json()).data;
       await target.waitForFunction(()=>document.querySelector('#state').textContent==='Waiting for owner approval');
       if(!await target.evaluate(secret=>!document.documentElement.outerHTML.includes(secret)&&!location.href.includes(secret),value.polling_secret))throw new Error('polling secret leaked');
       return {pairing_id:value.pairing_id,code:value.code};
-    }'''.replace('PAGE', page).replace('LABEL', json.dumps(label)).replace('REMEMBER', str(remember).lower()))
+    }'''.replace('PAGE', page).replace('LABEL', json.dumps(label)).replace('REMEMBER', json.dumps(remember)))
     control({'action': 'approve', **value})
     del value
     return script('''async (page) => { const target=PAGE; await target.waitForFunction(()=>!document.querySelector('#owner').hidden,null,{timeout:12000}); return true; }'''.replace('PAGE', page))
@@ -95,7 +97,10 @@ try:
       if((await page.locator('main').innerText()).length<30)throw new Error('blank trusted shell');
       return {page_identity:true,nonblank:true,no_framework_overlay:!await page.locator('body').innerText().then(text=>/Webpack|Vite Error|Unhandled Runtime Error/.test(text)),engine:page.context().browser().version()};
     }'''))
-    pair('Remembered owner')
+    proof.update(script('''async(page)=>{if(!await page.locator('#remember').isChecked())throw new Error('configured true default was not checked before interaction');return {remember_default_true_before_user_action:true}}'''))
+    cli(['screenshot', '--filename', str(runtime / 'default-true.png')])
+    proof['default_true_screenshot'] = str(runtime / 'default-true.png')
+    pair('Remembered owner', remember=None)
     proof.update(script('''async (page) => {
       const key='haeryong.owner-session.v1';
       if(!await page.evaluate(key=>Boolean(localStorage.getItem(key)),key))throw new Error('default remembered token absent');
@@ -124,6 +129,40 @@ try:
     assert ready['endpoint'] == local
     script('''async(page)=>{await page.reload();await page.waitForFunction(()=>document.querySelector('#state').textContent==='Remembered connection');return true}''')
     proof['daemon_restart'] = True
+    # Observe the configured false default before setChecked or any pairing
+    # action. The private fixture uses the existing typed configuration writer.
+    control({'action': 'remember_default', 'remember': False})
+    stop(); ready = start(urlparse(local).port)
+    assert ready['endpoint'] == local
+    proof.update(script('''async(page)=>{
+      const context=await page.context().browser().newContext(),target=await context.newPage();
+      target.qaErrors=[];target.on('pageerror',error=>target.qaErrors.push(error.message));
+      await target.setViewportSize({width:1280,height:800});await target.goto(BASE);
+      if(await target.title()!=='Haeryong Connect'||await target.locator('h1').textContent()!=='Haeryong Connect'||(await target.locator('main').innerText()).length<30)throw new Error('false-default shell identity/blank failure');
+      if(await target.locator('#remember').isChecked())throw new Error('configured false default was checked before interaction');
+      if(/Webpack|Vite Error|Unhandled Runtime Error/.test(await target.locator('body').innerText()))throw new Error('false-default shell overlay');
+      await target.screenshot({path:DESKTOP});await target.setViewportSize({width:390,height:844});await target.screenshot({path:MOBILE});
+      return {remember_default_false_before_user_action:true,remember_default_false_survives_daemon_restart:true,default_false_page_identity:true,default_false_nonblank:true,default_false_no_overlay:true};
+    }'''.replace('BASE', json.dumps(local)).replace('DESKTOP', json.dumps(str(runtime / 'default-false-desktop.png'))).replace('MOBILE', json.dumps(str(runtime / 'default-false-mobile.png')))))
+    proof.update({'default_false_desktop_screenshot': str(runtime / 'default-false-desktop.png'), 'default_false_mobile_screenshot': str(runtime / 'default-false-mobile.png')})
+    other_page = 'page.context().browser().contexts().find(context=>context!==page.context()).pages()[0]'
+    pair('False default explicit remember', other_page, True)
+    proof.update(script('''async(page)=>{
+      const context=page.context().browser().contexts().find(value=>value!==page.context()),target=context.pages()[0];
+      if(!await target.evaluate(()=>Boolean(localStorage.getItem('haeryong.owner-session.v1'))))throw new Error('explicit true override did not persist');
+      await target.reload();await target.waitForFunction(()=>document.querySelector('#state').textContent==='Remembered connection');
+      if(target.qaErrors.length)throw new Error('false-default override page error');await context.close();
+      return {false_default_explicit_remember_override:true,false_default_remembered_reload:true};
+    }'''))
+    script('''async(page)=>{const context=await page.context().browser().newContext(),target=await context.newPage();await target.goto(BASE);if(await target.locator('#remember').isChecked())throw new Error('fresh false default changed');return true}'''.replace('BASE', json.dumps(local)))
+    pair('False default memory only', other_page, None)
+    proof.update(script('''async(page)=>{
+      const context=page.context().browser().contexts().find(value=>value!==page.context()),target=context.pages()[0];
+      if(!await target.evaluate(()=>localStorage.getItem('haeryong.owner-session.v1')===null))throw new Error('untouched false default persisted a bearer');
+      await target.reload();await target.waitForFunction(()=>document.querySelector('#owner').hidden);await context.close();
+      return {false_default_without_override_memory_only:true,false_default_memory_only_reload_requires_pairing:true};
+    }'''))
+    control({'action': 'remember_default', 'remember': True})
     # A second same-listener origin starts unpaired and pairs through the existing
     # trusted owner UI. No private HTTPS/network configuration is involved.
     control({'action': 'advance', 'seconds': 61})

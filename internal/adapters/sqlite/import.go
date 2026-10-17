@@ -16,7 +16,15 @@ func (t *writeTx) Library() (domain.Library, error) {
 }
 func (t *writeTx) Upload(id string) (domain.Upload, error) { return upload(t.ctx, t.tx, id) }
 func (t *writeTx) Uploads(after, state string, unadopted bool, limit int) ([]domain.Upload, error) {
-	rows, err := t.tx.QueryContext(t.ctx, "SELECT upload_id FROM uploads WHERE upload_id>? AND (?='' AND state!='abandoned' OR state=?) AND (?=0 OR NOT EXISTS(SELECT 1 FROM import_intents i JOIN jobs j ON j.job_id=i.job_id WHERE json_extract(i.value,'$.UploadID')=uploads.upload_id AND j.state='completed')) ORDER BY upload_id LIMIT ?", after, state, state, unadopted, batch(limit))
+	return t.AuthorizedUploads("", after, state, unadopted, limit, domain.CredentialScope{Kind: "owner"})
+}
+func (t *writeTx) AuthorizedUploads(principal, after, state string, unadopted bool, limit int, scope domain.CredentialScope) ([]domain.Upload, error) {
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT upload_id FROM uploads WHERE (?='' OR principal_id=?) AND (?='owner' OR (
+ CASE WHEN purpose='result' AND json_extract(target,'$.draft_id') IS NOT NULL THEN 'draft.write' WHEN purpose='result' THEN 'import.publish' WHEN purpose='metadata' AND json_extract(target,'$.action')='draft_replace' THEN 'draft.write' WHEN purpose='metadata' AND json_extract(target,'$.action')='import' THEN 'import.publish' WHEN purpose='context' THEN 'context.write' WHEN purpose='body' AND json_extract(target,'$.action')='generation' THEN 'generation.request' ELSE '' END IN(SELECT value FROM json_each(?,'$.actions'))
+ AND (json_extract(target,'$.project_id') IS NULL OR json_extract(target,'$.project_id') IN(SELECT value FROM json_each(?,'$.project_ids')))
+ AND (json_extract(target,'$.draft_id') IS NULL OR json_extract(target,'$.draft_id') IN(SELECT value FROM json_each(?,'$.draft_ids')))
+ AND (json_extract(target,'$.version_id') IS NULL OR json_extract(target,'$.version_id') IN(SELECT value FROM json_each(?,'$.version_ids')))
+ )) AND upload_id>? AND (?='' AND state!='abandoned' OR state=?) AND (?=0 OR NOT EXISTS(SELECT 1 FROM import_intents i JOIN jobs j ON j.job_id=i.job_id WHERE json_extract(i.value,'$.UploadID')=uploads.upload_id AND j.state='completed')) ORDER BY upload_id LIMIT ?`, principal, principal, scope.Kind, jsonBytes(scope), jsonBytes(scope), jsonBytes(scope), jsonBytes(scope), after, state, state, unadopted, batch(limit))
 	if err != nil {
 		return nil, err
 	}
@@ -286,8 +294,10 @@ func (t *writeTx) PublishedVersion(id string) (domain.Version, error) {
 
 const uploadHashes = "SELECT content_hash FROM upload_ranges WHERE upload_id=? UNION SELECT content_hash FROM version_entries WHERE content_set_id IN(SELECT coalesce(sealed_content_set_id,seal_job_id) FROM uploads WHERE upload_id=?) AND content_hash IS NOT NULL"
 
+const uploadPinRows = "SELECT pin_id AS id,owner_kind AS kind,owner_id AS owner,content_hash AS hash FROM object_pins WHERE content_hash IN hashes UNION ALL SELECT 'reference:'||owner_kind||':'||owner_id||':'||content_hash,CASE WHEN owner_kind='content_set' AND NOT EXISTS(SELECT 1 FROM document_versions v WHERE v.content_set_id=owner_id AND v.sequence IS NOT NULL) THEN 'staging' ELSE 'adopted' END,owner_id,content_hash FROM object_references WHERE content_hash IN hashes"
+
 func (t *writeTx) UploadPins(id, after string, limit int) ([]domain.Pin, error) {
-	rows, err := t.tx.QueryContext(t.ctx, "WITH hashes AS ("+uploadHashes+"), allpins AS(SELECT pin_id AS id,owner_kind AS kind,owner_id AS owner,content_hash AS hash FROM object_pins WHERE content_hash IN hashes UNION ALL SELECT 'reference:'||owner_kind||':'||owner_id||':'||content_hash,CASE WHEN owner_kind='content_set' AND NOT EXISTS(SELECT 1 FROM document_versions v WHERE v.content_set_id=owner_id AND v.sequence IS NOT NULL) THEN 'staging' ELSE 'adopted' END,owner_id,content_hash FROM object_references WHERE content_hash IN hashes) SELECT id,kind,owner,hash FROM allpins WHERE id>? COLLATE BINARY ORDER BY id COLLATE BINARY LIMIT ?", id, id, after, batch(limit))
+	rows, err := t.tx.QueryContext(t.ctx, "WITH hashes AS ("+uploadHashes+"), allpins AS("+uploadPinRows+") SELECT id,kind,owner,hash FROM allpins WHERE id>? COLLATE BINARY ORDER BY id COLLATE BINARY LIMIT ?", id, id, after, batch(limit))
 	if err != nil {
 		return nil, err
 	}
@@ -310,30 +320,14 @@ func (t *writeTx) UploadStats(id string) (domain.UploadStats, error) {
 		return out, err
 	}
 	out.StagingBytes = size
-	after := ""
-	for {
-		pins, err := t.UploadPins(id, after, 64)
-		if err != nil {
-			return out, err
-		}
-		if len(pins) == 0 {
-			break
-		}
-		for _, p := range pins {
-			switch p.Kind {
-			case "adopted":
-				out.Adopted++
-			case "job", "input", "upload_read":
-				out.Active++
-			case "backup", "recovery", "draft":
-				out.Recovery++
-			default:
-				out.Staging++
-			}
-			after = p.ID
-		}
-	}
-	return out, nil
+	// Summary counts use the same reference view as the cursor, without rebuilding
+	// and sorting the complete pin set once for each cursor page under the writer.
+	err = t.tx.QueryRowContext(t.ctx, "WITH hashes AS ("+uploadHashes+"), allpins AS("+uploadPinRows+") SELECT "+
+		"coalesce(sum(CASE WHEN kind='adopted' THEN 1 ELSE 0 END),0),"+
+		"coalesce(sum(CASE WHEN kind IN ('job','input','upload_read') THEN 1 ELSE 0 END),0),"+
+		"coalesce(sum(CASE WHEN kind IN ('backup','recovery','draft') THEN 1 ELSE 0 END),0),"+
+		"coalesce(sum(CASE WHEN kind NOT IN ('adopted','job','input','upload_read','backup','recovery','draft') THEN 1 ELSE 0 END),0) FROM allpins", id, id).Scan(&out.Adopted, &out.Active, &out.Recovery, &out.Staging)
+	return out, err
 }
 
 func (t *writeTx) DiscardContentSet(id string) error {

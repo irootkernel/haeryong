@@ -161,7 +161,7 @@ func (t *writeTx) CreateProject(p domain.Project) error {
 	if p.Lifecycle == "" {
 		p.Lifecycle = "active"
 	}
-	return t.exec("INSERT INTO projects VALUES(?,?,?,?,?)", p.ID, p.Name, p.Lifecycle, p.Revision, p.PermissionsRevision)
+	return t.exec("INSERT INTO projects(project_id,name,lifecycle,revision,permissions_revision) VALUES(?,?,?,?,?)", p.ID, p.Name, p.Lifecycle, p.Revision, p.PermissionsRevision)
 }
 func (t *writeTx) CreateDocument(d domain.Document) error {
 	if d.LatestVersionID != "" {
@@ -173,7 +173,7 @@ func (t *writeTx) CreateDocument(d domain.Document) error {
 	if d.Lifecycle == "" {
 		d.Lifecycle = "active"
 	}
-	return t.exec("INSERT INTO documents VALUES(?,?,?,?,?,?)", d.ID, d.ProjectID, d.Title, d.Lifecycle, nullable(d.LatestVersionID), d.Revision)
+	return t.exec("INSERT INTO documents(document_id,project_id,title,lifecycle,latest_version_id,revision) VALUES(?,?,?,?,?,?)", d.ID, d.ProjectID, d.Title, d.Lifecycle, nullable(d.LatestVersionID), d.Revision)
 }
 func (t *writeTx) CreateContentSet(id, payloadSHA string) error {
 	if !hashPattern.MatchString(payloadSHA) {
@@ -253,6 +253,20 @@ func (t *writeTx) SetConfiguration(c domain.Configuration, expected int64) error
 	}
 	if err := t.exec("INSERT INTO config_revisions VALUES(?,?,?,?)", current+1, c.Value, c.Actor, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 		return err
+	}
+
+	// Shortening pending secret lifetime is immediate; an already issued secret
+	// never silently gains a longer lifetime from later policy expansion.
+	var settings struct {
+		Security domain.AuthSettings `json:"security"`
+	}
+	if err := json.Unmarshal(c.Value, &settings); err != nil {
+		return err
+	}
+	if settings.Security.PairingExpirySeconds > 0 {
+		if err := t.exec("UPDATE pairings SET expires_at=created_at+?*1000,revision=revision+1 WHERE consumed=0 AND state IN('pending','approved') AND expires_at>created_at+?*1000", settings.Security.PairingExpirySeconds, settings.Security.PairingExpirySeconds); err != nil {
+			return err
+		}
 	}
 	return t.appendEvent("configuration", "library", "configuration.changed", current+1, nil)
 }

@@ -78,7 +78,13 @@ func (s *Service) metadata(ctx context.Context, token, key string, input ImportR
 	})
 }
 func (s *Service) Import(ctx context.Context, token, key string, input ImportRequest) (domain.Response, error) {
-	if _, e := s.Auth.Authenticate(ctx, token); e != nil {
+	record, e := s.Auth.Authenticate(ctx, token)
+	if e != nil {
+		return domain.Response{}, e
+	}
+	if e = s.Store.Write(ctx, func(tx app.WriteTx) error {
+		return s.Auth.Authority(token).AuthorizeWrite(ctx, tx, domain.Request{Key: domain.OperationKey{PrincipalID: record.PrincipalID}, Method: "POST", Target: "/api/v1/imports", Body: []byte(`{}`)})
+	}); e != nil {
 		return domain.Response{}, e
 	}
 	if !input.DocumentPresent || !idPattern.MatchString(input.UploadID) || (input.DocumentID != nil && !idPattern.MatchString(*input.DocumentID)) || (input.ProjectID != "" && !idPattern.MatchString(input.ProjectID)) || (input.VersionID != "" && !idPattern.MatchString(input.VersionID)) || (input.BaseVersionID != nil && !idPattern.MatchString(*input.BaseVersionID)) {

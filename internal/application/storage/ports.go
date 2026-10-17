@@ -29,6 +29,9 @@ type Store interface {
 // Each callback is a short serialized write transaction. Files are streamed and
 // synced before entry; only atomic publication/directory sync may run inside it.
 type WriteTx interface {
+	QueryReadTx
+	CredentialsTx
+	ConfigurationTx
 	WorkJobs(int) ([]domain.Job, error)
 	StageEntry(domain.Entry) error
 	DraftTarget(string) (domain.DraftTarget, error)

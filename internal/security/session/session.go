@@ -71,6 +71,11 @@ func Check(s domain.Session, state domain.AuthState, now time.Time) (domain.Sess
 		s.State = "expired"
 		authorityError = ErrExpired
 	}
+	return Projection(s, authorityError)
+}
+
+// Projection covers the complete safe public DTO for either credential class.
+func Projection(s domain.Session, authorityError error) (domain.Session, error) {
 	// ETag covers the complete current public projection, including derived state,
 	// without claiming that a clock/policy projection mutates the stored revision.
 	s.ETag = ""

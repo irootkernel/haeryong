@@ -107,7 +107,11 @@ func (s *Store) Read(ctx context.Context, object domain.Object, pin domain.Pin, 
 	defer func() {
 		result = errors.Join(result, s.Write(context.Background(), func(tx app.WriteTx) error { return tx.ReleasePin(pin.ID) }))
 	}()
-	return s.Objects.VerifiedRead(ctx, contentstore.Object{Hash: object.Hash, Size: object.Size}, consume)
+	err = s.Objects.VerifiedRead(ctx, contentstore.Object{Hash: object.Hash, Size: object.Size}, consume)
+	if errors.Is(err, contentstore.ErrIntegrity) {
+		return errors.Join(domain.ErrContentIntegrity, err)
+	}
+	return err
 }
 func (s *Store) Collect(ctx context.Context, object domain.Object) error {
 	s.gcMu.Lock()

@@ -1,0 +1,346 @@
+package query
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	appauth "haeryong.local/haeryong/internal/application/auth"
+	app "haeryong.local/haeryong/internal/application/storage"
+	"haeryong.local/haeryong/internal/domain"
+	"net/url"
+	"strconv"
+)
+
+type Service struct {
+	Store app.Store
+	Auth  *appauth.Service
+	Bytes Bytes
+}
+
+func New(store app.Store, auth *appauth.Service, bytes Bytes) *Service {
+	return &Service{Store: store, Auth: auth, Bytes: bytes}
+}
+func (s *Service) read(ctx context.Context, token, target string, fn func(app.WriteTx) error) error {
+	return s.Store.Write(ctx, func(tx app.WriteTx) error {
+		record, err := s.Auth.AuthenticateWrite(ctx, tx, token)
+		if err != nil {
+			return err
+		}
+		if err := s.Auth.Authority(token).AuthorizeWrite(ctx, tx, domain.Request{Key: domain.OperationKey{PrincipalID: record.PrincipalID}, Method: "GET", Target: target}); err != nil {
+			return err
+		}
+		return fn(tx)
+	})
+}
+func visibleDocument(tx app.WriteTx, id string) (domain.QueryDocument, error) {
+	d, err := tx.QueryDocument(id)
+	if err != nil {
+		return d, err
+	}
+	if d.Lifecycle == "trash" || d.Lifecycle == "purged" {
+		return d, domain.ErrNotFound
+	}
+	_, err = tx.Scope(d.ProjectID)
+	return d, err
+}
+func visibleVersion(tx app.WriteTx, id string) (domain.Version, error) {
+	v, err := tx.PublishedVersion(id)
+	if err != nil {
+		return v, err
+	}
+	_, err = visibleDocument(tx, v.DocumentID)
+	return v, err
+}
+func (s *Service) Guard(ctx context.Context, token, version string) error {
+	return s.read(ctx, token, "/api/v1/versions/"+version, func(tx app.WriteTx) error { _, err := visibleVersion(tx, version); return err })
+}
+func validator(v any) string {
+	b, _ := json.Marshal(v)
+	h := sha256.Sum256(b)
+	return `"sha256-` + hex.EncodeToString(h[:]) + `"`
+}
+func nullable(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
+}
+func project(p domain.QueryProject) Project {
+	out := Project{ID: p.ID, Name: p.Name, Lifecycle: p.Lifecycle, Revision: p.Revision, PermissionsRevision: p.PermissionsRevision, UpdatedAt: p.UpdatedAt}
+	out.ETag = validator(out)
+	return out
+}
+func document(d domain.QueryDocument) Document {
+	out := Document{ID: d.ID, ProjectID: d.ProjectID, Title: d.Title, Lifecycle: d.Lifecycle, LatestVersionID: nullable(d.LatestVersionID), Revision: d.Revision, UpdatedAt: d.UpdatedAt, VersionsURL: "/api/v1/documents/" + d.ID + "/versions"}
+	out.ETag = validator(out)
+	return out
+}
+func version(v domain.Version) Version {
+	base := "/api/v1/versions/" + v.ID
+	out := Version{ID: v.ID, DocumentID: v.DocumentID, Sequence: v.Sequence, BaseVersionID: nullable(v.BaseVersionID), Title: v.Title, DefaultPage: v.DefaultPage, ViewerProfile: v.ViewerProfile, SourceBasis: v.SourceBasis, PayloadSHA: v.PayloadSHA, ManifestSHA: v.ManifestSHA, SuppliedMetadataSHA: nullable(v.MetadataHash), ManifestURL: base + "/metadata?kind=normalized", FilesURL: base + "/files", BootstrapURL: base + "/render-bootstrap"}
+	if v.MetadataHash != "" {
+		u := base + "/metadata?kind=supplied"
+		out.SuppliedMetadataURL = &u
+	}
+	out.ETag = validator(out)
+	return out
+}
+
+type cursor struct {
+	Binding, After, Key string
+	Sequence            int64
+}
+
+func (s *Service) cursorStart(ctx context.Context, token string, tx app.WriteTx, resource string, o Options) (cursor, int, domain.CredentialScope, error) {
+	limit := o.Limit
+	if limit == 0 {
+		limit = 50
+	}
+	if limit < 1 || limit > 200 {
+		return cursor{}, 0, domain.CredentialScope{}, &Error{"invalid_page_size"}
+	}
+	l, err := tx.Library()
+	if err != nil {
+		return cursor{}, 0, domain.CredentialScope{}, err
+	}
+	record, err := s.Auth.AuthenticateWrite(ctx, tx, token)
+	if err != nil {
+		return cursor{}, 0, domain.CredentialScope{}, err
+	}
+	principalRevision := int64(0)
+	permissions := map[string]int64{}
+	if record.Scope.Kind != "owner" {
+		principal, err := tx.WorkflowPrincipal(record.PrincipalID)
+		if err != nil {
+			return cursor{}, 0, domain.CredentialScope{}, err
+		}
+		principalRevision = principal.Revision
+		for _, id := range record.Scope.ProjectIDs {
+			state, err := tx.Scope(id)
+			if err != nil {
+				return cursor{}, 0, domain.CredentialScope{}, err
+			}
+			permissions[id] = state.Project.PermissionsRevision
+		}
+	}
+	b := validator([]any{l.RuntimeGeneration, resource, o.Project, o.Lifecycle, o.Directory, o.Kind, record.PrincipalID, record.Scope, principalRevision, permissions})
+	c := cursor{Binding: b}
+	if o.Cursor != "" {
+		raw, err := base64.RawURLEncoding.DecodeString(o.Cursor)
+		if err != nil || json.Unmarshal(raw, &c) != nil || c.Binding != b || c.Sequence < 0 {
+			return cursor{}, 0, domain.CredentialScope{}, &Error{"cursor_mismatch"}
+		}
+	}
+	return c, limit, record.Scope, nil
+}
+func cursorNext(c cursor) *string {
+	b, _ := json.Marshal(c)
+	s := base64.RawURLEncoding.EncodeToString(b)
+	return &s
+}
+func (s *Service) Projects(ctx context.Context, token string, o Options) (List[Project], error) {
+	out := List[Project]{Items: []Project{}}
+	err := s.read(ctx, token, "/api/v1/projects", func(tx app.WriteTx) error {
+		c, n, scope, err := s.cursorStart(ctx, token, tx, "projects", o)
+		if err != nil {
+			return err
+		}
+		rows, err := tx.QueryProjects(scope, c.After, c.Key, n+1)
+		if err != nil {
+			return err
+		}
+		for i, p := range rows {
+			if i == n {
+				last := rows[i-1]
+				c.After, c.Key = last.UpdatedAt, last.ID
+				out.NextCursor = cursorNext(c)
+				break
+			}
+			out.Items = append(out.Items, project(p))
+		}
+		return nil
+	})
+	return out, err
+}
+func (s *Service) Documents(ctx context.Context, token string, o Options) (List[Document], error) {
+	out := List[Document]{Items: []Document{}}
+	if o.Lifecycle != "" && o.Lifecycle != "active" && o.Lifecycle != "archived" {
+		return out, &Error{"invalid_lifecycle"}
+	}
+	err := s.read(ctx, token, "/api/v1/documents", func(tx app.WriteTx) error {
+		if o.Project != "" {
+			if _, err := tx.Scope(o.Project); err != nil {
+				return err
+			}
+		}
+		c, n, scope, err := s.cursorStart(ctx, token, tx, "documents", o)
+		if err != nil {
+			return err
+		}
+		rows, err := tx.QueryDocuments(scope, o.Project, o.Lifecycle, c.After, c.Key, n+1)
+		if err != nil {
+			return err
+		}
+		for i, d := range rows {
+			if i == n {
+				last := rows[i-1]
+				c.After, c.Key = last.UpdatedAt, last.ID
+				out.NextCursor = cursorNext(c)
+				break
+			}
+			out.Items = append(out.Items, document(d))
+		}
+		return nil
+	})
+	return out, err
+}
+func (s *Service) Document(ctx context.Context, token, id string) (Document, error) {
+	var out Document
+	err := s.read(ctx, token, "/api/v1/documents/"+id, func(tx app.WriteTx) error {
+		d, err := visibleDocument(tx, id)
+		if err == nil {
+			out = document(d)
+		}
+		return err
+	})
+	return out, err
+}
+func (s *Service) Versions(ctx context.Context, token, id string, o Options) (List[Version], error) {
+	out := List[Version]{Items: []Version{}}
+	err := s.read(ctx, token, "/api/v1/documents/"+id+"/versions", func(tx app.WriteTx) error {
+		if _, err := visibleDocument(tx, id); err != nil {
+			return err
+		}
+		c, n, scope, err := s.cursorStart(ctx, token, tx, "versions:"+id, o)
+		if err != nil {
+			return err
+		}
+		rows, err := tx.QueryVersions(scope, id, c.Sequence, n+1)
+		if err != nil {
+			return err
+		}
+		for i, v := range rows {
+			if i == n {
+				c.Sequence = rows[i-1].Sequence
+				out.NextCursor = cursorNext(c)
+				break
+			}
+			out.Items = append(out.Items, version(v))
+		}
+		return nil
+	})
+	return out, err
+}
+func (s *Service) Version(ctx context.Context, token, id string) (Version, error) {
+	var out Version
+	err := s.read(ctx, token, "/api/v1/versions/"+id, func(tx app.WriteTx) error {
+		v, err := visibleVersion(tx, id)
+		if err == nil {
+			out = version(v)
+		}
+		return err
+	})
+	return out, err
+}
+func (s *Service) Capabilities(ctx context.Context, token string) (map[string]any, error) {
+	out := map[string]any{}
+	err := s.read(ctx, token, "/api/v1/capabilities", func(tx app.WriteTx) error {
+		l, err := tx.Library()
+		if err != nil {
+			return err
+		}
+		out = map[string]any{"library_id": l.ID, "api_version": "1.0", "runtime_generation": l.RuntimeGeneration, "stream_epoch": l.StreamEpoch, "unfiled_project_id": l.UnfiledProjectID, "features": map[string]bool{"resumable_uploads": true, "atomic_import": true, "cursor_files": true, "streamed_files": true, "byte_ranges": true, "html_js_v1": false, "multi_page_loader": false, "renderer": false, "preview": false, "provider": false, "scheduler": false}}
+		return nil
+	})
+	return out, err
+}
+
+func entryFile(id string, e domain.Entry) File {
+	base := "/api/v1/versions/" + id
+	out := File{Path: e.Path, Kind: e.Kind, Size: strconv.FormatInt(e.Size, 10), Preview: "download", FileURL: base + "/file?path=" + url.QueryEscape(e.Path)}
+	if e.Kind == "file" {
+		out.Hash = nullable(e.Hash)
+		out.MediaType = "application/octet-stream"
+		out.ETag = `"sha256-` + e.Hash + `"`
+	} else {
+		out.Preview = "unavailable"
+		if e.Kind == "symlink" {
+			out.LinkTarget = &e.LinkText
+		}
+		if e.Kind == "directory" {
+			out.FilesURL = base + "/files?directory=" + url.QueryEscape(e.Path)
+		}
+		out.ETag = validator(out)
+	}
+	return out
+}
+func (s *Service) Files(ctx context.Context, token, id string, o Options) (List[File], error) {
+	out := List[File]{Items: []File{}}
+	directory := o.Directory
+	if directory != "" {
+		info, err := s.ResolveFile(ctx, token, id, directory, false)
+		if err != nil {
+			return out, err
+		}
+		if info.Kind != "directory" {
+			return out, &Error{"filter_is_not_directory"}
+		}
+		directory = info.ResolvedPath
+	}
+	err := s.read(ctx, token, "/api/v1/versions/"+id+"/files", func(tx app.WriteTx) error {
+		v, err := visibleVersion(tx, id)
+		if err != nil {
+			return err
+		}
+		if o.Kind != "" && o.Kind != "file" && o.Kind != "directory" && o.Kind != "symlink" {
+			return &Error{"invalid_kind"}
+		}
+		if o.Directory != "" {
+			if err := validPath(o.Directory); err != nil {
+				return err
+			}
+		}
+		c, n, _, err := s.cursorStart(ctx, token, tx, "files:"+id+":"+v.ContentSetID, o)
+		if err != nil {
+			return err
+		}
+		rows, err := tx.QueryEntries(v.ContentSetID, c.After, directory, o.Kind, n+1)
+		if err != nil {
+			return err
+		}
+		for i, e := range rows {
+			if i == n {
+				c.After = rows[i-1].Path
+				out.NextCursor = cursorNext(c)
+				break
+			}
+			out.Items = append(out.Items, entryFile(id, e))
+		}
+		return nil
+	})
+	return out, err
+}
+
+// Unavailable evidence remains a typed view; this read starts no source capture
+// or verification and never upgrades authored capture_status into a service check.
+func (s *Service) Evidence(ctx context.Context, token, id, evidenceID string) (map[string]any, error) {
+	var out map[string]any
+	err := s.read(ctx, token, "/api/v1/versions/"+id+"/source-evidence/"+evidenceID, func(tx app.WriteTx) error {
+		if _, err := visibleVersion(tx, id); err != nil {
+			return err
+		}
+		e, err := tx.QueryEvidence(id, evidenceID)
+		if err != nil {
+			return err
+		}
+		source, err := tx.QuerySource(id, e.SourceID)
+		if err != nil {
+			return err
+		}
+		out = map[string]any{"version_id": id, "evidence_id": evidenceID, "authored": json.RawMessage(e.Metadata), "source": json.RawMessage(source.Metadata), "availability": "unavailable", "bytes_origin": nil, "reason": "source_read_not_implemented", "service_verification": nil, "verifications_url": "/api/v1/versions/" + id + "/source-evidence/" + url.PathEscape(evidenceID) + "/verifications"}
+		return nil
+	})
+	return out, err
+}

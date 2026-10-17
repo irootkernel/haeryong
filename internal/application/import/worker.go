@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"haeryong.local/haeryong/internal/application/auth"
 	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
 	"io"
@@ -151,20 +152,17 @@ func (s *Service) jobFence(tx app.WriteTx, j domain.Job) error {
 		return domain.ErrStaleWorker
 	}
 	var scope struct {
-		PrincipalID string          `json:"principal_id"`
-		AuthEpoch   string          `json:"auth_epoch"`
-		Purpose     string          `json:"purpose"`
-		Target      json.RawMessage `json:"target"`
+		PrincipalID     string                 `json:"principal_id"`
+		AuthEpoch       string                 `json:"auth_epoch"`
+		Purpose         string                 `json:"purpose"`
+		Target          json.RawMessage        `json:"target"`
+		CredentialScope domain.CredentialScope `json:"credential_scope"`
 	}
 	if json.Unmarshal(j.Scope, &scope) != nil {
 		return domain.ErrDenied
 	}
-	state, e := tx.AuthState()
-	if e != nil {
+	if e := auth.AuthorizeAccepted(tx, scope.PrincipalID, scope.AuthEpoch, scope.Purpose, scope.Target, scope.CredentialScope); e != nil {
 		return e
-	}
-	if scope.PrincipalID != state.OwnerID || scope.AuthEpoch != state.AuthEpoch {
-		return domain.ErrDenied
 	}
 	if e := targetAuthority(tx, scope.Purpose, scope.Target); e != nil {
 		return e

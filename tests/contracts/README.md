@@ -145,3 +145,7 @@ consumer adds exactly one adopted pin and retains the exact target and bytes.
 All29 current methods pass; the original passing methods and later failing
 baseline are separate evidence. Only model/test digest entries changed. No
 calibration, source-generation or provider execution was repeated.
+
+## TASK-002-05 selected response extension
+
+The existing request/config/author-metadata shapes and schema1.0/APIv1 remain unchanged. Additive current query/list/bootstrap/config-view/staging-summary definitions now select previously provisional read fields, including per-item validators and nullable cursors. The current additional pure fixture validates those shapes and rejects direct-array lists/missing validators/numeric byte sizes. Actual authenticated SQLite/HTTP and CLI query/transfer/configuration regressions live in the production test packages and are recorded in [Task05 evidence](../../docs/testing/query-cli-configuration.md); they are not replaced by this pure fixture. The existing manifest digest domain remains unchanged and its schema/test digests reflect this recorded extension.

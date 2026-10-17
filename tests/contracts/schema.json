@@ -3029,6 +3029,499 @@
         "next_cursor"
       ],
       "additionalProperties": false
+    },
+    "query_project": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "lifecycle": {
+          "enum": [
+            "active",
+            "archived"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "permissions_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "updated_at": {
+          "$ref": "#/$defs/time"
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "^\"[^\"\\r\\n]+\"$"
+        }
+      },
+      "required": [
+        "project_id",
+        "name",
+        "lifecycle",
+        "revision",
+        "permissions_revision",
+        "updated_at",
+        "etag"
+      ],
+      "additionalProperties": false
+    },
+    "query_document": {
+      "type": "object",
+      "properties": {
+        "document_id": {
+          "$ref": "#/$defs/id"
+        },
+        "project_id": {
+          "$ref": "#/$defs/id"
+        },
+        "title": {
+          "type": "string"
+        },
+        "lifecycle": {
+          "enum": [
+            "active",
+            "archived",
+            "trash",
+            "purged"
+          ]
+        },
+        "latest_version_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "updated_at": {
+          "$ref": "#/$defs/time"
+        },
+        "versions_url": {
+          "type": "string"
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "^\"[^\"\\r\\n]+\"$"
+        }
+      },
+      "required": [
+        "document_id",
+        "project_id",
+        "title",
+        "lifecycle",
+        "latest_version_id",
+        "revision",
+        "updated_at",
+        "versions_url",
+        "etag"
+      ],
+      "additionalProperties": false
+    },
+    "query_version": {
+      "type": "object",
+      "properties": {
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "document_id": {
+          "$ref": "#/$defs/id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "base_version_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title_snapshot": {
+          "type": "string"
+        },
+        "default_page": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "viewer_profile": {
+          "enum": [
+            "html_js_v1"
+          ]
+        },
+        "source_basis": {
+          "enum": [
+            "unverified",
+            "evidence_recorded"
+          ]
+        },
+        "payload_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "supplied_metadata_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "manifest_url": {
+          "type": "string"
+        },
+        "supplied_metadata_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files_url": {
+          "type": "string"
+        },
+        "render_bootstrap_url": {
+          "type": "string"
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "^\"[^\"\\r\\n]+\"$"
+        }
+      },
+      "required": [
+        "version_id",
+        "document_id",
+        "sequence",
+        "base_version_id",
+        "title_snapshot",
+        "default_page",
+        "viewer_profile",
+        "source_basis",
+        "payload_sha256",
+        "manifest_sha256",
+        "supplied_metadata_sha256",
+        "manifest_url",
+        "supplied_metadata_url",
+        "files_url",
+        "render_bootstrap_url",
+        "etag"
+      ],
+      "additionalProperties": false
+    },
+    "query_file": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "kind": {
+          "enum": [
+            "file",
+            "directory",
+            "symlink"
+          ]
+        },
+        "byte_size": {
+          "$ref": "#/$defs/decimal"
+        },
+        "bytes_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "link_target": {
+          "type": "string"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "preview": {
+          "enum": [
+            "download",
+            "unavailable"
+          ]
+        },
+        "file_url": {
+          "type": "string"
+        },
+        "files_url": {
+          "type": "string"
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "^\"[^\"\\r\\n]+\"$"
+        }
+      },
+      "required": [
+        "path",
+        "kind",
+        "byte_size",
+        "preview",
+        "file_url",
+        "etag"
+      ],
+      "additionalProperties": false
+    },
+    "render_bootstrap": {
+      "type": "object",
+      "properties": {
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "viewer_profile": {
+          "enum": [
+            "html_js_v1"
+          ]
+        },
+        "default_page": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selected_page": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requested_page": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "navigation_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files_url": {
+          "type": "string"
+        },
+        "selected_file_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delivery": {
+          "enum": [
+            "authenticated_attachment"
+          ]
+        },
+        "renderer_available": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "version_id",
+        "viewer_profile",
+        "default_page",
+        "selected_page",
+        "requested_page",
+        "navigation_path",
+        "files_url",
+        "selected_file_url",
+        "delivery",
+        "renderer_available"
+      ],
+      "additionalProperties": false
+    },
+    "staging_summary": {
+      "type": "object",
+      "properties": {
+        "staging_bytes": {
+          "$ref": "#/$defs/decimal"
+        },
+        "pending_upload_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pending_uploads_url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "staging_bytes",
+        "pending_upload_count",
+        "pending_uploads_url"
+      ],
+      "additionalProperties": false
+    },
+    "configuration_view": {
+      "type": "object",
+      "properties": {
+        "config_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "^\"[^\"\\r\\n]+\"$"
+        },
+        "configuration": {
+          "$ref": "#/$defs/config"
+        }
+      },
+      "required": [
+        "config_revision",
+        "etag",
+        "configuration"
+      ],
+      "additionalProperties": false
+    },
+    "query_project_list": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/query_project"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "query_document_list": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/query_document"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "query_version_list": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/query_version"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "query_file_list": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/query_file"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
     }
   },
   "error_http": {
