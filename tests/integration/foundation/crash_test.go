@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
 	"haeryong.local/haeryong/internal/adapters/content/staging"
 	"haeryong.local/haeryong/internal/adapters/contentstore"
 	"haeryong.local/haeryong/internal/adapters/foundation"
@@ -23,11 +24,13 @@ import (
 	"haeryong.local/haeryong/internal/application/service"
 	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
+
+	// This descriptor travels on the child test process's private stdin, never in
+	// argv, logs or a production environment variable. No production kill hook is
+	// exposed: the child uses the existing typed/fault ports of the actual stack.
+	. "github.com/onsi/gomega"
 )
 
-// This descriptor travels on the child test process's private stdin, never in
-// argv, logs or a production environment variable. No production kill hook is
-// exposed: the child uses the existing typed/fault ports of the actual stack.
 type childRequest struct {
 	Selection  service.Selection
 	Token      string
@@ -94,7 +97,7 @@ func (t *observedTx) ClaimJob(id string) (domain.Job, error) {
 }
 
 // TestFoundationSubprocess is a test-binary entrypoint, not a product command.
-func TestFoundationSubprocess(t *testing.T) {
+func runFoundationChild(t *testing.T) {
 	if os.Getenv("HAERYONG_FOUNDATION_TEST_CHILD") != "1" {
 		return
 	}
@@ -193,19 +196,18 @@ func TestFoundationSubprocess(t *testing.T) {
 	t.Fatal("selected crash boundary was not reached")
 }
 
-func killAtBoundary(t *testing.T, f *fixture, request childRequest) {
-	t.Helper()
+func killAtBoundary(t GinkgoTInterface, f *fixture, request childRequest) {
+	GinkgoHelper()
 	request.Selection, request.Token = f.selection, f.token
 	f.close(t)
 	readControl, writeControl, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	defer readControl.Close()
 	defer writeControl.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestFoundationSubprocess$", "-test.timeout=20s")
+	command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestSuite$", "-test.timeout=20s")
 	command.Env = append(os.Environ(), "HAERYONG_FOUNDATION_TEST_CHILD=1")
 	descriptor, _ := json.Marshal(request)
 	command.Stdin = bytes.NewReader(descriptor)
@@ -213,9 +215,8 @@ func killAtBoundary(t *testing.T, f *fixture, request childRequest) {
 	var diagnostics bytes.Buffer
 	command.Stderr = &diagnostics
 	stdout, err := command.StdoutPipe()
-	if err != nil || command.Start() != nil {
-		t.Fatal("could not start foundation child")
-	}
+	Expect(err != nil || command.Start() != nil).To(BeFalse(), func() string { return fmt.Sprint("could not start foundation child") })
+
 	defer func() {
 		if command.ProcessState == nil {
 			_ = command.Process.Kill()
@@ -224,6 +225,7 @@ func killAtBoundary(t *testing.T, f *fixture, request childRequest) {
 	}()
 	reached := make(chan bool, 1)
 	go func() {
+		defer GinkgoRecover()
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
 			if scanner.Text() == "boundary:"+request.Boundary {
@@ -237,91 +239,96 @@ func killAtBoundary(t *testing.T, f *fixture, request childRequest) {
 	case ok := <-reached:
 		if !ok {
 			_ = command.Wait()
-			t.Fatalf("child exited before %s; stderr=%s", request.Boundary, diagnostics.String())
+			Fail(fmt.Sprintf("child exited before %s; stderr=%s", request.Boundary, diagnostics.String()))
 		}
 	case <-ctx.Done():
 		_ = command.Wait()
-		t.Fatalf("child did not reach %s", request.Boundary)
+		Fail(fmt.Sprintf("child did not reach %s", request.Boundary))
 	}
 	if competing, err := service.OpenWriter(f.selection); !errors.Is(err, service.ErrLocked) {
 		if competing != nil {
 			competing.Close()
 		}
-		t.Fatal("live child did not hold the actual writer lock")
+		Fail(fmt.Sprint("live child did not hold the actual writer lock"))
 	}
-	if err := command.Process.Kill(); err != nil {
-		t.Fatal(err)
+	{
+		err := command.Process.Kill()
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	err = command.Wait()
 	var exit *exec.ExitError
-	if !errors.As(err, &exit) || !exit.Sys().(syscall.WaitStatus).Signaled() || exit.Sys().(syscall.WaitStatus).Signal() != syscall.SIGKILL {
-		t.Fatal("child termination was not actual SIGKILL")
-	}
+	Expect(!errors.As(err, &exit) || !exit.Sys().(syscall.WaitStatus).Signaled() || exit.Sys().(syscall.WaitStatus).Signal() != syscall.SIGKILL).To(BeFalse(), func() string { return fmt.Sprint("child termination was not actual SIGKILL") })
+
 	f.reopen(t)
 	if path := os.Getenv("HAERYONG_TASK006_CRASH_REPORT"); path != "" {
 		file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
-		if err != nil {
-			t.Fatal(err)
-		}
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 		err = json.NewEncoder(file).Encode(map[string]any{"action": request.Action, "boundary": request.Boundary, "signal": exit.Sys().(syscall.WaitStatus).Signal().String(), "writer_exclusion_observed": true, "reopened_under_writer_lock": true})
-		if closeErr := file.Close(); err != nil || closeErr != nil {
-			t.Fatal("could not retain structured process-boundary observation")
+		{
+			closeErr := file.Close()
+			Expect(err != nil || closeErr != nil).To(BeFalse(), func() string { return fmt.Sprint("could not retain structured process-boundary observation") })
 		}
+
 	}
 }
 
-func TestProcessKillFileBoundariesNeverAcknowledgeNondurableInput(t *testing.T) {
+var _ = It("TestProcessKillFileBoundariesNeverAcknowledgeNondurableInput", Label("persistence"), func() {
+	t := GinkgoT()
+
 	for _, boundary := range []string{"filesystem_write", "filesystem_file_sync", "filesystem_file_close", "filesystem_rename", "filesystem_directory_sync", "database_before_commit"} {
-		t.Run(boundary, func(t *testing.T) {
+		func() {
+			By(boundary)
 			f := newFixture(t)
 			upload := f.create(t)
 			data := []byte("<html>synthetic crash boundary 한글</html>")
 			before, err := f.store.Health(f.ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 			original, err := f.store.Upload(f.ctx, upload)
-			if err != nil {
-				t.Fatal(err)
-			}
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 			killAtBoundary(t, f, childRequest{Action: "put", Boundary: boundary, Upload: upload, Payload: data})
 			after, err := f.store.Health(f.ctx)
-			if err != nil || after.Library != before.Library {
-				t.Fatal("restart changed library/profile/runtime/auth/event identity")
-			}
+			Expect(err != nil || after.Library != before.Library).To(BeFalse(), func() string { return fmt.Sprint("restart changed library/profile/runtime/auth/event identity") })
+
 			u, err := f.store.Upload(f.ctx, upload)
-			if err != nil || u.Checkpoint != original.Checkpoint {
-				t.Fatal("uncommitted input was acknowledged")
+			Expect(err != nil || u.Checkpoint != original.Checkpoint).To(BeFalse(), func() string { return fmt.Sprint("uncommitted input was acknowledged") })
+			{
+
+				err := f.store.Write(f.ctx, func(tx app.WriteTx) error {
+					_, err := tx.Object(digest(data))
+					if !errors.Is(err, domain.ErrNotFound) {
+						return errors.New("uncommitted bytes have READY metadata")
+					}
+					return nil
+				})
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 			}
-			if err := f.store.Write(f.ctx, func(tx app.WriteTx) error {
-				_, err := tx.Object(digest(data))
-				if !errors.Is(err, domain.ErrNotFound) {
-					return errors.New("uncommitted bytes have READY metadata")
-				}
-				return nil
-			}); err != nil {
-				t.Fatal(err)
-			}
+
 			cp := f.put(t, upload, data)
 			job := f.complete(t, upload, cp, key(t))
-			if err := f.core.Process(f.ctx, job); err != nil {
-				t.Fatal(err)
+			{
+				err := f.core.Process(f.ctx, job)
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 			}
-			sealed, err := f.store.Upload(f.ctx, upload)
-			if err != nil || sealed.State != "sealed" {
-				t.Fatal("same retained input did not resume after actual process kill")
-			}
-			entries, err := f.store.Entries(f.ctx, sealed.ContentSetID, "", 64)
-			if err != nil || len(entries) != 2 || entries[1].Hash != digest(data) {
-				t.Fatal("resumed tree identity differs")
-			}
-		})
-	}
-}
 
-func TestProcessKillReceiptReservationAndCommittedAcceptanceReplay(t *testing.T) {
+			sealed, err := f.store.Upload(f.ctx, upload)
+			Expect(err != nil || sealed.State != "sealed").To(BeFalse(), func() string { return fmt.Sprint("same retained input did not resume after actual process kill") })
+
+			entries, err := f.store.Entries(f.ctx, sealed.ContentSetID, "", 64)
+			Expect(err != nil || len(entries) != 2 || entries[1].Hash != digest(data)).To(BeFalse(), func() string { return fmt.Sprint("resumed tree identity differs") })
+
+		}()
+	}
+})
+var _ = It("TestProcessKillReceiptReservationAndCommittedAcceptanceReplay", Label("persistence"), func() {
+	t := GinkgoT()
+
 	for _, boundary := range []string{"receipt_reserved_uncommitted", "accepted_commit_before_return"} {
-		t.Run(boundary, func(t *testing.T) {
+		func() {
+			By(boundary)
 			f := newFixture(t)
 			upload := f.create(t)
 			cp := f.put(t, upload, []byte("<html>accepted client exit</html>"))
@@ -329,115 +336,112 @@ func TestProcessKillReceiptReservationAndCommittedAcceptanceReplay(t *testing.T)
 			cp.Complete = true
 			operation := key(t)
 			principal, err := f.auth.Authenticate(f.ctx, f.token)
-			if err != nil {
-				t.Fatal(err)
-			}
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 			killAtBoundary(t, f, childRequest{Action: "complete", Boundary: boundary, Upload: upload, Operation: operation, Checkpoint: cp})
 			receipt, err := f.store.Receipt(f.ctx, domain.OperationKey{PrincipalID: principal.PrincipalID, OperationID: operation})
-			if boundary == "receipt_reserved_uncommitted" && !errors.Is(err, domain.ErrNotFound) {
-				t.Fatal("uncommitted receipt survived process kill")
-			}
-			if boundary == "accepted_commit_before_return" && (err != nil || receipt.State != "completed" || receipt.Response.Status != 202) {
-				t.Fatal("committed202 creation receipt was lost")
-			}
+			Expect(boundary == "receipt_reserved_uncommitted" && !errors.Is(err, domain.ErrNotFound)).To(BeFalse(), func() string { return fmt.Sprint("uncommitted receipt survived process kill") })
+			Expect(boundary == "accepted_commit_before_return" && (err != nil || receipt.State != "completed" || receipt.Response.Status != 202)).To(BeFalse(), func() string { return fmt.Sprint("committed202 creation receipt was lost") })
+
 			response, err := f.core.Complete(f.ctx, f.token, upload, operation, cp)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if receipt.Response != nil && !bytes.Equal(receipt.Response.Body, response.Body) {
-				t.Fatal("lost-response replay changed the original job")
-			}
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+			Expect(receipt.Response != nil && !bytes.Equal(receipt.Response.Body, response.Body)).To(BeFalse(), func() string { return fmt.Sprint("lost-response replay changed the original job") })
+
 			job := responseID(t, response, "job_id")
-			if err := f.core.Process(f.ctx, job); err != nil {
-				t.Fatal(err)
+			{
+				err := f.core.Process(f.ctx, job)
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 			}
+
 			again, err := f.core.Complete(f.ctx, f.token, upload, operation, cp)
-			if err != nil || !bytes.Equal(response.Body, again.Body) {
-				t.Fatal("matching receipt did not replay before stale current checkpoint")
-			}
+			Expect(err != nil || !bytes.Equal(response.Body, again.Body)).To(BeFalse(), func() string { return fmt.Sprint("matching receipt did not replay before stale current checkpoint") })
+
 			changed := cp
 			changed.Generation++
-			if _, err := f.core.Complete(f.ctx, f.token, upload, operation, changed); !errors.Is(err, domain.ErrConflict) {
-				t.Fatal("changed semantic checkpoint reused original operation")
+			{
+				_, err := f.core.Complete(f.ctx, f.token, upload, operation, changed)
+				Expect(!errors.Is(err, domain.ErrConflict)).To(BeFalse(), func() string { return fmt.Sprint("changed semantic checkpoint reused original operation") })
 			}
-		})
-	}
-}
 
-func TestProcessKillClaimAndAtomicPublicationRecoverOriginalIntentOnce(t *testing.T) {
+		}()
+	}
+})
+var _ = It("TestProcessKillClaimAndAtomicPublicationRecoverOriginalIntentOnce", Label("persistence"), func() {
+	t := GinkgoT()
+
 	for _, boundary := range []string{"job_claim_committed", "publication_before_commit", "publication_committed"} {
-		t.Run(boundary, func(t *testing.T) {
+		func() {
+			By(boundary)
 			f := newFixture(t)
 			upload := f.create(t)
 			cp := f.put(t, upload, []byte("<html>immutable publication across process death</html>"))
 			seal := f.complete(t, upload, cp, key(t))
-			if err := f.core.Process(f.ctx, seal); err != nil {
-				t.Fatal(err)
+			{
+				err := f.core.Process(f.ctx, seal)
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 			}
+
 			operation, version := key(t), key(t)
 			input := importer.ImportRequest{UploadID: upload, DocumentPresent: true, VersionID: version}
 			accepted, err := f.core.Import(f.ctx, f.token, operation, input)
-			if err != nil {
-				t.Fatal(err)
-			}
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 			job := responseID(t, accepted, "job_id")
 			original, err := f.store.Job(f.ctx, job)
-			if err != nil {
-				t.Fatal(err)
-			}
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 			killAtBoundary(t, f, childRequest{Action: "process", Boundary: boundary, Job: job})
 			current, err := f.store.Job(f.ctx, job)
-			if err != nil {
-				t.Fatal(err)
-			}
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 			if boundary != "publication_committed" {
-				if current.State != "interrupted" || current.AttemptGeneration <= original.AttemptGeneration {
-					t.Fatal("startup did not fence the killed running attempt")
+				Expect(current.State != "interrupted" || current.AttemptGeneration <= original.AttemptGeneration).To(BeFalse(), func() string { return fmt.Sprint("startup did not fence the killed running attempt") })
+				{
+
+					_, err := f.store.Version(f.ctx, version)
+					Expect(!errors.Is(err, domain.ErrNotFound)).To(BeFalse(), func() string { return fmt.Sprint("uncommitted publication became visible") })
 				}
-				if _, err := f.store.Version(f.ctx, version); !errors.Is(err, domain.ErrNotFound) {
-					t.Fatal("uncommitted publication became visible")
-				}
-				if err := f.store.Write(f.ctx, func(tx app.WriteTx) error {
-					for _, state := range []string{"completed", "failed"} {
-						if err := tx.FinishJob(job, original.AttemptGeneration+1, state, func(app.WriteTx) error {
-							return errors.New("stale application callback unexpectedly ran")
-						}); !errors.Is(err, domain.ErrStaleWorker) {
-							return errors.New("killed attempt retained success or failure authority")
+				{
+
+					err := f.store.Write(f.ctx, func(tx app.WriteTx) error {
+						for _, state := range []string{"completed", "failed"} {
+							if err := tx.FinishJob(job, original.AttemptGeneration+1, state, func(app.WriteTx) error {
+								return errors.New("stale application callback unexpectedly ran")
+							}); !errors.Is(err, domain.ErrStaleWorker) {
+								return errors.New("killed attempt retained success or failure authority")
+							}
 						}
-					}
-					return nil
-				}); err != nil {
-					t.Fatal(err)
+						return nil
+					})
+					Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 				}
-				if err := f.core.Process(f.ctx, job); err != nil {
-					t.Fatal(err)
+				{
+
+					err := f.core.Process(f.ctx, job)
+					Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 				}
+
 			} else if current.State != "completed" {
-				t.Fatal("committed job result did not survive process kill")
+				Fail(fmt.Sprint("committed job result did not survive process kill"))
 			}
 			published, err := f.store.Version(f.ctx, version)
-			if err != nil || published.Sequence != 1 || published.ManifestSHA == "" {
-				t.Fatal("recovery did not publish the original immutable version")
-			}
+			Expect(err != nil || published.Sequence != 1 || published.ManifestSHA == "").To(BeFalse(), func() string { return fmt.Sprint("recovery did not publish the original immutable version") })
+
 			document, err := f.store.Document(f.ctx, published.DocumentID)
-			if err != nil || document.LatestVersionID != version {
-				t.Fatal("recovery latest pointer is inconsistent")
-			}
+			Expect(err != nil || document.LatestVersionID != version).To(BeFalse(), func() string { return fmt.Sprint("recovery latest pointer is inconsistent") })
+
 			replayed, err := f.core.Import(f.ctx, f.token, operation, input)
-			if err != nil || replayed.Status != 202 || !bytes.Equal(replayed.Body, accepted.Body) {
-				t.Fatal("committed202 receipt was replaced by the asynchronous outcome")
-			}
+			Expect(err != nil || replayed.Status != 202 || !bytes.Equal(replayed.Body, accepted.Body)).To(BeFalse(), func() string { return fmt.Sprint("committed202 receipt was replaced by the asynchronous outcome") })
+
 			health, err := f.store.Health(f.ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 			var publicationEvents int
 			var after int64
 			for {
 				events, err := f.store.Events(f.ctx, health.Library.StreamEpoch, after, 17)
-				if err != nil {
-					t.Fatal(err)
-				}
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 				if len(events) == 0 {
 					break
 				}
@@ -448,49 +452,60 @@ func TestProcessKillClaimAndAtomicPublicationRecoverOriginalIntentOnce(t *testin
 					after = event.Sequence
 				}
 			}
-			if publicationEvents != 1 {
-				t.Fatalf("publication effects/events were not once-only: %d", publicationEvents)
-			}
-		})
-	}
-}
+			Expect(publicationEvents != 1).To(BeFalse(), func() string {
+				return fmt.Sprintf("publication effects/events were not once-only: %d", publicationEvents)
+			})
 
-func TestProcessKillGCReservationRetainsFenceAndOtherOwnersAcrossRestart(t *testing.T) {
+		}()
+	}
+})
+var _ = It("TestProcessKillGCReservationRetainsFenceAndOtherOwnersAcrossRestart", Label("persistence"), func() {
+	t := GinkgoT()
+
 	for _, boundary := range []string{"filesystem_before_delete", "filesystem_directory_sync"} {
-		t.Run(boundary, func(t *testing.T) {
+		func() {
+			By(boundary)
 			f := newFixture(t)
 			candidate, stage := pinObject(t, f, "synthetic eligible deletion")
 			protected, _ := pinObject(t, f, "synthetic independent persisted owner")
-			if err := f.store.Write(f.ctx, func(tx app.WriteTx) error { return tx.ReleasePin(stage) }); err != nil {
-				t.Fatal(err)
+			{
+				err := f.store.Write(f.ctx, func(tx app.WriteTx) error { return tx.ReleasePin(stage) })
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 			}
+
 			killAtBoundary(t, f, childRequest{Action: "collect", Boundary: boundary, Object: candidate})
-			if err := f.store.Write(f.ctx, func(tx app.WriteTx) error {
-				current, err := tx.Object(candidate.Hash)
-				if err != nil || current.State != "deleting" || current.GCToken == "" {
-					return errors.New("interrupted collector lost its persisted deletion fence")
-				}
-				if err := tx.AcquirePin(domain.Pin{ID: key(t), Kind: "active_read", OwnerID: "late reader", Hash: candidate.Hash}); !errors.Is(err, domain.ErrDeleting) {
-					return errors.New("late read bypassed deleting reservation")
-				}
-				return nil
-			}); err != nil {
-				t.Fatal(err)
+			{
+				err := f.store.Write(f.ctx, func(tx app.WriteTx) error {
+					current, err := tx.Object(candidate.Hash)
+					if err != nil || current.State != "deleting" || current.GCToken == "" {
+						return errors.New("interrupted collector lost its persisted deletion fence")
+					}
+					if err := tx.AcquirePin(domain.Pin{ID: key(t), Kind: "active_read", OwnerID: "late reader", Hash: candidate.Hash}); !errors.Is(err, domain.ErrDeleting) {
+						return errors.New("late read bypassed deleting reservation")
+					}
+					return nil
+				})
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 			}
+
 			pinProtected(t, f, protected)
-			if err := f.store.Collect(f.ctx, candidate); err != nil {
-				t.Fatal(err)
+			{
+				err := f.store.Collect(f.ctx, candidate)
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 			}
-			if err := f.store.Write(f.ctx, func(tx app.WriteTx) error {
-				_, err := tx.Object(candidate.Hash)
-				if !errors.Is(err, domain.ErrNotFound) {
-					return errors.New("same deletion reservation did not reconcile")
-				}
-				return nil
-			}); err != nil {
-				t.Fatal(err)
+			{
+
+				err := f.store.Write(f.ctx, func(tx app.WriteTx) error {
+					_, err := tx.Object(candidate.Hash)
+					if !errors.Is(err, domain.ErrNotFound) {
+						return errors.New("same deletion reservation did not reconcile")
+					}
+					return nil
+				})
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 			}
+
 			pinProtected(t, f, protected)
-		})
+		}()
 	}
-}
+})

@@ -6,63 +6,63 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"syscall"
-	"testing"
 )
 
-func scratch(t *testing.T) string {
-	t.Helper()
+func scratch(t GinkgoTInterface) string {
+	GinkgoHelper()
 	base := os.TempDir()
 	var volume, parent syscall.Stat_t
 	if syscall.Stat("/Volumes/RootKernel", &volume) == nil && syscall.Stat("/Volumes", &parent) == nil && volume.Dev != parent.Dev && syscall.Access("/Volumes/RootKernel", 2) == nil {
 		base = "/Volumes/RootKernel/tmp"
-		if err := os.MkdirAll(base, 0700); err != nil {
-			t.Fatal(err)
+		{
+			err := os.MkdirAll(base, 0700)
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 		}
+
 	}
 	dir, err := os.MkdirTemp(base, "haeryong-contentstore-test-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(dir); err != nil {
-			t.Error(err)
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	DeferCleanup(func() {
+		{
+			err := os.RemoveAll(dir)
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 		}
+
 	})
 	return dir
 }
 
-func newStore(t *testing.T, options ...Option) (*Store, string) {
-	t.Helper()
+func newStore(t GinkgoTInterface, options ...Option) (*Store, string) {
+	GinkgoHelper()
 	dir := scratch(t)
 	s, err := New(dir, options...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { s.Close() })
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	DeferCleanup(func() { s.Close() })
 	return s, filepath.Join(dir, "objects")
 }
 
-func stage(t *testing.T, s *Store, data string) *Staged {
-	t.Helper()
+func stage(t GinkgoTInterface, s *Store, data string) *Staged {
+	GinkgoHelper()
 	staged, err := s.Stage(context.Background(), strings.NewReader(data))
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	return staged
 }
 
-func finalize(t *testing.T, s *Store, staged *Staged) Object {
-	t.Helper()
+func finalize(t GinkgoTInterface, s *Store, staged *Staged) Object {
+	GinkgoHelper()
 	object, err := s.Finalize(context.Background(), staged, func(_ Object, publish func() error) error { return publish() })
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	return object
 }
 
@@ -86,17 +86,18 @@ func (r *boundedReader) Read(b []byte) (int, error) {
 	return int(n), nil
 }
 
-func TestStreamDurabilityOrderingAndDuplicateVerification(t *testing.T) {
+var _ = It("TestStreamDurabilityOrderingAndDuplicateVerification", Label("unit"), func() {
+	t := GinkgoT()
+
 	var events []string
 	s, dir := newStore(t, WithFault(func(p Boundary) error { events = append(events, string(p)); return nil }))
 	reader := &boundedReader{left: 9*1024*1024 + 17}
 	staged, err := s.Stage(context.Background(), reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reader.max > bufferSize || staged.Object.Size != 9*1024*1024+17 {
-		t.Fatalf("not finite-buffer streaming: max=%d size=%d", reader.max, staged.Object.Size)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	Expect(reader.max > bufferSize || staged.Object.Size != 9*1024*1024+17).To(BeFalse(), func() string {
+		return fmt.Sprintf("not finite-buffer streaming: max=%d size=%d", reader.max, staged.Object.Size)
+	})
+
 	object, err := s.Finalize(context.Background(), staged, func(object Object, publish func() error) error {
 		events = append(events, "transaction")
 		if err := publish(); err != nil {
@@ -105,37 +106,43 @@ func TestStreamDurabilityOrderingAndDuplicateVerification(t *testing.T) {
 		events = append(events, "metadata_commit")
 		return nil
 	})
-	if err != nil {
-		t.Fatal(err)
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	{
+
+		got := events[len(events)-6:]
+		Expect(!reflect.DeepEqual(got, []string{"file_sync", "file_close", "transaction", "rename", "directory_sync", "metadata_commit"})).To(BeFalse(), func() string { return fmt.Sprintf("durability order: %v", got) })
 	}
-	if got := events[len(events)-6:]; !reflect.DeepEqual(got, []string{"file_sync", "file_close", "transaction", "rename", "directory_sync", "metadata_commit"}) {
-		t.Fatalf("durability order: %v", got)
-	}
+
 	data, err := os.ReadFile(filepath.Join(dir, object.Hash))
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	digest := sha256.Sum256(data)
-	if hex.EncodeToString(digest[:]) != object.Hash {
-		t.Fatal("wrong streamed digest")
-	}
+	Expect(hex.EncodeToString(digest[:]) != object.Hash).To(BeFalse(), func() string { return fmt.Sprint("wrong streamed digest") })
+
 	duplicate := stage(t, s, string(data))
-	if got := finalize(t, s, duplicate); got != object {
-		t.Fatal("identical bytes did not deduplicate identity")
+	{
+		got := finalize(t, s, duplicate)
+		Expect(got != object).To(BeFalse(), func() string { return fmt.Sprint("identical bytes did not deduplicate identity") })
 	}
-	if err := os.WriteFile(filepath.Join(dir, object.Hash), []byte("corrupt target"), 0600); err != nil {
-		t.Fatal(err)
+	{
+
+		err := os.WriteFile(filepath.Join(dir, object.Hash), []byte("corrupt target"), 0600)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	called := false
 	_, err = s.Finalize(context.Background(), stage(t, s, string(data)), func(_ Object, _ func() error) error { called = true; return nil })
-	if err == nil || called {
-		t.Fatalf("unverified target trusted by its name: called=%v err=%v", called, err)
-	}
-}
+	Expect(err == nil || called).To(BeFalse(), func() string {
+		return fmt.Sprintf("unverified target trusted by its name: called=%v err=%v", called, err)
+	})
 
-func TestPublicationFaultsLeaveRecoverableUnpublishedBytes(t *testing.T) {
+})
+var _ = It("TestPublicationFaultsLeaveRecoverableUnpublishedBytes", Label("unit"), func() {
+	t := GinkgoT()
+
 	for _, boundary := range []Boundary{Write, FileSync, FileClose, Rename, DirectorySync, "metadata_commit"} {
-		t.Run(string(boundary), func(t *testing.T) {
+		func() {
+			By(string(boundary))
 			injected := syscall.ENOSPC
 			armed := true
 			s, dir := newStore(t, WithFault(func(point Boundary) error {
@@ -157,32 +164,38 @@ func TestPublicationFaultsLeaveRecoverableUnpublishedBytes(t *testing.T) {
 				ready = true
 				return nil
 			})
-			if ready || finalErr == nil || staged == nil {
-				t.Fatalf("false publication: stage=%v final=%v ready=%v", stageErr, finalErr, ready)
-			}
+			Expect(ready || finalErr == nil || staged == nil).To(BeFalse(), func() string {
+				return fmt.Sprintf("false publication: stage=%v final=%v ready=%v", stageErr, finalErr, ready)
+			})
+
 			if boundary == Write || boundary == FileSync || boundary == FileClose {
-				if !errors.Is(stageErr, injected) || called {
-					t.Fatalf("stage failure reached commit: stage=%v called=%v", stageErr, called)
-				}
+				Expect(!errors.Is(stageErr, injected) || called).To(BeFalse(), func() string {
+					return fmt.Sprintf("stage failure reached commit: stage=%v called=%v", stageErr, called)
+				})
+
 			} else if stageErr != nil || !errors.Is(finalErr, injected) {
-				t.Fatalf("wrong fault boundary: stage=%v final=%v", stageErr, finalErr)
+				Fail(fmt.Sprintf("wrong fault boundary: stage=%v final=%v", stageErr, finalErr))
 			}
 			name := staged.RecoveryName
 			if staged.published {
 				name = staged.Object.Hash
 			}
-			if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
-				t.Fatalf("recovery bytes removed: %v", err)
+			{
+				_, err := os.Stat(filepath.Join(dir, name))
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprintf("recovery bytes removed: %v", err) })
 			}
+
 			armed = false
 			if boundary == "metadata_commit" {
-				if err := s.VerifiedRead(context.Background(), staged.Object, func(r io.ReadSeeker) error { _, err := io.Copy(io.Discard, r); return err }); err != nil {
-					t.Fatalf("durable orphan unavailable: %v", err)
+				{
+					err := s.VerifiedRead(context.Background(), staged.Object, func(r io.ReadSeeker) error { _, err := io.Copy(io.Discard, r); return err })
+					Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprintf("durable orphan unavailable: %v", err) })
 				}
+
 			}
-		})
+		}()
 	}
-}
+})
 
 type failedInput struct{ sent bool }
 
@@ -194,9 +207,12 @@ func (r *failedInput) Read(b []byte) (int, error) {
 	return copy(b, "retained partial input"), nil
 }
 
-func TestPartialWriteAndInputFailureRetainRecoveryFile(t *testing.T) {
+var _ = It("TestPartialWriteAndInputFailureRetainRecoveryFile", Label("unit"), func() {
+	t := GinkgoT()
+
 	for _, kind := range []string{"partial_write", "input_failure"} {
-		t.Run(kind, func(t *testing.T) {
+		func() {
+			By(kind)
 			writes := 0
 			s, dir := newStore(t, WithFault(func(p Boundary) error {
 				if p == Write {
@@ -212,79 +228,79 @@ func TestPartialWriteAndInputFailureRetainRecoveryFile(t *testing.T) {
 				input = &failedInput{}
 			}
 			staged, err := s.Stage(context.Background(), input)
-			if err == nil || staged == nil || staged.complete || staged.Object.Size == 0 {
-				t.Fatalf("partial failure lost recovery: staged=%#v err=%v", staged, err)
-			}
-			info, err := os.Stat(filepath.Join(dir, staged.RecoveryName))
-			if err != nil || info.Size() != staged.Object.Size {
-				t.Fatalf("partial byte checkpoint mismatch: %v", err)
-			}
-		})
-	}
-}
+			Expect(err == nil || staged == nil || staged.complete || staged.Object.Size == 0).To(BeFalse(), func() string { return fmt.Sprintf("partial failure lost recovery: staged=%#v err=%v", staged, err) })
 
-func TestVerifiedReadDeliversSnapshotAndRejectsDamageBeforeConsumer(t *testing.T) {
+			info, err := os.Stat(filepath.Join(dir, staged.RecoveryName))
+			Expect(err != nil || info.Size() != staged.Object.Size).To(BeFalse(), func() string { return fmt.Sprintf("partial byte checkpoint mismatch: %v", err) })
+
+		}()
+	}
+})
+var _ = It("TestVerifiedReadDeliversSnapshotAndRejectsDamageBeforeConsumer", Label("unit"), func() {
+	t := GinkgoT()
+
 	s, dir := newStore(t)
 	data := strings.Repeat("source bytes", bufferSize)
 	object := finalize(t, s, stage(t, s, data))
 	err := s.VerifiedRead(context.Background(), object, func(r io.ReadSeeker) error {
-		if _, ok := r.(io.Writer); ok {
-			t.Fatal("delivery exposed a writable handle")
+		{
+			_, ok := r.(io.Writer)
+			Expect(ok).To(BeFalse(), func() string { return fmt.Sprint("delivery exposed a writable handle") })
 		}
+
 		if err := os.WriteFile(filepath.Join(dir, object.Hash), bytes.Repeat([]byte{'!'}, len(data)), 0600); err != nil {
 			return err
 		}
 		got, err := io.ReadAll(r)
-		if string(got) != data {
-			t.Fatal("delivery reopened mutable source after verification")
-		}
+		Expect(string(got) != data).To(BeFalse(), func() string { return fmt.Sprint("delivery reopened mutable source after verification") })
+
 		return err
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	called := false
 	err = s.VerifiedRead(context.Background(), object, func(io.ReadSeeker) error { called = true; return nil })
-	if err == nil || called {
-		t.Fatalf("damaged object reached consumer: called=%v err=%v", called, err)
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".delivery-") {
-			t.Fatal("transient delivery leaked")
-		}
-	}
-}
+	Expect(err == nil || called).To(BeFalse(), func() string { return fmt.Sprintf("damaged object reached consumer: called=%v err=%v", called, err) })
 
-func TestRejectSymlinkHardlinkAndStagingSubstitution(t *testing.T) {
+	entries, err := os.ReadDir(dir)
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
+	for _, entry := range entries {
+		Expect(strings.HasPrefix(entry.Name(), ".delivery-")).To(BeFalse(), func() string { return fmt.Sprint("transient delivery leaked") })
+
+	}
+})
+var _ = It("TestRejectSymlinkHardlinkAndStagingSubstitution", Label("unit"), func() {
+	t := GinkgoT()
+
 	for _, kind := range []string{"symlink", "hardlink", "public_file", "stage_substitution"} {
-		t.Run(kind, func(t *testing.T) {
+		func() {
+			By(kind)
 			s, dir := newStore(t)
 			staged := stage(t, s, "exact bytes")
 			path := filepath.Join(dir, staged.Object.Hash)
 			other := filepath.Join(dir, "other")
-			if err := os.WriteFile(other, []byte("exact bytes"), 0600); err != nil {
-				t.Fatal(err)
+			{
+				err := os.WriteFile(other, []byte("exact bytes"), 0600)
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 			}
+
 			switch kind {
 			case "symlink":
 				if err := os.Symlink("other", path); err != nil {
-					t.Fatal(err)
+					Fail(fmt.Sprint(err))
 				}
 			case "hardlink":
 				if err := os.Link(other, path); err != nil {
-					t.Fatal(err)
+					Fail(fmt.Sprint(err))
 				}
 			case "public_file":
 				if err := os.WriteFile(path, []byte("exact bytes"), 0644); err != nil {
-					t.Fatal(err)
+					Fail(fmt.Sprint(err))
 				}
 				// Establish the unsafe mode even when the caller uses a private umask.
 				if err := os.Chmod(path, 0644); err != nil {
-					t.Fatal(err)
+					Fail(fmt.Sprint(err))
 				}
 			}
 			ready := false
@@ -304,30 +320,33 @@ func TestRejectSymlinkHardlinkAndStagingSubstitution(t *testing.T) {
 				ready = true
 				return nil
 			})
-			if err == nil || ready {
-				t.Fatalf("unsafe file accepted: ready=%v err=%v", ready, err)
-			}
-		})
-	}
-}
+			Expect(err == nil || ready).To(BeFalse(), func() string { return fmt.Sprintf("unsafe file accepted: ready=%v err=%v", ready, err) })
 
-func TestCancelInputAndDeliveryErrorsNeverSucceed(t *testing.T) {
+		}()
+	}
+})
+var _ = It("TestCancelInputAndDeliveryErrorsNeverSucceed", Label("unit"), func() {
+	t := GinkgoT()
+
 	s, dir := newStore(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	staged, err := s.Stage(ctx, strings.NewReader("cancelled"))
-	if !errors.Is(err, context.Canceled) || staged == nil || staged.complete {
-		t.Fatalf("cancelled stage: %v %#v", err, staged)
-	}
+	Expect(!errors.Is(err, context.Canceled) || staged == nil || staged.complete).To(BeFalse(), func() string { return fmt.Sprintf("cancelled stage: %v %#v", err, staged) })
+
 	object := finalize(t, s, stage(t, s, "keep me"))
 	called := false
-	if err := s.VerifiedRead(ctx, object, func(io.ReadSeeker) error { called = true; return nil }); !errors.Is(err, context.Canceled) || called {
-		t.Fatalf("cancelled delivery: %v called=%v", err, called)
+	{
+		err := s.VerifiedRead(ctx, object, func(io.ReadSeeker) error { called = true; return nil })
+		Expect(!errors.Is(err, context.Canceled) || called).To(BeFalse(), func() string { return fmt.Sprintf("cancelled delivery: %v called=%v", err, called) })
 	}
+
 	want := errors.New("consumer interrupted")
-	if err := s.VerifiedRead(context.Background(), object, func(io.ReadSeeker) error { return want }); !errors.Is(err, want) {
-		t.Fatal(err)
+	{
+		err := s.VerifiedRead(context.Background(), object, func(io.ReadSeeker) error { return want })
+		Expect(!errors.Is(err, want)).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	for _, point := range []Boundary{Write, FileClose} {
 		s.fault = func(p Boundary) error {
 			if p == point {
@@ -335,25 +354,27 @@ func TestCancelInputAndDeliveryErrorsNeverSucceed(t *testing.T) {
 			}
 			return nil
 		}
-		if err := s.VerifiedRead(context.Background(), object, func(io.ReadSeeker) error { return nil }); !errors.Is(err, syscall.ENOSPC) {
-			t.Fatalf("delivery fault %s returned %v", point, err)
+		{
+			err := s.VerifiedRead(context.Background(), object, func(io.ReadSeeker) error { return nil })
+			Expect(!errors.Is(err, syscall.ENOSPC)).To(BeFalse(), func() string { return fmt.Sprintf("delivery fault %s returned %v", point, err) })
 		}
+
 	}
 	s.fault = nil
 	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".delivery-") {
-			t.Fatal("failed delivery leaked")
-		}
-	}
-}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 
-func TestPublicationRequiresExactlyOneSuccessfulClosure(t *testing.T) {
+	for _, entry := range entries {
+		Expect(strings.HasPrefix(entry.Name(), ".delivery-")).To(BeFalse(), func() string { return fmt.Sprint("failed delivery leaked") })
+
+	}
+})
+var _ = It("TestPublicationRequiresExactlyOneSuccessfulClosure", Label("unit"), func() {
+	t := GinkgoT()
+
 	for _, kind := range []string{"skipped", "repeated", "ignored_failure"} {
-		t.Run(kind, func(t *testing.T) {
+		func() {
+			By(kind)
 			s, _ := newStore(t)
 			staged := stage(t, s, "publish protocol")
 			if kind == "ignored_failure" {
@@ -373,14 +394,14 @@ func TestPublicationRequiresExactlyOneSuccessfulClosure(t *testing.T) {
 				}
 				return nil
 			})
-			if err == nil {
-				t.Fatal("invalid metadata callback reported success")
-			}
-		})
-	}
-}
+			Expect(err == nil).To(BeFalse(), func() string { return fmt.Sprint("invalid metadata callback reported success") })
 
-func TestDeleteSyncFailureRetainsRetryableGCBoundary(t *testing.T) {
+		}()
+	}
+})
+var _ = It("TestDeleteSyncFailureRetainsRetryableGCBoundary", Label("unit"), func() {
+	t := GinkgoT()
+
 	s, dir := newStore(t)
 	object := finalize(t, s, stage(t, s, "collect after reservation"))
 	s.fault = func(p Boundary) error {
@@ -389,14 +410,20 @@ func TestDeleteSyncFailureRetainsRetryableGCBoundary(t *testing.T) {
 		}
 		return nil
 	}
-	if err := s.Delete(object); !errors.Is(err, syscall.EIO) {
-		t.Fatal(err)
+	{
+		err := s.Delete(object)
+		Expect(!errors.Is(err, syscall.EIO)).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
-	if _, err := os.Stat(filepath.Join(dir, object.Hash)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal(err)
+	{
+
+		_, err := os.Stat(filepath.Join(dir, object.Hash))
+		Expect(!errors.Is(err, os.ErrNotExist)).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	s.fault = nil
-	if err := s.Delete(object); err != nil {
-		t.Fatalf("reserved deletion not retryable: %v", err)
+	{
+		err := s.Delete(object)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprintf("reserved deletion not retryable: %v", err) })
 	}
-}
+
+})

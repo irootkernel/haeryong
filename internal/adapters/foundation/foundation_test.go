@@ -12,21 +12,23 @@ import (
 	"strings"
 	"sync/atomic"
 	"syscall"
-	"testing"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
 	"haeryong.local/haeryong/internal/adapters/contentstore"
 	"haeryong.local/haeryong/internal/adapters/sqlite"
 	"haeryong.local/haeryong/internal/application/service"
 	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
+
+	// These are actual private-profile SQLite/filesystem foundation fixtures. They
+	// establish generic X14/X17 behavior, not HTTP uploads/import publication or a
+	// full backup implementation.
+	. "github.com/onsi/gomega"
 )
 
-// These are actual private-profile SQLite/filesystem foundation fixtures. They
-// establish generic X14/X17 behavior, not HTTP uploads/import publication or a
-// full backup implementation.
 type fixture struct {
-	t             *testing.T
+	t             GinkgoTInterface
 	selectProfile service.Selection
 	writer        *service.LockedProfile
 	s             *Store
@@ -34,36 +36,40 @@ type fixture struct {
 	fault         sqlite.Fault
 }
 
-func foundationScratch(t *testing.T) string {
-	t.Helper()
+func foundationScratch(t GinkgoTInterface) string {
+	GinkgoHelper()
 	base := os.TempDir()
 	var volume, parent syscall.Stat_t
 	if syscall.Stat("/Volumes/RootKernel", &volume) == nil && syscall.Stat("/Volumes", &parent) == nil && volume.Dev != parent.Dev && syscall.Access("/Volumes/RootKernel", 2) == nil {
 		base = "/Volumes/RootKernel/tmp"
-		if err := os.MkdirAll(base, 0700); err != nil {
-			t.Fatal(err)
+		{
+			err := os.MkdirAll(base, 0700)
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 		}
+
 	}
 	dir, err := os.MkdirTemp(base, "haeryong-task00202-foundation-test-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(dir); err != nil {
-			t.Error(err)
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	DeferCleanup(func() {
+		{
+			err := os.RemoveAll(dir)
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 		}
+
 	})
 	return dir
 }
 
-func newFixture(t *testing.T, fault sqlite.Fault) *fixture {
-	t.Helper()
+func newFixture(t GinkgoTInterface, fault sqlite.Fault) *fixture {
+	GinkgoHelper()
 	f := &fixture{t: t, fault: fault, selectProfile: service.Selection{Profile: "foundation", DataDir: filepath.Join(foundationScratch(t), "profile")}}
-	if _, err := service.Initialize(f.selectProfile); err != nil {
-		t.Fatal(err)
+	{
+		_, err := service.Initialize(f.selectProfile)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	f.open()
-	t.Cleanup(f.close)
+	DeferCleanup(f.close)
 	return f
 }
 
@@ -151,27 +157,29 @@ func (f *fixture) object(hash string) (domain.Object, error) {
 	return object, err
 }
 
-func awaitResult(t *testing.T, result <-chan error) error {
-	t.Helper()
+func awaitResult(t GinkgoTInterface, result <-chan error) error {
+	GinkgoHelper()
 	select {
 	case err := <-result:
 		return err
 	case <-time.After(10 * time.Second):
-		t.Fatal("foundation barrier did not settle")
+		Fail(fmt.Sprint("foundation barrier did not settle"))
 		return nil
 	}
 }
 
-func awaitBarrier(t *testing.T, barrier <-chan struct{}) {
-	t.Helper()
+func awaitBarrier(t GinkgoTInterface, barrier <-chan struct{}) {
+	GinkgoHelper()
 	select {
 	case <-barrier:
 	case <-time.After(10 * time.Second):
-		t.Fatal("foundation barrier was not reached")
+		Fail(fmt.Sprint("foundation barrier was not reached"))
 	}
 }
 
-func TestX14VerifiedReadPinProtectsDeliveryAndCleanup(t *testing.T) {
+var _ = It("TestX14VerifiedReadPinProtectsDeliveryAndCleanup", Label("persistence"), func() {
+	t := GinkgoT()
+
 	f := newFixture(t, nil)
 	data := strings.Repeat("verified private bytes\n", 3*1024*1024/23)
 	object := f.publish(data, "staging-read")
@@ -188,6 +196,7 @@ func TestX14VerifiedReadPinProtectsDeliveryAndCleanup(t *testing.T) {
 	want := errors.New("consumer interrupted after verified bytes")
 	result := make(chan error, 1)
 	go func() {
+		defer GinkgoRecover()
 		result <- f.s.Read(context.Background(), object, domain.Pin{ID: "read-lifetime", Kind: "active_read", OwnerID: "reader"}, func(r io.ReadSeeker) error {
 			close(entered)
 			<-releaseConsumer
@@ -202,61 +211,85 @@ func TestX14VerifiedReadPinProtectsDeliveryAndCleanup(t *testing.T) {
 		})
 	}()
 	awaitBarrier(t, entered)
-	if err := f.write(func(tx app.WriteTx) error { return tx.ReleasePin("staging-read") }); err != nil {
-		t.Fatal(err)
+	{
+		err := f.write(func(tx app.WriteTx) error { return tx.ReleasePin("staging-read") })
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
-	if err := f.s.Collect(context.Background(), object); !errors.Is(err, domain.ErrPinned) {
-		t.Fatalf("active read not pinned: %v", err)
+	{
+
+		err := f.s.Collect(context.Background(), object)
+		Expect(!errors.Is(err, domain.ErrPinned)).To(BeFalse(), func() string { return fmt.Sprintf("active read not pinned: %v", err) })
 	}
+
 	closeArmed.Store(true)
 	close(releaseConsumer)
 	awaitBarrier(t, closing)
-	if err := f.s.Collect(context.Background(), object); !errors.Is(err, domain.ErrPinned) {
-		t.Fatalf("cleanup released read pin early: %v", err)
+	{
+		err := f.s.Collect(context.Background(), object)
+		Expect(!errors.Is(err, domain.ErrPinned)).To(BeFalse(), func() string { return fmt.Sprintf("cleanup released read pin early: %v", err) })
 	}
-	close(releaseClose)
-	if err := awaitResult(t, result); !errors.Is(err, want) {
-		t.Fatalf("consumer error lost: %v", err)
-	}
-	closeArmed.Store(false)
-	if err := f.s.Collect(context.Background(), object); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.object(object.Hash); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("collected metadata remains: %v", err)
-	}
-}
 
-func TestX14DurablePinKindsSurviveRestartAndPreventGC(t *testing.T) {
+	close(releaseClose)
+	{
+		err := awaitResult(t, result)
+		Expect(!errors.Is(err, want)).To(BeFalse(), func() string { return fmt.Sprintf("consumer error lost: %v", err) })
+	}
+
+	closeArmed.Store(false)
+	{
+		err := f.s.Collect(context.Background(), object)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	}
+	{
+
+		_, err := f.object(object.Hash)
+		Expect(!errors.Is(err, domain.ErrNotFound)).To(BeFalse(), func() string { return fmt.Sprintf("collected metadata remains: %v", err) })
+	}
+
+})
+var _ = It("TestX14DurablePinKindsSurviveRestartAndPreventGC", Label("persistence"), func() {
+	t := GinkgoT()
+
 	for _, kind := range []string{"staging", "backup", "job", "recovery", "draft"} {
-		t.Run(kind, func(t *testing.T) {
+		func() {
+			By(kind)
 			f := newFixture(t, nil)
 			object := f.publish("pin fixture "+kind, "seed")
-			if err := f.write(func(tx app.WriteTx) error {
-				if err := tx.AcquirePin(domain.Pin{ID: "protected", Kind: kind, OwnerID: "fixture", Hash: object.Hash}); err != nil {
-					return err
-				}
-				return tx.ReleasePin("seed")
-			}); err != nil {
-				t.Fatal(err)
+			{
+				err := f.write(func(tx app.WriteTx) error {
+					if err := tx.AcquirePin(domain.Pin{ID: "protected", Kind: kind, OwnerID: "fixture", Hash: object.Hash}); err != nil {
+						return err
+					}
+					return tx.ReleasePin("seed")
+				})
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 			}
-			f.reopen()
-			if err := f.s.Collect(context.Background(), object); !errors.Is(err, domain.ErrPinned) {
-				t.Fatalf("%s pin lost on restart: %v", kind, err)
-			}
-			if err := f.write(func(tx app.WriteTx) error { return tx.ReleasePin("protected") }); err != nil {
-				t.Fatal(err)
-			}
-			if err := f.s.Collect(context.Background(), object); err != nil {
-				t.Fatal(err)
-			}
-		})
-	}
-}
 
-func TestX14AdoptionReferenceAndConsumerPinCommitBeforeStagingRelease(t *testing.T) {
+			f.reopen()
+			{
+				err := f.s.Collect(context.Background(), object)
+				Expect(!errors.Is(err, domain.ErrPinned)).To(BeFalse(), func() string { return fmt.Sprintf("%s pin lost on restart: %v", kind, err) })
+			}
+			{
+
+				err := f.write(func(tx app.WriteTx) error { return tx.ReleasePin("protected") })
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+			}
+			{
+
+				err := f.s.Collect(context.Background(), object)
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+			}
+
+		}()
+	}
+})
+var _ = It("TestX14AdoptionReferenceAndConsumerPinCommitBeforeStagingRelease", Label("persistence"), func() {
+	t := GinkgoT()
+
 	for _, failCommit := range []bool{false, true} {
-		t.Run(fmt.Sprintf("commit_failure_%v", failCommit), func(t *testing.T) {
+		func() {
+			By(fmt.Sprintf("commit_failure_%v", failCommit))
 			var armed atomic.Bool
 			f := newFixture(t, func(p sqlite.Boundary) error {
 				if armed.Load() && p == sqlite.BeforeCommit {
@@ -271,6 +304,7 @@ func TestX14AdoptionReferenceAndConsumerPinCommitBeforeStagingRelease(t *testing
 			result := make(chan error, 1)
 			armed.Store(failCommit)
 			go func() {
+				defer GinkgoRecover()
 				result <- f.write(func(tx app.WriteTx) error {
 					if err := tx.AcquirePin(consumer); err != nil {
 						return err
@@ -285,21 +319,20 @@ func TestX14AdoptionReferenceAndConsumerPinCommitBeforeStagingRelease(t *testing
 			}()
 			awaitBarrier(t, adopted)
 			gcStarted, gcResult := make(chan struct{}), make(chan error, 1)
-			go func() { close(gcStarted); gcResult <- f.s.Collect(context.Background(), object) }()
+			go func() { defer GinkgoRecover(); close(gcStarted); gcResult <- f.s.Collect(context.Background(), object) }()
 			awaitBarrier(t, gcStarted)
 			close(release)
 			err := awaitResult(t, result)
-			if failCommit && !errors.Is(err, syscall.EIO) {
-				t.Fatalf("commit fault missing: %v", err)
+			Expect(failCommit && !errors.Is(err, syscall.EIO)).To(BeFalse(), func() string { return fmt.Sprintf("commit fault missing: %v", err) })
+			Expect(!failCommit && err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+			{
+
+				// The serialized collector sees either the original staging pin after
+				// rollback, or the committed consumer/ref pair, never an unpinned gap.
+				err := awaitResult(t, gcResult)
+				Expect(!errors.Is(err, domain.ErrPinned)).To(BeFalse(), func() string { return fmt.Sprintf("GC crossed adoption transaction: %v", err) })
 			}
-			if !failCommit && err != nil {
-				t.Fatal(err)
-			}
-			// The serialized collector sees either the original staging pin after
-			// rollback, or the committed consumer/ref pair, never an unpinned gap.
-			if err := awaitResult(t, gcResult); !errors.Is(err, domain.ErrPinned) {
-				t.Fatalf("GC crossed adoption transaction: %v", err)
-			}
+
 			armed.Store(false)
 			f.reopen()
 			probe := errors.New("rollback read-only pin probe")
@@ -310,42 +343,53 @@ func TestX14AdoptionReferenceAndConsumerPinCommitBeforeStagingRelease(t *testing
 				return probe
 			})
 			if failCommit {
-				if !errors.Is(err, probe) {
-					t.Fatalf("rollback lost staging pin: %v", err)
+				Expect(!errors.Is(err, probe)).To(BeFalse(), func() string { return fmt.Sprintf("rollback lost staging pin: %v", err) })
+				{
+
+					err := f.write(func(tx app.WriteTx) error { return tx.ReleasePin("stage") })
+					Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 				}
-				if err := f.write(func(tx app.WriteTx) error { return tx.ReleasePin("stage") }); err != nil {
-					t.Fatal(err)
+				{
+
+					err := f.s.Collect(context.Background(), object)
+					Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprintf("failed adoption leaked consumer pin/reference: %v", err) })
 				}
-				if err := f.s.Collect(context.Background(), object); err != nil {
-					t.Fatalf("failed adoption leaked consumer pin/reference: %v", err)
-				}
+
 			} else {
-				if !errors.Is(err, domain.ErrNotFound) {
-					t.Fatalf("staging pin not transferred: %v", err)
-				}
+				Expect(!errors.Is(err, domain.ErrNotFound)).To(BeFalse(), func() string { return fmt.Sprintf("staging pin not transferred: %v", err) })
+
 				changed := consumer
 				changed.OwnerID = "other-owner"
-				if err := f.write(func(tx app.WriteTx) error { return tx.AcquirePin(changed) }); !errors.Is(err, domain.ErrConflict) {
-					t.Fatalf("consumer pin not committed: %v", err)
+				{
+					err := f.write(func(tx app.WriteTx) error { return tx.AcquirePin(changed) })
+					Expect(!errors.Is(err, domain.ErrConflict)).To(BeFalse(), func() string { return fmt.Sprintf("consumer pin not committed: %v", err) })
 				}
-				if err := f.write(func(tx app.WriteTx) error { return tx.ReleasePin("consumer") }); err != nil {
-					t.Fatal(err)
-				}
-				if err := f.s.Collect(context.Background(), object); !errors.Is(err, domain.ErrPinned) {
-					t.Fatalf("accepted reference not retained: %v", err)
-				}
-			}
-		})
-	}
-}
+				{
 
-func TestX14GCFirstFencesAdoptionUntilFreshDurablePublication(t *testing.T) {
+					err := f.write(func(tx app.WriteTx) error { return tx.ReleasePin("consumer") })
+					Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+				}
+				{
+
+					err := f.s.Collect(context.Background(), object)
+					Expect(!errors.Is(err, domain.ErrPinned)).To(BeFalse(), func() string { return fmt.Sprintf("accepted reference not retained: %v", err) })
+				}
+
+			}
+		}()
+	}
+})
+var _ = It("TestX14GCFirstFencesAdoptionUntilFreshDurablePublication", Label("persistence"), func() {
+	t := GinkgoT()
+
 	f := newFixture(t, nil)
 	data := "GC reservation and replacement bytes"
 	object := f.publish(data, "stage")
-	if err := f.write(func(tx app.WriteTx) error { return tx.ReleasePin("stage") }); err != nil {
-		t.Fatal(err)
+	{
+		err := f.write(func(tx app.WriteTx) error { return tx.ReleasePin("stage") })
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	deleted, settleDelete := make(chan struct{}), make(chan struct{})
 	var armed atomic.Bool
 	armed.Store(true)
@@ -363,70 +407,83 @@ func TestX14GCFirstFencesAdoptionUntilFreshDurablePublication(t *testing.T) {
 	})
 	replacement := f.stage(data)
 	gcResult := make(chan error, 1)
-	go func() { gcResult <- f.s.Collect(context.Background(), object) }()
+	go func() { defer GinkgoRecover(); gcResult <- f.s.Collect(context.Background(), object) }()
 	awaitBarrier(t, deleted)
 	current, err := f.object(object.Hash)
-	if err != nil || current.State != "deleting" || current.GCToken == "" {
-		t.Fatalf("GC reservation not durable: %#v %v", current, err)
+	Expect(err != nil || current.State != "deleting" || current.GCToken == "").To(BeFalse(), func() string { return fmt.Sprintf("GC reservation not durable: %#v %v", current, err) })
+	{
+
+		err := f.write(func(tx app.WriteTx) error {
+			return tx.AcquirePin(domain.Pin{ID: "late", Kind: "backup", OwnerID: "late", Hash: object.Hash})
+		})
+		Expect(!errors.Is(err, domain.ErrDeleting)).To(BeFalse(), func() string { return fmt.Sprintf("pin raced reserved deletion: %v", err) })
 	}
-	if err := f.write(func(tx app.WriteTx) error {
-		return tx.AcquirePin(domain.Pin{ID: "late", Kind: "backup", OwnerID: "late", Hash: object.Hash})
-	}); !errors.Is(err, domain.ErrDeleting) {
-		t.Fatalf("pin raced reserved deletion: %v", err)
+	{
+
+		err := f.write(func(tx app.WriteTx) error {
+			return tx.Adopt(domain.Reference{Kind: "context", ID: "late", Hash: object.Hash}, "")
+		})
+		Expect(!errors.Is(err, domain.ErrDeleting)).To(BeFalse(), func() string { return fmt.Sprintf("adoption raced reserved deletion: %v", err) })
 	}
-	if err := f.write(func(tx app.WriteTx) error {
-		return tx.Adopt(domain.Reference{Kind: "context", ID: "late", Hash: object.Hash}, "")
-	}); !errors.Is(err, domain.ErrDeleting) {
-		t.Fatalf("adoption raced reserved deletion: %v", err)
+	{
+
+		_, err := f.s.Publish(context.Background(), replacement, domain.Pin{ID: "replacement", Kind: "staging", OwnerID: "replacement"})
+		Expect(!errors.Is(err, domain.ErrDeleting)).To(BeFalse(), func() string { return fmt.Sprintf("publish raced reserved deletion: %v", err) })
 	}
-	if _, err := f.s.Publish(context.Background(), replacement, domain.Pin{ID: "replacement", Kind: "staging", OwnerID: "replacement"}); !errors.Is(err, domain.ErrDeleting) {
-		t.Fatalf("publish raced reserved deletion: %v", err)
-	}
-	if publishes.Load() != 0 {
-		t.Fatal("deleting object reached filesystem publication")
-	}
+	Expect(publishes.Load() != 0).To(BeFalse(), func() string { return fmt.Sprint("deleting object reached filesystem publication") })
+
 	close(settleDelete)
-	if err := awaitResult(t, gcResult); !errors.Is(err, syscall.EIO) {
-		t.Fatalf("GC fault missing: %v", err)
+	{
+		err := awaitResult(t, gcResult)
+		Expect(!errors.Is(err, syscall.EIO)).To(BeFalse(), func() string { return fmt.Sprintf("GC fault missing: %v", err) })
 	}
+
 	armed.Store(false)
 	f.reopen()
 	current, err = f.object(object.Hash)
-	if err != nil || current.State != "deleting" {
-		t.Fatalf("deleting fence lost on restart: %#v %v", current, err)
-	}
-	if err := f.s.Collect(context.Background(), object); err != nil {
-		t.Fatalf("reserved deletion not recoverable: %v", err)
-	}
-	if err := f.write(func(tx app.WriteTx) error {
-		return tx.Adopt(domain.Reference{Kind: "context", ID: "stale", Hash: object.Hash}, "")
-	}); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("missing bytes adopted from stale metadata: %v", err)
-	}
-	fresh := f.publish(data, "fresh-stage")
-	if fresh.Hash != object.Hash {
-		t.Fatal("fresh verification changed content identity")
-	}
-	if err := f.write(func(tx app.WriteTx) error {
-		return tx.Adopt(domain.Reference{Kind: "context", ID: "fresh", Hash: fresh.Hash}, "fresh-stage")
-	}); err != nil {
-		t.Fatal(err)
-	}
-	f.reopen()
-	if err := f.s.Read(context.Background(), fresh, domain.Pin{ID: "fresh-read", Kind: "active_read", OwnerID: "reader"}, func(r io.ReadSeeker) error {
-		b, err := io.ReadAll(r)
-		if string(b) != data {
-			return errors.New("reverified bytes differ")
-		}
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-}
+	Expect(err != nil || current.State != "deleting").To(BeFalse(), func() string { return fmt.Sprintf("deleting fence lost on restart: %#v %v", current, err) })
+	{
 
-func TestX17FilesystemAndSQLiteCommitFaultsNeverPublishReadyMetadata(t *testing.T) {
+		err := f.s.Collect(context.Background(), object)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprintf("reserved deletion not recoverable: %v", err) })
+	}
+	{
+
+		err := f.write(func(tx app.WriteTx) error {
+			return tx.Adopt(domain.Reference{Kind: "context", ID: "stale", Hash: object.Hash}, "")
+		})
+		Expect(!errors.Is(err, domain.ErrNotFound)).To(BeFalse(), func() string { return fmt.Sprintf("missing bytes adopted from stale metadata: %v", err) })
+	}
+
+	fresh := f.publish(data, "fresh-stage")
+	Expect(fresh.Hash != object.Hash).To(BeFalse(), func() string { return fmt.Sprint("fresh verification changed content identity") })
+	{
+
+		err := f.write(func(tx app.WriteTx) error {
+			return tx.Adopt(domain.Reference{Kind: "context", ID: "fresh", Hash: fresh.Hash}, "fresh-stage")
+		})
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	}
+
+	f.reopen()
+	{
+		err := f.s.Read(context.Background(), fresh, domain.Pin{ID: "fresh-read", Kind: "active_read", OwnerID: "reader"}, func(r io.ReadSeeker) error {
+			b, err := io.ReadAll(r)
+			if string(b) != data {
+				return errors.New("reverified bytes differ")
+			}
+			return err
+		})
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	}
+
+})
+var _ = It("TestX17FilesystemAndSQLiteCommitFaultsNeverPublishReadyMetadata", Label("persistence"), func() {
+	t := GinkgoT()
+
 	for _, point := range []string{"write", "file_sync", "file_close", "rename", "directory_sync", "transaction_commit"} {
-		t.Run(point, func(t *testing.T) {
+		func() {
+			By(point)
 			var armed atomic.Bool
 			var dbCommits atomic.Int32
 			f := newFixture(t, func(p sqlite.Boundary) error {
@@ -446,91 +503,102 @@ func TestX17FilesystemAndSQLiteCommitFaultsNeverPublishReadyMetadata(t *testing.
 			})
 			armed.Store(true)
 			staged, stageErr := f.s.Objects.Stage(context.Background(), strings.NewReader(strings.Repeat("durability", 70000)))
-			if staged == nil {
-				t.Fatal("missing recovery staging handle")
-			}
+			Expect(staged == nil).To(BeFalse(), func() string { return fmt.Sprint("missing recovery staging handle") })
+
 			_, publishErr := f.s.Publish(context.Background(), staged, domain.Pin{ID: "failed-stage", Kind: "staging", OwnerID: "failed"})
-			if publishErr == nil {
-				t.Fatal("failed durable write returned publication success")
-			}
+			Expect(publishErr == nil).To(BeFalse(), func() string { return fmt.Sprint("failed durable write returned publication success") })
+
 			wantCommits := int32(0)
 			if point == "transaction_commit" {
 				wantCommits = 1
 			}
-			if got := dbCommits.Load(); got != wantCommits {
-				t.Fatalf("publication fault was ignored before DB commit: got %d commit attempts, want %d", got, wantCommits)
+			{
+				got := dbCommits.Load()
+				Expect(got != wantCommits).To(BeFalse(), func() string {
+					return fmt.Sprintf("publication fault was ignored before DB commit: got %d commit attempts, want %d", got, wantCommits)
+				})
 			}
+
 			if point == "write" || point == "file_sync" || point == "file_close" {
-				if !errors.Is(stageErr, syscall.ENOSPC) {
-					t.Fatalf("stage fault not observed: %v", stageErr)
-				}
+				Expect(!errors.Is(stageErr, syscall.ENOSPC)).To(BeFalse(), func() string { return fmt.Sprintf("stage fault not observed: %v", stageErr) })
+
 			} else if stageErr != nil || !errors.Is(publishErr, syscall.ENOSPC) {
-				t.Fatalf("wrong fault: stage=%v publish=%v", stageErr, publishErr)
+				Fail(fmt.Sprintf("wrong fault: stage=%v publish=%v", stageErr, publishErr))
 			}
 			armed.Store(false)
 			// The real wrapper must return a publish error before inserting READY
 			// or a pin; Finalize returning an error alone cannot undo a bad callback.
 			if staged.Object.Hash != "" {
-				if _, err := f.object(staged.Object.Hash); !errors.Is(err, domain.ErrNotFound) {
-					t.Fatalf("READY committed after failed publication: %v", err)
+				{
+					_, err := f.object(staged.Object.Hash)
+					Expect(!errors.Is(err, domain.ErrNotFound)).To(BeFalse(), func() string { return fmt.Sprintf("READY committed after failed publication: %v", err) })
 				}
+
 			}
 			rows, err := f.s.ReferencedObjects(context.Background(), "", 64)
-			if err != nil || len(rows) != 0 {
-				t.Fatalf("failed publication committed pins/references: %v %#v", err, rows)
-			}
+			Expect(err != nil || len(rows) != 0).To(BeFalse(), func() string { return fmt.Sprintf("failed publication committed pins/references: %v %#v", err, rows) })
+
 			if point == "transaction_commit" || point == "directory_sync" {
 				path := filepath.Join(f.writer.Profile.DataDir, "storage", "objects", staged.Object.Hash)
-				if _, err := os.Stat(path); err != nil {
-					t.Fatalf("recoverable finalized orphan missing: %v", err)
+				{
+					_, err := os.Stat(path)
+					Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprintf("recoverable finalized orphan missing: %v", err) })
 				}
+
 			} else if _, err := os.Stat(filepath.Join(f.writer.Profile.DataDir, "storage", "objects", staged.RecoveryName)); err != nil {
-				t.Fatalf("recoverable staging missing: %v", err)
+				Fail(fmt.Sprintf("recoverable staging missing: %v", err))
 			}
 			f.reopen()
 			rows, err = f.s.ReferencedObjects(context.Background(), "", 64)
-			if err != nil || len(rows) != 0 {
-				t.Fatalf("restart exposed failed publication: %v %#v", err, rows)
-			}
-			if staged.Object.Hash != "" {
-				if _, err := f.object(staged.Object.Hash); !errors.Is(err, domain.ErrNotFound) {
-					t.Fatalf("restart resurrected READY metadata: %v", err)
-				}
-			}
-		})
-	}
-}
+			Expect(err != nil || len(rows) != 0).To(BeFalse(), func() string { return fmt.Sprintf("restart exposed failed publication: %v %#v", err, rows) })
 
-func TestX17ReopenRejectsDamagedReferencedBytes(t *testing.T) {
+			if staged.Object.Hash != "" {
+				{
+					_, err := f.object(staged.Object.Hash)
+					Expect(!errors.Is(err, domain.ErrNotFound)).To(BeFalse(), func() string { return fmt.Sprintf("restart resurrected READY metadata: %v", err) })
+				}
+
+			}
+		}()
+	}
+})
+var _ = It("TestX17ReopenRejectsDamagedReferencedBytes", Label("persistence"), func() {
+	t := GinkgoT()
+
 	f := newFixture(t, nil)
 	object := f.publish("must stay verified", "retained")
 	path := filepath.Join(f.writer.Profile.DataDir, "storage", "objects", object.Hash)
 	f.close()
-	if err := os.WriteFile(path, []byte("damaged"), 0600); err != nil {
-		t.Fatal(err)
+	{
+		err := os.WriteFile(path, []byte("damaged"), 0600)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	writer, err := service.OpenWriter(f.selectProfile)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	defer writer.Close()
 	s := New(nil)
 	state, closer, err := s.Prepare(context.Background(), writer.Profile)
 	if closer != nil {
 		closer()
 	}
-	if err == nil || state.Ready {
-		t.Fatalf("damaged pinned bytes advertised ready: state=%#v err=%v", state, err)
-	}
-}
+	Expect(err == nil || state.Ready).To(BeFalse(), func() string {
+		return fmt.Sprintf("damaged pinned bytes advertised ready: state=%#v err=%v", state, err)
+	})
 
-func TestX14GCExecutorDoesNotReuseInflightReservation(t *testing.T) {
+})
+var _ = It("TestX14GCExecutorDoesNotReuseInflightReservation", Label("persistence"), func() {
+	t := GinkgoT()
+
 	f := newFixture(t, nil)
 	data := "identical bytes published after completed GC"
 	object := f.publish(data, "old-staging")
-	if err := f.write(func(tx app.WriteTx) error { return tx.ReleasePin("old-staging") }); err != nil {
-		t.Fatal(err)
+	{
+		err := f.write(func(tx app.WriteTx) error { return tx.ReleasePin("old-staging") })
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	beforeDelete, releaseDelete := make(chan struct{}), make(chan struct{})
 	var deletes atomic.Int32
 	f.objectsWithFault(func(point contentstore.Boundary) error {
@@ -541,12 +609,16 @@ func TestX14GCExecutorDoesNotReuseInflightReservation(t *testing.T) {
 		return nil
 	})
 	first := make(chan error, 1)
-	go func() { first <- f.s.Collect(context.Background(), object) }()
+	go func() { defer GinkgoRecover(); first <- f.s.Collect(context.Background(), object) }()
 	awaitBarrier(t, beforeDelete)
 	// C1 has committed deleting but has not removed its file. C2 must not reuse
 	// that live executor's reservation and complete deletion ahead of C1.
 	secondStarted, second := make(chan struct{}), make(chan error, 1)
-	go func() { close(secondStarted); second <- f.s.Collect(context.Background(), object) }()
+	go func() {
+		defer GinkgoRecover()
+		close(secondStarted)
+		second <- f.s.Collect(context.Background(), object)
+	}()
 	awaitBarrier(t, secondStarted)
 	var secondErr error
 	crossed := false
@@ -567,37 +639,46 @@ func TestX14GCExecutorDoesNotReuseInflightReservation(t *testing.T) {
 		secondErr = awaitResult(t, second)
 		fresh = f.publish(data, "fresh-staging")
 	}
-	if crossed {
-		t.Errorf("second Collect reused an in-flight reservation before the first physical delete: %v", secondErr)
-	}
-	if firstErr != nil {
-		t.Errorf("first GC executor did not finish its own reservation: %v", firstErr)
-	}
-	if !crossed && !errors.Is(secondErr, domain.ErrNotFound) {
-		t.Errorf("second executor did not recheck completed metadata: %v", secondErr)
-	}
-	if got := deletes.Load(); got != 1 {
-		t.Errorf("same reservation entered physical deletion %d times, want once", got)
-	}
-	if err := f.s.Read(context.Background(), fresh, domain.Pin{ID: "fresh-active-read", Kind: "active_read", OwnerID: "reader"}, func(r io.ReadSeeker) error {
-		bytes, err := io.ReadAll(r)
-		if string(bytes) != data {
-			return errors.New("fresh pinned bytes changed")
-		}
-		return err
-	}); err != nil {
-		t.Errorf("late GC deleted freshly published pinned bytes: %v", err)
-	}
-}
+	Expect(crossed).To(BeFalse(), func() string {
+		return fmt.Sprintf("second Collect reused an in-flight reservation before the first physical delete: %v", secondErr)
+	})
+	Expect(firstErr != nil).To(BeFalse(), func() string {
+		return fmt.Sprintf("first GC executor did not finish its own reservation: %v", firstErr)
+	})
+	Expect(!crossed && !errors.Is(secondErr, domain.ErrNotFound)).To(BeFalse(), func() string { return fmt.Sprintf("second executor did not recheck completed metadata: %v", secondErr) })
+	{
 
-func TestX14GCExecutorReleasesAfterDeleteFailureAndCancellation(t *testing.T) {
+		got := deletes.Load()
+		Expect(got != 1).To(BeFalse(), func() string {
+			return fmt.Sprintf("same reservation entered physical deletion %d times, want once", got)
+		})
+	}
+	{
+
+		err := f.s.Read(context.Background(), fresh, domain.Pin{ID: "fresh-active-read", Kind: "active_read", OwnerID: "reader"}, func(r io.ReadSeeker) error {
+			bytes, err := io.ReadAll(r)
+			if string(bytes) != data {
+				return errors.New("fresh pinned bytes changed")
+			}
+			return err
+		})
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprintf("late GC deleted freshly published pinned bytes: %v", err) })
+	}
+
+})
+var _ = It("TestX14GCExecutorReleasesAfterDeleteFailureAndCancellation", Label("persistence"), func() {
+	t := GinkgoT()
+
 	for _, mode := range []string{"delete_failure", "cancelled_finish"} {
-		t.Run(mode, func(t *testing.T) {
+		func() {
+			By(mode)
 			f := newFixture(t, nil)
 			object := f.publish("retry after executor interruption", "old-stage")
-			if err := f.write(func(tx app.WriteTx) error { return tx.ReleasePin("old-stage") }); err != nil {
-				t.Fatal(err)
+			{
+				err := f.write(func(tx app.WriteTx) error { return tx.ReleasePin("old-stage") })
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 			}
+
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			var injected atomic.Bool
@@ -615,22 +696,24 @@ func TestX14GCExecutorReleasesAfterDeleteFailureAndCancellation(t *testing.T) {
 			if mode == "cancelled_finish" {
 				want = context.Canceled
 			}
-			if !errors.Is(err, want) {
-				t.Fatalf("executor interruption missing: %v", err)
-			}
+			Expect(!errors.Is(err, want)).To(BeFalse(), func() string { return fmt.Sprintf("executor interruption missing: %v", err) })
+
 			current, err := f.object(object.Hash)
-			if err != nil || current.State != "deleting" {
-				t.Fatalf("failed executor lost recovery fence: %#v %v", current, err)
-			}
+			Expect(err != nil || current.State != "deleting").To(BeFalse(), func() string { return fmt.Sprintf("failed executor lost recovery fence: %#v %v", current, err) })
+
 			retried := make(chan error, 1)
-			go func() { retried <- f.s.Collect(context.Background(), object) }()
-			if err := awaitResult(t, retried); err != nil {
-				t.Fatalf("executor was not released for recovery: %v", err)
+			go func() { defer GinkgoRecover(); retried <- f.s.Collect(context.Background(), object) }()
+			{
+				err := awaitResult(t, retried)
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprintf("executor was not released for recovery: %v", err) })
 			}
+
 			f.reopen()
-			if _, err := f.object(object.Hash); !errors.Is(err, domain.ErrNotFound) {
-				t.Fatalf("completed retry lost across restart: %v", err)
+			{
+				_, err := f.object(object.Hash)
+				Expect(!errors.Is(err, domain.ErrNotFound)).To(BeFalse(), func() string { return fmt.Sprintf("completed retry lost across restart: %v", err) })
 			}
-		})
+
+		}()
 	}
-}
+})

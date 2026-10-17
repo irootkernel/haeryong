@@ -9,17 +9,22 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
 	importer "haeryong.local/haeryong/internal/application/import"
 	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
+
+	// Reuse the public native-generated G-VALUE corpus, not the unapproved R5 UI
+	// sample state. This checks bytes/paths and restart, not new human approval or
+	// semantic usefulness. Synthetic corruption belongs to separate regressions.
+	"fmt"
+	. "github.com/onsi/gomega"
 )
 
-// Reuse the public native-generated G-VALUE corpus, not the unapproved R5 UI
-// sample state. This checks bytes/paths and restart, not new human approval or
-// semantic usefulness. Synthetic corruption belongs to separate regressions.
-func TestExistingNativeGeneratedResultDirectoriesPublishAndReopenExactly(t *testing.T) {
+var _ = It("TestExistingNativeGeneratedResultDirectoriesPublishAndReopenExactly", Label("persistence"), func() {
+	t := GinkgoT()
+
 	f := newFixture(t)
 	type publishedTree struct {
 		version  string
@@ -29,11 +34,13 @@ func TestExistingNativeGeneratedResultDirectoriesPublishAndReopenExactly(t *test
 	trees := map[string]publishedTree{}
 	for _, name := range []string{"gaori", "mulgae"} {
 		project := key(t)
-		if err := f.store.Write(f.ctx, func(tx app.WriteTx) error {
-			return tx.CreateProject(domain.Project{ID: project, Name: "public native corpus " + name, Lifecycle: "active", Revision: 1, PermissionsRevision: 1})
-		}); err != nil {
-			t.Fatal(err)
+		{
+			err := f.store.Write(f.ctx, func(tx app.WriteTx) error {
+				return tx.CreateProject(domain.Project{ID: project, Name: "public native corpus " + name, Lifecycle: "active", Revision: 1, PermissionsRevision: 1})
+			})
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 		}
+
 		f.project = project
 		upload := f.create(t)
 		source := filepath.Join("../../../spikes/knowledge-value/samples", name)
@@ -52,9 +59,8 @@ func TestExistingNativeGeneratedResultDirectoriesPublishAndReopenExactly(t *test
 			expected := domain.Entry{Path: relative, Kind: "directory"}
 			var data []byte
 			if !entry.IsDir() {
-				if !entry.Type().IsRegular() {
-					t.Fatal("approved corpus changed to a nonregular fixture entry")
-				}
+				Expect(!entry.Type().IsRegular()).To(BeFalse(), func() string { return fmt.Sprint("approved corpus changed to a nonregular fixture entry") })
+
 				data, err = os.ReadFile(path)
 				if err != nil {
 					return err
@@ -72,71 +78,69 @@ func TestExistingNativeGeneratedResultDirectoriesPublishAndReopenExactly(t *test
 			tree.entries[relative] = expected
 			return nil
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 		seal := f.complete(t, upload, checkpoint, key(t))
-		if err := f.core.Process(f.ctx, seal); err != nil {
-			t.Fatal(err)
+		{
+			err := f.core.Process(f.ctx, seal)
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 		}
+
 		accepted, err := f.core.Import(f.ctx, f.token, key(t), importer.ImportRequest{UploadID: upload, DocumentPresent: true, VersionID: tree.version})
-		if err != nil {
-			t.Fatal(err)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+		{
+
+			err := f.core.Process(f.ctx, responseID(t, accepted, "job_id"))
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 		}
-		if err := f.core.Process(f.ctx, responseID(t, accepted, "job_id")); err != nil {
-			t.Fatal(err)
-		}
+
 		trees[name] = tree
 	}
 	f.reopen(t)
 	report := map[string]any{}
 	for name, tree := range trees {
 		version, err := f.store.Version(f.ctx, tree.version)
-		if err != nil || version.Sequence != 1 || version.ManifestSHA == "" {
-			t.Fatal("real generated version did not reopen with immutable identity")
-		}
+		Expect(err != nil || version.Sequence != 1 || version.ManifestSHA == "").To(BeFalse(), func() string { return fmt.Sprint("real generated version did not reopen with immutable identity") })
+
 		var cursor string
 		seen, files := 0, 0
 		for {
 			entries, err := f.store.Entries(f.ctx, version.ContentSetID, cursor, 2)
-			if err != nil {
-				t.Fatal(err)
-			}
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 			if len(entries) == 0 {
 				break
 			}
 			for _, actual := range entries {
 				expected, exists := tree.entries[actual.Path]
-				if !exists || actual.Kind != expected.Kind || actual.Size != expected.Size || actual.Hash != expected.Hash {
-					t.Fatal("real generated tree path/type/size/hash changed")
-				}
+				Expect(!exists || actual.Kind != expected.Kind || actual.Size != expected.Size || actual.Hash != expected.Hash).To(BeFalse(), func() string { return fmt.Sprint("real generated tree path/type/size/hash changed") })
+
 				if actual.Kind == "file" {
 					files++
 					err := f.store.Read(f.ctx, domain.Object{Hash: actual.Hash, Size: actual.Size, State: "ready"}, domain.Pin{Kind: "active_read", OwnerID: "native-corpus-regression"}, func(reader io.ReadSeeker) error {
 						hash := sha256.New()
 						_, err := io.Copy(hash, reader)
-						if err == nil && hex.EncodeToString(hash.Sum(nil)) != expected.Hash {
-							t.Error("real generated retained file bytes changed")
-						}
+						Expect(err == nil && hex.EncodeToString(hash.Sum(nil)) != expected.Hash).To(BeFalse(), func() string { return fmt.Sprint("real generated retained file bytes changed") })
+
 						return err
 					})
-					if err != nil {
-						t.Fatal(err)
-					}
+					Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 				}
 				seen++
 				cursor = actual.Path
 			}
 		}
-		if seen != len(tree.entries) || files != 4 {
-			t.Fatal("real generated directory inventory was incomplete")
-		}
+		Expect(seen != len(tree.entries) || files != 4).To(BeFalse(), func() string { return fmt.Sprint("real generated directory inventory was incomplete") })
+
 		report[name] = map[string]any{"entries": seen, "files": files, "file_bytes": tree.fileSize, "all_paths_types_hashes_reopened": true}
 	}
 	if path := os.Getenv("HAERYONG_TASK006_REAL_INPUT_REPORT"); path != "" {
 		data, _ := json.MarshalIndent(report, "", "  ")
-		if err := os.WriteFile(path, append(data, '\n'), 0600); err != nil {
-			t.Fatal(err)
+		{
+			err := os.WriteFile(path, append(data, '\n'), 0600)
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 		}
+
 	}
-}
+})

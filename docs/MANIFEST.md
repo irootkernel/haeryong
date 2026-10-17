@@ -8,7 +8,7 @@ This inventory covers 159 other files: all Markdown documents and Python documen
 
 | File | Bytes | SHA-256 |
 | --- | --- | --- |
-| `README.md` | 16560 | `c5a383e317dfefd8ef19e71d10014e6e6d2792c833bffb0f05a26d1e6a3d20d8` |
+| `README.md` | 16849 | `9b384788d185d8012922ad0a368ac06c5424674c10913f4b493dc2acce958746` |
 | `REVIEW-GUIDE.md` | 10105 | `8035dd9c431b7e6abc7adde3b2ae7824df2a97df3ef7b3ca7ce020e3cb0094ad` |
 | `adr/ADR-001.md` | 3239 | `02f3818c7843969ca3aa081fb252983d92f886904383d84d331a49eca57f9987` |
 | `adr/ADR-002.md` | 2987 | `2128dae47cc03f55000633c89bc4e4d06419c91a414230a45fd7e45e8bac759b` |
@@ -157,7 +157,7 @@ This inventory covers 159 other files: all Markdown documents and Python documen
 | `testing/stack-spike.md` | 13832 | `a85449001f2bbc45d384be3527b41d0cac1072597dae44aba48183c1e037b51b` |
 | `testing/storage-foundation.md` | 18134 | `96c41c5586426cadb79daaf116d4abd6f1751fb3d9110ff4b075ec7cd20f5c8e` |
 | `testing/test-strategy.md` | 16531 | `2b2f7ccb86ad82ca17c6c8637da38e24a173d4fde8c34cca4b42ea62d33567ec` |
-| `testing/test_validate_docs.py` | 5890 | `25f6cd98a1714306698fbed4d740ad331eb7292321fc772e654e0188cd8323e9` |
+| `testing/test_validate_docs.py` | 5096 | `a29e0acf5b44aa2e6d2225b0f721c6417309bf4cbf4688ba4fdd826525412a95` |
 | `testing/traceability.md` | 34441 | `9b634127367bc8caf1915a16ac01858522b6ff6ce74b3b3c0a10da1875ea361b` |
 | `testing/validate_docs.py` | 17139 | `9a0fe45af68cb217f58c550694a9113ddf7c59a6e029048de936fd99c90d20a0` |
 | `testing/viewer-spike.md` | 47123 | `6186a96aac963a91b3acbbb93fb4ac5aa5502740afe510a84f964a9ba3c37ef3` |

@@ -5,3 +5,33 @@ commands:
     tags: [docs, validation]
     parser: generic
     timeout_sec: 120
+  test:
+    command: ["make", "test"]
+    tags: [test, validation]
+    parser: generic
+    timeout_sec: 4800
+  test-prepare:
+    command: ["make", "test-prepare"]
+    tags: [test, validation]
+    parser: generic
+    timeout_sec: 600
+  test-unit:
+    command: ["make", "test-unit"]
+    tags: [test, validation]
+    parser: generic
+    timeout_sec: 300
+  test-int:
+    command: ["make", "test-int"]
+    tags: [test, validation]
+    parser: generic
+    timeout_sec: 300
+  test-e2e:
+    command: ["make", "test-e2e"]
+    tags: [test, validation]
+    parser: generic
+    timeout_sec: 3600
+  test-persistence:
+    command: ["make", "test-persistence"]
+    tags: [test, validation]
+    parser: generic
+    timeout_sec: 1500

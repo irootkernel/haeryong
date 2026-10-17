@@ -14,9 +14,11 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"testing"
 	"time"
 
+	"fmt"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"haeryong.local/haeryong/internal/adapters/content/staging"
 	"haeryong.local/haeryong/internal/adapters/foundation"
 	httpauth "haeryong.local/haeryong/internal/adapters/http/auth"
@@ -46,7 +48,7 @@ func (m routes) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type fixture struct {
-	t              *testing.T
+	t              GinkgoTInterface
 	selection      service.Selection
 	writer         *service.LockedProfile
 	store          *foundation.Store
@@ -60,43 +62,42 @@ type fixture struct {
 	token, project string
 }
 
-func id(t *testing.T) string {
-	t.Helper()
+func id(t GinkgoTInterface) string {
+	GinkgoHelper()
 	v, err := service.NewID()
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	return v
 }
-func newFixture(t *testing.T) *fixture {
-	t.Helper()
+func newFixture(t GinkgoTInterface) *fixture {
+	GinkgoHelper()
 	base := os.TempDir()
 	var volume, parent syscall.Stat_t
 	if syscall.Stat("/Volumes/RootKernel", &volume) == nil && syscall.Stat("/Volumes", &parent) == nil && volume.Dev != parent.Dev && syscall.Access("/Volumes/RootKernel", 2) == nil {
 		base = "/Volumes/RootKernel/tmp"
 	}
 	dir, err := os.MkdirTemp(base, "haeryong-task005-http-test-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	DeferCleanup(func() { os.RemoveAll(dir) })
 	f := &fixture{t: t, selection: service.Selection{Profile: "query", DataDir: filepath.Join(dir, "profile")}}
-	if _, err := service.Initialize(f.selection); err != nil {
-		t.Fatal(err)
+	{
+		_, err := service.Initialize(f.selection)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	f.open()
-	t.Cleanup(f.close)
+	DeferCleanup(f.close)
 	p, err := f.auth.CreatePairing(context.Background(), f.server.URL, "synthetic query owner", "query-fixture")
-	if err != nil {
-		t.Fatal(err)
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	{
+
+		_, err := f.auth.BootstrapDecide(context.Background(), domain.PairingDecision{ID: p.ID, Code: p.Code, Origin: p.Origin, ETag: p.ETag, OperationID: id(t), Action: "approve"})
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
-	if _, err := f.auth.BootstrapDecide(context.Background(), domain.PairingDecision{ID: p.ID, Code: p.Code, Origin: p.Origin, ETag: p.ETag, OperationID: id(t), Action: "approve"}); err != nil {
-		t.Fatal(err)
-	}
+
 	poll, err := f.auth.Poll(context.Background(), p.ID, p.PollingSecret, p.Origin)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	f.token = poll.Token
 	return f
 }
@@ -143,7 +144,7 @@ func (f *fixture) open() {
 	ctx, cancel := context.WithCancel(context.Background())
 	f.stop = cancel
 	f.worker = make(chan error, 1)
-	go func() { f.worker <- f.imports.Run(ctx) }()
+	go func() { defer GinkgoRecover(); f.worker <- f.imports.Run(ctx) }()
 }
 func (f *fixture) close() {
 	if f.server != nil {
@@ -208,18 +209,20 @@ func (f *fixture) json(method, path string, body any) (int, []byte) {
 	status, _, data := f.request(method, path, bytes.NewReader(data), map[string]string{"Content-Type": "application/json", "Idempotency-Key": id(f.t)})
 	return status, data
 }
-func decoded[T any](t *testing.T, data []byte) T {
-	t.Helper()
+func decoded[T any](t GinkgoTInterface, data []byte) T {
+	GinkgoHelper()
 	var result struct {
 		Data T `json:"data"`
 	}
-	if err := json.Unmarshal(data, &result); err != nil {
-		t.Fatal(err)
+	{
+		err := json.Unmarshal(data, &result)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	return result.Data
 }
-func want(t *testing.T, got, expected int, data []byte) {
-	t.Helper()
+func want(t GinkgoTInterface, got, expected int, data []byte) {
+	GinkgoHelper()
 	if got != expected {
 		var failure struct {
 			Error struct {
@@ -228,7 +231,7 @@ func want(t *testing.T, got, expected int, data []byte) {
 			} `json:"error"`
 		}
 		_ = json.Unmarshal(data, &failure)
-		t.Fatalf("HTTP%d want%d code=%s details=%v", got, expected, failure.Error.Code, failure.Error.Details)
+		Fail(fmt.Sprintf("HTTP%d want%d code=%s details=%v", got, expected, failure.Error.Code, failure.Error.Details))
 	}
 }
 func (f *fixture) create() string {
@@ -303,7 +306,9 @@ func (f *fixture) wait(job string) domain.Job {
 	}
 }
 
-func TestActualExistingDirectoryQueryCursorRangeAndRestart(t *testing.T) {
+var _ = It("TestActualExistingDirectoryQueryCursorRangeAndRestart", Label("persistence"), func() {
+	t := GinkgoT()
+
 	f := newFixture(t)
 	upload := f.create()
 	source := "../../../../spikes/knowledge-value/samples/gaori"
@@ -335,17 +340,15 @@ func TestActualExistingDirectoryQueryCursorRangeAndRestart(t *testing.T) {
 		f.put(upload, relative, "file", data)
 		return nil
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	v := f.publish(upload, nil)
 	base := "/api/v1/versions/" + v.ID
 	status, headers, data := f.request("GET", base, nil, nil)
 	want(t, status, 200, data)
 	summary := decoded[query.Version](t, data)
-	if summary.ManifestSHA != v.ManifestSHA || summary.FilesURL != base+"/files" || summary.SuppliedMetadataURL != nil || summary.ETag != headers.Get("ETag") {
-		t.Fatal("compact version/validator mismatch")
-	}
+	Expect(summary.ManifestSHA != v.ManifestSHA || summary.FilesURL != base+"/files" || summary.SuppliedMetadataURL != nil || summary.ETag != headers.Get("ETag")).To(BeFalse(), func() string { return fmt.Sprint("compact version/validator mismatch") })
+
 	status, _, data = f.request("GET", base, nil, map[string]string{"If-None-Match": summary.ETag})
 	want(t, status, 304, data)
 	seen := map[string]bool{}
@@ -360,9 +363,8 @@ func TestActualExistingDirectoryQueryCursorRangeAndRestart(t *testing.T) {
 		want(t, status, 200, data)
 		list := decoded[query.List[query.File]](t, data)
 		for _, entry := range list.Items {
-			if seen[entry.Path] || kinds[entry.Path] != entry.Kind {
-				t.Fatal("file cursor lost exact inventory identity", entry.Path)
-			}
+			Expect(seen[entry.Path] || kinds[entry.Path] != entry.Kind).To(BeFalse(), func() string { return fmt.Sprint("file cursor lost exact inventory identity", entry.Path) })
+
 			seen[entry.Path] = true
 		}
 		if list.NextCursor == nil {
@@ -373,41 +375,36 @@ func TestActualExistingDirectoryQueryCursorRangeAndRestart(t *testing.T) {
 			firstCursor = cursor
 		}
 	}
-	if len(seen) != len(kinds) {
-		t.Fatalf("cursor omitted entries %d/%d", len(seen), len(kinds))
-	}
+	Expect(len(seen) != len(kinds)).To(BeFalse(), func() string { return fmt.Sprintf("cursor omitted entries %d/%d", len(seen), len(kinds)) })
+
 	for name, content := range expected {
 		status, headers, data = f.request("GET", base+"/file?path="+url.QueryEscape(name), nil, nil)
 		want(t, status, 200, data)
-		if !bytes.Equal(content, data) {
-			t.Fatal("exact source bytes changed", name)
-		}
-		if headers.Get("Content-Type") != "application/octet-stream" || !strings.HasPrefix(headers.Get("Content-Disposition"), "attachment;") || headers.Get("Cache-Control") != "no-store" || headers.Get("X-Content-Type-Options") != "nosniff" || headers.Get("Content-Digest") == "" {
-			t.Fatal("authored bytes lack safe attachment/integrity headers")
-		}
+		Expect(!bytes.Equal(content, data)).To(BeFalse(), func() string { return fmt.Sprint("exact source bytes changed", name) })
+		Expect(headers.Get("Content-Type") != "application/octet-stream" || !strings.HasPrefix(headers.Get("Content-Disposition"), "attachment;") || headers.Get("Cache-Control") != "no-store" || headers.Get("X-Content-Type-Options") != "nosniff" || headers.Get("Content-Digest") == "").To(BeFalse(), func() string { return fmt.Sprint("authored bytes lack safe attachment/integrity headers") })
+
 		if len(content) > 4 {
 			status, _, part := f.request("GET", base+"/file?path="+url.QueryEscape(name), nil, map[string]string{"Range": "bytes=1-3", "If-Range": headers.Get("ETag")})
 			want(t, status, 206, part)
-			if !bytes.Equal(part, content[1:4]) {
-				t.Fatal("range changed immutable bytes")
-			}
+			Expect(!bytes.Equal(part, content[1:4])).To(BeFalse(), func() string { return fmt.Sprint("range changed immutable bytes") })
+
 		}
 	}
 	status, _, data = f.request("GET", base+"/metadata?kind=normalized", nil, nil)
 	want(t, status, 200, data)
 	var full map[string]any
 	manifestHash := sha256.Sum256(data)
-	if json.Unmarshal(data, &full) != nil || full["content"] == nil || hex.EncodeToString(manifestHash[:]) != v.ManifestSHA {
-		t.Fatal("normalized endpoint served compact summary instead of full manifest")
-	}
+	Expect(json.Unmarshal(data, &full) != nil || full["content"] == nil || hex.EncodeToString(manifestHash[:]) != v.ManifestSHA).To(BeFalse(), func() string {
+		return fmt.Sprint("normalized endpoint served compact summary instead of full manifest")
+	})
+
 	status, _, data = f.request("GET", base+"/metadata?kind=supplied", nil, nil)
 	want(t, status, 404, data)
 	status, _, data = f.request("GET", base+"/render-bootstrap", nil, nil)
 	want(t, status, 200, data)
 	bootstrap := decoded[query.Bootstrap](t, data)
-	if bootstrap.RendererAvailable || bootstrap.Delivery != "authenticated_attachment" || len(data) > 4096 {
-		t.Fatal("bootstrap pretends renderer or envelopes payload")
-	}
+	Expect(bootstrap.RendererAvailable || bootstrap.Delivery != "authenticated_attachment" || len(data) > 4096).To(BeFalse(), func() string { return fmt.Sprint("bootstrap pretends renderer or envelopes payload") })
+
 	f.restart()
 	status, _, data = f.request("GET", base+"/files?limit=2&cursor="+url.QueryEscape(firstCursor), nil, nil)
 	want(t, status, 200, data)
@@ -416,8 +413,7 @@ func TestActualExistingDirectoryQueryCursorRangeAndRestart(t *testing.T) {
 	for name, content := range expected {
 		status, _, data = f.request("GET", base+"/file?path="+url.QueryEscape(name), nil, nil)
 		want(t, status, 200, data)
-		if !bytes.Equal(content, data) {
-			t.Fatal("restart changed source bytes", name)
-		}
+		Expect(!bytes.Equal(content, data)).To(BeFalse(), func() string { return fmt.Sprint("restart changed source bytes", name) })
+
 	}
-}
+})

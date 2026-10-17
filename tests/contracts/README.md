@@ -19,7 +19,7 @@ hashes at an explicitly supplied new private absolute report path:
 python3 -B tests/contracts/run.py --report /absolute/private/new-contract-results.json
 ```
 
-Python3 and existing PyYAML are required; no package installation is needed.
+Python 3.11 or newer, pytest and PyYAML from root requirements-test.txt are required. Dependency preparation is separate from test execution.
 The [readiness record](../../docs/testing/contract-freeze.md) gives actual results
 and current acceptance state. These tests never start a listener or call AI.
 
@@ -149,3 +149,15 @@ calibration, source-generation or provider execution was repeated.
 ## TASK-002-05 selected response extension
 
 The existing request/config/author-metadata shapes and schema1.0/APIv1 remain unchanged. Additive current query/list/bootstrap/config-view/staging-summary definitions now select previously provisional read fields, including per-item validators and nullable cursors. The current additional pure fixture validates those shapes and rejects direct-array lists/missing validators/numeric byte sizes. Actual authenticated SQLite/HTTP and CLI query/transfer/configuration regressions live in the production test packages and are recorded in [Task05 evidence](../../docs/testing/query-cli-configuration.md); they are not replaced by this pure fixture. The existing manifest digest domain remains unchanged and its schema/test digests reflect this recorded extension.
+
+## Common-contract framework migration
+
+The root common test setup migrates this selected suite from unittest to native
+pytest fixtures and assertions. Existing case/group IDs, model behavior,
+runtime schema1.0 and APIv1 remain unchanged. The pytest coverage/report hook is
+added to the selected manifest digest domain, and the runner/test/hook digests
+are refreshed as an explicit test-harness revision. Earlier executed results
+remain historical evidence for their original snapshots; a fresh common gate
+must execute the migrated candidate. The root TESTING.md owns the current runner
+and dependency commands. No provider, browser, calibration or product acceptance
+is established by this framework migration.

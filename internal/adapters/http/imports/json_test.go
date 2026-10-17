@@ -3,10 +3,12 @@ package imports
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"io"
 	"os"
 	"strings"
-	"testing"
 )
 
 type repeatedByte byte
@@ -18,7 +20,9 @@ func (b repeatedByte) Read(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func TestInlineMetadataStreamsExactBytesAboveFormerEnvelope(t *testing.T) {
+var _ = It("TestInlineMetadataStreamsExactBytesAboveFormerEnvelope", Label("unit"), func() {
+	t := GinkgoT()
+
 	t.Setenv("TMPDIR", t.TempDir())
 	const size = 20 * 1024 * 1024
 	metadata := func() io.Reader {
@@ -26,45 +30,47 @@ func TestInlineMetadataStreamsExactBytesAboveFormerEnvelope(t *testing.T) {
 	}
 	body := io.MultiReader(strings.NewReader(`{"upload_id":"11111111-1111-4111-8111-111111111111","metadata":`), metadata(), strings.NewReader(`,"document_id":null}`))
 	input, cleanup, err := importInput(body, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	file, ok := input.Metadata.(*os.File)
 	if !ok {
 		cleanup()
-		t.Fatal("metadata was not privately spooled")
+		Fail(fmt.Sprint("metadata was not privately spooled"))
 	}
 	name := file.Name()
 	info, err := file.Stat()
 	if err != nil {
 		cleanup()
-		t.Fatal(err)
+		Fail(fmt.Sprint(err))
 	}
 	if info.Mode().Perm() != 0600 || info.Size() <= size {
 		cleanup()
-		t.Fatal("private metadata bytes missing")
+		Fail(fmt.Sprint("private metadata bytes missing"))
 	}
 	got, want := sha256.New(), sha256.New()
 	if _, err := io.Copy(got, input.Metadata); err != nil {
 		cleanup()
-		t.Fatal(err)
+		Fail(fmt.Sprint(err))
 	}
 	_, _ = io.Copy(want, metadata())
 	if hex.EncodeToString(got.Sum(nil)) != hex.EncodeToString(want.Sum(nil)) {
 		cleanup()
-		t.Fatal("metadata exact whitespace/Unicode/bytes changed")
+		Fail(fmt.Sprint("metadata exact whitespace/Unicode/bytes changed"))
 	}
 	if !input.DocumentPresent || input.DocumentID != nil {
 		cleanup()
-		t.Fatal("explicit null intent lost")
+		Fail(fmt.Sprint("explicit null intent lost"))
 	}
 	cleanup()
-	if _, err := os.Lstat(name); !os.IsNotExist(err) {
-		t.Fatal("transport spool not removed")
+	{
+		_, err := os.Lstat(name)
+		Expect(!os.IsNotExist(err)).To(BeFalse(), func() string { return fmt.Sprint("transport spool not removed") })
 	}
-}
 
-func TestImportControlParsingRejectsAmbiguityAndCleansSpool(t *testing.T) {
+})
+var _ = It("TestImportControlParsingRejectsAmbiguityAndCleansSpool", Label("unit"), func() {
+	t := GinkgoT()
+
 	dir := t.TempDir()
 	t.Setenv("TMPDIR", dir)
 	for _, body := range []string{
@@ -80,30 +86,25 @@ func TestImportControlParsingRejectsAmbiguityAndCleansSpool(t *testing.T) {
 	} {
 		_, cleanup, err := importInput(strings.NewReader(body), false)
 		cleanup()
-		if err == nil {
-			t.Fatalf("ambiguous input accepted: %s", body)
-		}
-		files, err := os.ReadDir(dir)
-		if err != nil || len(files) != 0 {
-			t.Fatal("failed parsing left metadata spool")
-		}
-	}
-}
+		Expect(err == nil).To(BeFalse(), func() string { return fmt.Sprintf("ambiguous input accepted: %s", body) })
 
-func TestValidationClosedInputAndImportOmissionMarkers(t *testing.T) {
+		files, err := os.ReadDir(dir)
+		Expect(err != nil || len(files) != 0).To(BeFalse(), func() string { return fmt.Sprint("failed parsing left metadata spool") })
+
+	}
+})
+var _ = It("TestValidationClosedInputAndImportOmissionMarkers", Label("unit"), func() {
+
 	input, cleanup, err := importInput(strings.NewReader(`{"upload_id":"u","document_id":"d","base_version_id":null}`), false)
 	defer cleanup()
-	if err != nil || !input.DocumentPresent || !input.BasePresent || input.BaseVersionID != nil || input.DocumentID == nil {
-		t.Fatalf("explicit input lost: %+v %v", input, err)
-	}
+	Expect(err != nil || !input.DocumentPresent || !input.BasePresent || input.BaseVersionID != nil || input.DocumentID == nil).To(BeFalse(), func() string { return fmt.Sprintf("explicit input lost: %+v %v", input, err) })
+
 	input, cleanup, err = importInput(strings.NewReader(`{"upload_id":"u"}`), true)
 	defer cleanup()
-	if err != nil || input.DocumentPresent {
-		t.Fatal("validation required publication intent")
-	}
+	Expect(err != nil || input.DocumentPresent).To(BeFalse(), func() string { return fmt.Sprint("validation required publication intent") })
+
 	_, cleanup, err = importInput(strings.NewReader(`{"upload_id":"u","document_id":null}`), true)
 	cleanup()
-	if err == nil {
-		t.Fatal("validation accepted hidden publication fields")
-	}
-}
+	Expect(err == nil).To(BeFalse(), func() string { return fmt.Sprint("validation accepted hidden publication fields") })
+
+})

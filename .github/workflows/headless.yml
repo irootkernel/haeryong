@@ -15,7 +15,7 @@ jobs:
         os: [macOS, Linux]
     # Required labels/preconditions, not a claim that runners are registered.
     runs-on: [self-hosted, '${{ matrix.os }}', ARM64]
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,11 +30,14 @@ jobs:
           name: headless-${{ matrix.os }}-ARM64
           if-no-files-found: error
           path: |
-            ${{ steps.checks.outputs.artifacts }}/environment.json
-            ${{ steps.checks.outputs.artifacts }}/contracts.json
-            ${{ steps.checks.outputs.artifacts }}/f12.json
-            ${{ steps.checks.outputs.artifacts }}/f12-http.json
-            ${{ steps.checks.outputs.artifacts }}/f12.json.failure.json
-            ${{ steps.checks.outputs.artifacts }}/cross-volume.json
-            ${{ steps.checks.outputs.artifacts }}/crash-boundaries.jsonl
-            ${{ steps.checks.outputs.artifacts }}/real-inputs.json
+            ${{ steps.checks.outputs.artifacts }}/prepare/environment.json
+            ${{ steps.checks.outputs.artifacts }}/unit/environment.json
+            ${{ steps.checks.outputs.artifacts }}/integration/environment.json
+            ${{ steps.checks.outputs.artifacts }}/integration/contracts.json
+            ${{ steps.checks.outputs.artifacts }}/persistence/environment.json
+            ${{ steps.checks.outputs.artifacts }}/persistence/cross-volume.json
+            ${{ steps.checks.outputs.artifacts }}/persistence/crash-boundaries.jsonl
+            ${{ steps.checks.outputs.artifacts }}/persistence/real-inputs.json
+            ${{ steps.checks.outputs.artifacts }}/e2e/environment.json
+            ${{ steps.checks.outputs.artifacts }}/e2e/f12.json
+            ${{ steps.checks.outputs.artifacts }}/e2e/f12-http.json

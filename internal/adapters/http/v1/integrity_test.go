@@ -6,13 +6,17 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	app "haeryong.local/haeryong/internal/application/storage"
 	"os"
 	"path/filepath"
-	"testing"
 )
 
-func TestActualHTTPStoredCorruptionWithholdsFileAndMetadataAndReleasesPins(t *testing.T) {
+var _ = It("TestActualHTTPStoredCorruptionWithholdsFileAndMetadataAndReleasesPins", Label("persistence"), func() {
+	t := GinkgoT()
+
 	f := newFixture(t)
 	u := f.create()
 	payload := []byte("<html>original immutable bytes</html>")
@@ -30,22 +34,26 @@ func TestActualHTTPStoredCorruptionWithholdsFileAndMetadataAndReleasesPins(t *te
 	for _, test := range cases {
 		objectPath := filepath.Join(f.writer.Profile.DataDir, "storage", "objects", test.hash)
 		original, err := os.ReadFile(objectPath)
-		if err != nil {
-			t.Fatal(err)
-		}
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 		f.put(carrier, test.name+".bin", "file", original)
-		t.Run(test.name, func(t *testing.T) {
+		func() {
+			By(test.name)
 			corrupt := bytes.Repeat([]byte("!"), len(original))
 			if test.sizeMismatch {
 				corrupt = original[:len(original)/2]
 			}
-			if err := os.WriteFile(objectPath, corrupt, 0600); err != nil {
-				t.Fatal(err)
+			{
+				err := os.WriteFile(objectPath, corrupt, 0600)
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 			}
+
 			defer func() {
-				if err := os.WriteFile(objectPath, original, 0600); err != nil {
-					t.Error(err)
+				{
+					err := os.WriteFile(objectPath, original, 0600)
+					Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 				}
+
 			}()
 			status, headers, data := f.request("GET", test.endpoint, nil, nil)
 			want(t, status, 503, data)
@@ -55,29 +63,31 @@ func TestActualHTTPStoredCorruptionWithholdsFileAndMetadataAndReleasesPins(t *te
 					Code string `json:"code"`
 				} `json:"error"`
 			}
-			if err := json.Unmarshal(data, &response); err != nil {
-				t.Fatal(err)
+			{
+				err := json.Unmarshal(data, &response)
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 			}
-			if response.Error.Code != "CONTENT_INTEGRITY_ERROR" {
-				t.Errorf("stored verified-object failure code=%s want CONTENT_INTEGRITY_ERROR", response.Error.Code)
-			}
-			if len(response.Data) != 0 || bytes.Contains(data, payload) || headers.Get("Content-Digest") != "" || headers.Get("Repr-Digest") != "" {
-				t.Error("failed verification exposed a successful payload or digest")
-			}
-			if err := f.store.Write(context.Background(), func(tx app.WriteTx) error {
-				pins, err := tx.UploadPins(carrier, "", 256)
-				if err != nil {
-					return err
-				}
-				for _, pin := range pins {
-					if pin.Hash == test.hash && pin.Kind == "read" {
-						t.Error("failed stored-object verification leaked transient read pin")
+			Expect(response.Error.Code != "CONTENT_INTEGRITY_ERROR").To(BeFalse(), func() string {
+				return fmt.Sprintf("stored verified-object failure code=%s want CONTENT_INTEGRITY_ERROR", response.Error.Code)
+			})
+			Expect(len(response.Data) != 0 || bytes.Contains(data, payload) || headers.Get("Content-Digest") != "" || headers.Get("Repr-Digest") != "").To(BeFalse(), func() string { return fmt.Sprint("failed verification exposed a successful payload or digest") })
+			{
+
+				err := f.store.Write(context.Background(), func(tx app.WriteTx) error {
+					pins, err := tx.UploadPins(carrier, "", 256)
+					if err != nil {
+						return err
 					}
-				}
-				return nil
-			}); err != nil {
-				t.Fatal(err)
+					for _, pin := range pins {
+						if pin.Hash == test.hash && pin.Kind == "read" {
+							Fail(fmt.Sprint("failed stored-object verification leaked transient read pin"))
+						}
+					}
+					return nil
+				})
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 			}
-		})
+
+		}()
 	}
-}
+})

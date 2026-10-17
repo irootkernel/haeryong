@@ -16,11 +16,16 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"testing"
+
+	"fmt"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"time"
 )
 
-func TestActualHTTPCapabilitiesDistinguishTransfersFromUnimplementedRenderer(t *testing.T) {
+var _ = It("TestActualHTTPCapabilitiesDistinguishTransfersFromUnimplementedRenderer", Label("persistence"), func() {
+	t := GinkgoT()
+
 	f := newFixture(t)
 	status, _, data := f.request("GET", "/api/v1/capabilities", nil, nil)
 	want(t, status, 200, data)
@@ -28,18 +33,23 @@ func TestActualHTTPCapabilitiesDistinguishTransfersFromUnimplementedRenderer(t *
 		Features map[string]bool `json:"features"`
 	}](t, data)
 	for _, name := range []string{"resumable_uploads", "atomic_import", "cursor_files", "streamed_files", "byte_ranges"} {
-		if enabled, present := result.Features[name]; !present || !enabled {
-			t.Fatalf("implemented transfer/query capability %s is not advertised", name)
+		{
+			enabled, present := result.Features[name]
+			Expect(!present || !enabled).To(BeFalse(), func() string { return fmt.Sprintf("implemented transfer/query capability %s is not advertised", name) })
 		}
+
 	}
 	for _, name := range []string{"html_js_v1", "multi_page_loader", "renderer", "preview", "provider", "scheduler"} {
-		if enabled, present := result.Features[name]; !present || enabled {
-			t.Fatalf("unimplemented capability %s is advertised", name)
+		{
+			enabled, present := result.Features[name]
+			Expect(!present || enabled).To(BeFalse(), func() string { return fmt.Sprintf("unimplemented capability %s is advertised", name) })
 		}
-	}
-}
 
-func TestActualHTTPExactUnicodeLinksAndRangeValidators(t *testing.T) {
+	}
+})
+var _ = It("TestActualHTTPExactUnicodeLinksAndRangeValidators", Label("persistence"), func() {
+	t := GinkgoT()
+
 	f := newFixture(t)
 	u := f.create()
 	files := map[string]string{"café.html": "NFC exact", "cafe\u0301.html": "NFD exact", "unique-cafe\u0301.html": "unique canonical fallback", "amb-ḋ\u0323.html": "first equivalent", "amb-ḍ\u0307.html": "second equivalent", "Case.html": "case-sensitive", "literal\\name.html": "literal backslash", "range.bin": "0123456789abcdefghij", "zero.bin": "", "folder-cafe\u0301/nested.txt": "nested exact bytes"}
@@ -64,15 +74,13 @@ func TestActualHTTPExactUnicodeLinksAndRangeValidators(t *testing.T) {
 	for p, content := range files {
 		status, _, data := get(p, false, nil)
 		want(t, status, 200, data)
-		if string(data) != content {
-			t.Fatal("exact path lost precedence", p)
-		}
+		Expect(string(data) != content).To(BeFalse(), func() string { return fmt.Sprint("exact path lost precedence", p) })
+
 	}
 	status, headers, data := get("unique-café.html", false, nil)
 	want(t, status, 200, data)
-	if string(data) != files["unique-cafe\u0301.html"] || headers.Get("Haeryong-Requested-Path") != url.QueryEscape("unique-café.html") || headers.Get("Haeryong-Resolved-Path") != url.QueryEscape("unique-cafe\u0301.html") {
-		t.Fatal("canonical fallback changed identity/spelling")
-	}
+	Expect(string(data) != files["unique-cafe\u0301.html"] || headers.Get("Haeryong-Requested-Path") != url.QueryEscape("unique-café.html") || headers.Get("Haeryong-Resolved-Path") != url.QueryEscape("unique-cafe\u0301.html")).To(BeFalse(), func() string { return fmt.Sprint("canonical fallback changed identity/spelling") })
+
 	status, _, data = get("amb-d\u0323\u0307.html", false, nil)
 	want(t, status, 400, data)
 	var failure struct {
@@ -80,47 +88,40 @@ func TestActualHTTPExactUnicodeLinksAndRangeValidators(t *testing.T) {
 			Details map[string]any `json:"details"`
 		} `json:"error"`
 	}
-	if json.Unmarshal(data, &failure) != nil || failure.Error.Details["reason"] != "ambiguous_path" {
-		t.Fatal("ambiguous canonical fallback did not remain explicit")
-	}
+	Expect(json.Unmarshal(data, &failure) != nil || failure.Error.Details["reason"] != "ambiguous_path").To(BeFalse(), func() string { return fmt.Sprint("ambiguous canonical fallback did not remain explicit") })
+
 	status, _, data = get("case.html", false, nil)
 	want(t, status, 404, data)
 	status, _, data = f.request("GET", base+"/files?directory="+url.QueryEscape("folder-café"), nil, nil)
 	want(t, status, 200, data)
 	filtered := decoded[query.List[query.File]](t, data)
-	if len(filtered.Items) != 1 || filtered.Items[0].Path != "folder-cafe\u0301/nested.txt" {
-		t.Fatal("directory filter did not use unique exact path lookup")
-	}
+	Expect(len(filtered.Items) != 1 || filtered.Items[0].Path != "folder-cafe\u0301/nested.txt").To(BeFalse(), func() string { return fmt.Sprint("directory filter did not use unique exact path lookup") })
+
 	for p, target := range links {
 		status, _, data = get(p, false, nil)
 		want(t, status, 200, data)
 		item := decoded[query.ResolvedFile](t, data)
-		if item.Kind != "symlink" || item.LinkTarget == nil || *item.LinkTarget != target {
-			t.Fatal("link text was followed/changed by default", p)
-		}
+		Expect(item.Kind != "symlink" || item.LinkTarget == nil || *item.LinkTarget != target).To(BeFalse(), func() string { return fmt.Sprint("link text was followed/changed by default", p) })
+
 	}
 	status, headers, data = get("links/inside", true, nil)
 	want(t, status, 200, data)
-	if string(data) != files["café.html"] || headers.Get("Haeryong-Resolved-Path") != url.QueryEscape("café.html") {
-		t.Fatal("in-version alias did not bind exact target")
-	}
+	Expect(string(data) != files["café.html"] || headers.Get("Haeryong-Resolved-Path") != url.QueryEscape("café.html")).To(BeFalse(), func() string { return fmt.Sprint("in-version alias did not bind exact target") })
+
 	status, _, data = f.request("GET", base+"/render-bootstrap?page_path="+url.QueryEscape("links/inside"), nil, nil)
 	want(t, status, 200, data)
 	aliasBootstrap := decoded[query.Bootstrap](t, data)
-	if aliasBootstrap.SelectedPage == nil || *aliasBootstrap.SelectedPage != "café.html" || aliasBootstrap.NavigationPath == nil || *aliasBootstrap.NavigationPath != "links/inside" {
-		t.Fatal("bootstrap lost alias navigation versus canonical page")
-	}
+	Expect(aliasBootstrap.SelectedPage == nil || *aliasBootstrap.SelectedPage != "café.html" || aliasBootstrap.NavigationPath == nil || *aliasBootstrap.NavigationPath != "links/inside").To(BeFalse(), func() string { return fmt.Sprint("bootstrap lost alias navigation versus canonical page") })
+
 	status, _, data = get("alias-dir", true, nil)
 	want(t, status, 200, data)
-	if decoded[query.ResolvedFile](t, data).Kind != "directory" {
-		t.Fatal("directory link fabricated file bytes")
-	}
+	Expect(decoded[query.ResolvedFile](t, data).Kind != "directory").To(BeFalse(), func() string { return fmt.Sprint("directory link fabricated file bytes") })
+
 	for _, p := range []string{"links/outside", "absolute", "missing", "cycle-a"} {
 		status, _, data = get(p, true, nil)
 		want(t, status, 404, data)
-		if json.Unmarshal(data, &failure) != nil || failure.Error.Details["reason"] != "unresolved_link" {
-			t.Fatal("link resolution lost unavailable reason", p)
-		}
+		Expect(json.Unmarshal(data, &failure) != nil || failure.Error.Details["reason"] != "unresolved_link").To(BeFalse(), func() string { return fmt.Sprint("link resolution lost unavailable reason", p) })
+
 	}
 	status, _, data = get("empty", false, map[string]string{"Range": "bytes=0-1"})
 	want(t, status, 416, data)
@@ -129,32 +130,27 @@ func TestActualHTTPExactUnicodeLinksAndRangeValidators(t *testing.T) {
 	etag := headers.Get("ETag")
 	status, headHeaders, headBody := f.request("HEAD", base+"/file?path=range.bin", nil, nil)
 	want(t, status, 200, headBody)
-	if len(headBody) != 0 || headHeaders.Get("Content-Length") != "20" || headHeaders.Get("ETag") != etag || headHeaders.Get("Repr-Digest") == "" {
-		t.Fatal("HEAD did not describe exact immutable GET representation")
-	}
+	Expect(len(headBody) != 0 || headHeaders.Get("Content-Length") != "20" || headHeaders.Get("ETag") != etag || headHeaders.Get("Repr-Digest") == "").To(BeFalse(), func() string { return fmt.Sprint("HEAD did not describe exact immutable GET representation") })
+
 	hash := sha256.Sum256([]byte(files["range.bin"]))
-	if etag != `"sha256-`+hex.EncodeToString(hash[:])+`"` {
-		t.Fatal("strong validator did not identify immutable bytes")
-	}
+	Expect(etag != `"sha256-`+hex.EncodeToString(hash[:])+`"`).To(BeFalse(), func() string { return fmt.Sprint("strong validator did not identify immutable bytes") })
+
 	for _, test := range []struct{ rangeValue, body string }{{"bytes=2-5", "2345"}, {"bytes=17-", "hij"}, {"bytes=-3", "hij"}} {
 		status, headers, data = get("range.bin", false, map[string]string{"Range": test.rangeValue, "If-Range": etag})
 		want(t, status, 206, data)
-		if string(data) != test.body || headers.Get("Content-Range") == "" || headers.Get("ETag") != etag || headers.Get("Repr-Digest") == "" || headers.Get("Content-Digest") != "" {
-			t.Fatal("range detached from immutable object", test.rangeValue)
-		}
+		Expect(string(data) != test.body || headers.Get("Content-Range") == "" || headers.Get("ETag") != etag || headers.Get("Repr-Digest") == "" || headers.Get("Content-Digest") != "").To(BeFalse(), func() string { return fmt.Sprint("range detached from immutable object", test.rangeValue) })
+
 	}
 	for _, ifRange := range []string{`"different"`, "W/" + etag} {
 		status, _, data = get("range.bin", false, map[string]string{"Range": "bytes=0-1", "If-Range": ifRange})
 		want(t, status, 200, data)
-		if string(data) != files["range.bin"] {
-			t.Fatal("If-Range mismatch stitched bytes")
-		}
+		Expect(string(data) != files["range.bin"]).To(BeFalse(), func() string { return fmt.Sprint("If-Range mismatch stitched bytes") })
+
 	}
 	status, _, data = get("range.bin", false, map[string]string{"If-None-Match": "W/" + etag})
 	want(t, status, 304, data)
-	if len(data) != 0 {
-		t.Fatal("304 carried private body")
-	}
+	Expect(len(data) != 0).To(BeFalse(), func() string { return fmt.Sprint("304 carried private body") })
+
 	status, _, data = get("range.bin", false, map[string]string{"If-Match": `"different"`})
 	want(t, status, 412, data)
 	for _, r := range []string{"bytes=999-", "bytes=9-1", "bytes=broken"} {
@@ -165,24 +161,19 @@ func TestActualHTTPExactUnicodeLinksAndRangeValidators(t *testing.T) {
 				Code string `json:"code"`
 			} `json:"error"`
 		}
-		if json.Unmarshal(data, &invalid) != nil || invalid.Error.Code != "RANGE_NOT_SATISFIABLE" {
-			t.Fatal("range error escaped canonical JSON")
-		}
-		if strings.Contains(r, "999") && headers.Get("Content-Range") != "bytes */20" {
-			t.Fatal("unsatisfiable range lost exact length")
-		}
+		Expect(json.Unmarshal(data, &invalid) != nil || invalid.Error.Code != "RANGE_NOT_SATISFIABLE").To(BeFalse(), func() string { return fmt.Sprint("range error escaped canonical JSON") })
+		Expect(strings.Contains(r, "999") && headers.Get("Content-Range") != "bytes */20").To(BeFalse(), func() string { return fmt.Sprint("unsatisfiable range lost exact length") })
+
 	}
 	status, headers, data = get("zero.bin", false, map[string]string{"Range": "bytes=0-0"})
 	want(t, status, 416, data)
-	if headers.Get("Content-Range") != "bytes */0" {
-		t.Fatal("empty immutable file range length lost")
-	}
+	Expect(headers.Get("Content-Range") != "bytes */0").To(BeFalse(), func() string { return fmt.Sprint("empty immutable file range length lost") })
+
 	status, _, data = f.request("GET", base+"/files?limit=1", nil, nil)
 	want(t, status, 200, data)
 	page := decoded[query.List[query.File]](t, data)
-	if page.NextCursor == nil {
-		t.Fatal("fixture needs continuation")
-	}
+	Expect(page.NextCursor == nil).To(BeFalse(), func() string { return fmt.Sprint("fixture needs continuation") })
+
 	other := f.publish(u, nil)
 	status, _, data = f.request("GET", "/api/v1/versions/"+other.ID+"/files?limit=1&cursor="+url.QueryEscape(*page.NextCursor), nil, nil)
 	want(t, status, 400, data)
@@ -190,55 +181,49 @@ func TestActualHTTPExactUnicodeLinksAndRangeValidators(t *testing.T) {
 	want(t, status, 400, data)
 	status, _, data = f.request("GET", base+"/file?path=%ff", nil, nil)
 	want(t, status, 400, data)
-}
+})
+var _ = It("TestActualHTTPTrustedOriginRangePreflight", Label("persistence"), func() {
+	t := GinkgoT()
 
-func TestActualHTTPTrustedOriginRangePreflight(t *testing.T) {
 	f := newFixture(t)
 	for _, method := range []string{"GET", "HEAD"} {
 		request, err := http.NewRequest("OPTIONS", f.server.URL+"/api/v1/versions/"+id(t)+"/file?path=private.html", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 		request.Header.Set("Origin", f.server.URL)
 		request.Header.Set("Access-Control-Request-Method", method)
 		request.Header.Set("Access-Control-Request-Headers", "authorization, range, if-range, if-none-match")
 		response, err := http.DefaultClient.Do(request)
-		if err != nil {
-			t.Fatal(err)
-		}
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 		body, err := io.ReadAll(response.Body)
 		response.Body.Close()
-		if err != nil {
-			t.Fatal(err)
-		}
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 		want(t, response.StatusCode, 204, body)
-		if response.Header.Get("Access-Control-Allow-Origin") != f.server.URL || response.Header.Get("Access-Control-Allow-Credentials") != "" {
-			t.Fatal("preflight expanded origin/cookie authority")
-		}
+		Expect(response.Header.Get("Access-Control-Allow-Origin") != f.server.URL || response.Header.Get("Access-Control-Allow-Credentials") != "").To(BeFalse(), func() string { return fmt.Sprint("preflight expanded origin/cookie authority") })
+
 		allowed := strings.ToLower(response.Header.Get("Access-Control-Allow-Headers"))
 		for _, header := range []string{"authorization", "range", "if-range", "if-none-match"} {
-			if !strings.Contains(allowed, header) {
-				t.Fatal("actual range preflight omitted", header)
-			}
+			Expect(!strings.Contains(allowed, header)).To(BeFalse(), func() string { return fmt.Sprint("actual range preflight omitted", header) })
+
 		}
-		if !strings.Contains(response.Header.Get("Access-Control-Allow-Methods"), method) {
-			t.Fatal("supported file method omitted from preflight", method)
-		}
+		Expect(!strings.Contains(response.Header.Get("Access-Control-Allow-Methods"), method)).To(BeFalse(), func() string { return fmt.Sprint("supported file method omitted from preflight", method) })
+
 		request.Header.Set("Origin", "http://untrusted.invalid")
 		response, err = http.DefaultClient.Do(request)
-		if err != nil {
-			t.Fatal(err)
-		}
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 		body, _ = io.ReadAll(response.Body)
 		response.Body.Close()
 		want(t, response.StatusCode, 403, body)
-		if response.Header.Get("Access-Control-Allow-Origin") != "" {
-			t.Fatal("unconfigured origin received private CORS grant")
-		}
-	}
-}
+		Expect(response.Header.Get("Access-Control-Allow-Origin") != "").To(BeFalse(), func() string { return fmt.Sprint("unconfigured origin received private CORS grant") })
 
-func TestActualHTTPFullManifestMetadataAndItemValidators(t *testing.T) {
+	}
+})
+var _ = It("TestActualHTTPFullManifestMetadataAndItemValidators", Label("persistence"), func() {
+	t := GinkgoT()
+
 	f := newFixture(t)
 	u := f.create()
 	payload := []byte("<html>source retained</html>\n")
@@ -249,15 +234,13 @@ func TestActualHTTPFullManifestMetadataAndItemValidators(t *testing.T) {
 	base := "/api/v1/versions/" + v.ID
 	status, _, summary := f.request("GET", base, nil, nil)
 	want(t, status, 200, summary)
-	if bytes.Contains(summary, []byte("ordinary author text")) || len(summary) > 4096 {
-		t.Fatal("compact summary inlined full authored metadata")
-	}
+	Expect(bytes.Contains(summary, []byte("ordinary author text")) || len(summary) > 4096).To(BeFalse(), func() string { return fmt.Sprint("compact summary inlined full authored metadata") })
+
 	status, _, data := f.request("GET", base+"/metadata?kind=normalized", nil, nil)
 	want(t, status, 200, data)
 	sum := sha256.Sum256(data)
-	if hex.EncodeToString(sum[:]) != v.ManifestSHA || !bytes.Contains(data, []byte("ordinary author text")) {
-		t.Fatal("full normalized metadata was truncated/substituted")
-	}
+	Expect(hex.EncodeToString(sum[:]) != v.ManifestSHA || !bytes.Contains(data, []byte("ordinary author text"))).To(BeFalse(), func() string { return fmt.Sprint("full normalized metadata was truncated/substituted") })
+
 	var full struct {
 		Regions []struct {
 			ID          string   `json:"id"`
@@ -268,51 +251,43 @@ func TestActualHTTPFullManifestMetadataAndItemValidators(t *testing.T) {
 			ID string `json:"id"`
 		} `json:"sources"`
 	}
-	if json.Unmarshal(data, &full) != nil || len(full.Regions) != 1 || full.Regions[0].PagePath != "page.html" || len(full.Sources) != 1 || full.Sources[0].ID != "source/한글" || len(full.Regions[0].EvidenceIDs) != 1 || full.Regions[0].EvidenceIDs[0] != "evidence/상세" {
-		t.Fatal("full manifest lost exact region/source bindings")
-	}
+	Expect(json.Unmarshal(data, &full) != nil || len(full.Regions) != 1 || full.Regions[0].PagePath != "page.html" || len(full.Sources) != 1 || full.Sources[0].ID != "source/한글" || len(full.Regions[0].EvidenceIDs) != 1 || full.Regions[0].EvidenceIDs[0] != "evidence/상세").To(BeFalse(), func() string { return fmt.Sprint("full manifest lost exact region/source bindings") })
+
 	region, err := f.store.Region(context.Background(), v.ID, "page.html", "overview")
-	if err != nil || !bytes.Contains(region.Metadata, []byte("evidence")) {
-		t.Fatal("published typed region not linked", err)
-	}
+	Expect(err != nil || !bytes.Contains(region.Metadata, []byte("evidence"))).To(BeFalse(), func() string { return fmt.Sprint("published typed region not linked", err) })
+
 	status, _, data = f.request("GET", base+"/source-evidence/"+url.PathEscape("evidence/상세"), nil, nil)
 	want(t, status, 200, data)
 	evidence := decoded[map[string]json.RawMessage](t, data)
-	if !bytes.Contains(evidence["authored"], []byte(`"source_id":"source/한글"`)) || !bytes.Contains(evidence["source"], []byte(hex.EncodeToString(digest[:]))) || string(evidence["service_verification"]) != "null" {
-		t.Fatal("evidence view changed source identity or fabricated verification")
-	}
+	Expect(!bytes.Contains(evidence["authored"], []byte(`"source_id":"source/한글"`)) || !bytes.Contains(evidence["source"], []byte(hex.EncodeToString(digest[:]))) || string(evidence["service_verification"]) != "null").To(BeFalse(), func() string { return fmt.Sprint("evidence view changed source identity or fabricated verification") })
+
 	status, _, data = f.request("GET", base+"/metadata?kind=supplied", nil, nil)
 	want(t, status, 200, data)
 	sum = sha256.Sum256(data)
-	if hex.EncodeToString(sum[:]) != v.MetadataHash {
-		t.Fatal("supplied metadata bytes/hash changed")
-	}
+	Expect(hex.EncodeToString(sum[:]) != v.MetadataHash).To(BeFalse(), func() string { return fmt.Sprint("supplied metadata bytes/hash changed") })
+
 	status, headers, data := f.request("GET", "/api/v1/documents/"+v.DocumentID, nil, nil)
 	want(t, status, 200, data)
 	doc := decoded[query.Document](t, data)
-	if doc.ETag != headers.Get("ETag") || doc.Revision < 1 || doc.UpdatedAt == "" {
-		t.Fatal("document validator/durable list ordering missing")
-	}
+	Expect(doc.ETag != headers.Get("ETag") || doc.Revision < 1 || doc.UpdatedAt == "").To(BeFalse(), func() string { return fmt.Sprint("document validator/durable list ordering missing") })
+
 	status, _, data = f.request("GET", "/api/v1/documents?project_id="+f.project, nil, nil)
 	want(t, status, 200, data)
 	docs := decoded[query.List[query.Document]](t, data)
-	if len(docs.Items) != 1 || docs.Items[0].ETag != doc.ETag {
-		t.Fatal("collection validator substituted for item")
-	}
+	Expect(len(docs.Items) != 1 || docs.Items[0].ETag != doc.ETag).To(BeFalse(), func() string { return fmt.Sprint("collection validator substituted for item") })
+
 	status, _, data = f.request("GET", doc.VersionsURL, nil, nil)
 	want(t, status, 200, data)
 	versions := decoded[query.List[query.Version]](t, data)
 	item := decoded[query.Version](t, summary)
-	if len(versions.Items) != 1 || versions.Items[0].ETag != item.ETag {
-		t.Fatal("version list/item validator mismatch")
-	}
+	Expect(len(versions.Items) != 1 || versions.Items[0].ETag != item.ETag).To(BeFalse(), func() string { return fmt.Sprint("version list/item validator mismatch") })
+
 	status, _, data = f.request("GET", base+"/render-bootstrap", nil, nil)
 	want(t, status, 200, data)
 	bootstrap := decoded[query.Bootstrap](t, data)
-	if bootstrap.SelectedPage == nil || *bootstrap.SelectedPage != "page.html" || bootstrap.RendererAvailable {
-		t.Fatal("compact default page context lost actual identity")
-	}
-}
+	Expect(bootstrap.SelectedPage == nil || *bootstrap.SelectedPage != "page.html" || bootstrap.RendererAvailable).To(BeFalse(), func() string { return fmt.Sprint("compact default page context lost actual identity") })
+
+})
 
 // These are explicitly seeded durable workflow bindings, exercised through the
 // production authenticator. No production credential-issuance route is added.
@@ -347,16 +322,20 @@ func (f *fixture) workflow(scope domain.CredentialScope) (string, string) {
 	return token, principal
 }
 
-func TestActualHTTPScopedQueriesFilterBeforePaginationAndBindCursor(t *testing.T) {
+var _ = It("TestActualHTTPScopedQueriesFilterBeforePaginationAndBindCursor", Label("persistence"), func() {
+	t := GinkgoT()
+
 	f := newFixture(t)
 	owner := f.token
 	allowedProject := f.project
 	foreignProject := id(t)
-	if err := f.store.Write(context.Background(), func(tx app.WriteTx) error {
-		return tx.CreateProject(domain.Project{ID: foreignProject, Name: "private other project", Lifecycle: "active"})
-	}); err != nil {
-		t.Fatal(err)
+	{
+		err := f.store.Write(context.Background(), func(tx app.WriteTx) error {
+			return tx.CreateProject(domain.Project{ID: foreignProject, Name: "private other project", Lifecycle: "active"})
+		})
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	f.project = foreignProject
 	u := f.create()
 	f.put(u, "private.html", "file", []byte("private other project bytes"))
@@ -375,9 +354,8 @@ func TestActualHTTPScopedQueriesFilterBeforePaginationAndBindCursor(t *testing.T
 	status, _, data := f.request("GET", "/api/v1/projects?limit=1", nil, nil)
 	want(t, status, 200, data)
 	projects := decoded[query.List[query.Project]](t, data)
-	if len(projects.Items) != 1 || projects.Items[0].ID != allowedProject || projects.NextCursor != nil {
-		t.Fatal("scope filtering followed pagination or exposed other project")
-	}
+	Expect(len(projects.Items) != 1 || projects.Items[0].ID != allowedProject || projects.NextCursor != nil).To(BeFalse(), func() string { return fmt.Sprint("scope filtering followed pagination or exposed other project") })
+
 	seen := map[string]bool{}
 	cursor := ""
 	firstCursor := ""
@@ -390,9 +368,8 @@ func TestActualHTTPScopedQueriesFilterBeforePaginationAndBindCursor(t *testing.T
 		want(t, status, 200, data)
 		docs := decoded[query.List[query.Document]](t, data)
 		for _, d := range docs.Items {
-			if d.ProjectID != allowedProject || d.ID == foreign.DocumentID || seen[d.ID] {
-				t.Fatal("scoped list included private/duplicate document")
-			}
+			Expect(d.ProjectID != allowedProject || d.ID == foreign.DocumentID || seen[d.ID]).To(BeFalse(), func() string { return fmt.Sprint("scoped list included private/duplicate document") })
+
 			seen[d.ID] = true
 		}
 		if docs.NextCursor == nil {
@@ -403,41 +380,40 @@ func TestActualHTTPScopedQueriesFilterBeforePaginationAndBindCursor(t *testing.T
 			firstCursor = cursor
 		}
 	}
-	if len(seen) != 2 || firstCursor == "" {
-		t.Fatal("scope pagination silently omitted allowed documents")
-	}
+	Expect(len(seen) != 2 || firstCursor == "").To(BeFalse(), func() string { return fmt.Sprint("scope pagination silently omitted allowed documents") })
+
 	f.token = otherReader
 	status, _, data = f.request("GET", "/api/v1/documents?limit=1&cursor="+url.QueryEscape(firstCursor), nil, nil)
 	want(t, status, 400, data)
 	f.token = reader
 	status, _, data = f.request("GET", "/api/v1/documents/"+foreign.DocumentID, nil, nil)
 	want(t, status, 404, data)
-	if err := f.store.Write(context.Background(), func(tx app.WriteTx) error {
-		p, err := tx.WorkflowPrincipal(principal)
-		if err != nil {
-			return err
-		}
-		p.Scope.ProjectIDs = nil
-		p.Revision++
-		return tx.PutWorkflowPrincipal(p)
-	}); err != nil {
-		t.Fatal(err)
+	{
+		err := f.store.Write(context.Background(), func(tx app.WriteTx) error {
+			p, err := tx.WorkflowPrincipal(principal)
+			if err != nil {
+				return err
+			}
+			p.Scope.ProjectIDs = nil
+			p.Revision++
+			return tx.PutWorkflowPrincipal(p)
+		})
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	status, _, data = f.request("GET", "/api/v1/documents?limit=1&cursor="+url.QueryEscape(firstCursor), nil, nil)
 	want(t, status, 400, data)
 	status, _, data = f.request("GET", "/api/v1/documents?limit=1", nil, nil)
 	want(t, status, 200, data)
-	if len(decoded[query.List[query.Document]](t, data).Items) != 0 {
-		t.Fatal("current restriction did not precede list disclosure")
-	}
+	Expect(len(decoded[query.List[query.Document]](t, data).Items) != 0).To(BeFalse(), func() string { return fmt.Sprint("current restriction did not precede list disclosure") })
+
 	f.token = owner
 	versionReader, _ := f.workflow(domain.CredentialScope{Kind: "workflow", Actions: []string{"version.read"}, ProjectIDs: []string{allowedProject}, VersionIDs: []string{allowed.ID}})
 	f.token = versionReader
 	status, _, data = f.request("GET", "/api/v1/versions/"+allowed.ID+"/file?path=allowed.html", nil, nil)
 	want(t, status, 200, data)
-	if string(data) != "allowed version bytes" {
-		t.Fatal("exact allowed version not delivered")
-	}
+	Expect(string(data) != "allowed version bytes").To(BeFalse(), func() string { return fmt.Sprint("exact allowed version not delivered") })
+
 	for _, v := range []string{another.ID, foreign.ID} {
 		status, _, data = f.request("GET", "/api/v1/versions/"+v, nil, nil)
 		want(t, status, 404, data)
@@ -447,9 +423,8 @@ func TestActualHTTPScopedQueriesFilterBeforePaginationAndBindCursor(t *testing.T
 	status, _, data = f.request("GET", "/api/v1/documents/"+allowed.DocumentID+"/versions?limit=1", nil, nil)
 	want(t, status, 200, data)
 	versions := decoded[query.List[query.Version]](t, data)
-	if len(versions.Items) != 1 || versions.Items[0].ID != allowed.ID {
-		t.Fatal("version-scoped list did not preserve exact allow set")
-	}
+	Expect(len(versions.Items) != 1 || versions.Items[0].ID != allowed.ID).To(BeFalse(), func() string { return fmt.Sprint("version-scoped list did not preserve exact allow set") })
+
 	f.token = owner
 	draftReader, _ := f.workflow(domain.CredentialScope{Kind: "workflow", Actions: []string{"draft.write"}, ProjectIDs: []string{allowedProject}, DraftIDs: []string{id(t)}})
 	f.token = draftReader
@@ -459,7 +434,7 @@ func TestActualHTTPScopedQueriesFilterBeforePaginationAndBindCursor(t *testing.T
 	status, _, data = f.request("GET", "/api/v1/versions/"+allowed.ID+"/file?path=allowed.html&path=private", nil, nil)
 	want(t, status, 401, data)
 	f.token = owner
-}
+})
 
 type blockedBytes struct {
 	query.Bytes
@@ -484,7 +459,9 @@ func (b *blockedBytes) Read(ctx context.Context, obj domain.Object, pin domain.P
 	return b.Bytes.Read(ctx, obj, pin, func(handle io.ReadSeeker) error { return consume(&blockedRead{ReadSeeker: handle, parent: b}) })
 }
 
-func TestActualHTTPRevocationDuringPinnedVerifiedFileDelivery(t *testing.T) {
+var _ = It("TestActualHTTPRevocationDuringPinnedVerifiedFileDelivery", Label("persistence"), func() {
+	t := GinkgoT()
+
 	f := newFixture(t)
 	u := f.create()
 	content := bytes.Repeat([]byte("immutable verified source bytes\n"), 20000)
@@ -493,9 +470,8 @@ func TestActualHTTPRevocationDuringPinnedVerifiedFileDelivery(t *testing.T) {
 	block := &blockedBytes{Bytes: f.store, entered: make(chan struct{}), release: make(chan struct{})}
 	f.query.Bytes = block
 	request, err := http.NewRequest("GET", f.server.URL+"/api/v1/versions/"+v.ID+"/file?path=stream.bin", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	request.Header.Set("Origin", f.server.URL)
 	request.Header.Set("Authorization", "Bearer "+f.token)
 	type result struct {
@@ -504,6 +480,7 @@ func TestActualHTTPRevocationDuringPinnedVerifiedFileDelivery(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
+		defer GinkgoRecover()
 		response, err := http.DefaultClient.Do(request)
 		if err != nil {
 			done <- result{err: err}
@@ -517,56 +494,56 @@ func TestActualHTTPRevocationDuringPinnedVerifiedFileDelivery(t *testing.T) {
 	case <-block.entered:
 	case <-time.After(10 * time.Second):
 		close(block.release)
-		t.Fatal("actual second read barrier not reached")
+		Fail(fmt.Sprint("actual second read barrier not reached"))
 	}
 	readPins := func() int {
 		count := 0
-		if err := f.store.Write(context.Background(), func(tx app.WriteTx) error {
-			rows, err := tx.UploadPins(u, "", 256)
-			for _, p := range rows {
-				if p.Kind == "read" && p.OwnerID == v.ID {
-					count++
+		{
+			err := f.store.Write(context.Background(), func(tx app.WriteTx) error {
+				rows, err := tx.UploadPins(u, "", 256)
+				for _, p := range rows {
+					if p.Kind == "read" && p.OwnerID == v.ID {
+						count++
+					}
 				}
-			}
-			return err
-		}); err != nil {
-			t.Fatal(err)
+				return err
+			})
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 		}
+
 		return count
 	}
 	if readPins() != 1 {
 		close(block.release)
-		t.Fatal("delivery did not retain its own active read pin")
+		Fail(fmt.Sprint("delivery did not retain its own active read pin"))
 	}
 	session, err := f.auth.Authenticate(context.Background(), f.token)
 	if err != nil {
 		close(block.release)
-		t.Fatal(err)
+		Fail(fmt.Sprint(err))
 	}
 	if _, err := f.auth.Revoke(context.Background(), f.token, session.ID); err != nil {
 		close(block.release)
-		t.Fatal(err)
+		Fail(fmt.Sprint(err))
 	}
 	close(block.release)
 	select {
 	case got := <-done:
 		if got.err == nil || len(got.body) >= len(content) || !bytes.Equal(got.body, content[:len(got.body)]) {
-			t.Fatal("revocation released remaining bytes or reported complete delivery")
+			Fail(fmt.Sprint("revocation released remaining bytes or reported complete delivery"))
 		}
 	case <-time.After(10 * time.Second):
-		t.Fatal("revoked delivery did not terminate")
+		Fail(fmt.Sprint("revoked delivery did not terminate"))
 	}
 	deadline := time.Now().Add(3 * time.Second)
 	for readPins() != 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("failed protected delivery leaked its read pin")
-		}
+		Expect(time.Now().After(deadline)).To(BeFalse(), func() string { return fmt.Sprint("failed protected delivery leaked its read pin") })
+
 		time.Sleep(10 * time.Millisecond)
 	}
 	status, _, data := f.request("GET", "/api/v1/versions/"+v.ID+"/file?path=stream.bin", nil, nil)
 	want(t, status, 401, data)
 	_, err = f.store.Version(context.Background(), v.ID)
-	if errors.Is(err, domain.ErrNotFound) {
-		t.Fatal("session revocation erased accepted publication")
-	}
-}
+	Expect(errors.Is(err, domain.ErrNotFound)).To(BeFalse(), func() string { return fmt.Sprint("session revocation erased accepted publication") })
+
+})

@@ -125,6 +125,13 @@ func (h *HTTP) Start(ctx context.Context, p service.Profile, id service.Identity
 		// Control is not a browser API. Reject browser origins and alternate Host
 		// values even if they can reach loopback; no proxy/forwarded trust exists.
 		if product != nil && !strings.HasPrefix(r.URL.Path, "/local/v1") && r.URL.Path != livePath {
+			// Product verification can outlast the bounded control response. File
+			// delivery and event streams renew their own socket-write deadlines;
+			// request cancellation still interrupts product work.
+			if err := http.NewResponseController(w).SetWriteDeadline(time.Time{}); err != nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
 			product.ServeHTTP(w, r)
 			return
 		}

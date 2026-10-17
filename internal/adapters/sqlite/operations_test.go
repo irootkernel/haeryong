@@ -7,9 +7,10 @@ import (
 	"reflect"
 	"sync"
 	"sync/atomic"
-	"testing"
 
 	"context"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"haeryong.local/haeryong/internal/application/service"
 	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
@@ -39,18 +40,20 @@ func (a *fixtureAuthority) Filter(_ context.Context, _ domain.Request, r domain.
 	}
 	return r, nil
 }
-func id(t *testing.T) string {
-	t.Helper()
+func id(t GinkgoTInterface) string {
+	GinkgoHelper()
 	s, err := service.NewID()
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	return s
 }
-func request(t *testing.T) domain.Request {
+func request(t GinkgoTInterface) domain.Request {
 	return domain.Request{Key: domain.OperationKey{PrincipalID: id(t), OperationID: id(t)}, Method: "PUT", Target: "/api/v1/resource/exact", Body: []byte(`{"value":"first"}`), Preconditions: map[string]string{"If-None-Match": "*"}, Omitted: []string{"created_at", "version_id"}}
 }
-func TestOperationAtomicContentionReplayAndOmissions(t *testing.T) {
+
+var _ = It("TestOperationAtomicContentionReplayAndOmissions", Label("persistence"), func() {
+	t := GinkgoT()
+
 	_, writer := profile(t)
 	s := openStore(t, writer, nil)
 	auth := &fixtureAuthority{}
@@ -78,6 +81,7 @@ func TestOperationAtomicContentionReplayAndOmissions(t *testing.T) {
 	for i := 0; i < 12; i++ {
 		wg.Add(1)
 		go func() {
+			defer GinkgoRecover()
 			defer wg.Done()
 			<-start
 			response, err := app.Execute(ctx, s, auth, r, normalize, apply)
@@ -93,29 +97,27 @@ func TestOperationAtomicContentionReplayAndOmissions(t *testing.T) {
 	close(failures)
 	close(responses)
 	for err := range failures {
-		t.Error(err)
+		Fail(fmt.Sprint(err))
 	}
 	var first domain.Response
 	for response := range responses {
 		if first.Status == 0 {
 			first = response
 		}
-		if !reflect.DeepEqual(response, first) {
-			t.Error("parallel response changed")
-		}
+		Expect(!reflect.DeepEqual(response, first)).To(BeFalse(), func() string { return fmt.Sprint("parallel response changed") })
+
 	}
-	if applied.Load() != 1 || normalized.Load() != 1 || auth.calls.Load() != 12 {
-		t.Fatalf("counts apply=%d normalize=%d auth=%d", applied.Load(), normalized.Load(), auth.calls.Load())
-	}
+	Expect(applied.Load() != 1 || normalized.Load() != 1 || auth.calls.Load() != 12).To(BeFalse(), func() string {
+		return fmt.Sprintf("counts apply=%d normalize=%d auth=%d", applied.Load(), normalized.Load(), auth.calls.Load())
+	})
+
 	h, _ := s.Health(ctx)
 	events, err := s.Events(ctx, h.Library.StreamEpoch, 0, 2)
-	if err != nil || len(events) != 1 || events[0].Revision != 1 {
-		t.Fatalf("atomic outbox: %v %+v", err, events)
-	}
+	Expect(err != nil || len(events) != 1 || events[0].Revision != 1).To(BeFalse(), func() string { return fmt.Sprintf("atomic outbox: %v %+v", err, events) })
+
 	originalReceipt, err := s.Receipt(ctx, r.Key)
-	if err != nil || originalReceipt.State != "completed" {
-		t.Fatal(err)
-	}
+	Expect(err != nil || originalReceipt.State != "completed").To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	for _, change := range []string{"method", "target", "body", "precondition", "omission"} {
 		changed := r
 		changed.Preconditions = map[string]string{"If-None-Match": "*"}
@@ -132,31 +134,37 @@ func TestOperationAtomicContentionReplayAndOmissions(t *testing.T) {
 		case "omission":
 			changed.Omitted = []string{"created_at"}
 		}
-		if _, err := app.Execute(ctx, s, auth, changed, normalize, apply); !errors.Is(err, domain.ErrConflict) {
-			t.Fatalf("changed %s accepted: %v", change, err)
+		{
+			_, err := app.Execute(ctx, s, auth, changed, normalize, apply)
+			Expect(!errors.Is(err, domain.ErrConflict)).To(BeFalse(), func() string { return fmt.Sprintf("changed %s accepted: %v", change, err) })
 		}
+
 	}
 	r.Omitted = []string{"version_id", "created_at"}
-	if _, err := app.Execute(ctx, s, auth, r, normalize, apply); err != nil {
-		t.Fatal("omission order changed identity", err)
+	{
+		_, err := app.Execute(ctx, s, auth, r, normalize, apply)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint("omission order changed identity", err) })
 	}
+
 	s.Close()
 	s = openStore(t, writer, nil)
 	replay, err := app.Execute(ctx, s, auth, r, normalize, apply)
-	if err != nil || !reflect.DeepEqual(first, replay) {
-		t.Fatalf("reopen replay/stale precondition: %v", err)
-	}
+	Expect(err != nil || !reflect.DeepEqual(first, replay)).To(BeFalse(), func() string { return fmt.Sprintf("reopen replay/stale precondition: %v", err) })
+
 	redacted, err := app.Execute(ctx, s, &fixtureAuthority{redact: true}, r, normalize, apply)
-	if err != nil || string(redacted.Body) != "redacted" {
-		t.Fatal("current visibility filter bypassed")
-	}
+	Expect(err != nil || string(redacted.Body) != "redacted").To(BeFalse(), func() string { return fmt.Sprint("current visibility filter bypassed") })
+
 	deny := &fixtureAuthority{deny: true}
 	s.Close()
-	if _, err := app.Execute(ctx, s, deny, r, normalize, apply); !errors.Is(err, domain.ErrDenied) {
-		t.Fatalf("denial did not precede even closed-store lookup: %v", err)
+	{
+		_, err := app.Execute(ctx, s, deny, r, normalize, apply)
+		Expect(!errors.Is(err, domain.ErrDenied)).To(BeFalse(), func() string { return fmt.Sprintf("denial did not precede even closed-store lookup: %v", err) })
 	}
-}
-func TestOperationCommitFaultRollsBackAllAndPrincipalNamespace(t *testing.T) {
+
+})
+var _ = It("TestOperationCommitFaultRollsBackAllAndPrincipalNamespace", Label("persistence"), func() {
+	t := GinkgoT()
+
 	_, writer := profile(t)
 	var fail atomic.Bool
 	s := openStore(t, writer, func(b Boundary) error {
@@ -172,138 +180,160 @@ func TestOperationCommitFaultRollsBackAllAndPrincipalNamespace(t *testing.T) {
 		return domain.Response{Status: 201, Body: []byte("saved")}, err
 	}
 	fail.Store(true)
-	if _, err := app.Execute(ctx, s, auth, r, nil, apply); err == nil {
-		t.Fatal("commit fault passed")
+	{
+		_, err := app.Execute(ctx, s, auth, r, nil, apply)
+		Expect(err == nil).To(BeFalse(), func() string { return fmt.Sprint("commit fault passed") })
 	}
+
 	fail.Store(false)
-	if _, err := s.Receipt(ctx, r.Key); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatal("rolled-back receipt retained")
+	{
+		_, err := s.Receipt(ctx, r.Key)
+		Expect(!errors.Is(err, domain.ErrNotFound)).To(BeFalse(), func() string { return fmt.Sprint("rolled-back receipt retained") })
 	}
-	if _, err := s.Resource(ctx, "note", r.Key.PrincipalID); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatal("rolled-back mutation retained")
+	{
+
+		_, err := s.Resource(ctx, "note", r.Key.PrincipalID)
+		Expect(!errors.Is(err, domain.ErrNotFound)).To(BeFalse(), func() string { return fmt.Sprint("rolled-back mutation retained") })
 	}
+
 	h, _ := s.Health(ctx)
 	events, _ := s.Events(ctx, h.Library.StreamEpoch, 0, 100)
-	if len(events) != 0 {
-		t.Fatal("rolled-back event retained")
-	}
+	Expect(len(events) != 0).To(BeFalse(), func() string { return fmt.Sprint("rolled-back event retained") })
+
 	s.Close()
 	s = openStore(t, writer, nil)
-	if _, err := app.Execute(ctx, s, auth, r, nil, apply); err != nil {
-		t.Fatal(err)
+	{
+		_, err := app.Execute(ctx, s, auth, r, nil, apply)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	r.Key.PrincipalID = id(t)
-	if _, err := app.Execute(ctx, s, auth, r, nil, apply); err != nil {
-		t.Fatal("principal namespaces collided", err)
+	{
+		_, err := app.Execute(ctx, s, auth, r, nil, apply)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint("principal namespaces collided", err) })
 	}
+
 	events, _ = s.Events(ctx, h.Library.StreamEpoch, 0, 100)
-	if len(events) != 2 {
-		t.Fatal("distinct principals did not independently commit")
+	Expect(len(events) != 2).To(BeFalse(), func() string { return fmt.Sprint("distinct principals did not independently commit") })
+	{
+
+		_, err := s.Events(ctx, "old-restored-epoch", 0, 1)
+		Expect(!errors.Is(err, domain.ErrPrecondition)).To(BeFalse(), func() string { return fmt.Sprint("wrong epoch replayed") })
 	}
-	if _, err := s.Events(ctx, "old-restored-epoch", 0, 1); !errors.Is(err, domain.ErrPrecondition) {
-		t.Fatal("wrong epoch replayed")
-	}
-}
-func TestReceiptReservationDefinitiveFailureAndCompleted202(t *testing.T) {
+
+})
+var _ = It("TestReceiptReservationDefinitiveFailureAndCompleted202", Label("persistence"), func() {
+	t := GinkgoT()
+
 	_, writer := profile(t)
 	s := openStore(t, writer, nil)
 	r := request(t)
 	auth := &fixtureAuthority{}
-	if err := s.Write(ctx, func(tx app.WriteTx) error { _, _, err := tx.ReserveOperation(r, nil); return err }); err != nil {
-		t.Fatal(err)
+	{
+		err := s.Write(ctx, func(tx app.WriteTx) error { _, _, err := tx.ReserveOperation(r, nil); return err })
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	receipt, err := s.Receipt(ctx, r.Key)
-	if err != nil || receipt.State != "accepted" || receipt.Response != nil {
-		t.Fatalf("reservation is not definitive: %v %+v", err, receipt)
-	}
+	Expect(err != nil || receipt.State != "accepted" || receipt.Response != nil).To(BeFalse(), func() string { return fmt.Sprintf("reservation is not definitive: %v %+v", err, receipt) })
+
 	unexpected := func(app.WriteTx, domain.Receipt) (domain.Response, error) {
-		t.Error("pending/replay redispatched")
+		Fail(fmt.Sprint("pending/replay redispatched"))
 		return domain.Response{}, nil
 	}
 	pending, err := app.Execute(ctx, s, auth, r, nil, unexpected)
-	if err != nil || pending.Status != 202 {
-		t.Fatal(err)
-	}
+	Expect(err != nil || pending.Status != 202).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	var body map[string]string
-	if err := json.Unmarshal(pending.Body, &body); err != nil || body["operation_id"] != r.Key.OperationID || body["operation_url"] != "/api/v1/operations/"+r.Key.OperationID {
-		t.Fatal("pending recovery identity missing")
+	{
+		err := json.Unmarshal(pending.Body, &body)
+		Expect(err != nil || body["operation_id"] != r.Key.OperationID || body["operation_url"] != "/api/v1/operations/"+r.Key.OperationID).To(BeFalse(), func() string { return fmt.Sprint("pending recovery identity missing") })
 	}
-	if err := s.Write(ctx, func(tx app.WriteTx) error { return tx.ReconcileOperation(r.Key) }); err != nil {
-		t.Fatal(err)
+	{
+
+		err := s.Write(ctx, func(tx app.WriteTx) error { return tx.ReconcileOperation(r.Key) })
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
-	if _, err := app.Execute(ctx, s, auth, r, nil, unexpected); !errors.Is(err, domain.ErrReconciliation) {
-		t.Fatalf("uncertainty mislabelled pending: %v", err)
+	{
+
+		_, err := app.Execute(ctx, s, auth, r, nil, unexpected)
+		Expect(!errors.Is(err, domain.ErrReconciliation)).To(BeFalse(), func() string { return fmt.Sprintf("uncertainty mislabelled pending: %v", err) })
 	}
+
 	failed := request(t)
 	expected := domain.Response{Status: 412, Body: []byte(`{"error":"original stale precondition"}`)}
-	if _, err := app.Execute(ctx, s, auth, failed, nil, func(app.WriteTx, domain.Receipt) (domain.Response, error) { return expected, nil }); err != nil {
-		t.Fatal(err)
+	{
+		_, err := app.Execute(ctx, s, auth, failed, nil, func(app.WriteTx, domain.Receipt) (domain.Response, error) { return expected, nil })
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	receipt, _ = s.Receipt(ctx, failed.Key)
-	if receipt.State != "failed" {
-		t.Fatalf("failure not labelled: %+v", receipt)
-	}
+	Expect(receipt.State != "failed").To(BeFalse(), func() string { return fmt.Sprintf("failure not labelled: %+v", receipt) })
+
 	replay, err := app.Execute(ctx, s, auth, failed, nil, unexpected)
-	if err != nil || !reflect.DeepEqual(expected, replay) {
-		t.Fatal("failure response not replayed")
-	}
+	Expect(err != nil || !reflect.DeepEqual(expected, replay)).To(BeFalse(), func() string { return fmt.Sprint("failure response not replayed") })
+
 	creation := request(t)
 	jobID := id(t)
 	response, err := app.Execute(ctx, s, auth, creation, nil, func(tx app.WriteTx, _ domain.Receipt) (domain.Response, error) {
 		return domain.Response{Status: 202, Body: []byte(jobID)}, tx.CreateJob(domain.Job{ID: jobID, Kind: "import"})
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	receipt, _ = s.Receipt(ctx, creation.Key)
-	if receipt.State != "completed" || receipt.Response.Status != 202 {
-		t.Fatal("job creation mislabelled accepted reservation")
+	Expect(receipt.State != "completed" || receipt.Response.Status != 202).To(BeFalse(), func() string { return fmt.Sprint("job creation mislabelled accepted reservation") })
+	{
+
+		err := s.Write(ctx, func(tx app.WriteTx) error {
+			j, err := tx.ClaimJob(jobID)
+			if err != nil {
+				return err
+			}
+			return tx.FinishJob(jobID, j.AttemptGeneration, "local failure", nil)
+		})
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
-	if err := s.Write(ctx, func(tx app.WriteTx) error {
-		j, err := tx.ClaimJob(jobID)
-		if err != nil {
-			return err
-		}
-		return tx.FinishJob(jobID, j.AttemptGeneration, "local failure", nil)
-	}); err != nil {
-		t.Fatal(err)
-	}
+
 	again, err := app.Execute(ctx, s, auth, creation, nil, unexpected)
-	if err != nil || !reflect.DeepEqual(response, again) {
-		t.Fatal("later job failure rewrote completed202")
-	}
-}
-func TestAuthorityDenialPreventsObjectAdoption(t *testing.T) {
+	Expect(err != nil || !reflect.DeepEqual(response, again)).To(BeFalse(), func() string { return fmt.Sprint("later job failure rewrote completed202") })
+
+})
+var _ = It("TestAuthorityDenialPreventsObjectAdoption", Label("persistence"), func() {
+	t := GinkgoT()
+
 	_, writer := profile(t)
 	s := openStore(t, writer, nil)
 	object := domain.Object{Hash: digest([]byte("labelled metadata fixture")), Size: 25}
-	if err := s.Write(ctx, func(tx app.WriteTx) error {
-		if err := tx.PutDurableObject(object); err != nil {
-			return err
-		}
-		return tx.AcquirePin(domain.Pin{ID: "staging", Kind: "upload", OwnerID: "upload", Hash: object.Hash})
-	}); err != nil {
-		t.Fatal(err)
+	{
+		err := s.Write(ctx, func(tx app.WriteTx) error {
+			if err := tx.PutDurableObject(object); err != nil {
+				return err
+			}
+			return tx.AcquirePin(domain.Pin{ID: "staging", Kind: "upload", OwnerID: "upload", Hash: object.Hash})
+		})
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	r := request(t)
 	applied := false
 	_, err := app.Execute(ctx, s, &fixtureAuthority{deny: true}, r, nil, func(tx app.WriteTx, _ domain.Receipt) (domain.Response, error) {
 		applied = true
 		return domain.Response{Status: 201}, tx.Adopt(domain.Reference{Kind: "consumer", ID: "saved", Hash: object.Hash}, "staging")
 	})
-	if !errors.Is(err, domain.ErrDenied) || applied {
-		t.Fatal("unauthorized adoption entered transaction")
+	Expect(!errors.Is(err, domain.ErrDenied) || applied).To(BeFalse(), func() string { return fmt.Sprint("unauthorized adoption entered transaction") })
+	{
+
+		err := s.Write(ctx, func(tx app.WriteTx) error {
+			_, err := tx.ReserveGC(object.Hash, "gc")
+			if !errors.Is(err, domain.ErrPinned) {
+				return fmt.Errorf("staging pin lost after denial: %v", err)
+			}
+			return nil
+		})
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
-	if err := s.Write(ctx, func(tx app.WriteTx) error {
-		_, err := tx.ReserveGC(object.Hash, "gc")
-		if !errors.Is(err, domain.ErrPinned) {
-			return fmt.Errorf("staging pin lost after denial: %v", err)
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-}
+
+})
 
 func (a *fixtureAuthority) AuthorizeWrite(_ context.Context, tx app.WriteTx, _ domain.Request) error {
 	if a.deny {
@@ -315,13 +345,18 @@ func (a *fixtureAuthority) AuthorizeWrite(_ context.Context, tx app.WriteTx, _ d
 	return nil
 }
 
-func TestAuthorityRechecksWriterWaitAndRollsBackPrecommitRevocation(t *testing.T) {
+var _ = It("TestAuthorityRechecksWriterWaitAndRollsBackPrecommitRevocation", Label("persistence"), func() {
+	t := GinkgoT()
+
 	_, writer := profile(t)
 	s := openStore(t, writer, nil)
 	request := request(t)
 	held, release := make(chan struct{}), make(chan struct{})
 	ownerDone := make(chan error, 1)
-	go func() { ownerDone <- s.Write(ctx, func(app.WriteTx) error { close(held); <-release; return nil }) }()
+	go func() {
+		defer GinkgoRecover()
+		ownerDone <- s.Write(ctx, func(app.WriteTx) error { close(held); <-release; return nil })
+	}()
 	<-held
 	authorized := make(chan struct{})
 	var revoked atomic.Bool
@@ -334,6 +369,7 @@ func TestAuthorityRechecksWriterWaitAndRollsBackPrecommitRevocation(t *testing.T
 	result := make(chan error, 1)
 	var applied atomic.Bool
 	go func() {
+		defer GinkgoRecover()
 		_, err := app.Execute(ctx, s, auth, request, nil, func(app.WriteTx, domain.Receipt) (domain.Response, error) {
 			applied.Store(true)
 			return domain.Response{Status: 201}, nil
@@ -343,15 +379,21 @@ func TestAuthorityRechecksWriterWaitAndRollsBackPrecommitRevocation(t *testing.T
 	<-authorized
 	revoked.Store(true)
 	close(release)
-	if err := <-ownerDone; err != nil {
-		t.Fatal(err)
+	{
+		err := <-ownerDone
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
-	if err := <-result; !errors.Is(err, domain.ErrDenied) || applied.Load() {
-		t.Fatalf("writer-wait revocation bypassed: %v apply=%v", err, applied.Load())
+	{
+
+		err := <-result
+		Expect(!errors.Is(err, domain.ErrDenied) || applied.Load()).To(BeFalse(), func() string { return fmt.Sprintf("writer-wait revocation bypassed: %v apply=%v", err, applied.Load()) })
 	}
-	if _, err := s.Receipt(ctx, request.Key); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatal("revoked lookup created a receipt")
+	{
+
+		_, err := s.Receipt(ctx, request.Key)
+		Expect(!errors.Is(err, domain.ErrNotFound)).To(BeFalse(), func() string { return fmt.Sprint("revoked lookup created a receipt") })
 	}
+
 	revoked.Store(false)
 	h, _ := s.Health(ctx)
 	auth = &fixtureAuthority{writeCheck: func(tx app.WriteTx) error {
@@ -372,17 +414,19 @@ func TestAuthorityRechecksWriterWaitAndRollsBackPrecommitRevocation(t *testing.T
 		revoked.Store(true)
 		return domain.Response{Status: 201}, err
 	})
-	if !errors.Is(err, domain.ErrDenied) {
-		t.Fatalf("precommit authority revocation ignored: %v", err)
+	Expect(!errors.Is(err, domain.ErrDenied)).To(BeFalse(), func() string { return fmt.Sprintf("precommit authority revocation ignored: %v", err) })
+	{
+
+		_, err := s.Resource(ctx, "restricted", "exact")
+		Expect(!errors.Is(err, domain.ErrNotFound)).To(BeFalse(), func() string { return fmt.Sprint("revoked mutation committed") })
 	}
-	if _, err := s.Resource(ctx, "restricted", "exact"); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatal("revoked mutation committed")
+	{
+
+		_, err := s.Receipt(ctx, request.Key)
+		Expect(!errors.Is(err, domain.ErrNotFound)).To(BeFalse(), func() string { return fmt.Sprint("revoked definitive receipt committed") })
 	}
-	if _, err := s.Receipt(ctx, request.Key); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatal("revoked definitive receipt committed")
-	}
+
 	events, _ := s.Events(ctx, h.Library.StreamEpoch, 0, 100)
-	if len(events) != 0 {
-		t.Fatal("revoked outbox committed")
-	}
-}
+	Expect(len(events) != 0).To(BeFalse(), func() string { return fmt.Sprint("revoked outbox committed") })
+
+})

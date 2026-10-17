@@ -14,15 +14,16 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
-	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"haeryong.local/haeryong/internal/application/service"
 )
 
 var ctx = context.Background()
 
-func scratch(t *testing.T) string {
-	t.Helper()
+func scratch(t GinkgoTInterface) string {
+	GinkgoHelper()
 	parent := os.TempDir()
 	if runtime.GOOS == "darwin" {
 		mounts, err := exec.Command("mount").Output()
@@ -31,70 +32,69 @@ func scratch(t *testing.T) string {
 		}
 	}
 	path, err := os.MkdirTemp(parent, "haeryong-sqlite-tests-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(path) })
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	DeferCleanup(func() { os.RemoveAll(path) })
 	return path
 }
-func profile(t *testing.T) (service.Selection, *service.LockedProfile) {
-	t.Helper()
+func profile(t GinkgoTInterface) (service.Selection, *service.LockedProfile) {
+	GinkgoHelper()
 	selection := service.Selection{Profile: "test", DataDir: filepath.Join(scratch(t), "library ?# 경로")}
-	if _, err := service.Initialize(selection); err != nil {
-		t.Fatal(err)
+	{
+		_, err := service.Initialize(selection)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	writer, err := service.OpenWriter(selection)
-	if err != nil {
-		t.Fatal(err)
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	DeferCleanup(func() { writer.Close() })
+	{
+		err := writer.PrepareStorageBootstrap(nil)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
-	t.Cleanup(func() { writer.Close() })
-	if err := writer.PrepareStorageBootstrap(nil); err != nil {
-		t.Fatal(err)
-	}
+
 	return selection, writer
 }
-func openStore(t *testing.T, writer *service.LockedProfile, fault Fault) *Store {
-	t.Helper()
+func openStore(t GinkgoTInterface, writer *service.LockedProfile, fault Fault) *Store {
+	GinkgoHelper()
 	s := New(fault)
 	state, _, err := s.Prepare(ctx, writer.Profile)
-	if err != nil {
-		t.Fatal(err)
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	Expect(!state.Ready).To(BeFalse(), func() string { return fmt.Sprint("storage not ready") })
+	DeferCleanup(func() { s.Close() })
+	{
+		err := writer.MarkStorageReady(nil)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
-	if !state.Ready {
-		t.Fatal("storage not ready")
-	}
-	t.Cleanup(func() { s.Close() })
-	if err := writer.MarkStorageReady(nil); err != nil {
-		t.Fatal(err)
-	}
+
 	return s
 }
-func TestBootstrapReopenIdentityAndSettings(t *testing.T) {
+
+var _ = It("TestBootstrapReopenIdentityAndSettings", Label("persistence"), func() {
+	t := GinkgoT()
+
 	_, writer := profile(t)
 	p := writer.Profile
 	s := openStore(t, writer, nil)
 	h, err := s.Health(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if h.Engine != "3.53.4" || h.Journal != "wal" || h.Synchronous != 2 || h.ForeignKeys != 1 || h.BusyTimeout != 5000 || h.Library.ID != p.LibraryID || h.Library.SchemaRevision != SchemaRevision {
-		t.Fatalf("unexpected health: %+v", h)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	Expect(h.Engine != "3.53.4" || h.Journal != "wal" || h.Synchronous != 2 || h.ForeignKeys != 1 || h.BusyTimeout != 5000 || h.Library.ID != p.LibraryID || h.Library.SchemaRevision != SchemaRevision).To(BeFalse(), func() string { return fmt.Sprintf("unexpected health: %+v", h) })
+
 	s.db.SetMaxIdleConns(0)
 	replacement, err := s.Health(ctx)
-	if err != nil || replacement.ForeignKeys != 1 || replacement.Synchronous != 2 || replacement.BusyTimeout != 5000 {
-		t.Fatalf("replacement connection settings lost: %+v %v", replacement, err)
-	}
+	Expect(err != nil || replacement.ForeignKeys != 1 || replacement.Synchronous != 2 || replacement.BusyTimeout != 5000).To(BeFalse(), func() string { return fmt.Sprintf("replacement connection settings lost: %+v %v", replacement, err) })
+
 	s.Close()
 	reopened := openStore(t, writer, nil)
 	again, err := reopened.Health(ctx)
-	if err != nil || h.Library != again.Library {
-		t.Fatalf("restart changed identity/epochs: %v %+v", err, again)
-	}
-}
-func TestBootstrapFaultsReuseOrRollback(t *testing.T) {
+	Expect(err != nil || h.Library != again.Library).To(BeFalse(), func() string { return fmt.Sprintf("restart changed identity/epochs: %v %+v", err, again) })
+
+})
+var _ = It("TestBootstrapFaultsReuseOrRollback", Label("persistence"), func() {
+	t := GinkgoT()
+
 	for _, boundary := range []Boundary{BeforeMigrationCommit, BeforeStorageDirectorySync} {
-		t.Run(string(boundary), func(t *testing.T) {
+		func() {
+			By(string(boundary))
 			_, writer := profile(t)
 			injected := errors.New("injected storage durability failure")
 			s := New(func(b Boundary) error {
@@ -103,44 +103,49 @@ func TestBootstrapFaultsReuseOrRollback(t *testing.T) {
 				}
 				return nil
 			})
-			if _, _, err := s.Prepare(ctx, writer.Profile); !errors.Is(err, injected) {
-				t.Fatalf("boundary failed: %v", err)
+			{
+				_, _, err := s.Prepare(ctx, writer.Profile)
+				Expect(!errors.Is(err, injected)).To(BeFalse(), func() string { return fmt.Sprintf("boundary failed: %v", err) })
 			}
-			if s.db != nil {
-				t.Fatal("failed Prepare retained database handle")
-			}
+			Expect(s.db != nil).To(BeFalse(), func() string { return fmt.Sprint("failed Prepare retained database handle") })
+
 			var initial string
 			if boundary == BeforeStorageDirectorySync {
 				raw := readDB(t, writer.Profile)
-				if err := raw.QueryRow("SELECT stream_epoch FROM libraries").Scan(&initial); err != nil {
-					t.Fatal(err)
+				{
+					err := raw.QueryRow("SELECT stream_epoch FROM libraries").Scan(&initial)
+					Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 				}
+
 				raw.Close()
 			}
 			ready := openStore(t, writer, nil)
 			h, _ := ready.Health(ctx)
-			if initial != "" && h.Library.StreamEpoch != initial {
-				t.Fatal("pending committed bootstrap regenerated epochs")
-			}
-		})
+			Expect(initial != "" && h.Library.StreamEpoch != initial).To(BeFalse(), func() string { return fmt.Sprint("pending committed bootstrap regenerated epochs") })
+
+		}()
 	}
-}
-func readDB(t *testing.T, p service.Profile) *sql.DB {
-	t.Helper()
+})
+
+func readDB(t GinkgoTInterface, p service.Profile) *sql.DB {
+	GinkgoHelper()
 	uri := url.URL{Scheme: "file", Path: filepath.Join(p.DataDir, "storage", "library.sqlite")}
 	q := uri.Query()
 	q.Set("mode", "rw")
 	uri.RawQuery = q.Encode()
 	db, err := sql.Open("sqlite", uri.String())
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	db.SetMaxOpenConns(1)
 	return db
 }
-func TestReadyStorageLossNeverCreatesSubstitute(t *testing.T) {
+
+var _ = It("TestReadyStorageLossNeverCreatesSubstitute", Label("persistence"), func() {
+	t := GinkgoT()
+
 	for _, damage := range []string{"missing", "zero", "corrupt", "foreign", "newer", "partial", "checksum"} {
-		t.Run(damage, func(t *testing.T) {
+		func() {
+			By(damage)
 			_, writer := profile(t)
 			s := openStore(t, writer, nil)
 			s.Close()
@@ -148,71 +153,71 @@ func TestReadyStorageLossNeverCreatesSubstitute(t *testing.T) {
 			switch damage {
 			case "missing":
 				if err := os.Remove(path); err != nil {
-					t.Fatal(err)
+					Fail(fmt.Sprint(err))
 				}
 			case "zero":
 				if err := os.Truncate(path, 0); err != nil {
-					t.Fatal(err)
+					Fail(fmt.Sprint(err))
 				}
 			case "corrupt":
 				if err := os.WriteFile(path, []byte("not a database"), 0600); err != nil {
-					t.Fatal(err)
+					Fail(fmt.Sprint(err))
 				}
 			case "foreign":
 				db := readDB(t, writer.Profile)
 				_, err := db.Exec("UPDATE libraries SET library_id='foreign'")
 				db.Close()
 				if err != nil {
-					t.Fatal(err)
+					Fail(fmt.Sprint(err))
 				}
 			case "newer":
 				db := readDB(t, writer.Profile)
 				_, err := db.Exec("UPDATE libraries SET schema_revision=999; PRAGMA user_version=999")
 				db.Close()
 				if err != nil {
-					t.Fatal(err)
+					Fail(fmt.Sprint(err))
 				}
 			case "partial":
 				db := readDB(t, writer.Profile)
 				_, err := db.Exec("DROP TABLE region_evidence")
 				db.Close()
 				if err != nil {
-					t.Fatal(err)
+					Fail(fmt.Sprint(err))
 				}
 			case "checksum":
 				db := readDB(t, writer.Profile)
 				_, err := db.Exec("UPDATE schema_migrations SET checksum='unknown' WHERE revision=2")
 				db.Close()
 				if err != nil {
-					t.Fatal(err)
+					Fail(fmt.Sprint(err))
 				}
 			}
 			before, _ := os.ReadFile(path)
 			failed := New(nil)
-			if _, _, err := failed.Prepare(ctx, writer.Profile); err == nil {
-				t.Fatal("damaged ready library initialized")
+			{
+				_, _, err := failed.Prepare(ctx, writer.Profile)
+				Expect(err == nil).To(BeFalse(), func() string { return fmt.Sprint("damaged ready library initialized") })
 			}
-			if failed.db != nil {
-				t.Fatal("Prepare failure leaked DB")
-			}
+			Expect(failed.db != nil).To(BeFalse(), func() string { return fmt.Sprint("Prepare failure leaked DB") })
+
 			if damage == "missing" {
-				if _, err := os.Stat(path); !os.IsNotExist(err) {
-					t.Fatal("missing database substituted")
+				{
+					_, err := os.Stat(path)
+					Expect(!os.IsNotExist(err)).To(BeFalse(), func() string { return fmt.Sprint("missing database substituted") })
 				}
+
 			}
 			if damage == "zero" || damage == "corrupt" {
 				after, _ := os.ReadFile(path)
-				if !bytes.Equal(before, after) {
-					t.Fatal("damaged bytes overwritten")
-				}
+				Expect(!bytes.Equal(before, after)).To(BeFalse(), func() string { return fmt.Sprint("damaged bytes overwritten") })
+
 			}
 			loaded, err := service.Load(service.Selection{Profile: "test", DataDir: writer.Profile.DataDir})
-			if err != nil || loaded.LibraryID != writer.Profile.LibraryID || loaded.StorageState != "ready" {
-				t.Fatalf("profile marker replaced: %v", err)
-			}
-		})
+			Expect(err != nil || loaded.LibraryID != writer.Profile.LibraryID || loaded.StorageState != "ready").To(BeFalse(), func() string { return fmt.Sprintf("profile marker replaced: %v", err) })
+
+		}()
 	}
-}
+})
 
 type endpointFixture struct {
 	started bool
@@ -229,9 +234,13 @@ func (e *endpointFixture) Start(_ context.Context, _ service.Profile, id service
 }
 func (e *endpointFixture) Close(context.Context) error { return nil }
 func (e *endpointFixture) Done() <-chan error          { return e.done }
-func TestReadyMarkerFaultAndLegacyUpgrade(t *testing.T) {
+
+var _ = It("TestReadyMarkerFaultAndLegacyUpgrade", Label("persistence"), func() {
+	t := GinkgoT()
+
 	for _, boundary := range []string{"profile_file_sync", "profile_rename", "profile_directory_sync"} {
-		t.Run(boundary, func(t *testing.T) {
+		func() {
+			By(boundary)
 			selection, writer := profile(t)
 			original := writer.Profile
 			writer.Close()
@@ -244,75 +253,79 @@ func TestReadyMarkerFaultAndLegacyUpgrade(t *testing.T) {
 				}
 				return nil
 			}}
-			if err := runner.Run(ctx, func(service.Identity) { t.Error("published failed ready marker") }); !errors.Is(err, injected) {
-				t.Fatalf("marker fault=%v", err)
+			{
+				err := runner.Run(ctx, func(service.Identity) { Fail(fmt.Sprint("published failed ready marker")) })
+				Expect(!errors.Is(err, injected)).To(BeFalse(), func() string { return fmt.Sprintf("marker fault=%v", err) })
 			}
-			if endpoint.started || s.db != nil {
-				t.Fatal("marker failure published or retained DB")
-			}
+			Expect(endpoint.started || s.db != nil).To(BeFalse(), func() string { return fmt.Sprint("marker failure published or retained DB") })
+
 			loaded, err := service.Load(selection)
-			if err != nil {
-				t.Fatal(err)
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+			Expect(loaded.LibraryID != original.LibraryID || loaded.ProfileID != original.ProfileID || loaded.ControlKey != original.ControlKey).To(BeFalse(), func() string { return fmt.Sprint("marker retry changed profile identity") })
+			{
+
+				err := (service.Runner{Selection: selection, Port: 9270, Storage: New(nil), Endpoint: &endpointFixture{}}).Run(ctx, func(id service.Identity) {
+					if !id.Storage.Ready {
+						Fail(fmt.Sprint("retry not ready"))
+					}
+				})
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 			}
-			if loaded.LibraryID != original.LibraryID || loaded.ProfileID != original.ProfileID || loaded.ControlKey != original.ControlKey {
-				t.Fatal("marker retry changed profile identity")
-			}
-			if err := (service.Runner{Selection: selection, Port: 9270, Storage: New(nil), Endpoint: &endpointFixture{}}).Run(ctx, func(id service.Identity) {
-				if !id.Storage.Ready {
-					t.Error("retry not ready")
-				}
-			}); err != nil {
-				t.Fatal(err)
-			}
-		})
+
+		}()
 	}
 	for _, nonempty := range []bool{false, true} {
-		t.Run(fmt.Sprint("legacy-", nonempty), func(t *testing.T) {
+		func() {
+			By(fmt.Sprint("legacy-", nonempty))
 			selection, writer := profile(t)
 			legacy := writer.Profile
 			legacy.Format = 1
 			legacy.StorageState = ""
 			writer.Close()
 			data, _ := json.Marshal(legacy)
-			if err := os.WriteFile(filepath.Join(legacy.DataDir, "profile.json"), data, 0600); err != nil {
-				t.Fatal(err)
+			{
+				err := os.WriteFile(filepath.Join(legacy.DataDir, "profile.json"), data, 0600)
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 			}
+
 			if nonempty {
-				if err := os.WriteFile(filepath.Join(legacy.DataDir, "storage", "unknown"), []byte("preserve"), 0600); err != nil {
-					t.Fatal(err)
+				{
+					err := os.WriteFile(filepath.Join(legacy.DataDir, "storage", "unknown"), []byte("preserve"), 0600)
+					Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 				}
+
 			}
 			endpoint := &endpointFixture{}
 			err := (service.Runner{Selection: selection, Port: 9270, Storage: New(nil), Endpoint: endpoint}).Run(ctx, func(service.Identity) {})
 			if nonempty {
-				if err == nil || endpoint.started {
-					t.Fatal("adopted unknown legacy storage")
-				}
+				Expect(err == nil || endpoint.started).To(BeFalse(), func() string { return fmt.Sprint("adopted unknown legacy storage") })
+
 				return
 			}
-			if err != nil {
-				t.Fatal(err)
-			}
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 			upgraded, err := service.Load(selection)
-			if err != nil || upgraded.Format != 2 || upgraded.StorageState != "ready" || upgraded.LibraryID != legacy.LibraryID || upgraded.ControlKey != legacy.ControlKey {
-				t.Fatalf("legacy upgrade: %v %+v", err, upgraded)
-			}
-		})
+			Expect(err != nil || upgraded.Format != 2 || upgraded.StorageState != "ready" || upgraded.LibraryID != legacy.LibraryID || upgraded.ControlKey != legacy.ControlKey).To(BeFalse(), func() string { return fmt.Sprintf("legacy upgrade: %v %+v", err, upgraded) })
+
+		}()
 	}
-}
-func TestMigrationRecoverySnapshotRetainedOnFailure(t *testing.T) {
+})
+var _ = It("TestMigrationRecoverySnapshotRetainedOnFailure", Label("persistence"), func() {
+	t := GinkgoT()
+
 	_, writer := profile(t)
 	p := writer.Profile
 	path := filepath.Join(p.DataDir, "storage", "library.sqlite")
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	f.Close()
 	db := readDB(t, p)
-	if _, err := db.Exec(migrations[0]); err != nil {
-		t.Fatal(err)
+	{
+		_, err := db.Exec(migrations[0])
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	for _, statement := range []struct {
 		query string
 		args  []any
@@ -323,15 +336,19 @@ func TestMigrationRecoverySnapshotRetainedOnFailure(t *testing.T) {
 		{"INSERT INTO schema_migrations VALUES(1,?,'now')", []any{digest([]byte(migrations[0]))}},
 		{"PRAGMA user_version=1", nil},
 	} {
-		if _, err := db.Exec(statement.query, statement.args...); err != nil {
-			t.Fatal(err)
+		{
+			_, err := db.Exec(statement.query, statement.args...)
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 		}
+
 	}
 
 	db.Close()
-	if err := writer.MarkStorageReady(nil); err != nil {
-		t.Fatal(err)
+	{
+		err := writer.MarkStorageReady(nil)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	injected := errors.New("injected migration commit failure")
 	s := New(func(b Boundary) error {
 		if b == BeforeMigrationCommit {
@@ -339,23 +356,28 @@ func TestMigrationRecoverySnapshotRetainedOnFailure(t *testing.T) {
 		}
 		return nil
 	})
-	if _, _, err := s.Prepare(ctx, writer.Profile); !errors.Is(err, injected) {
-		t.Fatalf("migration error: %v", err)
+	{
+		_, _, err := s.Prepare(ctx, writer.Profile)
+		Expect(!errors.Is(err, injected)).To(BeFalse(), func() string { return fmt.Sprintf("migration error: %v", err) })
 	}
+
 	snapshots, err := filepath.Glob(filepath.Join(p.DataDir, "storage", "pre-migration-*.sqlite"))
-	if err != nil || len(snapshots) != 1 {
-		t.Fatalf("snapshot missing: %v %v", snapshots, err)
-	}
+	Expect(err != nil || len(snapshots) != 1).To(BeFalse(), func() string { return fmt.Sprintf("snapshot missing: %v %v", snapshots, err) })
+
 	for _, name := range snapshots {
-		if _, err := os.Stat(name + ".json"); err != nil {
-			t.Fatal("verified snapshot record missing")
+		{
+			_, err := os.Stat(name + ".json")
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint("verified snapshot record missing") })
 		}
+
 	}
 	db = readDB(t, p)
 	var revision int
-	if err := db.QueryRow("SELECT schema_revision FROM libraries").Scan(&revision); err != nil || revision != 1 {
-		t.Fatalf("failed migration changed prior schema: %v %d", err, revision)
+	{
+		err := db.QueryRow("SELECT schema_revision FROM libraries").Scan(&revision)
+		Expect(err != nil || revision != 1).To(BeFalse(), func() string { return fmt.Sprintf("failed migration changed prior schema: %v %d", err, revision) })
 	}
+
 	db.Close()
 	snapshotFailure := New(func(b Boundary) error {
 		if b == BeforeSnapshotSync {
@@ -363,34 +385,43 @@ func TestMigrationRecoverySnapshotRetainedOnFailure(t *testing.T) {
 		}
 		return nil
 	})
-	if _, _, err := snapshotFailure.Prepare(ctx, writer.Profile); !errors.Is(err, injected) {
-		t.Fatalf("snapshot flush failure not fenced: %v", err)
+	{
+		_, _, err := snapshotFailure.Prepare(ctx, writer.Profile)
+		Expect(!errors.Is(err, injected)).To(BeFalse(), func() string { return fmt.Sprintf("snapshot flush failure not fenced: %v", err) })
 	}
-	if _, err := os.Stat(snapshots[0] + ".json"); err != nil {
-		t.Fatal("prior verified recovery snapshot lost")
+	{
+
+		_, err := os.Stat(snapshots[0] + ".json")
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint("prior verified recovery snapshot lost") })
 	}
+
 	ready := openStore(t, writer, nil)
 	h, err := ready.Health(ctx)
-	if err != nil || h.Library.SchemaRevision != SchemaRevision || !strings.HasPrefix(h.Library.ID, p.LibraryID) {
-		t.Fatalf("migration retry: %v %+v", err, h)
-	}
-}
+	Expect(err != nil || h.Library.SchemaRevision != SchemaRevision || !strings.HasPrefix(h.Library.ID, p.LibraryID)).To(BeFalse(), func() string { return fmt.Sprintf("migration retry: %v %+v", err, h) })
 
-func TestPendingUnknownStorageFailsWithoutNewDatabase(t *testing.T) {
+})
+var _ = It("TestPendingUnknownStorageFailsWithoutNewDatabase", Label("persistence"), func() {
+	t := GinkgoT()
+
 	_, writer := profile(t)
 	path := filepath.Join(writer.Profile.DataDir, "storage", "unrecognized")
-	if err := os.WriteFile(path, []byte("must preserve"), 0600); err != nil {
-		t.Fatal(err)
+	{
+		err := os.WriteFile(path, []byte("must preserve"), 0600)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	s := New(nil)
-	if _, _, err := s.Prepare(ctx, writer.Profile); err == nil {
-		t.Fatal("unknown pending content initialized")
+	{
+		_, _, err := s.Prepare(ctx, writer.Profile)
+		Expect(err == nil).To(BeFalse(), func() string { return fmt.Sprint("unknown pending content initialized") })
 	}
-	if _, err := os.Stat(filepath.Join(writer.Profile.DataDir, "storage", "library.sqlite")); !os.IsNotExist(err) {
-		t.Fatal("unknown pending storage received a substitute database")
+	{
+
+		_, err := os.Stat(filepath.Join(writer.Profile.DataDir, "storage", "library.sqlite"))
+		Expect(!os.IsNotExist(err)).To(BeFalse(), func() string { return fmt.Sprint("unknown pending storage received a substitute database") })
 	}
+
 	bytes, err := os.ReadFile(path)
-	if err != nil || string(bytes) != "must preserve" {
-		t.Fatal("unknown storage discarded")
-	}
-}
+	Expect(err != nil || string(bytes) != "must preserve").To(BeFalse(), func() string { return fmt.Sprint("unknown storage discarded") })
+
+})

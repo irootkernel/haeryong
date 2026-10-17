@@ -11,13 +11,18 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
-	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"time"
 )
 
-func TestCompletePartialRecoversRenameCollisionAfterCurrentHead(t *testing.T) {
+var _ = It("TestCompletePartialRecoversRenameCollisionAfterCurrentHead", Label("integration"), func() {
+	t := GinkgoT()
+
 	for _, deny := range []bool{false, true} {
-		t.Run(fmt.Sprint("current_auth_denied=", deny), func(t *testing.T) {
+		func() {
+			By(fmt.Sprint("current_auth_denied=", deny))
 			body := strings.Repeat("verified-original-", 4096)
 			hash := sha256.Sum256([]byte(body))
 			header := "sha-256=:" + base64.StdEncoding.EncodeToString(hash[:]) + ":"
@@ -26,9 +31,11 @@ func TestCompletePartialRecoversRenameCollisionAfterCurrentHead(t *testing.T) {
 			var head atomic.Bool
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if first.CompareAndSwap(false, true) {
-					if e := os.WriteFile(destination, []byte("unrelated destination"), 0600); e != nil {
-						t.Error(e)
+					{
+						e := os.WriteFile(destination, []byte("unrelated destination"), 0600)
+						Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 					}
+
 				} else if deny {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(401)
@@ -46,44 +53,45 @@ func TestCompletePartialRecoversRenameCollisionAfterCurrentHead(t *testing.T) {
 			}))
 			defer server.Close()
 			api, e := New(server.URL, "fixture", testCredential(t, server.URL))
-			if e != nil {
-				t.Fatal(e)
+			Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
+			{
+
+				_, _, e = api.Download(context.Background(), "version-fixture", "first.html", destination, false)
+				Expect(e == nil).To(BeFalse(), func() string { return fmt.Sprint("real no-replace collision did not fail") })
 			}
-			if _, _, e = api.Download(context.Background(), "version-fixture", "first.html", destination, false); e == nil {
-				t.Fatal("real no-replace collision did not fail")
-			}
+
 			original, e := os.ReadFile(destination)
-			if e != nil || string(original) != "unrelated destination" {
-				t.Fatal("collision overwrote unrelated file", e)
-			}
+			Expect(e != nil || string(original) != "unrelated destination").To(BeFalse(), func() string { return fmt.Sprint("collision overwrote unrelated file", e) })
+
 			partials, e := filepath.Glob(filepath.Join(filepath.Dir(destination), "*.partial"))
-			if e != nil || len(partials) != 1 {
-				t.Fatal("complete verified partial was not retained", e)
-			}
+			Expect(e != nil || len(partials) != 1).To(BeFalse(), func() string { return fmt.Sprint("complete verified partial was not retained", e) })
+
 			info, e := os.Stat(partials[0])
-			if e != nil || info.Size() != int64(len(body)) {
-				t.Fatal("counterexample is not a full partial", e)
+			Expect(e != nil || info.Size() != int64(len(body))).To(BeFalse(), func() string { return fmt.Sprint("counterexample is not a full partial", e) })
+			{
+
+				e = os.Remove(destination)
+				Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 			}
-			if e = os.Remove(destination); e != nil {
-				t.Fatal(e)
-			}
+
 			result, _, e := api.Download(context.Background(), "version-fixture", "first.html", destination, false)
 			if deny {
-				if e == nil {
-					t.Fatal("revoked current authority published local partial")
+				Expect(e == nil).To(BeFalse(), func() string { return fmt.Sprint("revoked current authority published local partial") })
+				{
+
+					_, e = os.Stat(destination)
+					Expect(!os.IsNotExist(e)).To(BeFalse(), func() string { return fmt.Sprint("unauthorized partial published") })
 				}
-				if _, e = os.Stat(destination); !os.IsNotExist(e) {
-					t.Fatal("unauthorized partial published")
-				}
+
 				return
 			}
-			if e != nil {
-				t.Fatal("complete partial could not recover after actual rename collision", e)
-			}
+			Expect(e != nil).To(BeFalse(), func() string {
+				return fmt.Sprint("complete partial could not recover after actual rename collision", e)
+			})
+
 			actual, e := os.ReadFile(destination)
-			if e != nil || string(actual) != body || !result.Resumed || !head.Load() {
-				t.Fatal("recovered output/current HEAD proof missing", e)
-			}
-		})
+			Expect(e != nil || string(actual) != body || !result.Resumed || !head.Load()).To(BeFalse(), func() string { return fmt.Sprint("recovered output/current HEAD proof missing", e) })
+
+		}()
 	}
-}
+})

@@ -6,12 +6,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"testing"
 
+	"fmt"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"haeryong.local/haeryong/internal/application/service"
 )
 
-func TestReplayAndIdentityMismatchRejected(t *testing.T) {
+var _ = It("TestReplayAndIdentityMismatchRejected", Label("integration"), func() {
+
 	p := service.Profile{LibraryID: "library", ProfileID: "profile", ControlKey: strings.Repeat("ab", 32)}
 	id := service.Identity{LibraryID: p.LibraryID, ProfileID: p.ProfileID, InstanceID: "instance", API: service.APIVersion, ControlReady: true, Storage: service.StorageState{State: "pending_task_002_02"}}
 	var captured []byte
@@ -45,22 +48,29 @@ func TestReplayAndIdentityMismatchRejected(t *testing.T) {
 	}))
 	defer server.Close()
 	id.Endpoint = server.URL
-	if _, err := Verify(context.Background(), p, id); err != nil {
-		t.Fatal(err)
+	{
+		_, err := Verify(context.Background(), p, id)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	for _, candidate := range []string{"replay", "wrong_library", "wrong_profile", "wrong_api", "wrong_instance"} {
 		mode = candidate
-		if _, err := Verify(context.Background(), p, id); err == nil {
-			t.Fatalf("accepted %s response", mode)
+		{
+			_, err := Verify(context.Background(), p, id)
+			Expect(err == nil).To(BeFalse(), func() string { return fmt.Sprintf("accepted %s response", mode) })
 		}
-	}
-}
 
-func TestEndpointValidationDoesNotFollowRedirectOrProxy(t *testing.T) {
+	}
+})
+var _ = It("TestEndpointValidationDoesNotFollowRedirectOrProxy", Label("integration"), func() {
+	t := GinkgoT()
+
 	for _, endpoint := range []string{"https://127.0.0.1:9270", "http://localhost:9270", "http://127.0.0.1:0", "http://127.0.0.1:9270/", "http://user@127.0.0.1:9270", "http://127.0.0.1:9270?x=y", "http://127.0.0.1:9270#fragment"} {
-		if _, err := endpointURL(endpoint); err == nil {
-			t.Errorf("accepted invalid endpoint %s", endpoint)
+		{
+			_, err := endpointURL(endpoint)
+			Expect(err == nil).To(BeFalse(), func() string { return fmt.Sprintf("accepted invalid endpoint %s", endpoint) })
 		}
+
 	}
 	p := service.Profile{LibraryID: "library", ProfileID: "profile", ControlKey: strings.Repeat("ab", 32)}
 	targetHit := false
@@ -70,15 +80,15 @@ func TestEndpointValidationDoesNotFollowRedirectOrProxy(t *testing.T) {
 	defer redirect.Close()
 	t.Setenv("HTTP_PROXY", target.URL)
 	id := service.Identity{LibraryID: p.LibraryID, ProfileID: p.ProfileID, InstanceID: "instance", API: service.APIVersion, Endpoint: redirect.URL, ControlReady: true}
-	if _, err := Verify(context.Background(), p, id); err == nil {
-		t.Fatal("redirect accepted")
+	{
+		_, err := Verify(context.Background(), p, id)
+		Expect(err == nil).To(BeFalse(), func() string { return fmt.Sprint("redirect accepted") })
 	}
-	if targetHit {
-		t.Fatal("credential proof forwarded to proxy or redirect target")
-	}
-}
+	Expect(targetHit).To(BeFalse(), func() string { return fmt.Sprint("credential proof forwarded to proxy or redirect target") })
 
-func TestLocalEndpointPortBoundaries(t *testing.T) {
+})
+var _ = It("TestLocalEndpointPortBoundaries", Label("integration"), func() {
+
 	for _, test := range []struct {
 		endpoint string
 		valid    bool
@@ -88,8 +98,10 @@ func TestLocalEndpointPortBoundaries(t *testing.T) {
 		{"http://127.0.0.1:9999", true}, {"http://127.0.0.1:65535", true},
 		{"http://127.0.0.1:65536", false},
 	} {
-		if _, err := endpointURL(test.endpoint); (err == nil) != test.valid {
-			t.Errorf("endpoint %s valid=%v error=%v", test.endpoint, test.valid, err)
+		{
+			_, err := endpointURL(test.endpoint)
+			Expect((err == nil) != test.valid).To(BeFalse(), func() string { return fmt.Sprintf("endpoint %s valid=%v error=%v", test.endpoint, test.valid, err) })
 		}
+
 	}
-}
+})

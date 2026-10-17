@@ -11,21 +11,26 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"testing"
 
+	"fmt"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"haeryong.local/haeryong/internal/adapters/contentstore"
 	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
 )
 
-func TestActualHTTPResourceFaultNeverAcknowledgesUndurableRange(t *testing.T) {
+var _ = It("TestActualHTTPResourceFaultNeverAcknowledgesUndurableRange", Label("persistence"), func() {
+	t := GinkgoT()
+
 	for _, test := range []struct {
 		name     string
 		boundary contentstore.Boundary
 		err      error
 		code     string
 	}{{"disk-full", contentstore.Write, syscall.ENOSPC, "RESOURCE_EXHAUSTED"}, {"file-sync-io", contentstore.FileSync, syscall.EIO, "FILE_ACCESS_ERROR"}} {
-		t.Run(test.name, func(t *testing.T) {
+		func() {
+			By(test.name)
 			f := newHTTPFixture(t)
 			id := f.upload("directory", "injected I/O failure")
 			original := f.store.Objects
@@ -35,9 +40,8 @@ func TestActualHTTPResourceFaultNeverAcknowledgesUndurableRange(t *testing.T) {
 				}
 				return nil
 			}))
-			if err != nil {
-				t.Fatal(err)
-			}
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 			f.store.Objects = injected
 			defer func() { f.store.Objects = original; injected.Close() }()
 			status, _, data := f.put(id, "file", "file", []byte("never acknowledged"), 0, true)
@@ -48,20 +52,20 @@ func TestActualHTTPResourceFaultNeverAcknowledgesUndurableRange(t *testing.T) {
 					Retryable bool   `json:"retryable"`
 				} `json:"error"`
 			}
-			if json.Unmarshal(data, &failure) != nil || failure.Error.Code != test.code || !failure.Error.Retryable {
-				t.Fatal("actual resource failure diagnosis lost")
+			Expect(json.Unmarshal(data, &failure) != nil || failure.Error.Code != test.code || !failure.Error.Retryable).To(BeFalse(), func() string { return fmt.Sprint("actual resource failure diagnosis lost") })
+			{
+
+				detail := f.detail(id)
+				Expect(detail.State != "open" || detail.Checkpoint.AcceptedBytes != "0").To(BeFalse(), func() string { return fmt.Sprint("undurable bytes acknowledged") })
 			}
-			if detail := f.detail(id); detail.State != "open" || detail.Checkpoint.AcceptedBytes != "0" {
-				t.Fatal("undurable bytes acknowledged")
-			}
+
 			hash := sha256.Sum256([]byte("never acknowledged"))
 			err = f.store.Write(context.Background(), func(tx app.WriteTx) error { _, err := tx.Object(hex.EncodeToString(hash[:])); return err })
-			if !errors.Is(err, domain.ErrNotFound) {
-				t.Fatal("failed flush created READY object")
-			}
-		})
+			Expect(!errors.Is(err, domain.ErrNotFound)).To(BeFalse(), func() string { return fmt.Sprint("failed flush created READY object") })
+
+		}()
 	}
-}
+})
 
 type interruptedBody struct{ done bool }
 
@@ -72,7 +76,10 @@ func (r *interruptedBody) Read(p []byte) (int, error) {
 	r.done = true
 	return copy(p, "prefix"), nil
 }
-func TestActualHandlerInterruptedBodyReportsRecoverableTransfer(t *testing.T) {
+
+var _ = It("TestActualHandlerInterruptedBodyReportsRecoverableTransfer", Label("persistence"), func() {
+	t := GinkgoT()
+
 	f := newHTTPFixture(t)
 	id := f.upload("directory", "interrupted body")
 	request := httptest.NewRequest("PUT", f.server.URL+"/api/v1/uploads/"+id+"/entries?path=file&kind=file", &interruptedBody{})
@@ -87,19 +94,15 @@ func TestActualHandlerInterruptedBodyReportsRecoverableTransfer(t *testing.T) {
 	response := recorder.Result()
 	defer response.Body.Close()
 	data, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	requireStatus(t, response.StatusCode, 503, data)
 	var failure struct {
 		Error struct {
 			Code string `json:"code"`
 		} `json:"error"`
 	}
-	if json.Unmarshal(data, &failure) != nil || failure.Error.Code != "TRANSFER_INTERRUPTED" {
-		t.Fatal("interrupted input was reported as complete/outage")
-	}
-	if f.detail(id).Checkpoint.AcceptedBytes != "0" {
-		t.Fatal("interrupted range acknowledged")
-	}
-}
+	Expect(json.Unmarshal(data, &failure) != nil || failure.Error.Code != "TRANSFER_INTERRUPTED").To(BeFalse(), func() string { return fmt.Sprint("interrupted input was reported as complete/outage") })
+	Expect(f.detail(id).Checkpoint.AcceptedBytes != "0").To(BeFalse(), func() string { return fmt.Sprint("interrupted range acknowledged") })
+
+})

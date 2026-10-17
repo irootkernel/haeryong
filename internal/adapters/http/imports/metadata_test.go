@@ -11,15 +11,19 @@ import (
 	"syscall"
 	"time"
 
+	"fmt"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"haeryong.local/haeryong/internal/adapters/contentstore"
 	importer "haeryong.local/haeryong/internal/application/import"
 	appstorage "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
 	"strings"
-	"testing"
 )
 
-func TestActualHTTPMetadataReferenceAndInlineBytesShareReplayIdentity(t *testing.T) {
+var _ = It("TestActualHTTPMetadataReferenceAndInlineBytesShareReplayIdentity", Label("persistence"), func() {
+	t := GinkgoT()
+
 	f := newHTTPFixture(t)
 	result := f.upload("file", "metadata.html")
 	status, _, data := f.put(result, "_input", "file", []byte("<html>metadata</html>"), 0, true)
@@ -36,9 +40,8 @@ func TestActualHTTPMetadataReferenceAndInlineBytesShareReplayIdentity(t *testing
 	status, _, data = f.put(created.ID, created.Entry, "file", metadata, 0, true)
 	requireStatus(t, status, 200, data)
 	sealed := f.seal(created.ID)
-	if sealed.ObjectRef == nil {
-		t.Fatal("metadata reference absent")
-	}
+	Expect(sealed.ObjectRef == nil).To(BeFalse(), func() string { return fmt.Sprint("metadata reference absent") })
+
 	previewKey := operation(t)
 	status, data = f.json("POST", "/api/v1/packages/validate", previewKey, map[string]any{"upload_id": result, "metadata_ref": sealed.ObjectRef})
 	requireStatus(t, status, 200, data)
@@ -58,17 +61,16 @@ func TestActualHTTPMetadataReferenceAndInlineBytesShareReplayIdentity(t *testing
 	var output struct {
 		VersionID string `json:"version_id"`
 	}
-	if json.Unmarshal(completed.Result, &output) != nil || output.VersionID == "" {
-		t.Fatal("metadata import missing result")
-	}
+	Expect(json.Unmarshal(completed.Result, &output) != nil || output.VersionID == "").To(BeFalse(), func() string { return fmt.Sprint("metadata import missing result") })
+
 	version, err := f.store.Version(context.Background(), output.VersionID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	digest := sha256.Sum256(metadata)
-	if version.MetadataHash != hex.EncodeToString(digest[:]) || version.Title != "Exact metadata" {
-		t.Fatalf("submitted metadata readback mismatch: exact_hash=%t title=%q", version.MetadataHash == hex.EncodeToString(digest[:]), version.Title)
-	}
+	Expect(version.MetadataHash != hex.EncodeToString(digest[:]) || version.Title != "Exact metadata").To(BeFalse(), func() string {
+		return fmt.Sprintf("submitted metadata readback mismatch: exact_hash=%t title=%q", version.MetadataHash == hex.EncodeToString(digest[:]), version.Title)
+	})
+
 	inline := append([]byte(`{"upload_id":"`+result+`","document_id":null,"metadata":`), metadata...)
 	inline = append(inline, '}')
 	status, _, data = f.request("POST", "/api/v1/imports", bytes.NewReader(inline), map[string]string{"Content-Type": "application/json", "Idempotency-Key": key})
@@ -76,9 +78,8 @@ func TestActualHTTPMetadataReferenceAndInlineBytesShareReplayIdentity(t *testing
 	replay := valueAs[struct {
 		ID string `json:"job_id"`
 	}](t, data)
-	if replay.ID != job.ID {
-		t.Fatal("inline/reference equivalent bytes created another job")
-	}
+	Expect(replay.ID != job.ID).To(BeFalse(), func() string { return fmt.Sprint("inline/reference equivalent bytes created another job") })
+
 	changed := bytes.Replace(inline, []byte("Exact metadata"), []byte("Changed metadata"), 1)
 	status, _, data = f.request("POST", "/api/v1/imports", bytes.NewReader(changed), map[string]string{"Content-Type": "application/json", "Idempotency-Key": key})
 	requireStatus(t, status, 409, data)
@@ -86,9 +87,10 @@ func TestActualHTTPMetadataReferenceAndInlineBytesShareReplayIdentity(t *testing
 	requireStatus(t, status, 400, data)
 	f.restart()
 	f.verify(version, map[string]string{"metadata.html": "<html>metadata</html>"}, nil)
-}
+})
+var _ = It("TestActualHTTPMalformedMetadataHasFieldDiagnosticAndRetainsSealedPayload", Label("persistence"), func() {
+	t := GinkgoT()
 
-func TestActualHTTPMalformedMetadataHasFieldDiagnosticAndRetainsSealedPayload(t *testing.T) {
 	f := newHTTPFixture(t)
 	id := f.upload("file", "retained.html")
 	status, _, data := f.put(id, "_input", "file", []byte("<html>retained</html>"), 0, true)
@@ -102,26 +104,29 @@ func TestActualHTTPMalformedMetadataHasFieldDiagnosticAndRetainsSealedPayload(t 
 			Details map[string]any `json:"details"`
 		} `json:"error"`
 	}
-	if json.Unmarshal(data, &failure) != nil || failure.Error.Code != "PACKAGE_INVALID" {
-		t.Fatal("metadata error was hidden")
-	}
+	Expect(json.Unmarshal(data, &failure) != nil || failure.Error.Code != "PACKAGE_INVALID").To(BeFalse(), func() string { return fmt.Sprint("metadata error was hidden") })
+
 	pointer, ok := failure.Error.Details["field"].(string)
-	if !ok || !strings.Contains(pointer, "title") {
-		t.Fatal("metadata field diagnostic missing")
-	}
+	Expect(!ok || !strings.Contains(pointer, "title")).To(BeFalse(), func() string { return fmt.Sprint("metadata field diagnostic missing") })
+
 	status, data = f.json("POST", "/api/v1/packages/validate", "", map[string]any{"upload_id": id, "metadata": map[string]any{"document": map[string]any{"title": 17}}})
 	requireStatus(t, status, 422, data)
-	if detail := f.detail(id); detail.State != "sealed" || !detail.Reusable {
-		t.Fatal("invalid optional metadata discarded sealed payload")
+	{
+		detail := f.detail(id)
+		Expect(detail.State != "sealed" || !detail.Reusable).To(BeFalse(), func() string { return fmt.Sprint("invalid optional metadata discarded sealed payload") })
 	}
+
 	version := f.publish(id, operation(t))
 	f.verify(version, map[string]string{"retained.html": "<html>retained</html>"}, nil)
-}
+})
+var
 
 // The negative fixtures follow tests/contracts/contract.py metadata(), including
 // collection-local uniqueness and exact retained source identity. They do not
 // require optional enrichment for ordinary payloads.
-func TestActualHTTPMetadataSemanticNegativesPreserveReusablePayload(t *testing.T) {
+_ = It("TestActualHTTPMetadataSemanticNegativesPreserveReusablePayload", Label("persistence"), func() {
+	t := GinkgoT()
+
 	f := newHTTPFixture(t)
 	id := f.upload("directory", "metadata rules")
 	payload := []byte("<html>source bytes</html>\n")
@@ -158,7 +163,8 @@ func TestActualHTTPMetadataSemanticNegativesPreserveReusablePayload(t *testing.T
 		{"missing_local_evidence", `{"regions":[{"id":"overview","page_path":"evidence.html","evidence_ids":["missing"]}]}`, "/regions"},
 	}
 	for _, test := range cases {
-		t.Run(test.name, func(t *testing.T) {
+		func() {
+			By(test.name)
 			metadata := json.RawMessage(test.metadata)
 			for _, route := range []string{"/api/v1/packages/validate", "/api/v1/imports"} {
 				request := map[string]any{"upload_id": id, "metadata": metadata}
@@ -175,20 +181,22 @@ func TestActualHTTPMetadataSemanticNegativesPreserveReusablePayload(t *testing.T
 						} `json:"details"`
 					} `json:"error"`
 				}
-				if err := json.Unmarshal(data, &failure); err != nil {
-					t.Fatal(err)
+				{
+					err := json.Unmarshal(data, &failure)
+					Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 				}
-				if failure.Error.Code != "PACKAGE_INVALID" && failure.Error.Code != "INVALID_EVIDENCE" {
-					t.Fatal("metadata rejection lost canonical error", failure.Error.Code)
-				}
-				if !strings.HasPrefix(failure.Error.Details.Field, test.field) {
-					t.Fatalf("%s diagnostic field %q does not identify %s", route, failure.Error.Details.Field, test.field)
-				}
+				Expect(failure.Error.Code != "PACKAGE_INVALID" && failure.Error.Code != "INVALID_EVIDENCE").To(BeFalse(), func() string { return fmt.Sprint("metadata rejection lost canonical error", failure.Error.Code) })
+				Expect(!strings.HasPrefix(failure.Error.Details.Field, test.field)).To(BeFalse(), func() string {
+					return fmt.Sprintf("%s diagnostic field %q does not identify %s", route, failure.Error.Details.Field, test.field)
+				})
+
 			}
-			if detail := f.detail(id); detail.State != "sealed" || !detail.Reusable {
-				t.Fatal("malformed optional metadata consumed payload")
+			{
+				detail := f.detail(id)
+				Expect(detail.State != "sealed" || !detail.Reusable).To(BeFalse(), func() string { return fmt.Sprint("malformed optional metadata consumed payload") })
 			}
-		})
+
+		}()
 	}
 	// An unresolved exact Haeryong relationship is optional enrichment, not a
 	// missing local source/evidence reference or a reason to discard the payload.
@@ -204,9 +212,10 @@ func TestActualHTTPMetadataSemanticNegativesPreserveReusablePayload(t *testing.T
 	// The same ordinary directory also remains admissible without metadata.
 	version := f.publish(id, operation(t))
 	f.verify(version, map[string]string{"evidence.html": string(payload)}, map[string]string{"assets": "directory"})
-}
+})
+var _ = It("TestActualHTTPFailedImportMetadataReferenceReplayAfterAbandonAndGC", Label("persistence"), func() {
+	t := GinkgoT()
 
-func TestActualHTTPFailedImportMetadataReferenceReplayAfterAbandonAndGC(t *testing.T) {
 	f := newHTTPFixture(t)
 	result := f.upload("file", "failed-job.html")
 	status, _, data := f.put(result, "_input", "file", []byte("<html>retained after failure</html>"), 0, true)
@@ -224,16 +233,16 @@ func TestActualHTTPFailedImportMetadataReferenceReplayAfterAbandonAndGC(t *testi
 		status, _, data = f.put(created.ID, created.Entry, "file", content, 0, true)
 		requireStatus(t, status, 200, data)
 		sealed := f.seal(created.ID)
-		if sealed.ObjectRef == nil {
-			t.Fatal("metadata object reference missing")
-		}
+		Expect(sealed.ObjectRef == nil).To(BeFalse(), func() string { return fmt.Sprint("metadata object reference missing") })
+
 		return created.ID, sealed.ObjectRef
 	}
 	metadataID, ref := makeMetadata("original failed job")
 	sameMetadataID, sameRef := makeMetadata("original failed job")
-	if sameRef.ID == ref.ID || sameRef.Hash != ref.Hash {
-		t.Fatal("equivalent metadata fixture did not use a distinct handle with exact bytes")
-	}
+	Expect(sameRef.ID == ref.ID || sameRef.Hash != ref.Hash).To(BeFalse(), func() string {
+		return fmt.Sprint("equivalent metadata fixture did not use a distinct handle with exact bytes")
+	})
+
 	_, changedRef := makeMetadata("different valid metadata")
 	// Pause the fixture executor after sealing so the fault is applied to this
 	// accepted import's generated-object write, rather than an unrelated job.
@@ -241,10 +250,10 @@ func TestActualHTTPFailedImportMetadataReferenceReplayAfterAbandonAndGC(t *testi
 	select {
 	case err := <-f.worker:
 		if err != nil && !errors.Is(err, context.Canceled) {
-			t.Fatal(err)
+			Fail(fmt.Sprint(err))
 		}
 	case <-time.After(10 * time.Second):
-		t.Fatal("fixture worker did not stop")
+		Fail(fmt.Sprint("fixture worker did not stop"))
 	}
 	f.stop = nil
 	request := map[string]any{"upload_id": result, "document_id": nil, "metadata_ref": ref}
@@ -260,51 +269,58 @@ func TestActualHTTPFailedImportMetadataReferenceReplayAfterAbandonAndGC(t *testi
 		}
 		return nil
 	}))
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	f.store.Objects = injected
 	processErr := f.core.Process(context.Background(), accepted.ID)
 	f.store.Objects = original
-	if err := injected.Close(); err != nil {
-		t.Fatal(err)
+	{
+		err := injected.Close()
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
-	if !errors.Is(processErr, syscall.ENOSPC) {
-		t.Fatalf("actual generated-object write fault not reached: %v", processErr)
-	}
+	Expect(!errors.Is(processErr, syscall.ENOSPC)).To(BeFalse(), func() string { return fmt.Sprintf("actual generated-object write fault not reached: %v", processErr) })
+
 	waitJob(t, f, accepted.ID, "failed")
 	for _, id := range []string{metadataID, sameMetadataID} {
 		status, data = f.json("POST", "/api/v1/uploads/"+id+"/abandon", operation(t), map[string]any{})
 		requireStatus(t, status, 200, data)
 	}
 	var object domain.Object
-	if err := f.store.Write(context.Background(), func(tx appstorage.WriteTx) error { var err error; object, err = tx.Object(ref.Hash); return err }); err != nil {
-		t.Fatal(err)
+	{
+		err := f.store.Write(context.Background(), func(tx appstorage.WriteTx) error { var err error; object, err = tx.Object(ref.Hash); return err })
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
-	if err := f.store.Collect(context.Background(), object); err != nil {
-		t.Fatalf("failed job or abandoned metadata retained an active pin: %v", err)
+	{
+
+		err := f.store.Collect(context.Background(), object)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprintf("failed job or abandoned metadata retained an active pin: %v", err) })
 	}
-	if err := f.store.Write(context.Background(), func(tx appstorage.WriteTx) error { _, err := tx.Object(ref.Hash); return err }); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatal("metadata object was not actually collected", err)
+	{
+
+		err := f.store.Write(context.Background(), func(tx appstorage.WriteTx) error { _, err := tx.Object(ref.Hash); return err })
+		Expect(!errors.Is(err, domain.ErrNotFound)).To(BeFalse(), func() string { return fmt.Sprint("metadata object was not actually collected", err) })
 	}
+
 	status, data = f.json("POST", "/api/v1/imports", key, request)
 	requireStatus(t, status, 202, data)
 	replay := valueAs[struct {
 		ID string `json:"job_id"`
 	}](t, data)
-	if replay.ID != accepted.ID {
-		t.Fatal("completed receipt replay reminted a job after metadata GC")
-	}
+	Expect(replay.ID != accepted.ID).To(BeFalse(), func() string { return fmt.Sprint("completed receipt replay reminted a job after metadata GC") })
+
 	status, data = f.json("POST", "/api/v1/imports", key, map[string]any{"upload_id": result, "document_id": nil, "metadata_ref": sameRef})
 	requireStatus(t, status, 202, data)
-	if valueAs[struct {
+	Expect(valueAs[struct {
 		ID string `json:"job_id"`
-	}](t, data).ID != accepted.ID {
-		t.Fatal("same exact metadata through another collected handle reminted a job")
+	}](t, data).ID != accepted.ID).To(BeFalse(), func() string {
+		return fmt.Sprint("same exact metadata through another collected handle reminted a job")
+	})
+	{
+
+		job := waitJob(t, f, accepted.ID, "failed")
+		Expect(len(job.Result) != 0).To(BeFalse(), func() string { return fmt.Sprint("failed job replay became a success publication") })
 	}
-	if job := waitJob(t, f, accepted.ID, "failed"); len(job.Result) != 0 {
-		t.Fatal("failed job replay became a success publication")
-	}
+
 	status, data = f.json("POST", "/api/v1/imports", key, map[string]any{"upload_id": result, "document_id": nil, "metadata_ref": changedRef})
 	requireStatus(t, status, 409, data)
-}
+})

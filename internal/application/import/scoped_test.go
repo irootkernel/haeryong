@@ -14,17 +14,21 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
-	"testing"
+
+	"fmt"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"time"
 )
 
-func TestProductionScopedCredentialDraftWriteAndAcceptedWork(t *testing.T) {
+var _ = It("TestProductionScopedCredentialDraftWriteAndAcceptedWork", Label("persistence"), func() {
+	t := GinkgoT()
+
 	f := newFixture(t)
 	draft, principal, binding, credential := key(t), key(t), key(t), key(t)
 	token, e := sec.Secret()
-	if e != nil {
-		t.Fatal(e)
-	}
+	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
+
 	scope := domain.CredentialScope{Kind: "workflow", Actions: []string{"draft.write"}, ProjectIDs: []string{f.project}, DraftIDs: []string{draft}}
 	e = f.store.Write(ctx, func(tx app.WriteTx) error {
 		if _, e := tx.MutateResource(domain.Resource{Kind: "draft", ID: draft, Value: encodedTest(map[string]any{"project_id": f.project, "document_id": nil, "state": "ready"})}, 0, "resource.invalidated"); e != nil {
@@ -43,15 +47,13 @@ func TestProductionScopedCredentialDraftWriteAndAcceptedWork(t *testing.T) {
 		}
 		return tx.PutScopedCredential(domain.ScopedCredential{ID: credential, PrincipalID: principal, TokenHash: sec.Verifier("workflow", token), AuthEpoch: l.AuthEpoch, Scope: scope, Permissions: map[string]int64{f.project: p.Project.PermissionsRevision}, ConfigRevision: p.ConfigRevision, CreatedAt: time.Now().UTC().Truncate(time.Millisecond)})
 	})
-	if e != nil {
-		t.Fatal(e)
-	}
+	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
+
 	handler, e := httpauth.New(f.auth, httpauth.Policy{Hosts: []string{"127.0.0.1:9270"}, Origins: []string{"http://127.0.0.1:9270"}}, httpimports.New(f.core))
-	if e != nil {
-		t.Fatal(e)
-	}
+	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
+
 	request := func(method, target string, body []byte, operation string, headers map[string]string) *httptest.ResponseRecorder {
-		t.Helper()
+		GinkgoHelper()
 		r := httptest.NewRequest(method, "http://127.0.0.1:9270"+target, bytes.NewReader(body))
 		r.Header.Set("Authorization", "Bearer "+token)
 		if operation != "" {
@@ -69,9 +71,8 @@ func TestProductionScopedCredentialDraftWriteAndAcceptedWork(t *testing.T) {
 	}
 	target := map[string]any{"project_id": f.project, "document_id": nil, "draft_id": draft}
 	create := request("POST", "/api/v1/uploads", encodedTest(map[string]any{"purpose": "result", "input_mode": "directory", "target": target}), key(t), nil)
-	if create.Code != 201 {
-		t.Fatal("draft create", create.Code, create.Body.String())
-	}
+	Expect(create.Code != 201).To(BeFalse(), func() string { return fmt.Sprint("draft create", create.Code, create.Body.String()) })
+
 	var envelope struct {
 		Data struct {
 			ID string `json:"upload_id"`
@@ -89,20 +90,20 @@ func TestProductionScopedCredentialDraftWriteAndAcceptedWork(t *testing.T) {
 	r.Header.Set("Haeryong-Upload-Final", "true")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
-	if w.Code != 200 {
-		t.Fatal("draft transfer", w.Code, w.Body.String())
-	}
+	Expect(w.Code != 200).To(BeFalse(), func() string { return fmt.Sprint("draft transfer", w.Code, w.Body.String()) })
+
 	var ack struct{ Data importer.ChunkResult }
-	if e = json.Unmarshal(w.Body.Bytes(), &ack); e != nil {
-		t.Fatal(e)
+	{
+		e = json.Unmarshal(w.Body.Bytes(), &ack)
+		Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 	}
+
 	cp := ack.Data.Checkpoint
 	cp.Generation++
 	cp.Complete = true
 	complete := request("POST", "/api/v1/uploads/"+envelope.Data.ID+"/complete", encodedTest(map[string]any{"checkpoint": cp}), key(t), nil)
-	if complete.Code != 202 {
-		t.Fatal("draft seal", complete.Code, complete.Body.String())
-	}
+	Expect(complete.Code != 202).To(BeFalse(), func() string { return fmt.Sprint("draft seal", complete.Code, complete.Body.String()) })
+
 	var accepted struct {
 		Data struct {
 			Job string `json:"job_id"`
@@ -118,24 +119,25 @@ func TestProductionScopedCredentialDraftWriteAndAcceptedWork(t *testing.T) {
 		c.Revoked = true
 		return tx.PutScopedCredential(c)
 	})
-	if e != nil {
-		t.Fatal(e)
+	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
+	{
+
+		e = f.core.Process(ctx, accepted.Data.Job)
+		Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint("accepted seal depends on creator credential", e) })
 	}
-	if e = f.core.Process(ctx, accepted.Data.Job); e != nil {
-		t.Fatal("accepted seal depends on creator credential", e)
-	}
+
 	j, e := f.store.Job(ctx, accepted.Data.Job)
-	if e != nil || j.State != "completed" {
-		t.Fatal(j, e)
+	Expect(e != nil || j.State != "completed").To(BeFalse(), func() string { return fmt.Sprint(j, e) })
+	{
+
+		got := request("GET", "/api/v1/uploads/"+envelope.Data.ID, nil, "", nil)
+		Expect(got.Code != 401).To(BeFalse(), func() string { return fmt.Sprint("revoked credential accepted", got.Code) })
 	}
-	if got := request("GET", "/api/v1/uploads/"+envelope.Data.ID, nil, "", nil); got.Code != 401 {
-		t.Fatal("revoked credential accepted", got.Code)
-	}
+
 	// A fresh actual scoped credential still cannot publish or manage owner policy.
 	token, e = sec.Secret()
-	if e != nil {
-		t.Fatal(e)
-	}
+	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
+
 	e = f.store.Write(ctx, func(tx app.WriteTx) error {
 		l, e := tx.Library()
 		if e != nil {
@@ -147,9 +149,8 @@ func TestProductionScopedCredentialDraftWriteAndAcceptedWork(t *testing.T) {
 		}
 		return tx.PutScopedCredential(domain.ScopedCredential{ID: key(t), PrincipalID: principal, TokenHash: sec.Verifier("workflow", token), AuthEpoch: l.AuthEpoch, Scope: scope, Permissions: map[string]int64{f.project: p.Project.PermissionsRevision}, ConfigRevision: p.ConfigRevision, CreatedAt: time.Now().UTC().Truncate(time.Millisecond)})
 	})
-	if e != nil {
-		t.Fatal(e)
-	}
+	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
+
 	for _, c := range []struct {
 		method, path string
 		body         any
@@ -159,16 +160,14 @@ func TestProductionScopedCredentialDraftWriteAndAcceptedWork(t *testing.T) {
 			b = encodedTest(c.body)
 		}
 		got := request(c.method, c.path, b, key(t), map[string]string{"If-Match": "\"pairing-" + key(t) + "-r1\""})
-		if got.Code != 403 {
-			t.Errorf("scoped %s %s: %d", c.method, c.path, got.Code)
-		}
+		Expect(got.Code != 403).To(BeFalse(), func() string { return fmt.Sprintf("scoped %s %s: %d", c.method, c.path, got.Code) })
+
 	}
 	for _, target := range []string{"/api/v1/configuration", "/api/v1/personal/review"} {
 		e := f.store.Write(ctx, func(tx app.WriteTx) error {
 			return f.auth.Authority(token).AuthorizeWrite(ctx, tx, domain.Request{Key: domain.OperationKey{PrincipalID: principal}, Method: http.MethodPost, Target: target})
 		})
-		if e != domain.ErrDenied {
-			t.Fatal("scoped management admitted", target, e)
-		}
+		Expect(e != domain.ErrDenied).To(BeFalse(), func() string { return fmt.Sprint("scoped management admitted", target, e) })
+
 	}
-}
+})

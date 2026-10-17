@@ -7,8 +7,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"path/filepath"
-	"testing"
 
+	"fmt"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"haeryong.local/haeryong/internal/adapters/content/staging"
 	"haeryong.local/haeryong/internal/adapters/foundation"
 	auth "haeryong.local/haeryong/internal/application/auth"
@@ -29,89 +31,97 @@ type fixture struct {
 	closeDB   func() error
 }
 
-func newFixture(t *testing.T) *fixture {
-	t.Helper()
+func newFixture(t GinkgoTInterface) *fixture {
+	GinkgoHelper()
 	f := &fixture{ctx: context.Background(), selection: service.Selection{Profile: "foundation", DataDir: filepath.Join(t.TempDir(), "library")}}
-	if _, err := service.Initialize(f.selection); err != nil {
-		t.Fatal(err)
+	{
+		_, err := service.Initialize(f.selection)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	f.reopen(t)
-	t.Cleanup(func() { f.close(t) })
+	DeferCleanup(func() { f.close(t) })
 	p, err := f.auth.CreatePairing(f.ctx, "http://127.0.0.1:9270", "synthetic foundation fixture", "test")
-	if err != nil {
-		t.Fatal(err)
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	{
+
+		_, err = f.auth.BootstrapDecide(f.ctx, domain.PairingDecision{ID: p.ID, Code: p.Code, Origin: p.Origin, ETag: p.ETag, OperationID: key(t), Action: "approve"})
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
-	if _, err = f.auth.BootstrapDecide(f.ctx, domain.PairingDecision{ID: p.ID, Code: p.Code, Origin: p.Origin, ETag: p.ETag, OperationID: key(t), Action: "approve"}); err != nil {
-		t.Fatal(err)
-	}
+
 	poll, err := f.auth.Poll(f.ctx, p.ID, p.PollingSecret, p.Origin)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	f.token = poll.Token
 	return f
 }
 
-func (f *fixture) close(t *testing.T) {
-	t.Helper()
+func (f *fixture) close(t GinkgoTInterface) {
+	GinkgoHelper()
 	if f.closeDB != nil {
-		if err := f.closeDB(); err != nil {
-			t.Error(err)
+		{
+			err := f.closeDB()
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 		}
+
 		f.closeDB = nil
 	}
 	if f.writer != nil {
-		if err := f.writer.Close(); err != nil {
-			t.Error(err)
+		{
+			err := f.writer.Close()
+			Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 		}
+
 		f.writer = nil
 	}
 }
 
-func (f *fixture) reopen(t *testing.T) {
-	t.Helper()
+func (f *fixture) reopen(t GinkgoTInterface) {
+	GinkgoHelper()
 	f.close(t)
 	var err error
 	f.writer, err = service.OpenWriter(f.selection)
-	if err != nil {
-		t.Fatal(err)
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	{
+
+		err = f.writer.PrepareStorageBootstrap(nil)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
-	if err = f.writer.PrepareStorageBootstrap(nil); err != nil {
-		t.Fatal(err)
-	}
+
 	f.store = foundation.New(nil)
 	_, f.closeDB, err = f.store.Prepare(f.ctx, f.writer.Profile)
-	if err != nil {
-		t.Fatal(err)
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	{
+
+		err = f.writer.MarkStorageReady(nil)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
-	if err = f.writer.MarkStorageReady(nil); err != nil {
-		t.Fatal(err)
-	}
+
 	f.auth = auth.New(f.store)
 	f.core = importer.New(f.store, f.auth, f.store, staging.New())
 	health, err := f.store.Health(f.ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	f.project = health.Library.UnfiledProjectID
 }
 
-func key(t *testing.T) string {
-	t.Helper()
+func key(t GinkgoTInterface) string {
+	GinkgoHelper()
 	id, err := service.NewID()
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	return id
 }
 
-func responseID(t *testing.T, response domain.Response, field string) string {
-	t.Helper()
+func responseID(t GinkgoTInterface, response domain.Response, field string) string {
+	GinkgoHelper()
 	var data map[string]json.RawMessage
 	var value string
-	if err := json.Unmarshal(response.Body, &data); err != nil || json.Unmarshal(data[field], &value) != nil || value == "" {
-		t.Fatalf("missing %s in typed response", field)
+	{
+		err := json.Unmarshal(response.Body, &data)
+		Expect(err != nil || json.Unmarshal(data[field], &value) != nil || value == "").To(BeFalse(), func() string { return fmt.Sprintf("missing %s in typed response", field) })
 	}
+
 	return value
 }
 
@@ -120,33 +130,30 @@ func digest(data []byte) string {
 	return hex.EncodeToString(hash[:])
 }
 
-func (f *fixture) create(t *testing.T) string {
-	t.Helper()
+func (f *fixture) create(t GinkgoTInterface) string {
+	GinkgoHelper()
 	target, _ := json.Marshal(map[string]any{"project_id": f.project, "document_id": nil})
 	r, err := f.core.Create(f.ctx, f.token, key(t), importer.CreateRequest{Purpose: "result", InputMode: "directory", SelectionName: "foundation tree", Target: target})
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	return responseID(t, r, "upload_id")
 }
 
-func (f *fixture) put(t *testing.T, upload string, data []byte) domain.Checkpoint {
-	t.Helper()
+func (f *fixture) put(t GinkgoTInterface, upload string, data []byte) domain.Checkpoint {
+	GinkgoHelper()
 	size := int64(len(data))
 	ack, err := f.core.Put(f.ctx, f.token, upload, importer.Chunk{Path: "nested/한글.html", Kind: "file", Hash: digest(data), Length: &size, Final: true}, bytes.NewReader(data))
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	return ack.Checkpoint
 }
 
-func (f *fixture) complete(t *testing.T, upload string, checkpoint domain.Checkpoint, operation string) string {
-	t.Helper()
+func (f *fixture) complete(t GinkgoTInterface, upload string, checkpoint domain.Checkpoint, operation string) string {
+	GinkgoHelper()
 	checkpoint.Generation++
 	checkpoint.Complete = true
 	r, err := f.core.Complete(f.ctx, f.token, upload, operation, checkpoint)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	return responseID(t, r, "job_id")
 }

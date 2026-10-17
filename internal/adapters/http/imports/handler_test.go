@@ -17,9 +17,11 @@ import (
 	"strings"
 	"sync/atomic"
 	"syscall"
-	"testing"
 	"time"
 
+	"fmt"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"haeryong.local/haeryong/internal/adapters/content/staging"
 	"haeryong.local/haeryong/internal/adapters/foundation"
 	httpauth "haeryong.local/haeryong/internal/adapters/http/auth"
@@ -31,7 +33,7 @@ import (
 )
 
 type httpFixture struct {
-	t              *testing.T
+	t              GinkgoTInterface
 	selection      service.Selection
 	writer         *service.LockedProfile
 	store          *foundation.Store
@@ -45,44 +47,43 @@ type httpFixture struct {
 	dropOperation  atomic.Pointer[string]
 }
 
-func newHTTPFixture(t *testing.T) *httpFixture {
-	t.Helper()
+func newHTTPFixture(t GinkgoTInterface) *httpFixture {
+	GinkgoHelper()
 	base := os.TempDir()
 	var volume, parent syscall.Stat_t
 	if syscall.Stat("/Volumes/RootKernel", &volume) == nil && syscall.Stat("/Volumes", &parent) == nil && volume.Dev != parent.Dev && syscall.Access("/Volumes/RootKernel", 2) == nil {
 		base = "/Volumes/RootKernel/tmp"
 	}
 	dir, err := os.MkdirTemp(base, "haeryong-task004-http-test-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	DeferCleanup(func() { os.RemoveAll(dir) })
 	f := &httpFixture{t: t, selection: service.Selection{Profile: "imports", DataDir: filepath.Join(dir, "profile")}}
-	if _, err := service.Initialize(f.selection); err != nil {
-		t.Fatal(err)
+	{
+		_, err := service.Initialize(f.selection)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	f.open()
-	t.Cleanup(f.close)
+	DeferCleanup(f.close)
 	p, err := f.auth.CreatePairing(context.Background(), f.server.URL, "synthetic HTTP owner", "fixture")
-	if err != nil {
-		t.Fatal(err)
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	{
+
+		_, err := f.auth.BootstrapDecide(context.Background(), domain.PairingDecision{ID: p.ID, Code: p.Code, Origin: p.Origin, ETag: p.ETag, OperationID: operation(t), Action: "approve"})
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
-	if _, err := f.auth.BootstrapDecide(context.Background(), domain.PairingDecision{ID: p.ID, Code: p.Code, Origin: p.Origin, ETag: p.ETag, OperationID: operation(t), Action: "approve"}); err != nil {
-		t.Fatal(err)
-	}
+
 	poll, err := f.auth.Poll(context.Background(), p.ID, p.PollingSecret, p.Origin)
-	if err != nil || poll.Token == "" {
-		t.Fatal("owner fixture not authenticated")
-	}
+	Expect(err != nil || poll.Token == "").To(BeFalse(), func() string { return fmt.Sprint("owner fixture not authenticated") })
+
 	f.token = poll.Token
 	return f
 }
-func operation(t *testing.T) string {
-	t.Helper()
+func operation(t GinkgoTInterface) string {
+	GinkgoHelper()
 	id, err := service.NewID()
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 	return id
 }
 func (f *httpFixture) open() {
@@ -142,7 +143,7 @@ func (f *httpFixture) open() {
 	ctx, cancel := context.WithCancel(context.Background())
 	f.stop = cancel
 	f.worker = make(chan error, 1)
-	go func() { f.worker <- f.core.Run(ctx) }()
+	go func() { defer GinkgoRecover(); f.worker <- f.core.Run(ctx) }()
 }
 func (f *httpFixture) close() {
 	if f.server != nil {
@@ -212,18 +213,20 @@ func (f *httpFixture) json(method, path, key string, value any) (int, []byte) {
 	status, _, data := f.request(method, path, bytes.NewReader(b), headers)
 	return status, data
 }
-func valueAs[T any](t *testing.T, data []byte) T {
-	t.Helper()
+func valueAs[T any](t GinkgoTInterface, data []byte) T {
+	GinkgoHelper()
 	var envelope struct {
 		Data T `json:"data"`
 	}
-	if err := json.Unmarshal(data, &envelope); err != nil {
-		t.Fatal(err)
+	{
+		err := json.Unmarshal(data, &envelope)
+		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
 	return envelope.Data
 }
-func requireStatus(t *testing.T, got, want int, data []byte) {
-	t.Helper()
+func requireStatus(t GinkgoTInterface, got, want int, data []byte) {
+	GinkgoHelper()
 	if got != want {
 		var value struct {
 			Error struct {
@@ -234,7 +237,7 @@ func requireStatus(t *testing.T, got, want int, data []byte) {
 			} `json:"error"`
 		}
 		_ = json.Unmarshal(data, &value)
-		t.Fatalf("HTTP status=%d want=%d error=%s field=%s", got, want, value.Error.Code, value.Error.Details.Field)
+		Fail(fmt.Sprintf("HTTP status=%d want=%d error=%s field=%s", got, want, value.Error.Code, value.Error.Details.Field))
 	}
 }
 func (f *httpFixture) upload(mode, name string) string {
@@ -432,7 +435,9 @@ func (f *httpFixture) verify(version domain.Version, expected map[string]string,
 	}
 }
 
-func TestActualAuthorizedResultDirectoryHTTPPublicationAndRestart(t *testing.T) {
+var _ = It("TestActualAuthorizedResultDirectoryHTTPPublicationAndRestart", Label("persistence"), func() {
+	t := GinkgoT()
+
 	f := newHTTPFixture(t)
 	id := f.upload("directory", "existing gaori result")
 	expected := map[string]string{}
@@ -463,38 +468,33 @@ func TestActualAuthorizedResultDirectoryHTTPPublicationAndRestart(t *testing.T) 
 		requireStatus(t, status, 200, data)
 		return nil
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(expected) < 3 {
-		t.Fatal("existing result fixture missing")
-	}
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	Expect(len(expected) < 3).To(BeFalse(), func() string { return fmt.Sprint("existing result fixture missing") })
+
 	f.seal(id)
 	version := f.publish(id, operation(t))
 	f.verify(version, expected, nil)
 	f.restart()
 	f.verify(version, expected, nil)
-}
+})
+var _ = It("TestActualUploadChunkIdentityResumeAndPolicy", Label("persistence"), func() {
+	t := GinkgoT()
 
-func TestActualUploadChunkIdentityResumeAndPolicy(t *testing.T) {
 	f := newHTTPFixture(t)
 	id := f.upload("directory", "resume")
 	status, first, data := f.put(id, "nested/page.html", "file", []byte("first"), 0, false)
 	requireStatus(t, status, 200, data)
-	if first.Checkpoint.Complete {
-		t.Fatal("file chunk declared whole input complete")
-	}
+	Expect(first.Checkpoint.Complete).To(BeFalse(), func() string { return fmt.Sprint("file chunk declared whole input complete") })
+
 	status, replay, data := f.put(id, "nested/page.html", "file", []byte("first"), 0, false)
 	requireStatus(t, status, 200, data)
-	if first.Checkpoint != replay.Checkpoint {
-		t.Fatal("natural replay mutated checkpoint")
-	}
+	Expect(first.Checkpoint != replay.Checkpoint).To(BeFalse(), func() string { return fmt.Sprint("natural replay mutated checkpoint") })
+
 	status, _, data = f.put(id, "nested/page.html", "file", []byte("other"), 0, false)
 	requireStatus(t, status, 409, data)
 	f.restart()
-	if f.detail(id).Checkpoint != first.Checkpoint {
-		t.Fatal("durable ACK lost after restart")
-	}
+	Expect(f.detail(id).Checkpoint != first.Checkpoint).To(BeFalse(), func() string { return fmt.Sprint("durable ACK lost after restart") })
+
 	status, _, data = f.put(id, "nested/page.html", "file", []byte("last"), 5, true)
 	requireStatus(t, status, 200, data)
 	status, _, data = f.put(id, "empty.bin", "file", nil, 0, true)
@@ -510,11 +510,13 @@ func TestActualUploadChunkIdentityResumeAndPolicy(t *testing.T) {
 	f.seal(id)
 	version := f.publish(id, operation(t))
 	f.verify(version, map[string]string{"nested/page.html": "firstlast", "empty.bin": ""}, map[string]string{"nested": "directory"})
-}
+})
+var _ = It("TestActualZIPAndSingleFileTypedEntries", Label("persistence"), func() {
+	t := GinkgoT()
 
-func TestActualZIPAndSingleFileTypedEntries(t *testing.T) {
 	for _, mode := range []string{"archive", "file"} {
-		t.Run(mode, func(t *testing.T) {
+		func() {
+			By(mode)
 			f := newHTTPFixture(t)
 			id := f.upload(mode, "selected.html")
 			expected := map[string]string{"selected.html": "<html>single</html>"}
@@ -528,22 +530,22 @@ func TestActualZIPAndSingleFileTypedEntries(t *testing.T) {
 				w := zip.NewWriter(&b)
 				for path, value := range expected {
 					entry, err := w.Create(path)
-					if err != nil {
-						t.Fatal(err)
-					}
+					Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 					_, _ = io.WriteString(entry, value)
 				}
 				_, _ = w.Create("empty/")
 				linkHeader := &zip.FileHeader{Name: "outside-link", Method: zip.Store}
 				linkHeader.SetMode(os.ModeSymlink | 0777)
 				link, err := w.CreateHeader(linkHeader)
-				if err != nil {
-					t.Fatal(err)
-				}
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 				_, _ = io.WriteString(link, "../outside")
-				if err := w.Close(); err != nil {
-					t.Fatal(err)
+				{
+					err := w.Close()
+					Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 				}
+
 				payload = b.Bytes()
 				kinds["empty"] = "directory"
 				kinds["nested"] = "directory"
@@ -557,15 +559,13 @@ func TestActualZIPAndSingleFileTypedEntries(t *testing.T) {
 			f.verify(version, expected, kinds)
 			if mode == "archive" {
 				rows, err := f.store.Entries(context.Background(), version.ContentSetID, "", 64)
-				if err != nil {
-					t.Fatal(err)
-				}
+				Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+
 				for _, entry := range rows {
-					if entry.Path == "outside-link" && entry.LinkText != "../outside" {
-						t.Fatal("ZIP link text changed")
-					}
+					Expect(entry.Path == "outside-link" && entry.LinkText != "../outside").To(BeFalse(), func() string { return fmt.Sprint("ZIP link text changed") })
+
 				}
 			}
-		})
+		}()
 	}
-}
+})

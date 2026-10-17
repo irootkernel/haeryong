@@ -4,56 +4,68 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	importer "haeryong.local/haeryong/internal/application/import"
 	"haeryong.local/haeryong/internal/application/transfer"
 	"os"
 	"path/filepath"
 	"strings"
-	"testing"
 )
 
-func TestSnapshotManifestRejectsCompleteRecordPrefix(t *testing.T) {
+var _ = It("TestSnapshotManifestRejectsCompleteRecordPrefix", Label("unit"), func() {
+	t := GinkgoT()
+
 	root := t.TempDir()
 	input := filepath.Join(root, "selected")
-	if e := os.Mkdir(input, 0700); e != nil {
-		t.Fatal(e)
+	{
+		e := os.Mkdir(input, 0700)
+		Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 	}
+
 	for _, name := range []string{"first.html", "second.html"} {
-		if e := os.WriteFile(filepath.Join(input, name), []byte(name), 0600); e != nil {
-			t.Fatal(e)
+		{
+			e := os.WriteFile(filepath.Join(input, name), []byte(name), 0600)
+			Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 		}
+
 	}
 	store, e := New(filepath.Join(root, "caller"))
-	if e != nil {
-		t.Fatal(e)
-	}
+	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
+
 	snapshot, e := store.Capture(context.Background(), input)
-	if e != nil {
-		t.Fatal(e)
-	}
+	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
+
 	manifest := filepath.Join(store.Root, "snapshots", snapshot.ID, "entries.jsonl")
 	original, e := os.ReadFile(manifest)
-	if e != nil {
-		t.Fatal(e)
-	}
+	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
+
 	boundary := bytes.IndexByte(original, '\n') + 1
-	if boundary <= 0 || boundary == len(original) {
-		t.Fatal("fixture lacks two complete records")
+	Expect(boundary <= 0 || boundary == len(original)).To(BeFalse(), func() string { return fmt.Sprint("fixture lacks two complete records") })
+	{
+
+		e = os.WriteFile(manifest, original[:boundary], 0600)
+		Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 	}
-	if e = os.WriteFile(manifest, original[:boundary], 0600); e != nil {
-		t.Fatal(e)
+	{
+
+		e = store.Entries(snapshot, func(transfer.Entry) error { return nil })
+		Expect(!errors.Is(e, importer.ErrInputChanged)).To(BeFalse(), func() string { return fmt.Sprint("valid JSON prefix was treated as complete selected input", e) })
 	}
-	if e = store.Entries(snapshot, func(transfer.Entry) error { return nil }); !errors.Is(e, importer.ErrInputChanged) {
-		t.Fatal("valid JSON prefix was treated as complete selected input", e)
+	{
+
+		e = os.WriteFile(manifest, original, 0600)
+		Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 	}
-	if e = os.WriteFile(manifest, original, 0600); e != nil {
-		t.Fatal(e)
-	}
+
 	count := 0
-	if e = store.Entries(snapshot, func(transfer.Entry) error { count++; return nil }); e != nil || count != 2 {
-		t.Fatal("original snapshot did not recover", count, e)
+	{
+		e = store.Entries(snapshot, func(transfer.Entry) error { count++; return nil })
+		Expect(e != nil || count != 2).To(BeFalse(), func() string { return fmt.Sprint("original snapshot did not recover", count, e) })
 	}
-}
+
+})
 
 // Err is called at the existing traversal/read boundaries. The callback changes
 // actual directory names only; it neither changes the capture implementation nor
@@ -65,35 +77,46 @@ type traversalContext struct {
 
 func (c traversalContext) Err() error { c.boundary(); return nil }
 
-func TestSelectedDirectorySwapNeverCapturesOutsideBytes(t *testing.T) {
+var _ = It("TestSelectedDirectorySwapNeverCapturesOutsideBytes", Label("unit"), func() {
+	t := GinkgoT()
+
 	root := t.TempDir()
 	selected, parked, outside := filepath.Join(root, "selected"), filepath.Join(root, "parked"), filepath.Join(root, "outside")
 	for _, path := range []string{selected, outside} {
-		if e := os.Mkdir(path, 0700); e != nil {
-			t.Fatal(e)
+		{
+			e := os.Mkdir(path, 0700)
+			Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 		}
+
 	}
 	for _, name := range []string{"first.html", "second.html"} {
-		if e := os.WriteFile(filepath.Join(selected, name), []byte("selected:"+name), 0600); e != nil {
-			t.Fatal(e)
+		{
+			e := os.WriteFile(filepath.Join(selected, name), []byte("selected:"+name), 0600)
+			Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 		}
-		if e := os.WriteFile(filepath.Join(outside, name), []byte("OUTSIDE:"+name), 0600); e != nil {
-			t.Fatal(e)
+		{
+
+			e := os.WriteFile(filepath.Join(outside, name), []byte("OUTSIDE:"+name), 0600)
+			Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 		}
+
 	}
 	store, e := New(filepath.Join(root, "caller"))
-	if e != nil {
-		t.Fatal(e)
-	}
+	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
+
 	calls, swapped, restored := 0, false, false
 	restore := func() {
 		if swapped && !restored {
-			if e := os.Remove(selected); e != nil {
-				t.Fatal(e)
+			{
+				e := os.Remove(selected)
+				Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 			}
-			if e := os.Rename(parked, selected); e != nil {
-				t.Fatal(e)
+			{
+
+				e := os.Rename(parked, selected)
+				Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 			}
+
 			restored = true
 		}
 	}
@@ -101,25 +124,27 @@ func TestSelectedDirectorySwapNeverCapturesOutsideBytes(t *testing.T) {
 	ctx := traversalContext{Context: context.Background(), boundary: func() {
 		calls++
 		if calls == 3 {
-			if e := os.Rename(selected, parked); e != nil {
-				t.Fatal(e)
+			{
+				e := os.Rename(selected, parked)
+				Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 			}
-			if e := os.Symlink(outside, selected); e != nil {
-				t.Fatal(e)
+			{
+
+				e := os.Symlink(outside, selected)
+				Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 			}
+
 			swapped = true
 			return
 		}
 		if swapped && !restored {
 			entries, e := os.ReadDir(filepath.Join(store.Root, "snapshots"))
-			if e != nil {
-				t.Fatal(e)
-			}
+			Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
+
 			for _, snapshot := range entries {
 				objects, e := os.ReadDir(filepath.Join(store.Root, "snapshots", snapshot.Name(), "objects"))
-				if e != nil {
-					t.Fatal(e)
-				}
+				Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
+
 				for _, object := range objects {
 					if !strings.HasPrefix(object.Name(), ".stage-") {
 						restore()
@@ -130,15 +155,14 @@ func TestSelectedDirectorySwapNeverCapturesOutsideBytes(t *testing.T) {
 		}
 	}}
 	snapshot, e := store.Capture(ctx, selected)
-	if !swapped {
-		t.Fatal("directory-open/child-walk barrier was not reached")
-	}
+	Expect(!swapped).To(BeFalse(), func() string { return fmt.Sprint("directory-open/child-walk barrier was not reached") })
+
 	if e != nil {
 		return
-	} // Explicit changed-input rejection is a valid safe outcome.
-	if !restored {
-		t.Fatal("counterexample did not restore original directory identity")
 	}
+	Expect( // Explicit changed-input rejection is a valid safe outcome.
+		!restored).To(BeFalse(), func() string { return fmt.Sprint("counterexample did not restore original directory identity") })
+
 	e = store.Entries(snapshot, func(entry transfer.Entry) error {
 		if entry.Kind != "file" {
 			return nil
@@ -150,45 +174,53 @@ func TestSelectedDirectorySwapNeverCapturesOutsideBytes(t *testing.T) {
 		defer f.Close()
 		b := make([]byte, 8)
 		n, _ := f.Read(b)
-		if strings.HasPrefix(string(b[:n]), "OUTSIDE:") {
-			t.Error("outside bytes were captured through replaced directory pathname")
-		}
+		Expect(strings.HasPrefix(string(b[:n]), "OUTSIDE:")).To(BeFalse(), func() string { return fmt.Sprint("outside bytes were captured through replaced directory pathname") })
+
 		return nil
 	})
-	if e != nil {
-		t.Fatal(e)
-	}
-}
+	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 
-func TestSelectedDirectoryOpeningSwapRejectsDifferentInitialIdentity(t *testing.T) {
+})
+var _ = It("TestSelectedDirectoryOpeningSwapRejectsDifferentInitialIdentity", Label("unit"), func() {
+	t := GinkgoT()
+
 	root := t.TempDir()
 	selected := filepath.Join(root, "selected")
 	outside := filepath.Join(root, "outside")
 	parked := filepath.Join(root, "parked")
 	for _, p := range []string{selected, outside} {
-		if e := os.Mkdir(p, 0700); e != nil {
-			t.Fatal(e)
+		{
+			e := os.Mkdir(p, 0700)
+			Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 		}
+
 	}
-	if e := os.WriteFile(filepath.Join(selected, "page.html"), []byte("selected"), 0600); e != nil {
-		t.Fatal(e)
+	{
+		e := os.WriteFile(filepath.Join(selected, "page.html"), []byte("selected"), 0600)
+		Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 	}
-	if e := os.WriteFile(filepath.Join(outside, "page.html"), []byte("OUTSIDE"), 0600); e != nil {
-		t.Fatal(e)
+	{
+
+		e := os.WriteFile(filepath.Join(outside, "page.html"), []byte("OUTSIDE"), 0600)
+		Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 	}
+
 	store, e := New(filepath.Join(root, "caller"))
-	if e != nil {
-		t.Fatal(e)
-	}
+	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
+
 	swapped := false
 	ctx := traversalContext{Context: context.Background(), boundary: func() {
 		if !swapped {
-			if e := os.Rename(selected, parked); e != nil {
-				t.Fatal(e)
+			{
+				e := os.Rename(selected, parked)
+				Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 			}
-			if e := os.Symlink(outside, selected); e != nil {
-				t.Fatal(e)
+			{
+
+				e := os.Symlink(outside, selected)
+				Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 			}
+
 			swapped = true
 		}
 	}}
@@ -199,28 +231,29 @@ func TestSelectedDirectoryOpeningSwapRejectsDifferentInitialIdentity(t *testing.
 		}
 	}()
 	snapshot, e := store.Capture(ctx, selected)
-	if !swapped {
-		t.Fatal("initial-stat/open boundary was not reached")
-	}
+	Expect(!swapped).To(BeFalse(), func() string { return fmt.Sprint("initial-stat/open boundary was not reached") })
+
 	if e != nil {
 		return
 	}
-	if e = store.Entries(snapshot, func(entry transfer.Entry) error {
-		if entry.Kind != "file" {
+	{
+		e = store.Entries(snapshot, func(entry transfer.Entry) error {
+			if entry.Kind != "file" {
+				return nil
+			}
+			f, e := store.Open(snapshot, entry)
+			if e != nil {
+				return e
+			}
+			defer f.Close()
+			b := make([]byte, 7)
+			n, _ := f.Read(b)
+			if string(b[:n]) == "OUTSIDE" {
+				Fail(fmt.Sprint("opened outside directory replaced initially selected identity"))
+			}
 			return nil
-		}
-		f, e := store.Open(snapshot, entry)
-		if e != nil {
-			return e
-		}
-		defer f.Close()
-		b := make([]byte, 7)
-		n, _ := f.Read(b)
-		if string(b[:n]) == "OUTSIDE" {
-			t.Error("opened outside directory replaced initially selected identity")
-		}
-		return nil
-	}); e != nil {
-		t.Fatal(e)
+		})
+		Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 	}
-}
+
+})
