@@ -5,15 +5,16 @@ package auth
 import (
 	"context"
 	"crypto/sha256"
-	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"mime"
 	"net"
 	"net/http"
 	"net/url"
+	"path"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -23,10 +24,8 @@ import (
 	appauth "haeryong.local/haeryong/internal/application/auth"
 	"haeryong.local/haeryong/internal/domain"
 	"haeryong.local/haeryong/internal/security/session"
+	"haeryong.local/haeryong/internal/webassets"
 )
-
-//go:embed web/index.html web/client.js
-var assets embed.FS
 
 type Policy struct{ Hosts, Origins []string }
 type identityKey struct{}
@@ -74,7 +73,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; connect-src 'self'; img-src data:; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src data:; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'")
 	if !h.hosts[r.Host] {
 		fail(w, r, session.ErrOrigin)
 		return
@@ -113,24 +112,46 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if r.Method == http.MethodGet && (shellPath(r.URL.Path) || r.URL.Path == "/auth-client.js") {
-		name := "web/index.html"
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if r.URL.Path == "/auth-client.js" {
-			name = "web/client.js"
-			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-		}
-		body, _ := assets.ReadFile(name)
-		if name == "web/index.html" {
-			settings, err := h.core.Settings(r.Context())
-			if err != nil {
-				fail(w, r, err)
+	if r.Method == http.MethodGet && (shellPath(r.URL.Path) || strings.HasPrefix(r.URL.Path, "/assets/")) {
+		// The committed compiled shell is served by this Go binary; there is no
+		// development server and no private caching layer.
+		dist := webassets.Dist()
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			// Clean rejects traversal before any embedded read.
+			name := path.Clean("/" + strings.TrimPrefix(r.URL.Path, "/assets/"))
+			if name == "/" || strings.Contains(name, "..") {
+				fail(w, r, domain.ErrNotFound)
 				return
 			}
-			if !settings.RememberDeviceDefault {
-				body = []byte(strings.Replace(string(body), `type="checkbox" checked`, `type="checkbox"`, 1))
+			body, err := fs.ReadFile(dist, "assets"+name)
+			if err != nil {
+				fail(w, r, domain.ErrNotFound)
+				return
 			}
+			media := mime.TypeByExtension(path.Ext(name))
+			if media == "" {
+				media = "application/octet-stream"
+			}
+			w.Header().Set("Content-Type", media)
+			w.Write(body)
+			return
 		}
+		body, err := webassets.Index()
+		if err != nil {
+			fail(w, r, err)
+			return
+		}
+		settings, err := h.core.Settings(r.Context())
+		if err != nil {
+			fail(w, r, err)
+			return
+		}
+		defaults := "remember-device=true"
+		if !settings.RememberDeviceDefault {
+			defaults = "remember-device=false"
+		}
+		body = []byte(strings.Replace(string(body), `content="remember-device"`, `content="`+defaults+`"`, 1))
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(body)
 		return
 	}

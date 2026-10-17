@@ -4,6 +4,7 @@ import http.client
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import socket
 import signal
@@ -30,6 +31,32 @@ def tree(root):
         (source / name).write_bytes(body)
     (source / "link").symlink_to("first.html")
     return source, bodies
+
+
+def test_daemon_serves_committed_shell_assets_without_dev_server(product):
+    status, body, headers = product.request("GET", "/", raw=True)
+    assert status == 200
+    assert headers["Content-Type"] == "text/html; charset=utf-8"
+    assert headers["Cache-Control"] == "no-store"
+    csp = headers["Content-Security-Policy"]
+    assert "script-src 'self'" in csp
+    assert "style-src 'self'" in csp
+    text = body.decode()
+    assert 'id="root"' in text
+    assert 'name="haeryong-session-defaults" content="remember-device=true"' in text
+    for marker in ("@vite", "localhost:5173", "wails", "window.runtime"):
+        assert marker not in text
+    script = re.search(r'src="(/assets/[^"]+\.js)"', text).group(1)
+    style = re.search(r'href="(/assets/[^"]+\.css)"', text).group(1)
+    for asset, fragment in ((script, "javascript"), (style, "css")):
+        status, body, headers = product.request("GET", asset, raw=True)
+        assert status == 200, asset
+        assert fragment in headers["Content-Type"]
+        assert headers["Cache-Control"] == "no-store"
+        assert b"wails" not in body
+        assert b"NATIVE_TRANSPORT_NOT_IMPLEMENTED" not in body
+    assert product.request("GET", "/assets/missing.js")[0] == 404
+    assert product.request("GET", "/assets/../index.html")[0] == 404
 
 
 def test_bootstrap_remembered_session_stop_restart_and_all_revoked_recovery(product):

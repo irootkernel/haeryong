@@ -1,9 +1,0 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>Haeryong Connect</title></head>
-<body><main><h1>Haeryong Connect</h1><p>Connect this trusted browser to your personal library.</p>
-<form id="connect"><label>Device label <input id="label" maxlength="128" required value="Browser"></label><label><input id="remember" type="checkbox" checked> Remember device</label><button>Connect device</button></form>
-<p id="comparison"></p><output id="state" aria-live="polite">Connect device</output><button id="retry">Retry connection</button>
-<section id="owner" hidden><h2>Connected owner</h2><button id="read">Check private status</button><button id="logout">Log out</button><pre id="private"></pre>
-<form id="approve"><h3>Compare the exact pending request</h3><label>Request ID <input id="request-id" required></label><label>Comparison code <input id="code" required></label><button value="approve">Approve device</button><button value="reject">Reject device</button><output id="decision-result" aria-live="polite"></output></form>
-<button id="refresh">Refresh devices</button><ul id="devices"></ul><output id="result" aria-live="polite"></output></section>
-</main><script type="module" src="/auth-client.js"></script></body></html>

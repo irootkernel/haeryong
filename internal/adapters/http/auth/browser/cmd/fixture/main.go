@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -22,15 +23,35 @@ import (
 
 	"haeryong.local/haeryong/internal/adapters/foundation"
 	httpauth "haeryong.local/haeryong/internal/adapters/http/auth"
+	httpv1 "haeryong.local/haeryong/internal/adapters/http/v1"
 	appauth "haeryong.local/haeryong/internal/application/auth"
+	"haeryong.local/haeryong/internal/application/query"
 	"haeryong.local/haeryong/internal/application/service"
 	storage "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
+	sec "haeryong.local/haeryong/internal/security/session"
 )
 
 type policyWriter struct {
 	http.ResponseWriter
 	done bool
+}
+
+// redactedControlError classifies private-control failures without echoing
+// codes, origins, IDs or other request material.
+func redactedControlError(err error) string {
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		return "pairing_not_found"
+	case errors.Is(err, domain.ErrPrecondition):
+		return "stale_precondition"
+	case errors.Is(err, domain.ErrConflict), errors.Is(err, domain.ErrTransition):
+		return "state_conflict"
+	case errors.Is(err, sec.ErrInvalid), errors.Is(err, sec.ErrOrigin):
+		return "code_or_origin_mismatch"
+	default:
+		return "error"
+	}
 }
 
 func (w *policyWriter) prepare() {
@@ -48,6 +69,8 @@ func (w *policyWriter) Write(data []byte) (int, error) {
 func run() error {
 	dir := flag.String("directory", "", "explicit private disposable directory")
 	port := flag.Int("port", 0, "loopback listener port; 0 only for a new harness")
+	clockOffset := flag.Int64("clock-offset-seconds", 0, "synthetic clock offset retained by the harness across restarts")
+	alias := flag.String("alias", "", "additional trusted origin (same model as the private HTTPS proxy forwarding to this listener)")
 	flag.Parse()
 	if *dir == "" {
 		return errors.New("directory required")
@@ -77,6 +100,7 @@ func run() error {
 	}
 	core := appauth.New(store)
 	var offset atomic.Int64
+	offset.Store(int64(time.Duration(*clockOffset) * time.Second))
 	core.Now = func() time.Time { return time.Now().Add(time.Duration(offset.Load())) }
 	listener, err := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", *port))
 	if err != nil {
@@ -85,7 +109,20 @@ func run() error {
 	_, boundPort, _ := net.SplitHostPort(listener.Addr().String())
 	local := "http://127.0.0.1:" + boundPort
 	remote := "http://localhost:" + boundPort
-	handler, err := httpauth.New(core, httpauth.Policy{Hosts: []string{strings.TrimPrefix(local, "http://"), strings.TrimPrefix(remote, "http://")}, Origins: []string{local, remote}}, nil)
+	hosts := []string{strings.TrimPrefix(local, "http://"), strings.TrimPrefix(remote, "http://")}
+	origins := []string{local, remote}
+	if *alias != "" {
+		parsed, err := url.Parse(*alias)
+		if err != nil || parsed.Scheme != "http" || parsed.Host == "" || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return errors.New("alias must be an exact loopback http origin")
+		}
+		hosts = append(hosts, parsed.Host)
+		origins = append(origins, *alias)
+	}
+	// The same product query routes as the daemon keep capabilities live for
+	// shell compatibility gating checks.
+	queries := query.New(store, core, store)
+	handler, err := httpauth.New(core, httpauth.Policy{Hosts: hosts, Origins: origins}, httpv1.New(queries))
 	if err != nil {
 		listener.Close()
 		return err
@@ -115,7 +152,7 @@ fetch('/api/v1/auth/pairings/arbitrary/approve',{method:'POST',mode:'no-cors',he
 	server.BaseContext = func(net.Listener) context.Context { return ctx }
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
-	json.NewEncoder(os.Stdout).Encode(map[string]any{"fixture": "task00205-production-auth-settings", "endpoint": local, "peer_endpoint": remote, "pid": os.Getpid()})
+	json.NewEncoder(os.Stdout).Encode(map[string]any{"fixture": "task00301-production-auth-shell", "endpoint": local, "peer_endpoint": remote, "pid": os.Getpid()})
 	go func() {
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
@@ -126,6 +163,7 @@ fetch('/api/v1/auth/pairings/arbitrary/approve',{method:'POST',mode:'no-cors',he
 				Seconds  int64  `json:"seconds"`
 				Remember *bool  `json:"remember"`
 			}
+			reason := ""
 			err := json.Unmarshal(scanner.Bytes(), &input)
 			if err == nil {
 				switch input.Action {
@@ -150,7 +188,11 @@ fetch('/api/v1/auth/pairings/arbitrary/approve',{method:'POST',mode:'no-cors',he
 					if err == nil && !found {
 						err = domain.ErrNotFound
 					}
+					if err != nil {
+						reason = redactedControlError(err)
+					}
 				case "expiry", "remember_default":
+					reason = "configuration"
 					config, e := store.Configuration(context.Background())
 					err = e
 					if err == nil {
@@ -179,10 +221,20 @@ fetch('/api/v1/auth/pairings/arbitrary/approve',{method:'POST',mode:'no-cors',he
 						}
 					}
 				default:
+					reason = "unknown_control"
 					err = errors.New("unknown private control")
 				}
+			} else {
+				reason = "malformed_control"
 			}
-			json.NewEncoder(os.Stdout).Encode(map[string]bool{"ok": err == nil})
+			if err != nil {
+				if reason == "" || reason == "error" {
+					reason = redactedControlError(err)
+				}
+				json.NewEncoder(os.Stdout).Encode(map[string]any{"ok": false, "reason": reason})
+			} else {
+				json.NewEncoder(os.Stdout).Encode(map[string]bool{"ok": true})
+			}
 		}
 	}()
 	select {

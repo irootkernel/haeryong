@@ -28,6 +28,8 @@ import (
 	"haeryong.local/haeryong/internal/application/service"
 	storage "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
+	"haeryong.local/haeryong/internal/webassets"
+	"regexp"
 )
 
 type fixture struct {
@@ -319,15 +321,59 @@ var _ = It("TestTrustedShellContainsNoPrivateAuthority", Label("persistence"), f
 	t := GinkgoT()
 
 	f := newFixture(t)
-	for _, path := range []string{"/", "/connect", "/auth-client.js"} {
+	index, err := webassets.Index()
+	Expect(err).To(BeNil())
+	asset := ""
+	for _, line := range strings.Split(string(index), "\n") {
+		if match := regexp.MustCompile(`src="(/assets/[^"]+)"`).FindStringSubmatch(line); match != nil {
+			asset = match[1]
+			break
+		}
+	}
+	Expect(asset).NotTo(BeEmpty(), "compiled shell references no asset")
+	for _, path := range []string{"/", "/connect", asset} {
 		status, headers, data := f.request(t, "GET", path, "", nil, nil)
 		Expect(status != 200).To(BeFalse(), func() string { return fmt.Sprintf("public shell%s HTTP%d", path, status) })
 		Expect(headers.Get("Referrer-Policy") != "no-referrer" || !strings.Contains(headers.Get("Content-Security-Policy"), "frame-ancestors 'none'")).To(BeFalse(), func() string { return fmt.Sprint("trusted host policy missing") })
+		Expect(headers.Get("Cache-Control")).To(Equal("no-store"))
 
 		for _, secret := range []string{"control_key", "polling_secret\":\"", "Authorization: Bearer"} {
 			Expect(strings.Contains(string(data), secret)).To(BeFalse(), func() string { return fmt.Sprintf("public asset contains secret material marker %s", secret) })
 
 		}
+	}
+})
+
+var _ = It("TestShellServesCompiledAppOnRegistryRoutesWithDefaultsInjection", Label("persistence"), func() {
+	t := GinkgoT()
+
+	f := newFixture(t)
+	routes := []string{"/", "/connect", "/library", "/projects", "/maintenance", "/trash", "/settings",
+		"/projects/11111111-1111-4111-8111-111111111111/sources",
+		"/documents/11111111-1111-4111-8111-111111111111/versions/22222222-2222-4222-8222-222222222222?page=nested%2Fguide.html",
+		"/maintenance/jobs/33333333-3333-4333-8333-333333333333",
+		"/settings/sessions"}
+	for _, route := range routes {
+		status, headers, data := f.request(t, "GET", route, "", nil, nil)
+		Expect(status != 200).To(BeFalse(), func() string { return fmt.Sprintf("shell route %s HTTP%d", route, status) })
+		Expect(headers.Get("Content-Type")).To(Equal("text/html; charset=utf-8"))
+		Expect(strings.Contains(string(data), `name="haeryong-session-defaults" content="remember-device=true"`)).To(BeTrue(), func() string { return "default remember injection missing on " + route })
+		Expect(strings.Contains(string(data), `id="root"`)).To(BeTrue())
+	}
+	status, _, _ := f.request(t, "GET", "/settings/not-a-section", "", nil, nil)
+	Expect(status).To(Equal(404), "unregistered shell path must not serve the app")
+
+	index, err := webassets.Index()
+	Expect(err).To(BeNil())
+	css := regexp.MustCompile(`href="(/assets/[^"]+\.css)"`).FindStringSubmatch(string(index))
+	Expect(css).NotTo(BeNil(), "compiled stylesheet reference missing")
+	status, headers, _ := f.request(t, "GET", css[1], "", nil, nil)
+	Expect(status).To(Equal(200))
+	Expect(headers.Get("Content-Type")).To(Equal("text/css; charset=utf-8"))
+	Expect(headers.Get("Cache-Control")).To(Equal("no-store"))
+	for _, unknown := range []string{"/assets/missing.js", "/assets/../index.html", "/assets/"} {
+		status, _, _ := f.request(t, "GET", unknown, "", nil, nil)
+		Expect(status).To(Equal(404), func() string { return "unknown asset served: " + unknown })
 	}
 })
 var _ = It("TestStrictAuthenticationControlObjectsAndMutationHeaders", Label("persistence"), func() {

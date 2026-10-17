@@ -2,6 +2,8 @@
 
 .omc/
 
+/frontend/node_modules/
+
 /.mulgae/*
 !/.mulgae/config.yaml
 

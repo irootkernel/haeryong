@@ -2,7 +2,7 @@
 id: "EPIC-003"
 type: "epic"
 title: "Shared reader and Wails client"
-status: "planned"
+status: "in_progress"
 depends_on: ["EPIC-002"]
 completion_requires: ["TASK-003-01","TASK-003-02","TASK-003-03","TASK-003-04","TASK-003-05","TASK-003-06"]
 ---
