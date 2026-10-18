@@ -27,3 +27,8 @@ func Dist() fs.FS {
 func Index() ([]byte, error) {
 	return fs.ReadFile(Dist(), "index.html")
 }
+
+// RendererLoader returns the separately bundled, unprivileged page integration.
+func RendererLoader() ([]byte, error) {
+	return fs.ReadFile(Dist(), "renderer/loader.js")
+}

@@ -76,16 +76,23 @@ type ResolvedFile struct {
 	Object        domain.Object `json:"-"`
 }
 type Bootstrap struct {
-	VersionID         string  `json:"version_id"`
-	ViewerProfile     string  `json:"viewer_profile"`
-	DefaultPage       *string `json:"default_page"`
-	SelectedPage      *string `json:"selected_page"`
-	RequestedPage     *string `json:"requested_page"`
-	NavigationPath    *string `json:"navigation_path"`
-	FilesURL          string  `json:"files_url"`
-	SelectedFileURL   *string `json:"selected_file_url"`
-	Delivery          string  `json:"delivery"`
-	RendererAvailable bool    `json:"renderer_available"`
+	VersionID            string  `json:"version_id"`
+	ViewerProfile        string  `json:"viewer_profile"`
+	DefaultPage          *string `json:"default_page"`
+	SelectedPage         *string `json:"selected_page"`
+	RequestedPage        *string `json:"requested_page"`
+	NavigationPath       *string `json:"navigation_path"`
+	FilesURL             string  `json:"files_url"`
+	SelectedFileURL      *string `json:"selected_file_url"`
+	Delivery             string  `json:"delivery"`
+	RendererAvailable    bool    `json:"renderer_available"`
+	RenderSessionsURL    string  `json:"render_sessions_url"`
+	RendererConstruction string  `json:"renderer_construction"`
+	// RendererUnavailableReason names the honest condition when the renderer
+	// is unavailable for this request's ingress (remote callers see the
+	// loopback construction as an unreachable capability); it is omitted
+	// whenever the renderer is available to the caller.
+	RendererUnavailableReason string `json:"renderer_unavailable_reason,omitempty"`
 }
 type Error struct{ Reason string }
 

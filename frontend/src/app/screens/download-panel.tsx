@@ -10,7 +10,7 @@
 // by the consented replacement semantics. Completion requires a clean
 // stream end plus close(); failures and cancellation abort and are never
 // labelled complete, and a stale authority never feeds bytes onward.
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { DispatchAuthority, ShellController } from "../../client/controller.ts";
 import { directoryTarget, destinationTransportSupport, downloadPackage, packageFileName, savePickerTarget } from "../../client/download.ts";
 import type { DownloadTarget } from "../../client/download.ts";
@@ -19,6 +19,7 @@ import { PackageDownloadIncomplete } from "../../client/download.ts";
 interface DownloadPanelProps {
   controller: ShellController;
   versionId: string;
+  filePath?: string;
 }
 
 type PanelStage =
@@ -40,16 +41,18 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
-export function DownloadPanel({ controller, versionId }: DownloadPanelProps) {
+export function DownloadPanel({ controller, versionId, filePath }: DownloadPanelProps) {
   const client = controller.client;
   const support = destinationTransportSupport();
+  const suggestedName = filePath?.split("/").at(-1) ?? packageFileName(versionId);
   const [stage, setStage] = useState<PanelStage>({ kind: "idle" });
-  const [customName, setCustomName] = useState(packageFileName(versionId));
+  const [customName, setCustomName] = useState(suggestedName);
   const [consented, setConsented] = useState(false);
   const [permissionState, setPermissionState] = useState<PermissionState | null>(null);
   const cancelRef = useRef(false);
   const authorityRef = useRef<DispatchAuthority | null>(null);
   const resultRef = useRef(false);
+  useEffect(() => () => { cancelRef.current = true; }, []);
 
   const beginConsent = useCallback(() => {
     setStage(support.savePicker || support.directoryDrop ? { kind: "consent" } : { kind: "unavailable-transport" });
@@ -65,9 +68,9 @@ export function DownloadPanel({ controller, versionId }: DownloadPanelProps) {
     cancelRef.current = false;
     setConsented(false);
     setPermissionState(null);
-    setCustomName(packageFileName(versionId));
+    setCustomName(suggestedName);
     setStage({ kind: "idle" });
-  }, [versionId]);
+  }, [versionId, suggestedName]);
 
   const confirmConsent = useCallback(() => {
     // Capture the authority at the explicit consent action; every later
@@ -84,7 +87,10 @@ export function DownloadPanel({ controller, versionId }: DownloadPanelProps) {
       cancelRef.current = false;
       setStage({ kind: "downloading", bytes: 0 });
       try {
-        const result = await downloadPackage(client, versionId, target, {
+        const result = await downloadPackage(filePath === undefined ? client : { packageStream: (id) => {
+          if (!client.fileStream) throw new Error("현재 연결은 첨부 파일 스트리밍을 지원하지 않습니다.");
+          return client.fileStream(id, filePath);
+        } }, versionId, target, {
           guard: () => controller.requireVerifiedDispatch(authorityRef.current),
           shouldContinue: () => !cancelRef.current,
           onProgress: (bytes) => {
@@ -102,7 +108,7 @@ export function DownloadPanel({ controller, versionId }: DownloadPanelProps) {
         setStage({ kind: "incomplete", stage: "reader", detail: error instanceof Error ? error.message : String(error) });
       }
     },
-    [client, controller, versionId],
+    [client, controller, versionId, filePath],
   );
 
   const acquireSavePicker = useCallback(async () => {
@@ -111,8 +117,8 @@ export function DownloadPanel({ controller, versionId }: DownloadPanelProps) {
     try {
       controller.requireVerifiedDispatch(authorityRef.current);
       const handle = await picker({
-        suggestedName: customName || packageFileName(versionId),
-        types: [{ description: "Haeryong original-directory archive", accept: { "application/zip": [".zip"] } }],
+        suggestedName: customName || suggestedName,
+        ...(filePath === undefined ? { types: [{ description: "Haeryong original-directory archive", accept: { "application/zip": [".zip"] } }] } : {}),
       });
       // Save-picker targets cannot detect prior existence; consent governs.
       await startDownload(savePickerTarget(handle));
@@ -123,7 +129,7 @@ export function DownloadPanel({ controller, versionId }: DownloadPanelProps) {
       }
       setStage({ kind: "incomplete", stage: "write", detail: error instanceof Error ? error.message : String(error) });
     }
-  }, [controller, customName, startDownload, versionId]);
+  }, [controller, customName, startDownload, versionId, suggestedName, filePath]);
 
   const onDrop = useCallback(async (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -157,7 +163,7 @@ export function DownloadPanel({ controller, versionId }: DownloadPanelProps) {
       if (state !== "granted") {
         return; // denied/prompt-unresolved stay honestly visible.
       }
-      const name = customName || packageFileName(versionId);
+      const name = customName || suggestedName;
       const target = directoryTarget(stage.directory, name);
       const exists = await target.exists();
       if (exists) {
@@ -184,9 +190,9 @@ export function DownloadPanel({ controller, versionId }: DownloadPanelProps) {
 
   return (
     <section className="panel" data-testid="download-panel" data-version={versionId}>
-      <h2>원본 디렉터리 전체 내려받기</h2>
+      <h2>{filePath === undefined ? "원본 디렉터리 전체 내려받기" : "파일 내려받기: " + filePath}</h2>
       <p className="hint">
-        선택한 버전의 원본 디렉터리를 ZIP 아카이브로 스트리밍합니다. 서비스 메타데이터는 포함되지 않습니다. 저장소에서 검증된 원본 항목을 내보냅니다. 이 화면은 수신한 ZIP을 다시 풀어 항목별 해시를 검증하지 않습니다.
+        {filePath === undefined ? "선택한 버전의 원본 디렉터리를 ZIP 아카이브로 스트리밍합니다. 서비스 메타데이터는 포함되지 않습니다. 저장소에서 검증된 원본 항목을 내보냅니다. 이 화면은 수신한 ZIP을 다시 풀어 항목별 해시를 검증하지 않습니다." : "선택한 원본 파일을 인증된 연결로 스트리밍해 저장합니다."}
       </p>
       {stage.kind === "idle" ? (
         <div className="form-row">

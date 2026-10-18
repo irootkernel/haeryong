@@ -7,6 +7,7 @@ behavior tests. No listener, provider, credentials or production data is used.
 """
 from copy import deepcopy
 from pathlib import Path
+from urllib.parse import urlparse
 import hashlib
 import io
 import json
@@ -97,6 +98,35 @@ def validate(name, value, code='INVALID_REQUEST'):
     """Validate selected shapes; error pointers always identify submitted fields."""
     if name == 'config' and isinstance(value, dict) and value.get('schema_version') not in (None, '1.0'):
         fail('UNSUPPORTED_SCHEMA', '/schema_version')
+    if name in ('personal_reader_preference', 'personal_reading_position', 'personal_page_position') and isinstance(value, dict):
+        absent = value.get('exists') is False
+        if absent:
+            if not (value.get('revision') is None and value.get('etag') is None):
+                fail(field='/revision', reason='absent personal state carries null validators')
+        elif value.get('revision') is None or value.get('etag') is None:
+            fail(field='/revision', reason='stored personal state carries real validators')
+        if ('required_precondition' in value) is not absent:
+            fail(field='/required_precondition', reason='create precondition only represents absent personal state')
+        family_defaults = {
+            'personal_reader_preference': {'default_page': None},
+            'personal_reading_position': {'page_path': None, 'page_query': '', 'page_fragment': '', 'opened': False, 'first_opened_at': None, 'last_opened_at': None},
+            'personal_page_position': {'page_query': '', 'page_fragment': '', 'position': {}},
+        }
+        if absent:
+            if value.get('value') != family_defaults[name]:
+                fail(field='/value', reason='absent personal state carries the exact family default value')
+            if value.get('page_position_url') is not None:
+                fail(field='/page_position_url', reason='absent personal state links no page-position resource')
+        elif name == 'personal_reading_position':
+            stored = value.get('value')
+            page = stored.get('page_path') if isinstance(stored, dict) else None
+            link = value.get('page_position_url')
+            if page is None and link is not None:
+                fail(field='/page_position_url', reason='null-page pointer links no page-position resource')
+            if page is not None and not (isinstance(link, str) and link):
+                fail(field='/page_position_url', reason='stored pointer with a page links its page-position resource')
+        elif value.get('page_position_url') is not None:
+            fail(field='/page_position_url', reason='only the reading pointer carries a page-position link')
     if name == 'upload_create' and isinstance(value, dict) and value.get('purpose') in ('body', 'metadata'):
         target = value.get('target', {})
         choices = ['question', 'annotation_create', 'annotation_edit', 'generation', 'evidence_verification'] if value['purpose'] == 'body' else ['import', 'draft_replace']
@@ -254,6 +284,19 @@ def configuration(value):
     origins = [m['origin'] for m in mappings]
     if len(set(origins)) != len(origins) or set(origins) & trusted:
         fail(field='/network/renderer_mappings', reason='unique separate quarantined origins required')
+    pool = network.get('renderer_pool')
+    if pool is not None:
+        base, count = pool['base_port'], pool['count']
+        if base + count - 1 > 65535:
+            fail(field='/network/renderer_pool/count', reason='range exceeds the port space')
+        if base <= 9273 and base + count - 1 >= 9272:
+            fail(field='/network/renderer_pool/base_port', reason='range intersects the frozen legacy fixture origins 9272-9273')
+        if base <= network['listener']['port'] <= base + count - 1:
+            fail(field='/network/renderer_pool', reason='range must not include the management listener port')
+        for mapping in mappings:
+            upstream = urlparse(mapping['upstream'])
+            if upstream.port is not None and base <= upstream.port <= base + count - 1:
+                fail(field='/network/renderer_pool', reason='range must not include a renderer mapping upstream port')
     for project_id, settings in value['projects'].items():
         validate('id', project_id)
         if 'maintenance' in settings:

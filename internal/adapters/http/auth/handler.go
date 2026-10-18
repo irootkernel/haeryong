@@ -73,7 +73,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src data:; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src data:; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self' http://127.0.0.1:* https://127.0.0.1:*; frame-src http://127.0.0.1:* https://127.0.0.1:*")
 	if !h.hosts[r.Host] {
 		fail(w, r, session.ErrOrigin)
 		return
@@ -86,7 +86,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if origin != "" {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Vary", "Origin")
-		w.Header().Set("Access-Control-Expose-Headers", "ETag, Retry-After, Repr-Digest, Content-Digest, Content-Range, Accept-Ranges, Haeryong-Requested-Path, Haeryong-Resolved-Path")
+		w.Header().Set("Access-Control-Expose-Headers", "ETag, Retry-After, Repr-Digest, Content-Digest, Content-Range, Accept-Ranges, Haeryong-Requested-Path, Haeryong-Resolved-Path, Haeryong-Context-Verified")
 	}
 	if r.Method == http.MethodOptions && strings.HasPrefix(r.URL.Path, "/api/v1/") {
 		if origin == "" {
@@ -95,7 +95,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, header := range strings.Split(r.Header.Get("Access-Control-Request-Headers"), ",") {
 			switch strings.ToLower(strings.TrimSpace(header)) {
-			case "", "authorization", "content-type", "if-match", "idempotency-key", "last-event-id", "range", "if-range", "if-none-match", "haeryong-upload-offset", "haeryong-upload-chunk-sha256", "haeryong-upload-length", "haeryong-upload-final":
+			case "", "authorization", "content-type", "if-match", "idempotency-key", "last-event-id", "range", "if-range", "if-none-match", "haeryong-upload-offset", "haeryong-upload-chunk-sha256", "haeryong-upload-length", "haeryong-upload-final", "haeryong-context-binding":
 			default:
 				fail(w, r, session.ErrOrigin)
 				return
@@ -108,7 +108,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, PATCH, DELETE")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, If-Match, Idempotency-Key, Last-Event-ID, Range, If-Range, If-None-Match, Haeryong-Upload-Offset, Haeryong-Upload-Chunk-SHA256, Haeryong-Upload-Length, Haeryong-Upload-Final")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, If-Match, Idempotency-Key, Last-Event-ID, Range, If-Range, If-None-Match, Haeryong-Upload-Offset, Haeryong-Upload-Chunk-SHA256, Haeryong-Upload-Length, Haeryong-Upload-Final, Haeryong-Context-Binding")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -357,16 +357,8 @@ GET versions/{id}/review
 PUT versions/{id}/review
 GET documents/{id}/revisit
 PUT documents/{id}/revisit
-GET versions/{id}/reading-position
-PUT versions/{id}/reading-position
-GET versions/{id}/page-position
-PUT versions/{id}/page-position
-GET versions/{id}/reader-preference
-PUT versions/{id}/reader-preference
 GET versions/{id}/annotations
 GET annotations/{id}
-POST contexts
-GET contexts/{id}
 POST versions/{id}/annotations
 PATCH annotations/{id}
 DELETE annotations/{id}

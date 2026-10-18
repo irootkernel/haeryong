@@ -34,6 +34,50 @@ func validPath(p string) error {
 	return nil
 }
 
+// lookupTx resolves an exact stored path first inside the caller's
+// transaction; a canonical fallback scans finite batches without normalizing
+// stored names, returning a result only when it is unique.
+func (s *Service) lookupTx(ctx context.Context, tx app.WriteTx, id, set, name string) (domain.Entry, error) {
+	if err := validPath(name); err != nil {
+		return domain.Entry{}, err
+	}
+	found, err := tx.QueryEntry(set, name)
+	if err == nil {
+		return found, nil
+	}
+	if !errors.Is(err, domain.ErrNotFound) {
+		return found, err
+	}
+	canonical := norm.NFC.String(name)
+	after := ""
+	matched := false
+	for {
+		var entries []domain.Entry
+		var err error
+		entries, err = tx.Entries(set, after, 128)
+		if err != nil {
+			return domain.Entry{}, err
+		}
+		for _, e := range entries {
+			after = e.Path
+			if norm.NFC.String(e.Path) == canonical {
+				if matched {
+					return domain.Entry{}, &Error{"ambiguous_path"}
+				}
+				found = e
+				matched = true
+			}
+		}
+		if len(entries) < 128 {
+			break
+		}
+	}
+	if !matched {
+		return domain.Entry{}, domain.ErrNotFound
+	}
+	return found, nil
+}
+
 // Exact lookup always wins. A canonical fallback scans finite batches without
 // normalizing stored names, returning a result only when it is unique.
 func (s *Service) lookup(ctx context.Context, token, id, set, name string) (domain.Entry, error) {
@@ -219,7 +263,7 @@ func (s *Service) RenderBootstrap(ctx context.Context, token, id, requested stri
 	if err != nil {
 		return Bootstrap{}, err
 	}
-	out := Bootstrap{VersionID: id, ViewerProfile: v.ViewerProfile, DefaultPage: v.DefaultPage, FilesURL: "/api/v1/versions/" + id + "/files", Delivery: "authenticated_attachment", RendererAvailable: false}
+	out := Bootstrap{VersionID: id, ViewerProfile: v.ViewerProfile, DefaultPage: v.DefaultPage, FilesURL: "/api/v1/versions/" + id + "/files", Delivery: "authenticated_attachment"}
 	out.RequestedPage = nullable(requested)
 	if requested != "" {
 		info, err := s.ResolveFile(ctx, token, id, requested, true)

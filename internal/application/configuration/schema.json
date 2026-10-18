@@ -52,6 +52,26 @@
                 "format": "origin"
               }
             },
+            "renderer_pool": {
+              "type": "object",
+              "properties": {
+                "base_port": {
+                  "type": "integer",
+                  "minimum": 1024,
+                  "maximum": 65535
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                }
+              },
+              "required": [
+                "base_port",
+                "count"
+              ],
+              "additionalProperties": false
+            },
             "renderer_mappings": {
               "type": "array",
               "items": {

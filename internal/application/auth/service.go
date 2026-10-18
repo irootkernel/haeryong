@@ -617,6 +617,12 @@ func (a *Authority) AuthorizeWrite(ctx context.Context, tx app.WriteTx, r domain
 	if err := authorizeScope(tx, record, r); err != nil {
 		return err
 	}
+	// Only a current owner write may reach the personal service's explicit
+	// lifecycle conflict. Saved responses and receipt reads retain strict
+	// current visibility through visibleRequest.
+	if record.Scope.Kind == "owner" && personalWriteTarget(r.Method, r.Target) {
+		return visibleTargetWithoutLifecycleMask(tx, r.Target)
+	}
 	return visibleRequest(tx, r)
 }
 func (a *Authority) Filter(ctx context.Context, r domain.Request, response domain.Response) (domain.Response, error) {
@@ -635,6 +641,9 @@ func (a *Authority) Filter(ctx context.Context, r domain.Request, response domai
 			if err := authorizeScope(tx, record, r); err != nil {
 				return err
 			}
+		}
+		if err := visibleContextTarget(tx, r.Target, true); err != nil {
+			return err
 		}
 		if err := visibleRequest(tx, r); err != nil {
 			return err
@@ -679,6 +688,16 @@ func (a *Authority) Filter(ctx context.Context, r domain.Request, response domai
 var canonicalID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 func visibleTarget(tx app.WriteTx, target string) error {
+	return visibleTargetMasking(tx, target, true)
+}
+
+// visibleTargetWithoutLifecycleMask keeps exact identity, scope and unknown
+// masking but lets an authorized writer observe the recorded lifecycle.
+func visibleTargetWithoutLifecycleMask(tx app.WriteTx, target string) error {
+	return visibleTargetMasking(tx, target, false)
+}
+
+func visibleTargetMasking(tx app.WriteTx, target string, mask bool) error {
 	parsed, err := url.ParseRequestURI(target)
 	if err != nil {
 		return sec.ErrInvalid
@@ -696,6 +715,9 @@ func visibleTarget(tx app.WriteTx, target string) error {
 		if e != nil {
 			return e
 		}
+		if !mask && v.Sequence == 0 {
+			return domain.ErrNotFound
+		}
 		document = v.DocumentID
 	case "projects":
 		_, e := tx.Scope(parts[3])
@@ -706,7 +728,7 @@ func visibleTarget(tx app.WriteTx, target string) error {
 		if e != nil {
 			return e
 		}
-		if d.Lifecycle == "trash" || d.Lifecycle == "purged" {
+		if mask && (d.Lifecycle == "trash" || d.Lifecycle == "purged") {
 			return domain.ErrNotFound
 		}
 		_, e = tx.Scope(d.ProjectID)
@@ -804,8 +826,142 @@ func (s *Service) AuthenticateWrite(ctx context.Context, tx app.WriteTx, token s
 	return s.authenticateTx(tx, token, false)
 }
 
-// Upload receipt authority follows the saved action target, including replay.
+// DeliveryAuthorityCurrent rechecks a remembered render-delivery authority
+// against current state inside the caller's transaction: for an owner device
+// session, current epoch/revocation/expiry of that exact session; for a
+// scoped workflow credential, current revocation/epoch/expiry, active
+// principal, current permission revisions, and the captured version.read
+// action with the exact version/project anchors. Both kinds then require the
+// version to remain published under a non-trash lifecycle. Definitive
+// denials use the ordinary nondisclosing errors; anything else is transient.
+func (s *Service) DeliveryAuthorityCurrent(ctx context.Context, tx app.WriteTx, kind, authorityID, principalID, versionID string) error {
+	state, err := tx.AuthState()
+	if err != nil {
+		return err
+	}
+	scope := domain.CredentialScope{}
+	switch kind {
+	case "owner":
+		record, err := tx.SessionByID(authorityID)
+		if err != nil {
+			return err
+		}
+		if record.PrincipalID != principalID || record.PrincipalID != state.OwnerID {
+			return domain.ErrDenied
+		}
+		if _, err := sec.Check(record, state, s.now()); err != nil {
+			return err
+		}
+	case "workflow":
+		credential, err := tx.ScopedCredential(authorityID)
+		if err != nil {
+			return err
+		}
+		if credential.PrincipalID != principalID {
+			return domain.ErrDenied
+		}
+		principal, err := tx.WorkflowPrincipal(credential.PrincipalID)
+		if err != nil {
+			return err
+		}
+		if credential.Revoked || !principal.Active || credential.AuthEpoch != state.AuthEpoch {
+			return sec.ErrRevoked
+		}
+		if credential.ExpiresAt != nil && !s.now().Before(*credential.ExpiresAt) {
+			return sec.ErrExpired
+		}
+		for id, revision := range credential.Permissions {
+			current, err := tx.Scope(id)
+			if err != nil {
+				return err
+			}
+			if current.Project.PermissionsRevision != revision {
+				return domain.ErrDenied
+			}
+		}
+		scope = RestrictScope(credential.Scope, principal.Scope)
+	default:
+		return domain.ErrDenied
+	}
+	version, err := tx.PublishedVersion(versionID)
+	if err != nil {
+		return err
+	}
+	document, err := tx.Document(version.DocumentID)
+	if err != nil {
+		return err
+	}
+	if document.Lifecycle == "trash" || document.Lifecycle == "purged" {
+		return domain.ErrNotFound
+	}
+	if kind == "workflow" {
+		if !contains(scope.Actions, "version.read") || !contains(scope.VersionIDs, versionID) || !contains(scope.ProjectIDs, document.ProjectID) {
+			return domain.ErrNotFound
+		}
+	}
+	return nil
+}
+
+// personalWriteTarget identifies the three owner-scoped personal-resource
+// PUT routes that report an exact lifecycle transition instead of GET masking.
+func personalWriteTarget(method, target string) bool {
+	if method != "PUT" {
+		return false
+	}
+	path := strings.SplitN(target, "?", 2)[0]
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 5 || parts[0] != "api" || parts[1] != "v1" || parts[2] != "versions" || !canonicalID.MatchString(parts[3]) {
+		return false
+	}
+	return parts[4] == "reading-position" || parts[4] == "page-position" || parts[4] == "reader-preference"
+}
+
+// Receipt authority follows the saved action target, including replay.
+// visibleContextTarget enforces the saved context semantic target's CURRENT
+// authority in the auth path before any receipt read, replay or filter
+// response leaves the service: exact version/project scope and a present
+// page binding always, with trash/purged hidden nondisclosing. The explicit
+// lifecycle transition list in schema-registry covers the personal reader
+// families, not new context creation.
+func visibleContextTarget(tx app.WriteTx, target string, strict bool) error {
+	parsed, err := url.ParseRequestURI(target)
+	if err != nil {
+		return sec.ErrInvalid
+	}
+	if parsed.Path != "/api/v1/contexts" {
+		return nil
+	}
+	version := parsed.Query().Get("version_id")
+	if !canonicalID.MatchString(version) {
+		return sec.ErrInvalid
+	}
+	v, err := tx.Version(version)
+	if err != nil {
+		return err
+	}
+	d, err := tx.Document(v.DocumentID)
+	if err != nil {
+		return err
+	}
+	if strict && (d.Lifecycle == "trash" || d.Lifecycle == "purged") {
+		return domain.ErrNotFound
+	}
+	if _, err := tx.Scope(d.ProjectID); err != nil {
+		return err
+	}
+	if page := parsed.Query().Get("page_path"); page != "" {
+		if _, err := tx.Page(version, page); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func visibleRequest(tx app.WriteTx, r domain.Request) error {
+	if err := visibleContextTarget(tx, r.Target, true); err != nil {
+		return err
+	}
+
 	if err := visibleTarget(tx, r.Target); err != nil {
 		return err
 	}

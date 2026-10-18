@@ -76,7 +76,7 @@ func newCommandFixture(t GinkgoTInterface) commandFixture {
 	server := httptest.NewUnstartedServer(nil)
 	base := "http://" + server.Listener.Addr().String()
 	endpoint, _ := url.Parse(base)
-	handler, e := httpauth.New(auth, httpauth.Policy{Hosts: []string{endpoint.Host}, Origins: []string{base}}, productRoutes{httpconfig.New(configuration), v1.New(query.New(store, auth, store)), httpimports.New(imports)})
+	handler, e := httpauth.New(auth, httpauth.Policy{Hosts: []string{endpoint.Host}, Origins: []string{base}}, productRoutes{httpconfig.New(configuration), v1.New(query.New(store, auth, store), nil, nil), httpimports.New(imports)})
 	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 
 	server.Config.Handler = handler
@@ -288,3 +288,21 @@ func newIDForCommand(t GinkgoTInterface) string {
 
 	return id
 }
+
+var _ = It("TestProductHandlerRefusesExternalHostCollisionWithActualEndpoint", Label("persistence"), func() {
+	t := GinkgoT()
+	f := newCommandFixture(t)
+	configuration := []byte(`{"network":{"remote_enabled":true,"external_base_url":"https://127.0.0.1:9443","allowed_origins":["http://127.0.0.1:9443","https://127.0.0.1:9443"]}}`)
+	// The actual --port endpoint sharing the external host cannot be
+	// distinguished on the wire (the Host header carries no scheme), so
+	// startup fails visibly instead of misclassifying local callers.
+	_, e := productHandler(f.auth, "http://127.0.0.1:9443", configuration)
+	Expect(e == nil).To(BeFalse(), func() string { return "ambiguous endpoint tuple accepted" })
+	Expect(e.Error()).To(ContainSubstring("differ"))
+	// A distinct actual local host keeps serving.
+	_, e = productHandler(f.auth, "http://127.0.0.1:9270", configuration)
+	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint("noncolliding endpoint rejected: ", e) })
+	// Remote disabled ignores the external URL entirely.
+	_, e = productHandler(f.auth, "http://127.0.0.1:9443", []byte(`{"network":{"remote_enabled":false}}`))
+	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint("remote-disabled startup rejected: ", e) })
+})

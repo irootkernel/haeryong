@@ -135,7 +135,7 @@ func (f *fixture) open() {
 	f.query = query.New(f.store, f.auth, f.store)
 	f.server = httptest.NewUnstartedServer(nil)
 	origin := "http://" + f.server.Listener.Addr().String()
-	handler, err := httpauth.New(f.auth, httpauth.Policy{Hosts: []string{f.server.Listener.Addr().String()}, Origins: []string{origin}}, routes{New(f.query), httpimports.New(f.imports)})
+	handler, err := httpauth.New(f.auth, httpauth.Policy{Hosts: []string{f.server.Listener.Addr().String()}, Origins: []string{origin}}, routes{New(f.query, nil, nil), httpimports.New(f.imports)})
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -416,4 +416,66 @@ var _ = It("TestActualExistingDirectoryQueryCursorRangeAndRestart", Label("persi
 		Expect(!bytes.Equal(content, data)).To(BeFalse(), func() string { return fmt.Sprint("restart changed source bytes", name) })
 
 	}
+})
+
+// C2: the three absent personal-resource responses expose the registry's
+// default visible value with EXPLICIT null revision/etag JSON keys (not
+// omitted) and the create precondition; a stored pointer carries the
+// once-encoded selected page-position link or an explicit null link.
+var _ = It("TestPersonalAbsentHTTPWireDefaultsAndPointerLink", Label("persistence"), func() {
+	t := GinkgoT()
+	f := newFixture(t)
+	upload := f.create()
+	f.put(upload, "hello.html", "file", []byte("<html>hi</html>"))
+	v := f.publish(upload, nil)
+	// The closed machine shapes own the exact response key set; every actual
+	// Go HTTP payload must align with its family's shape, including the
+	// mandatory nullable page_position_url on non-pointer families.
+	exactKeys := func(data []byte, keys ...string) {
+		var envelope struct {
+			Data map[string]json.RawMessage `json:"data"`
+		}
+		Expect(json.Unmarshal(data, &envelope) != nil).To(BeFalse(), func() string { return string(data) })
+		Expect(len(envelope.Data)).To(Equal(len(keys)), func() string { return string(data) })
+		for _, key := range keys {
+			_, ok := envelope.Data[key]
+			Expect(ok).To(BeTrue(), func() string { return "missing key " + key + ": " + string(data) })
+		}
+	}
+	status, _, data := f.request("GET", "/api/v1/versions/"+v.ID+"/reader-preference", nil, nil)
+	want(t, status, 200, data)
+	exactKeys(data, "exists", "value", "revision", "etag", "required_precondition", "page_position_url")
+	Expect(string(data)).To(ContainSubstring(`"exists":false`), func() string { return string(data) })
+	Expect(string(data)).To(ContainSubstring(`"default_page":null`), func() string { return string(data) })
+	Expect(string(data)).To(ContainSubstring(`"revision":null`), func() string { return string(data) })
+	Expect(string(data)).To(ContainSubstring(`"etag":null`), func() string { return string(data) })
+	Expect(string(data)).To(ContainSubstring(`"required_precondition":"if_none_match_star"`), func() string { return string(data) })
+	Expect(string(data)).To(ContainSubstring(`"page_position_url":null`), func() string { return string(data) })
+	status, _, data = f.request("GET", "/api/v1/versions/"+v.ID+"/reading-position", nil, nil)
+	want(t, status, 200, data)
+	exactKeys(data, "exists", "value", "revision", "etag", "required_precondition", "page_position_url")
+	Expect(string(data)).To(ContainSubstring(`"page_path":null,"page_query":"","page_fragment":"","opened":false,"first_opened_at":null,"last_opened_at":null`), func() string { return string(data) })
+	Expect(string(data)).To(ContainSubstring(`"page_position_url":null`), func() string { return string(data) })
+	status, _, data = f.request("GET", "/api/v1/versions/"+v.ID+"/page-position?page=hello.html", nil, nil)
+	want(t, status, 200, data)
+	exactKeys(data, "exists", "value", "revision", "etag", "required_precondition", "page_position_url")
+	Expect(string(data)).To(ContainSubstring(`"page_query":"","page_fragment":"","position":{}`), func() string { return string(data) })
+	Expect(string(data)).To(ContainSubstring(`"page_position_url":null`), func() string { return string(data) })
+	// Store a page-bound pointer and observe the canonical encoded link;
+	// a stored response replaces the precondition with the real validator
+	// while keeping the exact pointer key set.
+	pointerBody := `{"page_path":"hello.html","page_query":"s=1","page_fragment":"f","opened":true}`
+	status, _, data = f.request("PUT", "/api/v1/versions/"+v.ID+"/reading-position", bytes.NewReader([]byte(pointerBody)), map[string]string{"Content-Type": "application/json", "Idempotency-Key": id(t), "If-None-Match": "*"})
+	want(t, status, 200, data)
+	exactKeys(data, "exists", "value", "revision", "etag", "page_position_url")
+	Expect(string(data)).To(ContainSubstring(`"page_position_url":"/api/v1/versions/`+v.ID+`/page-position?page=hello.html"`), func() string { return string(data) })
+	var stored struct {
+		Data struct {
+			ETag string `json:"etag"`
+		} `json:"data"`
+	}
+	Expect(json.Unmarshal(data, &stored) != nil).To(BeFalse())
+	status, _, data = f.request("PUT", "/api/v1/versions/"+v.ID+"/reading-position", bytes.NewReader([]byte(`{"page_path":null,"page_query":"","page_fragment":"","opened":true}`)), map[string]string{"Content-Type": "application/json", "Idempotency-Key": id(t), "If-Match": stored.Data.ETag})
+	want(t, status, 200, data)
+	Expect(string(data)).To(ContainSubstring(`"page_position_url":null`), func() string { return string(data) })
 })

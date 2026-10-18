@@ -42,6 +42,24 @@ class TestContracts:
         with pytest.raises(c.ContractError):
             c.validate('staging_summary', {'staging_bytes': 0, 'pending_upload_count': 0, 'pending_uploads_url': '/api/v1/uploads'})
 
+    def test_Task00303RendererBootstrapDeliveryAndRemoteReason(self):
+        base = {'version_id': V, 'viewer_profile': 'html_js_v1', 'default_page': None, 'selected_page': 'page.html', 'requested_page': 'page.html', 'navigation_path': None, 'files_url': '/api/v1/versions/' + V + '/files', 'selected_file_url': '/api/v1/versions/' + V + '/file?path=page.html'}
+        available = {**base, 'delivery': 'loopback_renderer_origin', 'renderer_available': True, 'render_sessions_url': '/api/v1/versions/' + V + '/render-sessions', 'renderer_construction': 'loopback_renderer_origin'}
+        remote = {**base, 'selected_file_url': None, 'delivery': 'authenticated_attachment', 'renderer_available': False, 'render_sessions_url': '', 'renderer_construction': '', 'renderer_unavailable_reason': 'renderer_remote_ingress'}
+        unavailable = {**remote}
+        del unavailable['renderer_unavailable_reason']
+        for item in (available, remote, unavailable):
+            c.validate('render_bootstrap', item)
+        for invalid in (
+            {**available, 'delivery': 'untrusted_proxy'},
+            {**remote, 'renderer_unavailable_reason': 7},
+            {**remote, 'renderer_available': 'yes'},
+            {**remote, 'phantom_feature': True},
+            {**available, 'render_sessions_url': None},
+        ):
+            with pytest.raises(c.ContractError):
+                c.validate('render_bootstrap', invalid)
+
     def test_Task00204_upload_validators_and_end_input_declaration(self):
         upload = self.model.create(key(701), {'purpose': 'result', 'target': {'project_id': P, 'document_id': None}, 'input_mode': 'directory'})
         before = self.model.summary(upload)
@@ -753,3 +771,54 @@ class TestContracts:
             nested = deepcopy(generated)
             nested['version']['created_at'] = value
             self.error('INVALID_REQUEST', c.validate, 'generated_metadata', nested, field='/version/created_at')
+
+    def test_C5_04_selected_personal_resource_wire(self):
+        # Absent state: exact default visible value, explicit null validator
+        # keys, and the create precondition. Stored state keeps exists true
+        # with a real revision/etag, and the pointer's page_position_url is a
+        # nullable canonical page link that never lends the pointer validator.
+        absent = [
+            ('personal_reader_preference', {'exists': False, 'value': {'default_page': None}, 'revision': None, 'etag': None, 'required_precondition': 'if_none_match_star', 'page_position_url': None}),
+            ('personal_reading_position', {'exists': False, 'value': {'page_path': None, 'page_query': '', 'page_fragment': '', 'opened': False, 'first_opened_at': None, 'last_opened_at': None}, 'revision': None, 'etag': None, 'required_precondition': 'if_none_match_star', 'page_position_url': None}),
+            ('personal_page_position', {'exists': False, 'value': {'page_query': '', 'page_fragment': '', 'position': {}}, 'revision': None, 'etag': None, 'required_precondition': 'if_none_match_star', 'page_position_url': None}),
+        ]
+        for name, item in absent:
+            c.validate(name, item)
+            # Unknown keys and stripped null validator keys are both invalid.
+            self.error('INVALID_REQUEST', c.validate, name, {**item, 'extra': 1}, field='/extra')
+            stripped = {k: v for k, v in item.items() if k not in ('revision', 'etag')}
+            if name == 'personal_reading_position':
+                stripped = {k: v for k, v in stripped.items() if k != 'page_position_url'}
+            self.error('INVALID_REQUEST', c.validate, name, stripped, field='/revision')
+            wrong_precondition = {**item, 'required_precondition': 'if-match'}
+            self.error('INVALID_ENUM', c.validate, name, wrong_precondition, field='/required_precondition')
+        stored_default = {'exists': True, 'value': {'default_page': None}, 'revision': 1, 'etag': '"sha256-stored"', 'page_position_url': None}
+        c.validate('personal_reader_preference', stored_default)
+        c.validate('personal_reader_preference', {'exists': True, 'value': {'default_page': 'flows/retry.html'}, 'revision': 4, 'etag': '"sha256-stored"', 'page_position_url': None})
+        pointer = {'exists': True, 'value': {'page_path': 'flows/retry.html', 'page_query': 's=1', 'page_fragment': 'f', 'opened': True, 'first_opened_at': '2026-10-18T00:00:00.000000000Z', 'last_opened_at': '2026-10-18T01:00:00.000000000Z'}, 'revision': 2, 'etag': '"sha256-pointer"', 'page_position_url': '/api/v1/versions/' + V + '/page-position?page=flows%2Fretry.html'}
+        c.validate('personal_reading_position', pointer)
+        c.validate('personal_reading_position', {**pointer, 'value': {**pointer['value'], 'page_path': None}, 'page_position_url': None})
+        c.validate('personal_page_position', {'exists': True, 'value': {'page_query': 's=1', 'page_fragment': 'f', 'position': {'top': 120, 'region_id': 'retry'}}, 'revision': 3, 'etag': '"sha256-page"', 'page_position_url': None})
+        self.error('INVALID_REQUEST', c.validate, 'personal_page_position', {'exists': True, 'value': {'page_query': 's=1', 'page_fragment': 'f', 'position': {}}, 'revision': None, 'etag': None, 'page_position_url': None}, field='/revision')
+        # Half-null validators fail in BOTH directions: stored state with one
+        # null validator, absent state with one real validator.
+        self.error('INVALID_REQUEST', c.validate, 'personal_reader_preference', {'exists': True, 'value': {'default_page': None}, 'revision': 1, 'etag': None, 'page_position_url': None}, field='/revision')
+        self.error('INVALID_REQUEST', c.validate, 'personal_reader_preference', {'exists': True, 'value': {'default_page': None}, 'revision': None, 'etag': '"sha256-stored"', 'page_position_url': None}, field='/revision')
+        self.error('INVALID_REQUEST', c.validate, 'personal_reader_preference', {'exists': False, 'value': {'default_page': None}, 'revision': 1, 'etag': None, 'required_precondition': 'if_none_match_star', 'page_position_url': None}, field='/revision')
+        self.error('INVALID_REQUEST', c.validate, 'personal_reading_position', {'exists': False, 'value': absent[1][1]['value'], 'revision': None, 'etag': '"sha256-stored"', 'required_precondition': 'if_none_match_star', 'page_position_url': None}, field='/revision')
+        # Absent state carries the exact family default value, never a
+        # stored-looking one.
+        self.error('INVALID_REQUEST', c.validate, 'personal_reader_preference', {**absent[0][1], 'value': {'default_page': 'flows/retry.html'}}, field='/value')
+        self.error('INVALID_REQUEST', c.validate, 'personal_reading_position', {**absent[1][1], 'value': {'page_path': None, 'page_query': 's=1', 'page_fragment': '', 'opened': False, 'first_opened_at': None, 'last_opened_at': None}}, field='/value')
+        self.error('INVALID_REQUEST', c.validate, 'personal_page_position', {**absent[2][1], 'value': {'page_query': '', 'page_fragment': '', 'position': {'top': 1}}}, field='/value')
+        # Link contradictions: absent state and non-pointer families link
+        # nothing; the pointer's link follows its stored page exactly.
+        self.error('INVALID_REQUEST', c.validate, 'personal_reader_preference', {**absent[0][1], 'page_position_url': '/api/v1/x'}, field='/page_position_url')
+        self.error('INVALID_REQUEST', c.validate, 'personal_page_position', {'exists': True, 'value': {'page_query': '', 'page_fragment': '', 'position': {}}, 'revision': 1, 'etag': '"sha256-page"', 'page_position_url': '/api/v1/x'}, field='/page_position_url')
+        self.error('INVALID_REQUEST', c.validate, 'personal_reading_position', {**pointer, 'page_position_url': None}, field='/page_position_url')
+        self.error('INVALID_REQUEST', c.validate, 'personal_reading_position', {**pointer, 'page_position_url': None}, field='/page_position_url')
+        self.error('INVALID_REQUEST', c.validate, 'personal_reading_position', {**pointer, 'value': {**pointer['value'], 'page_path': None}}, field='/page_position_url')
+        # Wrong-typed stored values raise the typed ContractError from shape
+        # or semantic validation, never an uncaught crash from this block.
+        self.error('INVALID_REQUEST', c.validate, 'personal_reading_position', {'exists': True, 'value': [1], 'revision': 1, 'etag': '"sha256-x"', 'page_position_url': None})
+        self.error('INVALID_REQUEST', c.validate, 'personal_reading_position', {'exists': True, 'value': 1, 'revision': 1, 'etag': '"sha256-x"', 'page_position_url': '/api/v1/link'})

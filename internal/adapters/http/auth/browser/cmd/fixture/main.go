@@ -145,7 +145,7 @@ func run() error {
 	// proofs exercise the real streamed import/publication surface.
 	queries := query.New(store, core, store)
 	imports := importer.New(store, core, store, staging.New())
-	api := &apiRoutes{queries: httpv1.New(queries), imports: httpimports.New(imports)}
+	api := &apiRoutes{queries: httpv1.New(queries, nil, nil), imports: httpimports.New(imports)}
 	handler, err := httpauth.New(core, httpauth.Policy{Hosts: hosts, Origins: origins}, api)
 	if err != nil {
 		listener.Close()

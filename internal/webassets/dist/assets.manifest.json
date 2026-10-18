@@ -1,10 +1,11 @@
 {
   "files": {
-    "assets/index-BdWa_JCU.js": "1172901d4dd89edde24321b49c85844ff76874fcba0fd01471a823d15c21f450",
-    "assets/index-ChcXOWYZ.css": "e26778c567ad6ddfc8ef56a28b6a18053816c30e922d217fb8cdbf322cbb1d08",
-    "index.html": "c49714b9cd7a70ffee3931e4166148975024406e16911a26371d2683695d3ce8"
+    "assets/index-CzF_KCRc.js": "aa4f2faf8b9e237f8791baac3f8a7434543ef8ef2cb08ef206ed08303b44e05e",
+    "assets/index-rqfWgx68.css": "5c23a33c610a86f508371d509e83bba632637aac5868a6d0c1e028ed8936159f",
+    "index.html": "cb2b15278e133ba3312f136a7e8c354b1409c92364b0c35ad5b012a3baeeb902",
+    "renderer/loader.js": "e4cf52e9a26b0788bbe0e051607b03724428b4a1cf1747ff799442c47818b60c"
   },
-  "input_files": 38,
-  "inputs_digest": "74f402b601477e8ed263282072f319b2022b155b3df9820adc508e31a90c6d5b",
+  "input_files": 60,
+  "inputs_digest": "87447a559fa6bae6531d71079a33b8936ba6586eb6f01bd8cf9c7727edb196f2",
   "kind": "haeryong-webassets/v1"
 }

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"haeryong.local/haeryong/internal/application/query"
+	"haeryong.local/haeryong/internal/application/render"
 	"haeryong.local/haeryong/internal/application/service"
 	"haeryong.local/haeryong/internal/domain"
 	sec "haeryong.local/haeryong/internal/security/session"
@@ -18,15 +19,59 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 )
 
-type Handler struct{ Core *query.Service }
+type Handler struct {
+	Core   *query.Service
+	Render *render.Lazy
+	// Endpoints supplies the trusted runtime origins from product wiring:
+	// the actual local management origin and the configured external origin
+	// (empty when remote ingress is disabled). A nil closure classifies
+	// every request as local; requests reaching this handler have already
+	// passed the auth adapter's exact Host/Origin policy.
+	Endpoints func() (local, external string)
+}
 
-func New(core *query.Service) *Handler { return &Handler{Core: core} }
+func New(core *query.Service, renderer *render.Lazy, endpoints func() (local, external string)) *Handler {
+	return &Handler{Core: core, Render: renderer, Endpoints: endpoints}
+}
+
+// ingressRemote classifies the trusted ingress endpoint of a request from
+// exact runtime wiring, never an inferred client location: with a
+// configured external origin, a request is remote when its supplied Origin
+// is the external origin, or its Host is the external host while differing
+// from the actual local management host (the local endpoint wins ties;
+// construction refuses ambiguous equal hosts). An absent Origin never
+// proves locality, and no Forwarded or User-Agent signal is consulted.
+func (h *Handler) ingressRemote(r *http.Request) bool {
+	if h.Endpoints == nil {
+		return false
+	}
+	local, external := h.Endpoints()
+	if external == "" {
+		return false
+	}
+	if origin := r.Header.Get("Origin"); origin != "" && origin == external {
+		return true
+	}
+	externalURL, err := url.Parse(external)
+	if err != nil || externalURL.Host == "" || r.Host != externalURL.Host {
+		return false
+	}
+	if local == "" {
+		return true
+	}
+	localURL, localErr := url.Parse(local)
+	if localErr != nil || localURL.Host == "" {
+		return true
+	}
+	return localURL.Host != r.Host
+}
 func route(r *http.Request) []string {
 	parts := strings.Split(strings.TrimPrefix(strings.TrimSuffix(r.URL.EscapedPath(), "/"), "/api/v1/"), "/")
 	for i, part := range parts {
@@ -39,11 +84,20 @@ func route(r *http.Request) []string {
 	return parts
 }
 func (h *Handler) Handles(r *http.Request) bool {
-	if r.Method != "GET" && r.Method != "HEAD" {
-		return false
-	}
 	p := route(r)
 	if len(p) == 0 {
+		return false
+	}
+	if r.Method == http.MethodPost {
+		if len(p) == 3 && p[0] == "versions" && p[2] == "render-sessions" {
+			return true
+		}
+		return len(p) == 5 && p[0] == "versions" && p[2] == "render-sessions" && (p[4] == "renew" || p[4] == "close")
+	}
+	if len(p) == 3 && p[0] == "versions" && (p[2] == "reading-position" || p[2] == "reader-preference" || p[2] == "page-position") {
+		return r.Method == "GET" || r.Method == "HEAD" || r.Method == "PUT"
+	}
+	if r.Method != "GET" && r.Method != "HEAD" {
 		return false
 	}
 	if len(p) == 1 {
@@ -104,6 +158,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			allowed = []string{"kind"}
 		case "render-bootstrap":
 			allowed = []string{"page_path"}
+		case "reading-position", "reader-preference":
+			allowed = []string{}
+		case "page-position":
+			allowed = []string{"page"}
 		default:
 			allowed = nil
 		}
@@ -121,12 +179,27 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if r.Method == http.MethodPost {
+		h.renderSession(w, r, token, p)
+		return
+	}
 	var data any
 	etag := ""
 	version := ""
 	switch {
 	case len(p) == 1 && p[0] == "capabilities":
-		data, err = h.Core.Capabilities(r.Context(), token)
+		var capabilities map[string]any
+		capabilities, err = h.Core.Capabilities(r.Context(), token)
+		if err == nil && h.ingressRemote(r) {
+			// The loopback renderer construction is unreachable from remote
+			// ingress; the honest advertisement keeps the feature flags off
+			// and names the condition. Remote construction is EPIC-007.
+			capabilities["renderer_unavailable_reason"] = render.ReasonRemoteIngress
+		} else if err == nil && h.Render != nil && !h.Render.Unavailable() {
+			features := capabilities["features"].(map[string]bool)
+			features["html_js_v1"], features["multi_page_loader"], features["renderer"] = true, true, true
+		}
+		data = capabilities
 	case len(p) == 1 && p[0] == "projects":
 		data, err = h.Core.Projects(r.Context(), token, o)
 	case len(p) == 1 && p[0] == "documents":
@@ -148,8 +221,44 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		data, err = h.Core.Files(r.Context(), token, p[1], o)
 		version = p[1]
 	case p[0] == "versions" && len(p) == 3 && p[2] == "render-bootstrap":
-		data, err = h.Core.RenderBootstrap(r.Context(), token, p[1], values.Get("page_path"))
+		var bootstrap query.Bootstrap
+		bootstrap, err = h.Core.RenderBootstrap(r.Context(), token, p[1], values.Get("page_path"))
+		if err == nil && h.ingressRemote(r) {
+			bootstrap.RendererUnavailableReason = render.ReasonRemoteIngress
+		} else if err == nil && h.Render != nil && !h.Render.Unavailable() {
+			bootstrap.RendererAvailable = true
+			bootstrap.Delivery = "loopback_renderer_origin"
+			bootstrap.RenderSessionsURL = "/api/v1/versions/" + p[1] + "/render-sessions"
+			bootstrap.RendererConstruction = "loopback_renderer_origin"
+		}
+		data = bootstrap
 		version = p[1]
+	case p[0] == "versions" && len(p) == 3 && (p[2] == "reading-position" || p[2] == "reader-preference" || p[2] == "page-position") && (r.Method == "GET" || r.Method == "HEAD"):
+		var kind query.PersonalKind
+		page := ""
+		switch p[2] {
+		case "reading-position":
+			kind = query.ReadingPosition
+		case "reader-preference":
+			kind = query.ReaderPreference
+		default:
+			kind = query.PagePosition
+			page = values.Get("page")
+			if page == "" {
+				failure(w, r, &query.Error{Reason: "page_required"})
+				return
+			}
+		}
+		var view query.PersonalView
+		view, err = h.Core.PersonalGet(r.Context(), token, p[1], kind, page)
+		data = view
+		if view.Exists && view.ETag != nil {
+			etag = *view.ETag
+		}
+		version = p[1]
+	case p[0] == "versions" && len(p) == 3 && (p[2] == "reading-position" || p[2] == "reader-preference" || p[2] == "page-position") && r.Method == "PUT":
+		h.personalPut(w, r, token, p[1], p[2], values)
+		return
 	case p[0] == "versions" && len(p) == 4:
 		data, err = h.Core.Evidence(r.Context(), token, p[1], p[3])
 		version = p[1]
@@ -181,6 +290,156 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	respond(w, r, 200, data)
+}
+
+// renderSession serves the trusted-host render-session lifecycle routes:
+// open (durable K receipt), renew and close (natural session identity, no
+// receipt). The renderer subsystem is constructed lazily on first use.
+func (h *Handler) renderSession(w http.ResponseWriter, r *http.Request, token string, p []string) {
+	if err := emptyRenderControl(r.Body); err != nil {
+		failure(w, r, err)
+		return
+	}
+	key := ""
+	if len(p) == 3 && p[2] == "render-sessions" {
+		var err error
+		key, err = personalOperationKey(r)
+		if err != nil {
+			failure(w, r, err)
+			return
+		}
+	}
+	// Remote ingress never constructs the renderer subsystem, reserves an
+	// operation or binds a listener: the loopback construction is a known
+	// unavailable capability for this caller (remote construction belongs to
+	// EPIC-007). Renew shares the boundary; close stays usable so a known
+	// owned session can still be cleaned up from any ingress.
+	if (len(p) == 3 && p[2] == "render-sessions" || len(p) == 5 && p[4] == "renew") && h.ingressRemote(r) {
+		failure(w, r, &render.Error{Reason: render.ReasonRemoteIngress})
+		return
+	}
+	if h.Render == nil {
+		failure(w, r, &render.Error{Reason: render.ReasonUnsupportedAccount})
+		return
+	}
+	core, err := h.Render.Get()
+	if err != nil {
+		failure(w, r, err)
+		return
+	}
+	var response domain.Response
+	switch {
+	case len(p) == 3 && p[2] == "render-sessions":
+		response, err = core.Open(r.Context(), token, key, p[1])
+	case len(p) == 5 && p[2] == "render-sessions" && p[4] == "renew":
+		response, err = core.Renew(r.Context(), token, p[1], p[3])
+	case len(p) == 5 && p[2] == "render-sessions" && p[4] == "close":
+		response, err = core.Close(r.Context(), token, p[1], p[3])
+	default:
+		failure(w, r, domain.ErrNotFound)
+		return
+	}
+	if err != nil {
+		failure(w, r, err)
+		return
+	}
+	if response.Status == 204 {
+		w.WriteHeader(204)
+		return
+	}
+	respond(w, r, response.Status, json.RawMessage(response.Body))
+}
+
+// Render control has no author data or optional authority fields. Empty input
+// and an empty object are equivalent; null, unknown fields and trailing values
+// fail before constructing the lazy renderer or reserving an operation.
+func emptyRenderControl(body io.Reader) error {
+	if body == nil {
+		return nil
+	}
+	decoder := json.NewDecoder(body)
+	var fields map[string]json.RawMessage
+	if err := decoder.Decode(&fields); errors.Is(err, io.EOF) {
+		return nil
+	} else if err != nil || fields == nil || len(fields) != 0 {
+		return sec.ErrInvalid
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return sec.ErrInvalid
+	}
+	return nil
+}
+
+// missingPrecondition names a required personal-save control header.
+type missingPrecondition string
+
+func (e missingPrecondition) Error() string        { return "missing required header" }
+func (e missingPrecondition) Is(target error) bool { return target == sec.ErrMissing }
+
+var personalKeyPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+func personalOperationKey(r *http.Request) (string, error) {
+	values := r.Header.Values("Idempotency-Key")
+	if len(values) == 0 {
+		return "", missingPrecondition("Idempotency-Key")
+	}
+	if len(values) != 1 || !personalKeyPattern.MatchString(values[0]) {
+		return "", sec.ErrInvalid
+	}
+	return values[0], nil
+}
+
+// personalPut performs one durable owner-only personal save. Body parsing
+// stays typed and strictly validated; there is no author-field, string or
+// serialized-state admission quota, and no truncation — an unrepresentable
+// payload fails honestly rather than being capped.
+func (h *Handler) personalPut(w http.ResponseWriter, r *http.Request, token, version, kindName string, values url.Values) {
+	kind := query.PersonalKind(kindName)
+	page := ""
+	if kind == query.PagePosition {
+		page = values.Get("page")
+	}
+	key, err := personalOperationKey(r)
+	if err != nil {
+		failure(w, r, err)
+		return
+	}
+	etag := ""
+	create := false
+	match := r.Header.Values("If-Match")
+	none := r.Header.Values("If-None-Match")
+	switch {
+	case len(match) == 1 && len(none) == 0:
+		if match[0] == "" {
+			failure(w, r, sec.ErrInvalid)
+			return
+		}
+		etag = match[0]
+	case len(match) == 0 && len(none) == 1 && none[0] == "*":
+		create = true
+	default:
+		if len(match) == 0 && len(none) == 0 {
+			failure(w, r, missingPrecondition("If-Match"))
+			return
+		}
+		failure(w, r, sec.ErrInvalid)
+		return
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		failure(w, r, sec.ErrInvalid)
+		return
+	}
+	response, err := h.Core.PersonalPut(r.Context(), token, key, version, kind, page, etag, create, body)
+	if err != nil {
+		failure(w, r, err)
+		return
+	}
+	if value, ok := response.Headers["ETag"]; ok {
+		w.Header().Set("ETag", value)
+	}
+	respond(w, r, response.Status, json.RawMessage(response.Body))
 }
 
 func parameters(r *http.Request, allowed []string) (url.Values, error) {
@@ -232,7 +491,7 @@ func (h *Handler) deliver(w http.ResponseWriter, r *http.Request, token, id, kin
 		}
 		if handle == nil {
 			if r.Header.Get("Range") != "" {
-				failureCode(w, r, 416, "RANGE_NOT_SATISFIABLE", nil)
+				failureCode(w, r, 416, "RANGE_NOT_SATISFIABLE", nil, false)
 				started = true
 				return nil
 			}
@@ -266,7 +525,7 @@ func (h *Handler) deliver(w http.ResponseWriter, r *http.Request, token, id, kin
 		// conditionals and a mismatching If-Range have been accounted for.
 		if info.Object.Size == 0 && r.Header.Get("Range") != "" && (r.Header.Get("If-Range") == "" || r.Header.Get("If-Range") == info.ETag) && matchIfMatch(r.Header.Get("If-Match"), info.ETag) && !matchNone(r.Header.Get("If-None-Match"), info.ETag) {
 			w.Header().Set("Content-Range", "bytes */0")
-			failureCode(w, r, 416, "RANGE_NOT_SATISFIABLE", nil)
+			failureCode(w, r, 416, "RANGE_NOT_SATISFIABLE", nil, false)
 			started = true
 			return nil
 		}
@@ -284,7 +543,7 @@ func (h *Handler) deliver(w http.ResponseWriter, r *http.Request, token, id, kin
 				code = "PRECONDITION_FAILED"
 			}
 			w.Header().Del("Content-Length")
-			failureCode(w, r, writer.status, code, nil)
+			failureCode(w, r, writer.status, code, nil, writer.status == 503)
 			started = true
 		}
 		return nil
@@ -461,6 +720,8 @@ func failure(w http.ResponseWriter, r *http.Request, err error) {
 		}
 	case errors.Is(err, domain.ErrPrecondition):
 		status, code = 412, "PRECONDITION_FAILED"
+	case errors.Is(err, sec.ErrMissing):
+		status, code = 428, "PRECONDITION_REQUIRED"
 	case errors.Is(err, domain.ErrContentIntegrity):
 		status, code = 503, "CONTENT_INTEGRITY_ERROR"
 	case errors.Is(err, syscall.ENOSPC), errors.Is(err, syscall.EDQUOT), errors.Is(err, syscall.ENOMEM):
@@ -470,9 +731,45 @@ func failure(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		status, code = 503, "TRANSFER_INTERRUPTED"
 	}
-	failureCode(w, r, status, code, details)
+	var lifecycle *query.Transition
+	if errors.As(err, &lifecycle) {
+		status, code = 409, "INVALID_TRANSITION"
+		details["lifecycle"] = lifecycle.Lifecycle
+	}
+	var renderer *render.Error
+	if errors.As(err, &renderer) {
+		details["reason"] = renderer.Reason
+		switch renderer.Reason {
+		case render.ReasonUnknownSession:
+			status, code = 404, "NOT_FOUND"
+		case render.ReasonClosedSession, render.ReasonStaleSession, render.ReasonDeniedDelivery:
+			status, code = 409, "INVALID_TRANSITION"
+		case render.ReasonExhausted:
+			status, code = 409, "INVALID_TRANSITION"
+			details["expansion"] = "widen network.renderer_pool and restart the daemon"
+		case render.ReasonBindConflict:
+			status, code = 409, "INVALID_TRANSITION"
+		case render.ReasonTransientOwner:
+			status, code = 503, "SERVICE_RECOVERING"
+		case render.ReasonUnsupportedAccount, render.ReasonRemoteIngress:
+			status, code = 503, "FEATURE_NOT_READY"
+		default:
+			status, code = 503, "SERVICE_RECOVERING"
+		}
+	}
+	var requiredHeader missingPrecondition
+	if errors.As(err, &requiredHeader) {
+		details["missing"] = string(requiredHeader)
+	}
+	retryable := status == 503
+	if renderer != nil && renderer.Reason != render.ReasonTransientOwner {
+		// Account/ledger repair requires an explicit supported remedy. A
+		// definite delivery denial must not trigger logout or endless retries.
+		retryable = false
+	}
+	failureCode(w, r, status, code, details, retryable)
 }
-func failureCode(w http.ResponseWriter, r *http.Request, status int, code string, details map[string]any) {
+func failureCode(w http.ResponseWriter, r *http.Request, status int, code string, details map[string]any, retryable bool) {
 	w.Header().Del("Content-Disposition")
 	w.Header().Del("Content-Digest")
 	w.Header().Del("Repr-Digest")
@@ -480,7 +777,7 @@ func failureCode(w http.ResponseWriter, r *http.Request, status int, code string
 		details = map[string]any{}
 	}
 	id, _ := service.NewID()
-	b, _ := json.Marshal(map[string]any{"error": map[string]any{"code": code, "message": code, "retryable": status == 503, "details": details}, "request_id": id})
+	b, _ := json.Marshal(map[string]any{"error": map[string]any{"code": code, "message": code, "retryable": retryable, "details": details}, "request_id": id})
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Content-Length", strconv.Itoa(len(b)))
 	w.WriteHeader(status)

@@ -7,11 +7,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	auth "haeryong.local/haeryong/internal/application/auth"
 	"haeryong.local/haeryong/internal/application/service"
 	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
 	sec "haeryong.local/haeryong/internal/security/session"
+	"net/url"
 	"reflect"
 	"time"
 )
@@ -57,6 +59,43 @@ type View struct {
 func tag(b []byte) string {
 	h := sha256.Sum256(b)
 	return `"configuration-` + hex.EncodeToString(h[:]) + `"`
+}
+
+// validateEffectiveEndpoint rejects a candidate whose external HTTPS host
+// equals the effective local management Host. The candidate's own listener
+// and external fields are compared within the same value, never a mixed
+// state. Without a CLI listener override the candidate configuration's
+// listener port names its normal restart destination; with ListenerOverride
+// the trusted RuntimeEndpoint (the actual Product(origin) endpoint,
+// reflecting the actual --port) applies instead, so an older persisted plan
+// that collides only under today's override fails commit with no revision,
+// effects or restart. Host equality is rejected regardless of http/https
+// scheme because the request Host header carries no scheme.
+func (s *Service) validateEffectiveEndpoint(candidate map[string]any) error {
+	network, ok := candidate["network"].(map[string]any)
+	if !ok || network["remote_enabled"] != true {
+		return nil
+	}
+	external, _ := network["external_base_url"].(string)
+	remote, err := url.Parse(external)
+	if err != nil || remote.Host == "" {
+		// Shape errors are owned by Validate.
+		return nil
+	}
+	localHost := ""
+	if s.ListenerOverride && s.RuntimeEndpoint != "" {
+		if endpoint, err := url.Parse(s.RuntimeEndpoint); err == nil {
+			localHost = endpoint.Host
+		}
+	} else if listener, ok := network["listener"].(map[string]any); ok {
+		if _, err := url.Parse("http://127.0.0.1:" + fmt.Sprint(listener["port"])); err == nil {
+			localHost = "127.0.0.1:" + fmt.Sprint(listener["port"])
+		}
+	}
+	if localHost != "" && remote.Host == localHost {
+		return invalid("/network/external_base_url", "external host must differ from the effective local management host")
+	}
+	return nil
 }
 func encoded(v any) []byte { b, _ := json.Marshal(v); return b }
 func (s *Service) owner(ctx context.Context, tx app.WriteTx, token string) (domain.Session, error) {
@@ -225,6 +264,9 @@ func (s *Service) Plan(ctx context.Context, token, key string, input PlanRequest
 	if e = Validate(next); e != nil {
 		return domain.Response{}, e
 	}
+	if e = s.validateEffectiveEndpoint(next); e != nil {
+		return domain.Response{}, e
+	}
 	for id := range next["projects"].(map[string]any) {
 		found := false
 		for _, p := range projects {
@@ -246,11 +288,20 @@ func (s *Service) Plan(ctx context.Context, token, key string, input PlanRequest
 		}
 	}
 	restart := !reflect.DeepEqual(old["network"], next["network"])
+	impact := map[string]any{"controlled_restart_required": restart, "security": "immediate", "workflow_scope": "new capture; current restrictions apply", "provider_execution": "not_ready"}
+	if old, next := networkPool(old), networkPool(next); old != next {
+		// A pool fully inside 9000..9999 is preferred; any other valid
+		// choice is accepted with an explicit preference note in the plan
+		// impact.
+		if next.base < 9000 || next.base+next.count-1 > 9999 {
+			impact["renderer_pool"] = "valid; preferred range is 9000..9999"
+		}
+	}
 	id, e := service.NewID()
 	if e != nil {
 		return domain.Response{}, e
 	}
-	plan := domain.ConfigurationPlan{ID: id, PrincipalID: actor.PrincipalID, BaseRevision: input.ExpectedRevision, ExpiresAt: s.Now().UTC().Add(15 * time.Minute).Format(time.RFC3339Nano), Scope: encoded(input.Scope), Changes: encoded(changes), Effective: Canonical(next), Permissions: permissions, Impact: encoded(map[string]any{"controlled_restart_required": restart, "security": "immediate", "workflow_scope": "new capture; current restrictions apply", "provider_execution": "not_ready"})}
+	plan := domain.ConfigurationPlan{ID: id, PrincipalID: actor.PrincipalID, BaseRevision: input.ExpectedRevision, ExpiresAt: s.Now().UTC().Add(15 * time.Minute).Format(time.RFC3339Nano), Scope: encoded(input.Scope), Changes: encoded(changes), Effective: Canonical(next), Permissions: permissions, Impact: encoded(impact)}
 
 	apply := func(tx app.WriteTx, _ domain.Receipt) (domain.Response, error) {
 		live, e := tx.Configuration()
@@ -331,6 +382,9 @@ func (s *Service) Commit(ctx context.Context, token, id, alias string, input Com
 				return e
 			}
 			if e = Validate(next); e != nil {
+				return e
+			}
+			if e = s.validateEffectiveEndpoint(next); e != nil {
 				return e
 			}
 

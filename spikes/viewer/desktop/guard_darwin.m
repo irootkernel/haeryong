@@ -7,6 +7,7 @@
 @property(nonatomic,strong) id original;
 @property(nonatomic,strong) NSURL *trusted;
 @property(nonatomic,strong) NSMutableArray *popups;
+@property(nonatomic,strong) NSMutableArray *popupURLs;
 @property(nonatomic,strong) NSMutableArray *senders;
 @property(nonatomic) NSUInteger totalPopups;
 @property(nonatomic) NSUInteger accepted;
@@ -37,6 +38,9 @@ static BOOL sameOrigin(NSURL *a,NSURL *b){return [a.scheme isEqualToString:b.sch
  // privileged controller before construction. Copied native scheme requests
  // remain disabled by the app middleware.
  plain.userContentController=[WKUserContentController new];
+ // Record the exact popup target URL for harness verification; content is
+ // never inspected, only the requested navigation target.
+ if(self.popupURLs.count<8)[self.popupURLs addObject:action.request.URL.absoluteString?:@""];
  // This WebKit rejects replacing an already registered scheme handler, even
  // with nil. Every copied wails:// request is denied by the app middleware.
  WKWebView *popup=[[WKWebView alloc]initWithFrame:NSMakeRect(0,0,720,520) configuration:plain];
@@ -48,11 +52,11 @@ static BOOL sameOrigin(NSURL *a,NSURL *b){return [a.scheme isEqualToString:b.sch
 int hy_install(void *pointer,const char *expected){
  NSWindow *window=(__bridge NSWindow*)pointer;WKWebView *view=findWebView(window.contentView);if(!view)return 0;
  if(guard)return sameOrigin(guard.trusted,[NSURL URLWithString:[NSString stringWithUTF8String:expected]])?1:0;
- HYGuard *next=[HYGuard new];next.original=view.navigationDelegate;next.trusted=[NSURL URLWithString:[NSString stringWithUTF8String:expected]];next.popups=[NSMutableArray new];next.senders=[NSMutableArray new];
+ HYGuard *next=[HYGuard new];next.original=view.navigationDelegate;next.trusted=[NSURL URLWithString:[NSString stringWithUTF8String:expected]];next.popups=[NSMutableArray new];next.popupURLs=[NSMutableArray new];next.senders=[NSMutableArray new];
  if(![next.original respondsToSelector:@selector(userContentController:didReceiveScriptMessage:)])return 0;
  [view.configuration.userContentController removeScriptMessageHandlerForName:@"external"];
  [view.configuration.userContentController addScriptMessageHandler:next name:@"external"];
  view.navigationDelegate=next;view.UIDelegate=next;guard=next;return 1;
 }
-void hy_eval(void *pointer,const char *script){WKWebView *view=findWebView(((__bridge NSWindow*)pointer).contentView);[view evaluateJavaScript:[NSString stringWithUTF8String:script] completionHandler:^(id result,NSError *error){if(error)NSLog(@"Haeryong fixture script evaluation failed: %@",error.localizedDescription);}];}
-char *hy_stats(void){NSDictionary *value=@{@"installed":@(guard!=nil),@"accepted_main_messages":@(guard.accepted),@"denied_messages":@(guard.denied),@"denied_top_navigations":@(guard.navigationsDenied),@"plain_popups":@(guard.totalPopups),@"active_popups":@(guard.popups.count),@"senders":guard.senders?:@[]};NSData *data=[NSJSONSerialization dataWithJSONObject:value options:0 error:nil];return strdup([[NSString alloc]initWithData:data encoding:NSUTF8StringEncoding].UTF8String);}
+void hy_eval(void *pointer,const char *script){WKWebView *view=findWebView(((__bridge NSWindow*)pointer).contentView);NSString *code=[NSString stringWithUTF8String:script];[view evaluateJavaScript:code completionHandler:^(id result,NSError *error){if(error)NSLog(@"Haeryong fixture script evaluation failed: %@ (script length %lu)",error.localizedDescription,(unsigned long)[code length]);}];}
+char *hy_stats(void){NSDictionary *value=@{@"installed":@(guard!=nil),@"accepted_main_messages":@(guard.accepted),@"denied_messages":@(guard.denied),@"denied_top_navigations":@(guard.navigationsDenied),@"plain_popups":@(guard.totalPopups),@"active_popups":@(guard.popups.count),@"popup_urls":guard.popupURLs?:@[],@"senders":guard.senders?:@[]};NSData *data=[NSJSONSerialization dataWithJSONObject:value options:0 error:nil];return strdup([[NSString alloc]initWithData:data encoding:NSUTF8StringEncoding].UTF8String);}

@@ -23,7 +23,7 @@ import (
 func configurationPriorSchemaFour(t GinkgoTInterface, s *Store) {
 	GinkgoHelper()
 	{
-		_, e := s.db.Exec(`DROP TABLE configuration_plans;DROP TABLE scoped_credentials;DROP TABLE workflow_principals;
+		_, e := s.db.Exec(`DROP TABLE contexts;DROP TABLE configuration_plans;DROP TABLE scoped_credentials;DROP TABLE workflow_principals;
 DROP TRIGGER project_created;DROP TRIGGER document_created;DROP TRIGGER project_updated;DROP TRIGGER document_updated;
 ALTER TABLE projects DROP COLUMN updated_at;ALTER TABLE documents DROP COLUMN updated_at;
 DELETE FROM schema_migrations WHERE revision>4;UPDATE libraries SET schema_revision=4;PRAGMA user_version=4`)
@@ -152,7 +152,7 @@ var _ = It("TestConfigurationSchemaFourUpgradePreservesReferencesSessionsAndReco
 			}
 			reopened := openStore(t, writer, nil)
 			after, e := reopened.Health(ctx)
-			Expect(e != nil || after.Library.ID != prior.Library.ID || after.Library.ProfileID != prior.Library.ProfileID || after.Library.RuntimeGeneration != prior.Library.RuntimeGeneration || after.Library.AuthEpoch != prior.Library.AuthEpoch || after.Library.StreamEpoch != prior.Library.StreamEpoch || after.Library.SchemaRevision != 5).To(BeFalse(), func() string { return fmt.Sprint("normal upgrade changed stable identities", e) })
+			Expect(e != nil || after.Library.ID != prior.Library.ID || after.Library.ProfileID != prior.Library.ProfileID || after.Library.RuntimeGeneration != prior.Library.RuntimeGeneration || after.Library.AuthEpoch != prior.Library.AuthEpoch || after.Library.StreamEpoch != prior.Library.StreamEpoch || after.Library.SchemaRevision != SchemaRevision).To(BeFalse(), func() string { return fmt.Sprint("normal upgrade changed stable identities", e) })
 
 			current, e := reopened.Configuration(ctx)
 			Expect(e != nil || current.Revision != configuration.Revision || !bytes.Equal(current.Value, configuration.Value)).To(BeFalse(), func() string { return fmt.Sprint("migration changed effective configuration", e) })

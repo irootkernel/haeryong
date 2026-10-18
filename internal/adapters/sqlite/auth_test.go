@@ -598,6 +598,10 @@ func priorSchemaTwo(t GinkgoTInterface, s *Store) {
 		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
 
+	if version >= 6 {
+		_, err := s.db.Exec("DROP TABLE contexts")
+		Expect(err).NotTo(HaveOccurred())
+	}
 	if version >= 5 {
 		{
 			_, err := s.db.Exec("DROP TABLE configuration_plans;DROP TABLE scoped_credentials;DROP TABLE workflow_principals;DROP TRIGGER project_created;DROP TRIGGER document_created;DROP TRIGGER project_updated;DROP TRIGGER document_updated;ALTER TABLE projects DROP COLUMN updated_at;ALTER TABLE documents DROP COLUMN updated_at")

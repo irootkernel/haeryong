@@ -53,6 +53,15 @@ func productHandler(core *appauth.Service, local string, configuration []byte, p
 		}
 		policy.Hosts = append(policy.Hosts, remote.Host)
 		policy.Origins = append(policy.Origins, *c.Network.External)
+		if remote.Host == u.Host {
+			// The request Host header carries no scheme, so an external URL
+			// differing only by scheme from the actual local endpoint cannot
+			// be distinguished on the wire. Serving such a tuple would let
+			// ordinary local callers be classified as remote ingress, so
+			// construction fails visibly instead (including startup from an
+			// externally modified persisted configuration).
+			return nil, errors.New("configured external base URL host must differ from the actual local management listener host")
+		}
 	}
 	var next http.Handler
 	if len(protected) > 0 {
@@ -60,6 +69,24 @@ func productHandler(core *appauth.Service, local string, configuration []byte, p
 	}
 	return httpauth.New(core, policy, next)
 }
+
+// configuredExternalOrigin extracts the trusted external HTTPS origin from a
+// persisted configuration value for runtime ingress classification; it
+// returns the empty string when remote ingress is disabled. The same value
+// productHandler validates is the single source of the external endpoint.
+func configuredExternalOrigin(configuration []byte) string {
+	var c struct {
+		Network struct {
+			RemoteEnabled bool    `json:"remote_enabled"`
+			External      *string `json:"external_base_url"`
+		} `json:"network"`
+	}
+	if json.Unmarshal(configuration, &c) != nil || !c.Network.RemoteEnabled || c.Network.External == nil {
+		return ""
+	}
+	return *c.Network.External
+}
+
 func bootstrapCommand(ctx context.Context, opt options, emit func(any) error, input io.Reader) error {
 	if opt.endpoint != "" {
 		return invalid("local bootstrap uses verified profile discovery")

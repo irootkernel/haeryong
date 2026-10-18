@@ -6,6 +6,7 @@ import (
 	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
 	sec "haeryong.local/haeryong/internal/security/session"
+	"net/url"
 	"strings"
 )
 
@@ -153,7 +154,56 @@ func authorizeScope(tx app.WriteTx, record domain.Session, r domain.Request) err
 		if contains(record.Scope.Actions, "import.publish") {
 			return nil
 		}
+	case "contexts":
+		// POST follows the context-writing workflow action with the exact
+		// version/project anchors enforced here so replayed receipts cannot
+		// outlive a scope loss. A record read is authorized by the record's
+		// own principal ownership check in the service.
+		if r.Method == "POST" && len(parts) == 3 && contains(record.Scope.Actions, "context.write") {
+			if query := strings.SplitN(r.Target, "?", 2); len(query) == 2 {
+				if values, e := url.ParseQuery(query[1]); e == nil {
+					if version := values.Get("version_id"); version != "" {
+						v, e := tx.PublishedVersion(version)
+						if e != nil {
+							return e
+						}
+						d, e := tx.Document(v.DocumentID)
+						if e != nil {
+							return e
+						}
+						if contains(record.Scope.VersionIDs, version) && contains(record.Scope.ProjectIDs, d.ProjectID) {
+							return nil
+						}
+					}
+				}
+			}
+			return domain.ErrNotFound
+		}
+		if r.Method == "GET" && len(parts) == 4 {
+			return nil
+		}
 	case "projects", "documents", "versions":
+		// Render-session opens follow the render-bootstrap authority family:
+		// the scoped version.read action with the exact version/project
+		// anchors. Renewal and close of a known session are controlled by the
+		// renderer service's own current-authority checks.
+		if parts[2] == "versions" && len(parts) == 5 && parts[4] == "render-sessions" && r.Method == "POST" {
+			if !contains(record.Scope.Actions, "version.read") {
+				return domain.ErrDenied
+			}
+			v, e := tx.PublishedVersion(parts[3])
+			if e != nil {
+				return e
+			}
+			d, e := tx.Document(v.DocumentID)
+			if e != nil {
+				return e
+			}
+			if contains(record.Scope.VersionIDs, v.ID) && contains(record.Scope.ProjectIDs, d.ProjectID) {
+				return nil
+			}
+			return domain.ErrNotFound
+		}
 		// The package archive is an export action with its own scope: the
 		// exact project/version anchors plus package.export authorize it,
 		// while version.read alone does not and package.export alone grants

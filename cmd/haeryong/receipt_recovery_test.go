@@ -66,7 +66,7 @@ var _ = It("TestActualCLIRecoveryDistinguishesPendingReconcilingAndCommitted", L
 			server := httptest.NewUnstartedServer(nil)
 			base := "http://" + server.Listener.Addr().String()
 			u, _ := url.Parse(base)
-			h, e := httpauth.New(auth, httpauth.Policy{Hosts: []string{u.Host}, Origins: []string{base}}, productRoutes{v1.New(query.New(store, auth, store)), httpimports.New(imports)})
+			h, e := httpauth.New(auth, httpauth.Policy{Hosts: []string{u.Host}, Origins: []string{base}}, productRoutes{v1.New(query.New(store, auth, store), nil, nil), httpimports.New(imports)})
 			Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 
 			lookedUp := make(chan struct{}, 1)

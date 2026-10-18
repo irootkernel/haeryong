@@ -48,7 +48,10 @@ In the last column, `K` means a required Idempotency-Key; `N` means a named natu
 | POST /uploads/{id}/abandon | owner or originating workflow principal, with current purpose/target scope | Stop further transfer/seal acceptance, retain existing adopted references and protect active/unknown work before reclaiming unreferenced staging | K |
 | POST /imports | owner or current import.publish scope | Canonical import request requires upload_id and explicit document_id; publish 201, return identical explicit version 200, or commit a 202 receipt for job.kind=import pending atomic publication | K |
 | POST /packages/validate | owner/scoped agent | Validate a sealed upload or stream a raw directory/archive/file into validation staging; optional metadata, no author manifest or arbitrary server path | O |
-| GET /versions/{id}/render-bootstrap | authenticated host with version.read scope | Small selected-version/default-page/loader context and the selected delivery construction; no whole-directory HTML/asset envelope or owner bearer in the artifact | - |
+| GET /versions/{id}/render-bootstrap | authenticated host with version.read scope | Small selected-version/default-page/loader context and the selected delivery construction; no whole-directory HTML/asset envelope or owner bearer in the artifact. Availability is request-context honest: remote ingress (exact runtime Host/Origin classification) reports `renderer_available=false` with an optional `renderer_unavailable_reason=renderer_remote_ingress` and keeps the attachment fallback, while local callers keep the loopback construction | - |
+| POST /versions/{id}/render-sessions | owner or current version.read for the exact version/project | Reserve/reuse its sticky renderer origin and return one ephemeral delivery session with a one-use form-POST handoff. Remote ingress is denied `503 FEATURE_NOT_READY` with `details.reason=renderer_remote_ingress` and retryable false (no Retry-After, no owner logout or retry loop) before any renderer construction, operation reservation or listener; remote construction belongs to EPIC-007 | K |
+| POST /versions/{id}/render-sessions/{session_id}/renew | same current originating principal and exact known session | Reauthorize a live selection; lease expiry alone is not logout, and explicit close is terminal. Remote ingress carries the same 503 FEATURE_NOT_READY availability denial | N |
+| POST /versions/{id}/render-sessions/{session_id}/close | current principal owning that known session | Idempotent terminal close, including after document visibility changes and from remote ingress; never release its origin reservation | N |
 | GET /versions/{id}/files | owner or current version.read scope | Cursor listing/stream of exact file/page/directory/link entries, byte sizes, media/preview metadata and digests | - |
 | GET /versions/{id}/file?path={path} | owner or current version.read scope | Stream an immutable regular file or return typed directory/link metadata; resolve_link=true explicitly resolves in-version links and reports exact requested/resolved paths and target validator | - |
 | GET /versions/{id}/metadata?kind={kind} | owner or current version.read scope | Stream exact normalized or explicitly supplied metadata; absent supplied metadata is explicit, not an injected payload file | - |
@@ -77,7 +80,7 @@ In the last column, `K` means a required Idempotency-Key; `N` means a named natu
 | GET /versions/{id}/annotations | owner | Anchors/notes with each individual ETag | - |
 | GET /annotations/{id} | owner | One original anchored note/current revision and allowed history | - |
 | POST /contexts | owner/scoped context-writing workflow | Accept a direct JSON/text stream or a sealed purpose=context uploaded-object reference and return scoped context_ref; large transfer chunks/resumes automatically | K |
-| GET /contexts/{id} | current authorized record/context scope | Stream exact context bytes; an opaque reference never authenticates the read by itself | - |
+| GET /contexts/{id} | current authorized record/context scope | Stream exact context bytes; an opaque reference never authenticates the read by itself. An optional fresh-proof mode (below) returns a body-less 304 proof instead | - |
 | POST /versions/{id}/annotations | owner | New version/page/region note with inline text/context or immutable body/context references; no total note/state size cap | K |
 | PATCH /annotations/{id} | owner + individual If-Match | Body edit or explicit reattachment; stale edit fails, old anchor/history retained | K |
 | DELETE /annotations/{id} | owner + individual If-Match | Explicit note deletion, separate from document lifecycle | K |
@@ -143,6 +146,8 @@ Without resolve_link, a directory or symlink returns typed metadata {path,kind,l
 Large JSON/text fields use an immutable body_ref, metadata_ref or context_ref plus digest and streamed retrieval. References are bound to the authorized record/scope and normalized by content identity for semantic request fingerprints. Saved notes/questions/jobs adopt context objects with their own pins, so disposing a render channel does not erase saved context. Control messages carry the handle; callbacks/native handles/owner credentials are never serialized as management authority. There is no total serialized-author-state cap or silent prefix truncation. Actual provider context/output windows constrain a selected AI call separately, not storage or rendering.
 
 POST /contexts uses an explicit input selector and binding: input=direct (default) accepts the exact UTF-8 JSON or text request bytes under its Content-Type; input=upload accepts a small JSON {upload_id} naming a sealed purpose=context object. The input selector and binding use query parameters under [context binding normalization](import-workflow.md#context-binding-transport-normalization): version_id is required, and omitted page_path/render_instance_id becomes null. The upload's JSON target still requires all three keys explicitly. Fresh submissions must match the current channel/workflow and the complete normalized uploaded target; omission never clears or inherits a non-null render binding. After channel loss, an authorized owner recovery may resume/adopt the original persisted context/action binding under current version/target authority; it does not retarget the object to a new render_instance_id or claim that a new page supplied old data. A handle alone grants no recovery authority. Both forms normalize to identical context bytes/digest and binding for retry identity. The response supplies context_ref, bytes_sha256 and media_type; GET /contexts/{id} uses that exact context_ref as id. The host, not page code, performs this authenticated operation after the sender-bound context.transfer protocol. A ready context is not yet a saved note or question; an accepted Save/Ask transaction adopts it and its pins. A transient data reference is never an authentication credential.
+
+GET /contexts/{id} also carries a closed **fresh-binding proof mode**, selected only by the presence of the `Haeryong-Context-Binding` request header: canonical unpadded base64url of one UTF-8 JSON object with exactly `version_id`, `page_path` and `render_instance_id` (JSON null as the only absent form; the same [context binding normalization](import-workflow.md#context-binding-transport-normalization) family). The mode additionally requires exactly one strong `If-None-Match: "sha256-<hash>"` naming the expected object digest from the host's receipt, and rejects a combined `Range`. In one transaction the server proves current record authorization, that the caller is the exact originating session, and that the persisted tuple and digest match; success is a `304` with no body and no Content-Length, carrying the record's strong `ETag` and the `Haeryong-Context-Verified: fresh` response marker (exposed to permitted cross-origin trusted callers). A mismatch returns `412 PRECONDITION_FAILED` (retryable false); malformed, duplicate, padded, CR/LF-carrying, non-canonically-encoded or structurally invalid header values return `400 INVALID_REQUEST`. This private mode redefines If-None-Match semantics relative to a standard conditional GET (match is a 304 success, mismatch a 412 rejection) and never streams bytes; the staged object is not opened for the metadata proof. Absent the binding header, the ordinary authorized recovery GET keeps its exact current behavior — including ignoring standalone If-None-Match/If-Match/Range headers with a full-byte 200 — and never emits the marker; `HEAD` remains unrouted. The planned M2 native transport maps a closed `verifyContextFresh` named operation (exact context id, immutable tuple and bytes_sha256, typed verified/ETag result, no byte-stream fabrication and no generic header passthrough) to this same header pair Go-side; until that bridge exists a native call fails honestly as an unimplemented operation.
 
 ## Concrete composed response shapes
 
@@ -234,3 +239,36 @@ The selected concrete read DTO fields are in the [registry](schema-registry.md#s
 Regular-file delivery uses one verified pinned handle for full/Range/HEAD/conditional reads. Strong ETag and Repr-Digest identify the full immutable representation. Content-Digest is present for the complete200 response body, and omitted for206/HEAD; Content-Range describes206. Empty/unsatisfiable ranges return416. Requested/resolved-path headers use URL-query escaping and preserve literal names. Current authority/visibility is rechecked during delivery; bytes are withheld on stored integrity failure and read-owned pins are released. Attachment, nosniff and sandbox policy prevent imported HTML from executing in the trusted host origin.
 
 Poll and SSE validate the entire available batch's sequence continuity before emitting domain events or advancing a cursor. A first/interior gap, foreign epoch or invalid/future cursor returns content-free resync with the current head. A hidden target is a content-free invalidation. Resync does not acknowledge unsaved client work. Status storage fields report distinct upload-owned retained-object bytes, pending open/sealing/sealed upload count and the pending-upload URL; deduplicated hash accounting is not a filesystem free-space estimate. Unavailable provider/scheduler/backup sections give explicit reasons.
+
+## Reader foundation delivery (TASK-003-03, in progress)
+
+The renderer-session routes above are implemented alongside the independent
+reader-preference, reading-position and page-position resources. This is an
+implementation boundary, not Task acceptance or browser/native qualification;
+[the Reader record](../testing/reader-viewer.md) tracks unfinished work.
+Render control accepts an empty body or `{}` only. Null, unknown fields and
+trailing values fail before construction or operation reservation. The open K
+replays its original response; renew/close use the exact natural session ID.
+Closing is terminal and idempotent, including when its document is hidden.
+
+Open returns `{version_id,render_origin,session_id,handoff:{url,secret,expires_at},lease_expires_at}`.
+The one-use secret is submitted by form POST to the renderer, never placed in a
+URL. The renderer-only HttpOnly cookie grants no management authority. Origin
+ownership remains durable after delivery close and daemon restart. A completed
+open receipt does not resurrect its ephemeral handoff after restart; an active
+selection obtains a new session under current owner authority.
+
+Capabilities and bootstrap reflect the actual wired renderer facade without
+constructing it during a read. An unavailable facade retains authenticated
+attachment delivery. Bootstrap's loopback construction adds `render_sessions_url`
+and `renderer_construction`; it contains no authored HTML, bulk assets or bearer.
+Selection-specific bind/exhaustion failures remain explicit open failures.
+
+Renderer failures use the existing error registry and `details.reason`:
+unknown session is `NOT_FOUND`; closed/stale delivery, pool exhaustion, bind
+conflict or definitive delivery denial is `INVALID_TRANSITION`; unsupported
+account lookup is `FEATURE_NOT_READY`; ledger/binding repair or transient owner
+lookup uses `SERVICE_RECOVERING`. Only the transient owner check is automatically
+retryable among these renderer conditions. Pool exhaustion supplies the explicit
+pool-expansion/restart remedy. A hidden document's delivery denial does not
+revoke a still-valid owner session or become an indefinite transient retry.

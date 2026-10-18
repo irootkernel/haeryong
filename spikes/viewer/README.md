@@ -308,3 +308,40 @@ credential, real401 revocation, and native outage/restoration using unchanged
 saved-session bytes. The actual three-row native check and pointer interaction
 are bounded; physical Android/Safari, keyboard activation and full browser-console
 coverage are not established by this correction.
+
+## Shared Reader regression (TASK-003-03)
+
+The existing beta.28 desktop harness also has a `--reader` mode using the
+shared compiled frontend, a fixed trusted static origin and the closed Go
+`ReaderService` transport. Its prepaired credential stays in Go. This reuses
+G-VIEW's actual main-frame/sender guard; production onboarding, native pickers,
+tray and service discovery belong to TASK-003-05.
+
+With the repository's prepared Go/Node dependencies and native macOS SDK, run:
+
+```sh
+python3 -B spikes/viewer/check_reader_native.py --receipt /absolute/private/native-reader.json
+```
+
+The driver builds into an owned temporary directory, creates a disposable real
+daemon/library and app-state ledger, and closes its processes. It checks the
+raw typed facade, the actual shared Reader, a labelled seeded personal request
+replayed after restart at the same origin, and forced-window-crash recovery.
+The actual Reader executes local modules/Worker, external Preact 10.27.2, WASM
+and an authored button handler invoked programmatically. Their live results and
+large text are captured through `context_ref`; an independently constructed
+expected JSON byte digest must match the server receipt. External Preact
+availability is a real network prerequisite for that observation.
+
+The native report distinguishes repeated native-message/scheme denials from
+plain popups; repetitions are not distinct attack classes. Popup target mapping
+and removal of privileged handlers are covered; popup DOM authentication and
+measured lease expiry are separate observations. The seeded restart checks
+persistence and actual UI replay, rather than a native network-loss experiment.
+The report's `full_qualification` describes completion of these declared harness
+stages, not the production companion, full M14 or the Epic gate.
+
+`--stages selfcheck` selects an affected facade check and records the restricted
+scope. Use a distinct receipt path for each run. Shared browser checks and
+remaining Task acceptance are documented in
+[the Reader implementation record](../../docs/testing/reader-viewer.md).

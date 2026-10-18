@@ -99,6 +99,21 @@ test("every forwarded operation is a declared native operation name", async () =
   assert.equal(new Set(names).size, names.length);
 });
 
+test("context operations use closed named calls and discard a prior-era consumer response", async () => {
+  const fake = port();
+  fake.handlers.set("createContextUpload", () => ({ upload_id: "upload", checkpoint: {} }));
+  const gate = { resolve: null as null | ((value: unknown) => void) };
+  fake.handlers.set("consumeContext", () => new Promise((resolve) => { gate.resolve = resolve; }));
+  const client = new NativeHaeryongClient(fake as unknown as NativePort);
+  const binding = { version_id: "version", page_path: "한글.html", render_instance_id: "render" };
+  await client.createContextUpload(binding, "U");
+  assert.deepEqual(fake.calls[0], ["createContextUpload", { binding, operation_id: "U" }]);
+  const pending = client.consumeContext(binding, "upload", "Q");
+  client.invalidate(); gate.resolve?.({ kind: "committed", body: { context_ref: "old" } });
+  await assert.rejects(pending, StaleResponseError);
+  assert.deepEqual(fake.calls[1], ["consumeContext", { binding, upload_id: "upload", operation_id: "Q" }]);
+});
+
 test("typed errors propagate unchanged", async () => {
   const fake = port();
   fake.handlers.set("revokeSession", () => {
@@ -140,14 +155,10 @@ test("subscribeEvents wires the port subscription lifecycle", async () => {
   assert.ok(portClosed);
 });
 
-test("invalidate changes the era without erasing the bound credential", () => {
-  const fake = port();
-  const client = new NativeHaeryongClient(fake as unknown as NativePort);
-  client.setCredential("token-1");
-  client.invalidate();
-  assert.equal(client.credential, "token-1");
-  client.setCredential("");
-  assert.equal(client.credential, "");
+test("native transport rejects JavaScript bearer binding", () => {
+  const client = new NativeHaeryongClient(port() as unknown as NativePort);
+  assert.throws(() => client.setCredential("token-1"), /Native sessions attach through Go/);
+  client.setCredential(""); client.invalidate();
 });
 
 test("a late success crossing an invalidate boundary is discarded", async () => {
@@ -196,4 +207,28 @@ test("a subscription arriving from a dead era is closed, not wired", async () =>
   });
   await wrapped.closed;
   assert.ok(portClosed, "stale-era subscription was disposed");
+});
+
+test("verifyContextFresh maps the closed proof operation and validates the typed result", async () => {
+  const fake = port();
+  const digest = "b".repeat(64);
+  const binding = { version_id: "33333333-3333-4333-8333-333333333333", page_path: null, render_instance_id: null };
+  fake.handlers.set("verifyContextFresh", () => ({ verified: true, etag: `"sha256-${digest}"` }));
+  const client = new NativeHaeryongClient(fake as unknown as NativePort);
+  await client.verifyContextFresh("ctx-9", binding, digest);
+  assert.deepEqual(fake.calls[0], ["verifyContextFresh", { context_ref: "ctx-9", binding, bytes_sha256: digest }]);
+  fake.handlers.set("verifyContextFresh", () => ({ verified: true, etag: '"sha256-other"' }));
+  await assert.rejects(client.verifyContextFresh("ctx-9", binding, digest), /unverified result/);
+  fake.handlers.set("verifyContextFresh", () => ({ verified: false, etag: `"sha256-${digest}"` }));
+  await assert.rejects(client.verifyContextFresh("ctx-9", binding, digest), /unverified result/);
+});
+
+test("failed disposal retains its captured attachment for retry after live attachment is cleared", async () => {
+  const fake = port(); let attempts = 0;
+  fake.handlers.set("attachSession", () => ({ attachment_id: "old", public_origin: "http://127.0.0.1:9270", session: {}, capabilities: {} }));
+  fake.handlers.set("disposeSession", () => { if (++attempts === 1) throw new ApiError(500, "NATIVE_LOCAL_FORGET_FAILED", true); });
+  const client = new NativeHaeryongClient(fake as unknown as NativePort);
+  await client.attachSession(); await assert.rejects(client.disposeSession(), ApiError);
+  await client.disposeSession(); await client.disposeSession();
+  assert.deepEqual(fake.calls.filter(([op]) => op === "disposeSession"), [["disposeSession", { attachment_id: "old" }], ["disposeSession", { attachment_id: "old" }]]);
 });

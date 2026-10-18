@@ -211,6 +211,7 @@ export function ConnectScreen({ controller, state }: { controller: ShellControll
       <p className="status" role="status" aria-label="연결 상태">
         {state.notice}
       </p>
+      {state.localCleanupPending && <button type="button" onClick={() => void controller.retryLocalCleanup()}>연결 자격 정리 다시 시도</button>}
 
       {needsPairing && (
         <form onSubmit={onSubmit}>

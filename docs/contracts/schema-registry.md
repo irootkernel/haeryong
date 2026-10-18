@@ -10,7 +10,7 @@
 | Metadata-local IDs | Optional sources, evidence and references have nonempty Unicode string IDs, unique within their own collection in one version. Resolve using `(version_id, local_id)`; different versions may reuse a local ID. They are not mandatory author boilerplate. |
 | Page identity | `(version_id, page_path)`; page_path is the exact normalized relative UTF-8 path. Preserve case and Unicode code points; no ASCII/length/depth rule or automatic case-fold/rename. |
 | Region identity | `(version_id, page_path, region_id)`; nonempty Unicode ID unique within that page. Optional declarations and runtime-discovered anchors may coexist; missing anchors remain unresolved without rejecting the directory. Cross-version/page correspondence is explicit. |
-| Context reference | Opaque context_ref for streamed immutable JSON/text context, scoped to owner, version and optional page/render context. It is a data handle, not a credential; saved notes/questions adopt the referenced object under their own lifetime pins. |
+| Context reference | Opaque context_ref for streamed immutable JSON/text context, scoped to owner, version and optional page/render context. It is a data handle, not a credential; saved notes/questions adopt the referenced object under their own lifetime pins. A closed fresh-proof mode on the context GET (request `Haeryong-Context-Binding` pair, body-less `304` with strong ETag and `Haeryong-Context-Verified: fresh` marker, `412` mismatch) proves the current originating session, persisted tuple and digest for ready/echo; the ordinary recovery read stays session-independent. |
 | File inventory | Cursor/stream resource of exact paths, entry kinds, file bytes/digests and optional media/preview metadata. A list page or transport chunk size is not a total file/content limit. |
 | Time | UTC RFC 3339 strings; client display/schedule timezone does not change stored instants. |
 | Mutable resource | `id`, integer `revision >= 1`, and opaque strong `etag`. The API and clients use the same resource identity. |
@@ -26,7 +26,22 @@
 
 The owner_id is the stable owner principal_id across device sessions. A remembered managed workflow has a server-allocated workflow_binding_id and stable principal_id, separate from its revocable credential/session; rotating a token does not create a new receipt namespace. Reusing that explicit binding retains identity; a different remembered workflow allocates a new binding. Do not hash the scope/project set to infer identity. Each issued credential captures its own currently permitted scope, and later binding changes cannot expand it. Owner-authenticated local CLI/IPC issues/revokes these credentials as described by configuration. Local bootstrap records the owner principal with actor bootstrap. Scheduled daemon work records the originating owner/policy and a system actor on its job/audit; it does not introduce another human authority tier. Physical table layout is an implementation choice.
 
-Clients echo an ETag exactly in `If-Match`; they do not construct it from a numeric revision or reuse another resource's validator. An absent personal state is represented by `exists: false`, its default visible value, `revision: null`, `etag: null` and `required_precondition: "if_none_match_star"`. The first write uses `If-None-Match: *`. An existing record whose value is the default still has `exists: true` and a real ETag.
+Clients echo an ETag exactly in `If-Match`; they do not construct it from a numeric revision or reuse another resource's validator. An absent personal state is represented by `exists: false`, its default visible value, `revision: null`, `etag: null` and `required_precondition: "if_none_match_star"`. The first write uses `If-None-Match: *`. An existing record whose value is the default still has `exists: true` and a real ETag. Every personal response carries `page_position_url` as a mandatory key: for the reading-position resource it is the once-encoded canonical page link or explicit null for a whole-version pointer, never lending the pointer validator; the other two families always carry it as null so the three closed response shapes stay family-stable. `required_precondition` appears exactly when `exists` is false. Renderer content responses percent-encode `Haeryong-Page-Path` and `Haeryong-Resolved-Path` exactly once, like the management file handler; receivers decode each value with exactly one QueryUnescape.
+
+
+The selected absent personal values are exact, not omitted fields or defaults
+inferred from a missing record:
+
+| Resource | Absent value |
+| --- | --- |
+| reader-preference | {"default_page":null} |
+| reading-position | {"page_path":null,"page_query":"","page_fragment":"","opened":false,"first_opened_at":null,"last_opened_at":null} |
+| page-position | {"page_query":"","page_fragment":"","position":{}} |
+
+In all three absent responses both revision and etag are null,
+required_precondition is if_none_match_star and page_position_url is null.
+A stored default value remains an existing resource with its actual validator.
+
 
 ## Enum registry
 
@@ -250,7 +265,7 @@ These additive selections make previously provisional production read shapes con
 | Document | document_id, project_id, title, lifecycle, nullable latest_version_id, revision, updated_at, versions_url, etag |
 | Version | version_id, document_id, sequence, nullable base_version_id, title_snapshot, nullable default_page, viewer_profile, source_basis, payload_sha256, manifest_sha256, nullable supplied_metadata_sha256, manifest_url, nullable supplied_metadata_url, files_url, render_bootstrap_url, etag |
 | File entry | path, kind, decimal byte_size, preview, file_url, etag; regular files add bytes_sha256/media_type, links add link_target, directories add files_url |
-| Render bootstrap | version_id, viewer_profile, nullable default_page/selected_page/requested_page/navigation_path/selected_file_url, files_url, delivery=authenticated_attachment, renderer_available=false |
+| Render bootstrap | version_id, viewer_profile, nullable default_page/selected_page/requested_page/navigation_path/selected_file_url, files_url, delivery (authenticated_attachment or loopback_renderer_origin), renderer_available, render_sessions_url, renderer_construction, optional nullable renderer_unavailable_reason (renderer_remote_ingress for remote ingress); machine shape in the selected contract schema |
 | Configuration | config_revision, etag, configuration (the selected effective config shape) |
 | Status staging | decimal staging_bytes, nonnegative pending_upload_count, pending_uploads_url |
 

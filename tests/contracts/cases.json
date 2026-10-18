@@ -169,6 +169,13 @@
       "expected_contract_result": "sealed is verification state, reusable additionally requires current authority and every byte available/pinnable. Preserve pins/adopted references; no new missing upload state or age-only abandonment.",
       "later_owner": "TASK-002-02/04/05",
       "test_prefix": "test_C5_03_"
+    },
+    {
+      "id": "C5-04",
+      "setup_or_action": "GET/PUT the three owner personal reader resources on absent and stored state.",
+      "expected_contract_result": "Absent responses carry the exact default visible value with explicit null revision/etag keys and required_precondition if_none_match_star; stored values (including a stored default) keep exists true with a real validator. The reading-position response always carries page_position_url: the once-encoded canonical page link, or explicit null for a whole-version pointer, never lending the pointer validator to that resource.",
+      "later_owner": "TASK-003-03; M2 Reader UI",
+      "test_prefix": "test_C5_04_"
     }
   ],
   "supplemental_groups": [

@@ -1003,3 +1003,32 @@ var _ = It("TestJobListSingleAndCancelValidatorsUseDurableRevision", Label("pers
 	})
 
 })
+
+var _ = It("TestCORSRequestBindingAllowedResponseVerifiedExposedForFreshProof", Label("persistence"), func() {
+	t := GinkgoT()
+	f := newFixture(t)
+	token, _ := f.owner(t)
+	// A permitted cross-origin trusted caller may send the fresh-proof
+	// request pair: the preflight admits the request header alongside the
+	// standard conditional header.
+	preflight, _, _ := f.request(t, "OPTIONS", "/api/v1/contexts/00000000-0000-4000-8000-000000000001", token, nil, map[string]string{
+		"Origin":                         f.server.URL,
+		"Access-Control-Request-Method":  "GET",
+		"Access-Control-Request-Headers": "haeryong-context-binding, if-none-match",
+	})
+	Expect(preflight != 204).To(BeFalse(), func() string { return fmt.Sprintf("preflight HTTP%d", preflight) })
+	// The 304 proof response's dedicated marker is exposed for the same
+	// caller, while no response marker header is submitted by clients.
+	status, headers, _ := f.request(t, "GET", "/api/v1/session", token, nil, map[string]string{"Origin": f.server.URL})
+	Expect(status != 200).To(BeFalse(), func() string { return fmt.Sprintf("origin GET HTTP%d", status) })
+	Expect(headers.Get("Access-Control-Expose-Headers")).To(ContainSubstring("Haeryong-Context-Verified"))
+	Expect(headers.Get("Access-Control-Expose-Headers")).To(ContainSubstring("ETag"))
+	// Supplying the response marker as a request header is not part of the
+	// allowed request surface.
+	rejected, _, _ := f.request(t, "OPTIONS", "/api/v1/contexts/00000000-0000-4000-8000-000000000001", token, nil, map[string]string{
+		"Origin":                         f.server.URL,
+		"Access-Control-Request-Method":  "GET",
+		"Access-Control-Request-Headers": "haeryong-context-verified",
+	})
+	Expect(rejected != 403).To(BeFalse(), func() string { return fmt.Sprintf("response marker accepted as request header HTTP%d", rejected) })
+})

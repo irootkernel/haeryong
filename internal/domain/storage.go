@@ -150,6 +150,19 @@ type UploadRange struct {
 	Hash           string
 }
 
+// ContextRecord is the durable sealed-context adoption record. PagePath and
+// RenderInstanceID are nil for a null binding; SessionID preserves the
+// originating owner-session relation for fresh ready/echo validation.
+// Possession of the ID grants no authorization by itself.
+type ContextRecord struct {
+	ID, PrincipalID, VersionID string
+	PagePath, RenderInstanceID *string
+	SessionID                  string
+	MediaType                  string
+	Object                     Object
+	CreatedAt                  string
+}
+
 type ScopeState struct {
 	Project        Project
 	ConfigRevision int64

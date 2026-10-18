@@ -18,7 +18,12 @@ class TestValidatorAdmission:
         source = Path(__file__).resolve().parents[2]
         for name in ('docs', 'spikes', 'tests', 'skills'):
             shutil.copytree(source / name, self.root / name)
-        shutil.copyfile(source / 'TESTING.md', self.root / 'TESTING.md')
+        # Copy the root authorities actually linked by the documentation;
+        # frontend dependencies and generated bundles are not fixture inputs.
+        for name in ('TESTING.md', 'frontend/README.md'):
+            target = self.root / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source / name, target)
         subprocess.run(['git', 'init', '--quiet', str(self.root)], check=True)
         self.task = self.root / 'docs/tasks/EPIC-001/TASK-001-01.md'
         self.original = self.task.read_text(encoding='utf-8')

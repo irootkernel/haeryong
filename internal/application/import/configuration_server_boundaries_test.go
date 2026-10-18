@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 
 	"fmt"
 	. "github.com/onsi/ginkgo/v2"
@@ -225,4 +226,80 @@ var _ = It("TestConfigurationExpiryAppliesAfterDurableCommitAndKeepsOriginalRece
 	current, e = f.store.Configuration(ctx)
 	Expect(e != nil || current.Revision != baseline.ConfigRevision+1).To(BeFalse(), func() string { return fmt.Sprint("replay committed twice", e) })
 
+})
+
+var _ = It("TestConfigurationEffectiveEndpointCollisionFailsPlanAndCommit", Label("persistence"), func() {
+	t := GinkgoT()
+	f := newFixture(t)
+	plain := config.New(f.store, f.auth, nil)
+	baseline, e := plain.Read(ctx, f.token)
+	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
+	var current struct {
+		Network struct {
+			Listener struct {
+				Port int `json:"port"`
+			} `json:"listener"`
+		} `json:"network"`
+	}
+	Expect(json.Unmarshal(baseline.Value, &current) != nil).To(BeFalse())
+	port := current.Network.Listener.Port
+	changes := func(external string) map[string]any {
+		return map[string]any{"network": map[string]any{
+			"remote_enabled":    true,
+			"external_base_url": external,
+			"allowed_origins":   []any{"http://127.0.0.1:" + strconv.Itoa(port), external},
+		}}
+	}
+
+	// A fresh proposal whose external host equals the configured listener
+	// host fails the static rule before any plan is persisted.
+	_, e = plain.Plan(ctx, f.token, key(t), config.PlanRequest{Scope: config.Scope{Kind: "library"}, ExpectedRevision: baseline.ConfigRevision, Changes: changes("https://127.0.0.1:" + strconv.Itoa(port))})
+	Expect(e == nil).To(BeFalse(), func() string { return "static collision accepted at plan time" })
+
+	// A noncolliding external plan commits and advances the revision, even
+	// while the daemon runs under a CLI listener override on another port.
+	committed, e := plain.Plan(ctx, f.token, key(t), config.PlanRequest{Scope: config.Scope{Kind: "library"}, ExpectedRevision: baseline.ConfigRevision, Changes: changes("https://haeryong.private:9443")})
+	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
+	var plan struct {
+		ID string `json:"plan_id"`
+	}
+	Expect(json.Unmarshal(committed.Body, &plan) != nil).To(BeFalse())
+	overridden := config.New(f.store, f.auth, nil)
+	overridden.ListenerOverride = true
+	overridden.RuntimeEndpoint = "http://127.0.0.1:9443"
+	restarted := 0
+	overridden.Restart = func() { restarted++ }
+	_, e = overridden.Commit(ctx, f.token, plan.ID, "", config.CommitRequest{ExpectedRevision: baseline.ConfigRevision, Confirmed: true})
+	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint("noncolliding commit rejected: ", e) })
+	Expect(restarted).To(Equal(1))
+	after, e := overridden.Read(ctx, f.token)
+	Expect(e != nil).To(BeFalse())
+	Expect(after.ConfigRevision != baseline.ConfigRevision+1).To(BeFalse(), "commit did not advance the revision")
+
+	// Under the same override, a fresh proposal whose external host equals
+	// the ACTUAL runtime endpoint fails the effective-endpoint rule even
+	// though the static listener comparison passes.
+	_, e = overridden.Plan(ctx, f.token, key(t), config.PlanRequest{Scope: config.Scope{Kind: "library"}, ExpectedRevision: after.ConfigRevision, Changes: changes("https://127.0.0.1:9443")})
+	Expect(e == nil).To(BeFalse(), func() string { return "override collision accepted at plan time" })
+
+	// A plan persisted before the override existed becomes invalid at commit
+	// under the override, with no revision, effects or restart.
+	preOverride := config.New(f.store, f.auth, nil)
+	older, e := preOverride.Plan(ctx, f.token, key(t), config.PlanRequest{Scope: config.Scope{Kind: "library"}, ExpectedRevision: after.ConfigRevision, Changes: changes("https://127.0.0.1:9443")})
+	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint("pre-override plan rejected: ", e) })
+	var olderPlan struct {
+		ID string `json:"plan_id"`
+	}
+	Expect(json.Unmarshal(older.Body, &olderPlan) != nil).To(BeFalse())
+	restarted = 0
+	_, e = overridden.Commit(ctx, f.token, olderPlan.ID, "", config.CommitRequest{ExpectedRevision: after.ConfigRevision, Confirmed: true})
+	Expect(e == nil).To(BeFalse(), func() string { return "stale-collision commit accepted" })
+	Expect(restarted).To(Equal(0))
+	final, e := overridden.Read(ctx, f.token)
+	Expect(e != nil).To(BeFalse())
+	Expect(final.ConfigRevision != after.ConfigRevision).To(BeFalse(), "failed commit changed the revision")
+	// Replay semantics are unchanged: the failed commit never completed, so
+	// retrying the same plan fails identically instead of replaying.
+	_, e = overridden.Commit(ctx, f.token, olderPlan.ID, "", config.CommitRequest{ExpectedRevision: after.ConfigRevision, Confirmed: true})
+	Expect(e == nil).To(BeFalse(), func() string { return "failed commit retried into an effect" })
 })

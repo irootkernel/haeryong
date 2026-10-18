@@ -9,7 +9,11 @@
     "external_base_url": null,
     "allowed_origins": [
       "http://127.0.0.1:9270"
-    ]
+    ],
+    "renderer_pool": {
+      "base_port": 9281,
+      "count": 8
+    }
   },
   "security": {
     "remember_device_default": true,

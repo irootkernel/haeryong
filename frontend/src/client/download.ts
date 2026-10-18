@@ -73,7 +73,7 @@ export interface DownloadTarget {
  * opened only after the caller's consent/acquisition/conflict steps; this
  * function never acquires handles itself.
  */
-export async function downloadPackage(client: HaeryongClient, versionId: string, target: DownloadTarget, callbacks: DownloadCallbacks = {}): Promise<{ bytes: number }> {
+export async function downloadPackage(client: Pick<HaeryongClient, "packageStream">, versionId: string, target: DownloadTarget, callbacks: DownloadCallbacks = {}): Promise<{ bytes: number }> {
   let stream: PackageStream;
   try {
     stream = await client.packageStream(versionId);

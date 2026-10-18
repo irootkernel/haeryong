@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	yaml "go.yaml.in/yaml/v3"
+	"haeryong.local/haeryong/internal/application/origins"
 	"io"
 	"net/url"
 	"reflect"
@@ -221,6 +222,16 @@ func Validate(value map[string]any) error {
 			return invalid("/network/external_base_url", "remote HTTPS origin required")
 		}
 		trusted[origin] = true
+		// Static collision guard for the no-override path: the request Host
+		// header carries no scheme, so an external URL differing only by
+		// scheme from the configured listener host is indistinguishable on
+		// the wire. The runtime effective-endpoint check covers a CLI
+		// listener override against its actual endpoint.
+		if remote, err := url.Parse(origin); err == nil {
+			if localEndpoint, err := url.Parse(local); err == nil && remote.Host == localEndpoint.Host {
+				return invalid("/network/external_base_url", "external host must differ from the local listener host")
+			}
+		}
 	}
 	allowed := map[string]bool{}
 	for _, v := range network["allowed_origins"].([]any) {
@@ -237,6 +248,39 @@ func Validate(value map[string]any) error {
 				return invalid("/network/renderer_mappings", "unique separate origins required")
 			}
 			seen[o] = true
+		}
+	}
+	if pool, ok := network["renderer_pool"].(map[string]any); ok {
+		base, e := integerValue(pool["base_port"], "/network/renderer_pool/base_port")
+		if e != nil {
+			return e
+		}
+		count, e := integerValue(pool["count"], "/network/renderer_pool/count")
+		if e != nil {
+			return e
+		}
+		last := base + count - 1
+		if last > 65535 {
+			return invalid("/network/renderer_pool/count", "range exceeds the port space")
+		}
+		if base <= origins.LegacyPortLast && last >= origins.LegacyPortFirst {
+			return invalid("/network/renderer_pool/base_port", "range intersects the frozen legacy fixture origins 9272-9273")
+		}
+		if management, e := integerValue(listener["port"], "/network/listener/port"); e == nil && management >= base && management <= last {
+			return invalid("/network/renderer_pool", "range must not include the management listener port")
+		}
+		if mappings, ok := network["renderer_mappings"].([]any); ok {
+			for _, v := range mappings {
+				upstream := v.(map[string]any)["upstream"].(string)
+				parsed, e := url.Parse(upstream)
+				if e != nil {
+					continue
+				}
+				port, e := strconv.Atoi(parsed.Port())
+				if e == nil && port >= base && port <= last {
+					return invalid("/network/renderer_pool", "range must not include a renderer mapping upstream port")
+				}
+			}
 		}
 	}
 	maintenance := value["maintenance"].(map[string]any)
@@ -275,6 +319,57 @@ func Validate(value map[string]any) error {
 	}
 	return nil
 }
+
+// Default renderer pool. The base starts at 9281: the G-VIEW spike fixture
+// origins (9272/9273, trusted 9270) may still hold authored Service Workers
+// in preserved browser profiles on this machine, and production defaults
+// must not collide with them. The range is an address-space mechanism, never
+// a content or version admission limit.
+const (
+	DefaultRendererPoolBase  = 9281
+	DefaultRendererPoolCount = 8
+)
+
+// RendererPool returns the effective renderer origin pool of a decoded
+// configuration value. Profiles stored before the key existed resolve to the
+// code default; new libraries receive the same value from defaults.json.
+func RendererPool(value map[string]any) (int, int) {
+	network, _ := value["network"].(map[string]any)
+	pool, _ := network["renderer_pool"].(map[string]any)
+	base, baseErr := integerValue(pool["base_port"], "")
+	count, countErr := integerValue(pool["count"], "")
+	if baseErr != nil || countErr != nil || count < 1 || base < 1024 || base+count-1 > 65535 {
+		return DefaultRendererPoolBase, DefaultRendererPoolCount
+	}
+	return base, count
+}
+
+// integerValue accepts the strict integer forms produced by Decode and
+// plain JSON decoding of defaults.
+func integerValue(v any, path string) (int, error) {
+	switch number := v.(type) {
+	case json.Number:
+		value, e := strconv.Atoi(number.String())
+		if e != nil {
+			return 0, invalid(path, "integer required")
+		}
+		return value, nil
+	case float64:
+		if number != float64(int(number)) {
+			return 0, invalid(path, "integer required")
+		}
+		return int(number), nil
+	}
+	return 0, invalid(path, "integer required")
+}
+
+// networkPool summarizes the effective renderer pool of a decoded
+// configuration value for plan-impact comparison.
+func networkPool(value map[string]any) struct{ base, count int } {
+	base, count := RendererPool(value)
+	return struct{ base, count int }{base, count}
+}
+
 func shape(s map[string]any, v any, path string) error {
 	if ref, ok := s["$ref"].(string); ok {
 		return shape(definitions[strings.TrimPrefix(ref, "#/$defs/")].(map[string]any), v, path)

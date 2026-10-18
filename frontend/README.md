@@ -1,7 +1,7 @@
 # Haeryong shared frontend shell
 
 This directory holds the shared React/TypeScript trusted shell, Home/Library
-and result-transfer controls, and their transport adapters. The compiled production bundle under
+and result-transfer controls, the shared Reader, and their transport adapters. The compiled production bundle under
 `../internal/webassets/dist` is committed and served by the Go daemon; no
 development server and no service worker/private asset caching are involved.
 
@@ -12,9 +12,14 @@ development server and no service worker/private asset caching are involved.
   Settings/Storage upload discovery/recovery. The preselection harness is a
   separate verification entrypoint, excluded from the production bundle.
 - `src/client/` — `HaeryongClient` contract, browser HTTP transport, narrow
-  `NativePort` boundary (the real desktop binding ships with TASK-003-05),
+  `NativePort` boundary (the production desktop binding ships with TASK-003-05),
   credential stores, and the connection state machine.
 - `check_build.py` — validation/regeneration entrypoint (see below).
+- `src/viewer/` — unprivileged page loader, immutable incremental snapshot,
+  active-page channel, trusted host context transfer, render-session lifetime
+  and the isolated Reader frame. TASK-003-03 owns the shared Reader and its
+  bounded native harness integration; the production companion remains
+  TASK-003-05.
 
 ## Dependency preparation (explicit, once)
 
@@ -42,8 +47,18 @@ committed bundle drift apart.
 
 The browser entrypoint build must never contain native-bridge markers
 (`wails`, `window.runtime`, `@wailsapp`, `NATIVE_TRANSPORT_NOT_IMPLEMENTED`);
-the separate native entrypoint build (`npm run build:native`) is a scratch
-artefact for TASK-003-05 and is not embedded in the daemon.
+the separate native entrypoint build (`npm run build:native`) is used by the
+reused TASK-003-03 Wails harness and the later production companion. It is not
+embedded in the daemon. The browser bundle remains independent of Wails.
+
+The separate `vite.loader.config.ts` builds a self-contained page integration
+IIFE at `internal/webassets/dist/renderer/loader.js`. Both regeneration and
+normal validation include it; normal validation compares a fresh loader build
+and the trusted browser bundle with the same committed manifest. The renderer
+adapter delivers this script under its narrow cookie boundary. It carries no
+management credential or native bridge. See the current
+[Reader implementation record](../docs/testing/reader-viewer.md) for scope and
+unfinished acceptance work.
 
 ## Daily scripts
 
@@ -83,3 +98,50 @@ save-dialog UX, normal permission prompts, Wails or physical devices. Response
 loss and labelled HTTP/transport faults are explicit test controls. Source
 semantics and executed qualification limits are in
 [the result-transfer record](../docs/testing/result-transfer.md).
+
+## Reader browser regression
+
+```sh
+python3 -B internal/adapters/http/auth/browser/check_reader.py \
+  --browser-cli /absolute/path/to/playwright-cli \
+  --receipt /private/existing-directory/reader.json
+```
+
+This builds the current tagged daemon into a short, private scratch directory,
+pairs a disposable owner and imports a complete multi-page fixture. It exercises
+the compiled shared Reader and its real iframe/channel, ordinary scripts, local
+modules and Workers, external Preact from `esm.sh/preact@10.27.2`, an exact large
+context digest, child navigation/history, host selection, independent personal
+resources, Continue, public-browser popup routing and the exact-document Import
+control. External framework unavailability fails the check; it is not silently
+counted as passed CDN coverage. It does not qualify Wails or private ingress.
+The driver closes its browser and daemon and removes its own private state on
+success; a failure receipt identifies retained scratch state for diagnosis.
+
+## Native session and JSON adapter foundation
+
+`ShellController.attachNativeSession()` accepts a nonsecret Go attachment
+identity, then verifies the real current session and capabilities through the
+native client. Browser bearer binding is rejected by `NativeHaeryongClient`;
+no token sentinel is used. Routine verification keeps the attachment, current
+401s dispose it. Explicit logout clears Go's usable credential and attempts
+local-file removal before seeking server revocation; disposal retains the
+captured cleanup identity. The adapter is connected to the existing beta.28
+Wails ReaderMode harness through its closed Go operation switch and guarded
+bootstrap. A failed local forget is visible and retryable after detachment.
+
+`client/native-wire.ts` turns the closed JSON reply `{ok,value}` or
+`{ok:false,error:{status,code,retryable,retry_after?,details?}}` into typed client
+results. Upload chunks carry `bytes_b64`. Package/file opens return `stream_id`;
+`streamRead` takes that ID and `max_bytes` and returns nullable `data_b64` plus
+`eof`. The adapter consumes a nonempty final EOF chunk before closing and
+cancels only its captured stream. Subscription opens return `subscription_id`;
+`eventsPoll`/`eventsClose` reconstruct a local liveness handle, not a generic
+API subscription authority. Unit tests force JSON round trips, arbitrary
+0–255 byte hashes, final EOF bytes, typed failures and late-read cancellation.
+These unit tests isolate adapter behavior. Actual Go/Wails execution through
+the same compiled Reader, closed operations, bootstrap, sender guard and stream
+path is covered by the [native Reader regression](../spikes/viewer/README.md#shared-reader-regression-task-003-03)
+and [Reader implementation record](../docs/testing/reader-viewer.md). Production
+desktop onboarding and native file dialogs remain with TASK-003-05; the wider
+responsive and cross-client gate remains TASK-003-06.

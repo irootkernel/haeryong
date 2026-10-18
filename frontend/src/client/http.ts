@@ -30,15 +30,35 @@ import type {
   DocumentView,
   FileEntryView,
   VersionView,
+  RenderBootstrapView,
+  RenderSessionView,
+  PersonalKind,
+  PersonalView,
 } from "./types.ts";
 import { ApiError, NetworkError, StaleResponseError, UncertainResponseError } from "./types.ts";
 import { eraGuardedStream } from "./stream.ts";
+import type { ContextBinding } from "./context-types.ts";
+
+// Canonical base64url (RFC 4648 §5, unpadded) of the exact UTF-8 JSON form
+// the server's strict parser requires: all three tuple keys with JSON null
+// for absent members.
+function encodeContextBinding(binding: ContextBinding): string {
+  const json = JSON.stringify({ version_id: binding.version_id, page_path: binding.page_path, render_instance_id: binding.render_instance_id });
+  const bytes = new TextEncoder().encode(json);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
 
 // Browser transport on the trusted origin. Header bearer only; cookies are
 // omitted, redirects are errors and only same-origin /api/v1 paths are called.
 // Every request captures the current era; responses from an earlier
 // credential/library/generation era are discarded before being applied.
 export class HttpHaeryongClient implements HaeryongClient {
+  get publicOrigin(): string { return location.origin; }
+
   #credential = "";
   #era = 0;
 
@@ -48,6 +68,21 @@ export class HttpHaeryongClient implements HaeryongClient {
 
   invalidate(): void {
     this.#era += 1;
+  }
+
+  async #apiError(response: Response, era: number, fallbackRetryable: boolean): Promise<ApiError> {
+    let code = "TRANSPORT_ERROR", retryable = fallbackRetryable;
+    let details: Record<string, unknown> = {};
+    try {
+      const parsed = (await response.json()) as { error?: { code?: unknown; retryable?: unknown; details?: unknown } };
+      if (typeof parsed.error?.code === "string") code = parsed.error.code;
+      if (typeof parsed.error?.retryable === "boolean") retryable = parsed.error.retryable;
+      if (parsed.error?.details && typeof parsed.error.details === "object" && !Array.isArray(parsed.error.details)) details = parsed.error.details as Record<string, unknown>;
+    } catch {
+      // A non-JSON response retains the transport fallback classification.
+    }
+    if (era !== this.#era) throw new StaleResponseError();
+    return new ApiError(response.status, code, retryable, Number(response.headers.get("Retry-After")) || 0, details);
   }
 
   async #exchange<T>(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<{ status: number; data: T }> {
@@ -71,18 +106,7 @@ export class HttpHaeryongClient implements HaeryongClient {
     }
     if (era !== this.#era) throw new StaleResponseError();
     if (!response.ok) {
-      let code = "TRANSPORT_ERROR";
-      let retryable = true;
-      let retryAfter = Number(response.headers.get("Retry-After")) || 0;
-      try {
-        const parsed = (await response.json()) as { error?: { code?: string; retryable?: boolean } };
-        if (parsed.error?.code) code = parsed.error.code;
-        if (parsed.error?.retryable === false) retryable = false;
-      } catch {
-        // Non-JSON error bodies keep the transport fallback code.
-      }
-      if (era !== this.#era) throw new StaleResponseError();
-      throw new ApiError(response.status, code, retryable, retryAfter);
+      throw await this.#apiError(response, era, true);
     }
     if (response.status === 204) return { status: response.status, data: null as T };
     let parsed: { data?: T };
@@ -117,15 +141,7 @@ export class HttpHaeryongClient implements HaeryongClient {
     }
     if (era !== this.#era) throw new StaleResponseError();
     if (!response.ok) {
-      let code = "TRANSPORT_ERROR";
-      try {
-        const parsed = (await response.json()) as { error?: { code?: string } };
-        if (parsed.error?.code) code = parsed.error.code;
-      } catch {
-        // Non-JSON error bodies keep the transport fallback code.
-      }
-      if (era !== this.#era) throw new StaleResponseError();
-      throw new ApiError(response.status, code, response.status === 503, 0);
+      throw await this.#apiError(response, era, response.status === 503);
     }
     let parsed: { data?: unknown };
     try {
@@ -170,6 +186,38 @@ export class HttpHaeryongClient implements HaeryongClient {
     return this.#request("GET", this.#collection(`/api/v1/versions/${encodeURIComponent(versionId)}/files`, { cursor }));
   }
 
+  renderBootstrap(versionId: string, pagePath?: string): Promise<RenderBootstrapView> {
+    const query = pagePath === undefined ? "" : `?page_path=${encodeURIComponent(pagePath)}`;
+    return this.#request("GET", `/api/v1/versions/${encodeURIComponent(versionId)}/render-bootstrap${query}`);
+  }
+
+  renderSessionOpen(versionId: string, operationId: string): Promise<RenderSessionView> {
+    return this.#request("POST", `/api/v1/versions/${encodeURIComponent(versionId)}/render-sessions`, {}, { "Idempotency-Key": operationId });
+  }
+
+  async renderSessionRenew(versionId: string, sessionId: string): Promise<void> {
+    await this.#request("POST", `/api/v1/versions/${encodeURIComponent(versionId)}/render-sessions/${encodeURIComponent(sessionId)}/renew`, {});
+  }
+
+  async renderSessionClose(versionId: string, sessionId: string): Promise<void> {
+    await this.#request("POST", `/api/v1/versions/${encodeURIComponent(versionId)}/render-sessions/${encodeURIComponent(sessionId)}/close`, {});
+  }
+
+  personalGet(kind: PersonalKind, versionId: string, page?: string): Promise<PersonalView> {
+    const prefix = `/api/v1/versions/${encodeURIComponent(versionId)}/${kind}`;
+    const query = kind === "page-position" && page ? `?page=${encodeURIComponent(page)}` : "";
+    return this.#request("GET", prefix + query);
+  }
+
+  personalPut(kind: PersonalKind, versionId: string, page: string | null, body: unknown, precondition: { ifMatch: string } | { create: true }, operationId: string): Promise<PersonalView> {
+    const prefix = `/api/v1/versions/${encodeURIComponent(versionId)}/${kind}`;
+    const query = kind === "page-position" && page ? `?page=${encodeURIComponent(page)}` : "";
+    const headers: Record<string, string> = { "Content-Type": "application/json", "Idempotency-Key": operationId };
+    if ("ifMatch" in precondition) headers["If-Match"] = precondition.ifMatch;
+    else headers["If-None-Match"] = "*";
+    return this.#request("PUT", prefix + query, body, headers);
+  }
+
   listUploads(filter: { state?: UploadStateFilter; unadopted?: boolean; cursor?: string }): Promise<ListPage<UploadSummary>> {
     return this.#request("GET", this.#collection("/api/v1/uploads", { state: filter.state, unadopted: filter.unadopted === undefined ? undefined : filter.unadopted ? "true" : "false", cursor: filter.cursor }));
   }
@@ -192,6 +240,49 @@ export class HttpHaeryongClient implements HaeryongClient {
 
   async createUpload(request: CreateUploadRequest, operationId: string): Promise<{ upload_id: string; checkpoint: UploadCheckpoint }> {
     return this.#request("POST", "/api/v1/uploads", request, { "Idempotency-Key": operationId });
+  }
+
+  createContextUpload(binding: ContextBinding, operationId: string): Promise<{ upload_id: string; checkpoint: UploadCheckpoint }> {
+    return this.#request("POST", "/api/v1/uploads", { purpose: "context", input_mode: "object", target: binding }, { "Idempotency-Key": operationId });
+  }
+
+  async consumeContext(binding: ContextBinding, uploadId: string, operationId: string): Promise<DecisionResult> {
+    const query = new URLSearchParams({ version_id: binding.version_id, input: "upload" });
+    if (binding.page_path !== null) query.set("page_path", binding.page_path);
+    if (binding.render_instance_id !== null) query.set("render_instance_id", binding.render_instance_id);
+    const outcome = await this.#exchange<unknown>("POST", "/api/v1/contexts?" + query.toString(), { upload_id: uploadId }, { "Idempotency-Key": operationId });
+    return { kind: outcome.status === 202 ? "accepted" : "committed", body: outcome.data };
+  }
+
+  async verifyContextFresh(contextRef: string, binding: ContextBinding, bytesSha256: string): Promise<void> {
+    const path = `/api/v1/contexts/${encodeURIComponent(contextRef)}`;
+    const etag = `"sha256-${bytesSha256}"`;
+    const era = this.#era;
+    const headers = new Headers({ "Haeryong-Context-Binding": encodeContextBinding(binding), "If-None-Match": etag });
+    if (this.#credential) headers.set("Authorization", "Bearer " + this.#credential);
+    let response: Response;
+    try {
+      response = await fetch(path, { method: "GET", credentials: "omit", redirect: "error", headers });
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "AbortError") throw cause;
+      throw new NetworkError();
+    }
+    if (era !== this.#era) throw new StaleResponseError();
+    if (response.status === 304) {
+      // A 304 is not response.ok: the proof is the exact status plus the
+      // strong ETag and the fresh-verification marker, with no body.
+      if (response.headers.get("ETag") !== etag || response.headers.get("Haeryong-Context-Verified") !== "fresh") {
+        throw new ApiError(304, "CONTEXT_PROOF_INVALID", false, 0, {});
+      }
+      return;
+    }
+    if (!response.ok) {
+      throw await this.#apiError(response, era, response.status === 503);
+    }
+    // A body-carrying response is never a fresh proof; the server keeps
+    // ordinary byte recovery on the binding-absent path only.
+    response.body?.cancel().catch(() => undefined);
+    throw new ApiError(response.status, "CONTEXT_PROOF_INVALID", false, 0, {});
   }
 
   async putUploadEntry(uploadId: string, chunk: EntryChunk): Promise<ChunkAck> {
@@ -245,7 +336,14 @@ export class HttpHaeryongClient implements HaeryongClient {
   }
 
   async packageStream(versionId: string): Promise<PackageStream> {
-    const path = `/api/v1/versions/${encodeURIComponent(versionId)}/package`;
+    return this.#stream(`/api/v1/versions/${encodeURIComponent(versionId)}/package`);
+  }
+
+  fileStream(versionId: string, path: string): Promise<PackageStream> {
+    return this.#stream(`/api/v1/versions/${encodeURIComponent(versionId)}/file?${new URLSearchParams({ path })}`);
+  }
+
+  async #stream(path: string): Promise<PackageStream> {
     const controller = new AbortController();
     const era = this.#era;
     const headers = new Headers();
@@ -256,15 +354,7 @@ export class HttpHaeryongClient implements HaeryongClient {
       throw new StaleResponseError();
     }
     if (!response.ok || !response.body) {
-      let code = "TRANSPORT_ERROR";
-      try {
-        const parsed = (await response.json()) as { error?: { code?: string } };
-        if (parsed.error?.code) code = parsed.error.code;
-      } catch {
-        // Non-JSON error bodies keep the transport fallback code.
-      }
-      if (era !== this.#era) throw new StaleResponseError();
-      throw new ApiError(response.status, code, response.status === 503, 0);
+      throw await this.#apiError(response, era, response.status === 503);
     }
     return {
       // The stream stays era-guarded throughout consumption: a chunk read

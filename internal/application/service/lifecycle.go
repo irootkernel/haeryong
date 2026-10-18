@@ -45,6 +45,9 @@ type Runner struct {
 	ProfileFault func(string) error
 	Work         func(context.Context) error
 	ListenerPort func(context.Context) (int, error)
+	// CloseDependents drains auxiliary listeners while storage and the writer
+	// are still owned, after the management endpoint has stopped accepting work.
+	CloseDependents func() error
 }
 
 func (r Runner) Run(ctx context.Context, onReady func(Identity)) (result error) {
@@ -67,6 +70,9 @@ func (r Runner) Run(ctx context.Context, onReady func(Identity)) (result error) 
 		return err
 	}
 	defer func() { result = errors.Join(result, closeStorage()) }()
+	if r.CloseDependents != nil {
+		defer func() { result = errors.Join(result, r.CloseDependents()) }()
+	}
 	if storage.Ready {
 		if err := writer.MarkStorageReady(r.ProfileFault); err != nil {
 			return err

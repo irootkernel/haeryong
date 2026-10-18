@@ -68,4 +68,6 @@ CREATE TABLE workflow_principals(principal_id TEXT PRIMARY KEY,binding_id TEXT N
 CREATE TABLE scoped_credentials(credential_id TEXT PRIMARY KEY,principal_id TEXT NOT NULL REFERENCES workflow_principals(principal_id),token_hash TEXT NOT NULL UNIQUE,auth_epoch TEXT NOT NULL,scope BLOB NOT NULL CHECK(json_valid(scope)),permissions BLOB NOT NULL CHECK(json_valid(permissions)),config_revision INTEGER NOT NULL CHECK(config_revision>=1),created_at INTEGER NOT NULL,expires_at INTEGER,revoked INTEGER NOT NULL CHECK(revoked IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=1));
 CREATE TABLE configuration_plans(plan_id TEXT PRIMARY KEY,principal_id TEXT NOT NULL,base_revision INTEGER NOT NULL CHECK(base_revision>=1),expires_at TEXT NOT NULL,value BLOB NOT NULL CHECK(json_valid(value)));
 `,
+	`CREATE TABLE contexts(context_id TEXT PRIMARY KEY,principal_id TEXT NOT NULL,version_id TEXT NOT NULL,page_path TEXT,render_instance_id TEXT,origin_session_id TEXT NOT NULL,media_type TEXT NOT NULL CHECK(media_type IN ('application/json','text/plain')),content_hash TEXT NOT NULL REFERENCES content_objects(content_hash),byte_size INTEGER NOT NULL CHECK(byte_size>=0),created_at TEXT NOT NULL);
+`,
 }

@@ -23,6 +23,7 @@ export interface ShellState {
   /** Unresolved write intents kept in owner-scope memory across UI phase changes. */
   pendingDecision: PendingDecision | null;
   pendingRevokes: PendingRevoke[];
+  localCleanupPending: boolean;
 }
 
 export const NOTICE = {
@@ -41,6 +42,8 @@ export const NOTICE = {
   logoutConfirmed: "로그아웃이 서버에서 확인되었습니다.",
   logoutAlreadyRevoked: "서버 세션은 이미 해지되어 있었습니다.",
   logoutAckUnknown: "로그아웃했습니다. 서버 해지 여부는 확인되지 않았습니다.",
+  logoutNativeLocal: "이 앱의 연결을 해제하고 저장된 연결 자격을 정리하는 중입니다.",
+  logoutLocalFailure: "저장된 연결 자격을 지우지 못했습니다. 앱을 다시 시작하면 재접속될 수 있습니다. 연결 자격 정리를 다시 시도하세요. 서버 해지 여부는 확인되지 않았습니다.",
   externalRemoval: "이 브라우저의 저장된 연결이 제거되었습니다. 다시 연결하세요.",
 } as const;
 
@@ -83,6 +86,7 @@ export class ShellController {
   #listeners = new Set<(state: ShellState) => void>();
   #state: ShellState;
   #token = "";
+  #nativeAttachment: string | null = null;
   #run = 0;
   #generation = "";
   #libraryId = "";
@@ -106,6 +110,7 @@ export class ShellController {
       notice: NOTICE.unauthenticated,
       pendingDecision: null,
       pendingRevokes: [],
+      localCleanupPending: false,
     };
   }
 
@@ -145,7 +150,7 @@ export class ShellController {
   }
 
   hasCredential(): boolean {
-    return this.#token !== "" || this.#store.read() !== null;
+    return this.#nativeAttachment !== null || this.#token !== "" || this.#store.read() !== null;
   }
 
   subscribe(listener: (state: ShellState) => void): () => void {
@@ -158,7 +163,9 @@ export class ShellController {
     for (const listener of this.#listeners) listener(this.#state);
   }
 
-  #clearCredential(notice: string): void {
+  #clearCredential(notice: string, keepNativeTransport = false): void {
+    const native = this.#nativeAttachment !== null;
+    this.#nativeAttachment = null;
     this.#token = "";
     this.#store.clear();
     this.#generation = "";
@@ -166,11 +173,19 @@ export class ShellController {
     this.#boundCredential = "";
     // Drop the transport binding immediately: responses pending from the
     // cleared authority must be invalidated before anything else rebinds.
-    this.#client.setCredential("");
-    this.#client.invalidate();
+    let disposal: Promise<void> | undefined;
+    if (!native || !keepNativeTransport) {
+      this.#client.setCredential("");
+      this.#client.invalidate();
+      if (native) disposal = this.#client.disposeSession?.();
+    }
     // Every pending intent belongs to the credential/library authority that
     // dispatched it; late failures from a replaced authority never reinsert.
     this.#authority += 1;
+    const clearedAuthority = this.#authority;
+    void disposal?.catch(() => {
+      if (clearedAuthority === this.#authority) this.#apply({ localCleanupPending: true, notice: NOTICE.logoutLocalFailure });
+    });
     this.#run += 1;
     this.#closeEvents();
     this.#apply({
@@ -210,9 +225,28 @@ export class ShellController {
     this.#apply({ phase: "degraded", notice: NOTICE.disconnected });
   }
 
+  get nativeSessionAvailable(): boolean { return typeof this.#client.attachSession === "function"; }
+
+  async attachNativeSession(): Promise<void> {
+    if (!this.#client.attachSession) throw new Error("Native session attachment is unavailable.");
+    const run = ++this.#run;
+    try {
+      const attached = await this.#client.attachSession();
+      if (run !== this.#run) return;
+      if (this.#nativeAttachment !== attached.attachment_id) {
+        this.#nativeAttachment = attached.attachment_id;
+        this.#token = ""; this.#boundCredential = "";
+        this.#authority++; this.#client.invalidate(); this.#closeEvents();
+        this.#apply({ phase: "checking", notice: NOTICE.checking, localCleanupPending: false });
+      }
+      await this.verify();
+    } catch (error) { this.#failure(error, run); }
+  }
+
   async verify(): Promise<void> {
-    const token = this.#token || this.#store.read() || "";
-    if (!token) {
+    const native = this.#nativeAttachment !== null;
+    const token = native ? "" : this.#token || this.#store.read() || "";
+    if (!native && !token) {
       this.#run += 1;
       this.#clearEventsAndGeneration();
       this.#apply({
@@ -220,16 +254,16 @@ export class ShellController {
         session: null,
         capabilities: null,
         memoryOnly: false,
-        notice: NOTICE.unauthenticated,
+        notice: this.#state.localCleanupPending ? NOTICE.logoutLocalFailure : NOTICE.unauthenticated,
       });
       return;
     }
-    const remembered = this.#store.read() === token;
+    const remembered = native || this.#store.read() === token;
     this.#token = token;
     // The transport authority era changes only when the bound credential
     // actually changes. Routine same-authority rechecks keep the current era
     // so in-flight writes are not discarded mid-flight.
-    const rebinding = token !== this.#boundCredential;
+    const rebinding = !native && token !== this.#boundCredential;
     if (rebinding) {
       this.#client.setCredential(token);
       this.#client.invalidate();
@@ -381,13 +415,14 @@ export class ShellController {
   /** Local logout: clear this browser immediately, then seek a server ack once. */
   async logout(): Promise<void> {
     const token = this.#token;
-    this.#clearCredential(NOTICE.logoutLocal);
+    const native = this.#nativeAttachment !== null;
+    this.#clearCredential(native ? NOTICE.logoutNativeLocal : NOTICE.logoutLocal, native);
     // Guard post-await effects by authority identity, not the verification-run
     // counter: a no-token verify() during the pending revoke bumps #run without
     // replacing the session and must not leave the old token transport-bound.
     const authority = this.#authority;
-    if (!token) return;
-    this.#client.setCredential(token);
+    if (!native && !token) return;
+    if (!native) this.#client.setCredential(token);
     try {
       await this.#client.revokeOwnSession();
       if (authority === this.#authority) {
@@ -397,7 +432,9 @@ export class ShellController {
       if (authority === this.#authority) {
         // Only an explicit SESSION_REVOKED for this credential proves server-side
         // revocation. Expiry, generic 401s and lost responses stay honestly unknown.
-        if (error instanceof ApiError && error.status === 401 && error.code === "SESSION_REVOKED") {
+        if (native && error instanceof ApiError && error.code === "NATIVE_LOCAL_FORGET_FAILED") {
+          this.#apply({ notice: NOTICE.logoutLocalFailure, localCleanupPending: true });
+        } else if (error instanceof ApiError && error.status === 401 && error.code === "SESSION_REVOKED") {
           this.#apply({ notice: NOTICE.logoutAlreadyRevoked });
         } else {
           this.#apply({ notice: NOTICE.logoutAckUnknown });
@@ -407,9 +444,29 @@ export class ShellController {
       // Drop the transport credential unless a genuinely new authority (a new
       // binding or another clear) has taken it over.
       if (authority === this.#authority) {
+        if (native) {
+          try {
+            await this.#client.disposeSession?.();
+            if (authority === this.#authority && this.#state.localCleanupPending) this.#apply({ localCleanupPending: false, notice: NOTICE.logoutAckUnknown });
+          } catch {
+            if (authority === this.#authority) this.#apply({ localCleanupPending: true, notice: NOTICE.logoutLocalFailure });
+          }
+        }
+        if (authority !== this.#authority) return;
         this.#client.setCredential("");
         this.#client.invalidate();
       }
+    }
+  }
+
+  async retryLocalCleanup(): Promise<void> {
+    if (!this.#state.localCleanupPending) return;
+    const authority = this.#authority;
+    try {
+      await this.#client.disposeSession?.();
+      if (authority === this.#authority) this.#apply({ localCleanupPending: false, notice: NOTICE.logoutAckUnknown });
+    } catch {
+      if (authority === this.#authority) this.#apply({ notice: NOTICE.logoutLocalFailure });
     }
   }
 

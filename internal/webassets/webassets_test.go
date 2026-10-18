@@ -15,7 +15,7 @@ import (
 )
 
 func frontendInputs(root string) ([]string, error) {
-	fixed := []string{"index.html", "package.json", "package-lock.json", "tsconfig.json", "vite.config.ts", "vite.native.config.ts"}
+	fixed := []string{"index.html", "native.html", "package.json", "package-lock.json", "tsconfig.json", "vite.config.ts", "vite.native.config.ts", "vite.loader.config.ts"}
 	var files []string
 	for _, name := range fixed {
 		files = append(files, filepath.Join(root, "frontend", name))
@@ -116,7 +116,7 @@ var _ = It("TestCommittedWebAssetsMatchManifestAndFrontendInputs", Label("unit")
 		if strings.HasPrefix(name, "assets/") {
 			asset, err := fs.ReadFile(dist, name)
 			Expect(err).To(BeNil())
-			for _, marker := range []string{"wails", "window.runtime", "@wailsapp", "NATIVE_TRANSPORT_NOT_IMPLEMENTED"} {
+			for _, marker := range []string{"wails", "window.runtime", "@wailsapp", "NATIVE_TRANSPORT_NOT_IMPLEMENTED", "HAEYONG_NATIVE_TRANSPORT_BOUND", "haeryongNativeCall"} {
 				Expect(strings.Contains(string(asset), marker)).To(BeFalse(), "browser asset contains native marker "+marker)
 			}
 		}

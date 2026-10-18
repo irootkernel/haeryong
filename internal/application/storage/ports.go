@@ -129,4 +129,10 @@ type WriteTx interface {
 	CompleteUpload(string, domain.Checkpoint, string) (domain.Response, error)
 	FinishSeal(string, int64, string) error
 	AbandonUpload(string) error
+
+	// Personal reader state and sealed contexts read inside the same
+	// serialized transaction as their authority checks.
+	ResourceRow(kind, id string) (domain.Resource, error)
+	PutContext(domain.ContextRecord) error
+	Context(string) (domain.ContextRecord, error)
 }

@@ -3,6 +3,7 @@
 // URLs, filesystem paths or generic method names from imported content.
 import type {
   Capabilities,
+  NativeAttachment,
   ChunkAck,
   CreateUploadRequest,
   CredentialAware,
@@ -34,9 +35,14 @@ import type {
   DocumentView,
   FileEntryView,
   VersionView,
+  RenderBootstrapView,
+  RenderSessionView,
+  PersonalKind,
+  PersonalView,
 } from "./types.ts";
 import { StaleResponseError } from "./types.ts";
 import { eraGuardedStream } from "./stream.ts";
+import type { ContextBinding } from "./context-types.ts";
 
 export type PairRequest = { device_label: string };
 export type PollPairingRequest = { pairing_id: string; polling_secret: string };
@@ -68,9 +74,24 @@ export type ImportPublishCall = { request: ImportPublishRequest; operation_id: s
 export type JobRequest = { job_id: string };
 export type JobCancelCall = { job_id: string; operation_id: string };
 export type PackageStreamRequest = { version_id: string };
+export type CreateContextUploadCall = { binding: ContextBinding; operation_id: string };
+export type ConsumeContextCall = { binding: ContextBinding; upload_id: string; operation_id: string };
+export type VerifyContextFreshCall = { context_ref: string; binding: ContextBinding; bytes_sha256: string };
+export type ContextFreshProof = { verified: true; etag: string };
+export type RenderBootstrapRequest = { version_id: string; page_path?: string };
+export type RenderSessionOpenCall = { version_id: string; operation_id: string };
+export type RenderSessionRouteCall = { version_id: string; session_id: string };
+export type PersonalGetRequest = { kind: PersonalKind; version_id: string; page?: string };
+export type PersonalPutCall = { kind: PersonalKind; version_id: string; page: string | null; body: unknown; precondition: { if_match: string } | { create: true }; operation_id: string };
 
 /** Named operations only; each overload pins an exact payload/result pair. */
 export interface NativePort {
+  call(operation: "attachSession", payload: {}): Promise<NativeAttachment>;
+  call(operation: "disposeSession", payload: { attachment_id: string }): Promise<void>;
+  call(operation: "fileStream", payload: { version_id: string; path: string }): Promise<PackageStream>;
+  call(operation: "createContextUpload", payload: CreateContextUploadCall): Promise<{ upload_id: string; checkpoint: UploadCheckpoint }>;
+  call(operation: "consumeContext", payload: ConsumeContextCall): Promise<DecisionResult>;
+  call(operation: "verifyContextFresh", payload: VerifyContextFreshCall): Promise<ContextFreshProof>;
   call(operation: "pair", payload: PairRequest): Promise<PairingCreated>;
   call(operation: "pollPairing", payload: PollPairingRequest): Promise<PairingPoll>;
   call(operation: "decidePairing", payload: PairingDecisionRequest & DecidePairingPayload): Promise<DecisionResult>;
@@ -102,9 +123,19 @@ export interface NativePort {
   call(operation: "jobGet", payload: JobRequest): Promise<JobView>;
   call(operation: "jobCancel", payload: JobCancelCall): Promise<DecisionResult>;
   call(operation: "packageStream", payload: PackageStreamRequest): Promise<PackageStream>;
+  call(operation: "renderBootstrap", payload: RenderBootstrapRequest): Promise<RenderBootstrapView>;
+  call(operation: "renderSessionOpen", payload: RenderSessionOpenCall): Promise<RenderSessionView>;
+  call(operation: "renderSessionRenew", payload: RenderSessionRouteCall): Promise<void>;
+  call(operation: "renderSessionClose", payload: RenderSessionRouteCall): Promise<void>;
+  call(operation: "personalGet", payload: PersonalGetRequest): Promise<PersonalView>;
+  call(operation: "personalPut", payload: PersonalPutCall): Promise<PersonalView>;
 }
 
 export const NATIVE_OPERATIONS = [
+  "attachSession", "disposeSession", "fileStream",
+  "createContextUpload",
+  "consumeContext",
+  "verifyContextFresh",
   "pair",
   "pollPairing",
   "decidePairing",
@@ -136,34 +167,57 @@ export const NATIVE_OPERATIONS = [
   "jobGet",
   "jobCancel",
   "packageStream",
+  "renderBootstrap",
+  "renderSessionOpen",
+  "renderSessionRenew",
+  "renderSessionClose",
+  "personalGet",
+  "personalPut",
 ] as const;
 
 /** HaeryongClient view over an injected NativePort. */
 export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
   readonly #port: NativePort;
-  #credential = "";
+  #attachment: string | null = null;
+  #pendingDisposal: string | null = null;
+  #publicOrigin: string | null = null;
   #era = 0;
 
   constructor(port: NativePort) {
     this.#port = port;
   }
 
-  /**
-   * The desktop host owns credential binding (TASK-003-05). Binding the same
-   * token again does not change the era; only invalidate() does.
-   */
+  get publicOrigin(): string | null { return this.#publicOrigin; }
+
+  // Native session authority stays in Go. A browser bearer or a made-up
+  // token sentinel cannot bind this adapter.
   setCredential(token: string): void {
-    this.#credential = token;
+    if (token !== "") throw new Error("Native sessions attach through Go, not a JavaScript credential.");
   }
 
-  get credential(): string {
-    return this.#credential;
+  async attachSession(): Promise<NativeAttachment> {
+    const value = await this.#fresh(this.#port.call("attachSession", {}), this.#era);
+    const origin = new URL(value.public_origin);
+    if (!value.attachment_id || origin.origin !== value.public_origin || !["http:", "https:"].includes(origin.protocol)) throw new Error("Invalid native attachment metadata");
+    if (value.attachment_id !== this.#attachment) { this.#era++; this.#pendingDisposal = null; }
+    this.#attachment = value.attachment_id; this.#publicOrigin = value.public_origin;
+    return value;
+  }
+
+  async disposeSession(): Promise<void> {
+    const attachment = this.#attachment ?? this.#pendingDisposal;
+    this.#attachment = null; this.#publicOrigin = null; this.#era++;
+    if (attachment) {
+      this.#pendingDisposal = attachment;
+      await this.#port.call("disposeSession", { attachment_id: attachment });
+      if (this.#pendingDisposal === attachment) this.#pendingDisposal = null;
+    }
   }
 
   /**
    * Authority era change (credential/library/generation boundary). This never
-   * erases the bound credential by itself; the controller drops it explicitly
-   * with setCredential(""). Responses and rejections crossing an invalidate()
+   * erases the Go attachment by itself; explicit disposal carries its captured
+   * nonsecret identity to Go. Responses and rejections crossing an invalidate()
    * boundary are converted to StaleResponseError: a late success must not be
    * applied, and a late failure must not be mistaken for a current-outcome
    * network loss of a dispatched write.
@@ -250,6 +304,37 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
     };
   }
 
+  async fileStream(versionId: string, path: string): Promise<PackageStream> {
+    const era = this.#era;
+    const stream = await this.#fresh(this.#port.call("fileStream", { version_id: versionId, path }), era);
+    return { body: eraGuardedStream(stream.body, () => era !== this.#era), cancel: () => stream.cancel() };
+  }
+
+  renderBootstrap(versionId: string, pagePath?: string): Promise<RenderBootstrapView> {
+    return this.#fresh(this.#port.call("renderBootstrap", { version_id: versionId, page_path: pagePath }), this.#era);
+  }
+
+  renderSessionOpen(versionId: string, operationId: string): Promise<RenderSessionView> {
+    return this.#fresh(this.#port.call("renderSessionOpen", { version_id: versionId, operation_id: operationId }), this.#era);
+  }
+
+  renderSessionRenew(versionId: string, sessionId: string): Promise<void> {
+    return this.#fresh(this.#port.call("renderSessionRenew", { version_id: versionId, session_id: sessionId }), this.#era);
+  }
+
+  renderSessionClose(versionId: string, sessionId: string): Promise<void> {
+    return this.#fresh(this.#port.call("renderSessionClose", { version_id: versionId, session_id: sessionId }), this.#era);
+  }
+
+  personalGet(kind: PersonalKind, versionId: string, page?: string): Promise<PersonalView> {
+    return this.#fresh(this.#port.call("personalGet", { kind, version_id: versionId, page }), this.#era);
+  }
+
+  personalPut(kind: PersonalKind, versionId: string, page: string | null, body: unknown, precondition: { ifMatch: string } | { create: true }, operationId: string): Promise<PersonalView> {
+    const wire = "ifMatch" in precondition ? { if_match: precondition.ifMatch } : { create: true as const };
+    return this.#fresh(this.#port.call("personalPut", { kind, version_id: versionId, page, body, precondition: wire, operation_id: operationId }), this.#era);
+  }
+
   listProjects(cursor?: string): Promise<ListPage<ProjectView>> {
     return this.#fresh(this.#port.call("listProjects", { cursor }), this.#era);
   }
@@ -296,6 +381,25 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
 
   createUpload(request: CreateUploadRequest, operationId: string): Promise<{ upload_id: string; checkpoint: UploadCheckpoint }> {
     return this.#fresh(this.#port.call("createUpload", { request, operation_id: operationId }), this.#era);
+  }
+
+  createContextUpload(binding: ContextBinding, operationId: string): Promise<{ upload_id: string; checkpoint: UploadCheckpoint }> {
+    return this.#fresh(this.#port.call("createContextUpload", { binding, operation_id: operationId }), this.#era);
+  }
+
+  consumeContext(binding: ContextBinding, uploadId: string, operationId: string): Promise<DecisionResult> {
+    return this.#fresh(this.#port.call("consumeContext", { binding, upload_id: uploadId, operation_id: operationId }), this.#era);
+  }
+
+  // Typed fresh-binding proof (M2 maps this closed named operation to the
+  // same HTTP header pair Go-side; no byte stream is fabricated here). The
+  // Go bridge is not bound yet, so a call fails honestly as an unknown
+  // operation instead of reporting a fake success.
+  async verifyContextFresh(contextRef: string, binding: ContextBinding, bytesSha256: string): Promise<void> {
+    const proof = await this.#fresh(this.#port.call("verifyContextFresh", { context_ref: contextRef, binding, bytes_sha256: bytesSha256 }), this.#era);
+    if (proof?.verified !== true || typeof proof.etag !== "string" || proof.etag !== `"sha256-${bytesSha256}"`) {
+      throw new Error("native context proof returned an unverified result");
+    }
   }
 
   putUploadEntry(uploadId: string, chunk: EntryChunk): Promise<ChunkAck> {

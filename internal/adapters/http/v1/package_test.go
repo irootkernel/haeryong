@@ -210,7 +210,7 @@ var _ = It("TestActualPackageMidStreamFailureAbortsConnectionNeverCleanEOF", Lab
 	broken := &query.Service{Store: f.store, Auth: f.auth, Bytes: &failingBytes{inner: f.store, passObjects: 1}}
 	server := httptest.NewUnstartedServer(nil)
 	origin := "http://" + server.Listener.Addr().String()
-	handler, err := httpauth.New(f.auth, httpauth.Policy{Hosts: []string{server.Listener.Addr().String()}, Origins: []string{origin}}, routes{New(broken), httpimports.New(f.imports)})
+	handler, err := httpauth.New(f.auth, httpauth.Policy{Hosts: []string{server.Listener.Addr().String()}, Origins: []string{origin}}, routes{New(broken, nil, nil), httpimports.New(f.imports)})
 	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	server.Config.Handler = handler
 	server.Start()
@@ -290,7 +290,7 @@ var _ = It("TestPackageFirstWriteAndFlushErrorsAbortInsteadOfAppendingJSON", Lab
 		var recovered any
 		func() {
 			defer func() { recovered = recover() }()
-			New(f.query).deliverPackage(writer, httptest.NewRequest("GET", "/api/v1/versions/"+v.ID+"/package", nil), f.token, v.ID)
+			New(f.query, nil, nil).deliverPackage(writer, httptest.NewRequest("GET", "/api/v1/versions/"+v.ID+"/package", nil), f.token, v.ID)
 		}()
 		Expect(recovered).To(Equal(http.ErrAbortHandler), kind)
 		Expect(writer.body.Len()).To(BeNumerically(">", 0), kind)
@@ -326,7 +326,7 @@ var _ = It("TestActualPackageStreamStopsWhenItsOwnerSessionIsRevoked", Label("pe
 	Expect(err).NotTo(HaveOccurred())
 	server := httptest.NewUnstartedServer(nil)
 	origin := "http://" + server.Listener.Addr().String()
-	handler, err := httpauth.New(f.auth, httpauth.Policy{Hosts: []string{server.Listener.Addr().String()}, Origins: []string{origin}}, routes{New(f.query), httpimports.New(f.imports)})
+	handler, err := httpauth.New(f.auth, httpauth.Policy{Hosts: []string{server.Listener.Addr().String()}, Origins: []string{origin}}, routes{New(f.query, nil, nil), httpimports.New(f.imports)})
 	Expect(err).NotTo(HaveOccurred())
 	revoked := make(chan error, 1)
 	server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

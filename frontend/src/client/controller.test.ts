@@ -192,6 +192,24 @@ class FakeClient implements HaeryongClient, CredentialAware {
     this.calls.push("packageStream");
     throw new Error("not used in controller tests");
   }
+  renderBootstrap(): Promise<never> {
+    throw new Error("not used in controller tests");
+  }
+  renderSessionOpen(): Promise<never> {
+    throw new Error("not used in controller tests");
+  }
+  renderSessionRenew(): Promise<void> {
+    return Promise.resolve();
+  }
+  renderSessionClose(): Promise<void> {
+    return Promise.resolve();
+  }
+  personalGet(): Promise<never> {
+    throw new Error("not used in controller tests");
+  }
+  personalPut(): Promise<never> {
+    throw new Error("not used in controller tests");
+  }
   subscribeEvents(): EventSubscription {
     this.calls.push("subscribeEvents");
     return this.eventsHandler();
@@ -1187,4 +1205,81 @@ test("instantly failing event streams recover with a bounded backoff", async () 
   } finally {
     controller.stop();
   }
+});
+
+test("native attachment verifies and rechecks without a JavaScript credential; logout revokes before disposing Go authority", async () => {
+  const fake = new FakeClient(), store = new MemoryCredentialStore();
+  const native = Object.assign(fake, {
+    async attachSession() { fake.calls.push("attachNative"); return { attachment_id: "public-attachment", session: sessionInfo(), capabilities: capabilities(), public_origin: "http://127.0.0.1:9270" }; },
+    async disposeSession() { fake.calls.push("disposeNative"); },
+  });
+  const controller = new ShellController(native, store);
+  await controller.attachNativeSession();
+  assert.equal(controller.state.phase, "verified"); assert.equal(controller.hasCredential(), true);
+  assert.equal(fake.credential, ""); assert.equal(store.read(), null);
+  const authority = controller.captureDispatchAuthority();
+  await controller.verify(); controller.requireVerifiedDispatch(authority);
+  assert.equal(fake.calls.filter((call) => call === "setCredential").length, 0);
+  await controller.logout();
+  assert.equal(controller.state.phase, "unauthenticated"); assert.equal(controller.hasCredential(), false);
+  assert.ok(fake.calls.indexOf("revokeOwnSession") < fake.calls.indexOf("disposeNative"));
+  assert.equal(controller.state.notice, NOTICE.logoutConfirmed);
+  controller.stop();
+});
+
+test("native disconnection retains its attachment, but a current-session 401 disposes it and invalidates captured authority", async () => {
+  const fake = new FakeClient(); let disposed = false;
+  const native = Object.assign(fake, {
+    async attachSession() { return { attachment_id: "public-attachment", session: sessionInfo(), capabilities: capabilities(), public_origin: "http://127.0.0.1:9270" }; },
+    async disposeSession() { disposed = true; },
+  });
+  const controller = new ShellController(native, new MemoryCredentialStore());
+  await controller.attachNativeSession(); const authority = controller.captureDispatchAuthority();
+  fake.sessionHandler = async () => { throw new NetworkError(); };
+  await controller.verify(); assert.equal(controller.state.phase, "degraded"); assert.equal(controller.hasCredential(), true); assert.equal(disposed, false);
+  fake.sessionHandler = async () => { throw new ApiError(401, "SESSION_REVOKED", false); };
+  await controller.verify(); assert.equal(controller.state.phase, "unauthenticated"); assert.equal(controller.hasCredential(), false); assert.equal(disposed, true);
+  assert.throws(() => controller.requireVerifiedDispatch(authority), DispatchBlockedError);
+  assert.equal(fake.credential, ""); controller.stop();
+});
+
+test("a native approve whose committed body is unreadable keeps the original K pending", async () => {
+  const fake = new FakeClient(), store = new MemoryCredentialStore();
+  fake.decidePairing = () => Promise.reject(new UncertainResponseError(new Error("unreadable native success body")));
+  const controller = new ShellController(fake, store);
+  await controller.acceptPairing("owner-token", true);
+  assert.equal(controller.state.phase, "verified");
+  const request = {
+    pairing_id: "pair-native",
+    code: "424242",
+    origin: "http://127.0.0.1:9270",
+    etag: '"pairing-pair-native-r1"',
+    operation_id: "op-native-1",
+    action: "approve" as const,
+  };
+  const outcome = await controller.decidePairing(request);
+  assert.deepEqual(outcome, { outcome: "unknown", operation: "op-native-1" });
+  assert.deepEqual(controller.state.pendingDecision?.request, request);
+  const retried = await controller.retryPendingDecision();
+  assert.deepEqual(retried, { outcome: "unknown", operation: "op-native-1" });
+  assert.deepEqual(controller.state.pendingDecision?.request, request);
+  controller.stop();
+});
+
+test("native local forget failure stays visible through disposal and no-token verify; cleanup retry clears warning", async () => {
+  const fake = new FakeClient(); let allow = false, disposals = 0;
+  fake.ownRevokeHandler = async () => { throw new ApiError(500, "NATIVE_LOCAL_FORGET_FAILED", true); };
+  const native = Object.assign(fake, {
+    async attachSession() { return { attachment_id: "native", session: sessionInfo(), capabilities: capabilities(), public_origin: "http://127.0.0.1:9270" }; },
+    async disposeSession() { disposals++; if (!allow) throw new ApiError(500, "NATIVE_LOCAL_FORGET_FAILED", true); },
+  });
+  const controller = new ShellController(native, new MemoryCredentialStore());
+  await controller.attachNativeSession(); await controller.logout();
+  assert.equal(controller.state.phase, "unauthenticated"); assert.equal(controller.hasCredential(), false);
+  assert.equal(controller.state.localCleanupPending, true); assert.equal(controller.state.notice, NOTICE.logoutLocalFailure);
+  await controller.verify(); assert.equal(controller.state.notice, NOTICE.logoutLocalFailure);
+  await controller.retryLocalCleanup(); assert.equal(controller.state.localCleanupPending, true);
+  allow = true; await controller.retryLocalCleanup();
+  assert.equal(controller.state.localCleanupPending, false); assert.equal(controller.state.notice, NOTICE.logoutAckUnknown); assert.equal(disposals, 3);
+  controller.stop();
 });

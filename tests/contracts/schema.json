@@ -2112,6 +2112,26 @@
                 "format": "origin"
               }
             },
+            "renderer_pool": {
+              "type": "object",
+              "properties": {
+                "base_port": {
+                  "type": "integer",
+                  "minimum": 1024,
+                  "maximum": 65535
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                }
+              },
+              "required": [
+                "base_port",
+                "count"
+              ],
+              "additionalProperties": false
+            },
             "renderer_mappings": {
               "type": "array",
               "items": {
@@ -3355,11 +3375,28 @@
         },
         "delivery": {
           "enum": [
-            "authenticated_attachment"
+            "authenticated_attachment",
+            "loopback_renderer_origin"
           ]
         },
         "renderer_available": {
           "type": "boolean"
+        },
+        "render_sessions_url": {
+          "type": "string"
+        },
+        "renderer_construction": {
+          "type": "string"
+        },
+        "renderer_unavailable_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -3373,6 +3410,254 @@
         "selected_file_url",
         "delivery",
         "renderer_available"
+      ],
+      "additionalProperties": false
+    },
+    "personal_reader_preference": {
+      "type": "object",
+      "properties": {
+        "exists": {
+          "type": "boolean"
+        },
+        "value": {
+          "type": "object",
+          "properties": {
+            "default_page": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/path"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "default_page"
+          ],
+          "additionalProperties": false
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "etag": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "required_precondition": {
+          "enum": [
+            "if_none_match_star"
+          ]
+        },
+        "page_position_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "exists",
+        "value",
+        "revision",
+        "etag",
+        "page_position_url"
+      ],
+      "additionalProperties": false
+    },
+    "personal_reading_position": {
+      "type": "object",
+      "properties": {
+        "exists": {
+          "type": "boolean"
+        },
+        "value": {
+          "type": "object",
+          "properties": {
+            "page_path": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/path"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "page_query": {
+              "type": "string"
+            },
+            "page_fragment": {
+              "type": "string"
+            },
+            "opened": {
+              "type": "boolean"
+            },
+            "first_opened_at": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "last_opened_at": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "page_path",
+            "page_query",
+            "page_fragment",
+            "opened",
+            "first_opened_at",
+            "last_opened_at"
+          ],
+          "additionalProperties": false
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "etag": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "required_precondition": {
+          "enum": [
+            "if_none_match_star"
+          ]
+        },
+        "page_position_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "exists",
+        "value",
+        "revision",
+        "etag",
+        "page_position_url"
+      ],
+      "additionalProperties": false
+    },
+    "personal_page_position": {
+      "type": "object",
+      "properties": {
+        "exists": {
+          "type": "boolean"
+        },
+        "value": {
+          "type": "object",
+          "properties": {
+            "page_query": {
+              "type": "string"
+            },
+            "page_fragment": {
+              "type": "string"
+            },
+            "position": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "page_query",
+            "page_fragment",
+            "position"
+          ],
+          "additionalProperties": false
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "etag": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "required_precondition": {
+          "enum": [
+            "if_none_match_star"
+          ]
+        },
+        "page_position_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "exists",
+        "value",
+        "revision",
+        "etag",
+        "page_position_url"
       ],
       "additionalProperties": false
     },

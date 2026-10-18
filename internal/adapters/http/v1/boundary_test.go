@@ -8,11 +8,13 @@ import (
 	"encoding/json"
 	"errors"
 	"haeryong.local/haeryong/internal/application/query"
+	"haeryong.local/haeryong/internal/application/render"
 	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
 	sec "haeryong.local/haeryong/internal/security/session"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync"
@@ -47,6 +49,164 @@ var _ = It("TestActualHTTPCapabilitiesDistinguishTransfersFromUnimplementedRende
 
 	}
 })
+
+var _ = It("reports only the wired renderer without initializing it and retains attachment fallback after a construction failure", Label("persistence"), func() {
+	t := GinkgoT()
+	f := newFixture(t)
+	u := f.create()
+	f.put(u, "page.html", "file", []byte("<html>renderer availability</html>"))
+	version := f.publish(u, nil)
+	calls := 0
+	constructionError := errors.New("account metadata lookup unavailable")
+	lazy := render.NewLazy(func() (*render.Service, error) {
+		calls++
+		return nil, constructionError
+	})
+	defer lazy.Shutdown()
+	handler := New(f.query, lazy, nil)
+	request := func(path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", path, nil)
+		r.Header.Set("Authorization", "Bearer "+f.token)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		Expect(w.Code).To(Equal(200))
+		return w
+	}
+	for _, available := range []bool{true, false} {
+		capabilities := decoded[struct {
+			Features map[string]bool `json:"features"`
+		}](t, request("/api/v1/capabilities").Body.Bytes())
+		Expect(capabilities.Features["renderer"]).To(Equal(available))
+		Expect(capabilities.Features["html_js_v1"]).To(Equal(available))
+		bootstrap := decoded[query.Bootstrap](t, request("/api/v1/versions/"+version.ID+"/render-bootstrap").Body.Bytes())
+		Expect(bootstrap.RendererAvailable).To(Equal(available))
+		if available {
+			Expect(bootstrap.RenderSessionsURL).NotTo(BeEmpty())
+			Expect(calls).To(BeZero())
+			_, err := lazy.Get()
+			Expect(err).To(MatchError(constructionError))
+		} else {
+			Expect(bootstrap.Delivery).To(Equal("authenticated_attachment"))
+			Expect(bootstrap.RenderSessionsURL).To(BeEmpty())
+			Expect(calls).To(Equal(1))
+		}
+	}
+})
+var _ = It("TestRendererIngressClassificationHonestAvailabilityAndDenial", Label("persistence"), func() {
+	t := GinkgoT()
+	f := newFixture(t)
+	u := f.create()
+	f.put(u, "page.html", "file", []byte("<html>ingress classification</html>"))
+	version := f.publish(u, nil)
+	calls := 0
+	lazy := render.NewLazy(func() (*render.Service, error) {
+		calls++
+		return nil, errors.New("construction must not happen from classification")
+	})
+	defer lazy.Shutdown()
+	const local = "http://127.0.0.1:9270"
+	const external = "https://haeryong.private:9443"
+	handler := New(f.query, lazy, func() (string, string) { return local, external })
+	type capsShape struct {
+		Features map[string]bool `json:"features"`
+		Reason   *string         `json:"renderer_unavailable_reason"`
+	}
+	type failureShape struct {
+		Error struct {
+			Code      string `json:"code"`
+			Retryable bool   `json:"retryable"`
+			Details   struct {
+				Reason string `json:"reason"`
+			} `json:"details"`
+		} `json:"error"`
+	}
+	request := func(handler http.Handler, method, path, host, origin string, headers map[string]string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, "http://"+host+path, nil)
+		r.Host = host
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		r.Header.Set("Authorization", "Bearer "+f.token)
+		for k, v := range headers {
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w
+	}
+	failureOf := func(w *httptest.ResponseRecorder) failureShape {
+		var failure failureShape
+		Expect(json.Unmarshal(w.Body.Bytes(), &failure)).To(Succeed(), func() string { return w.Body.String() })
+		return failure
+	}
+
+	// Local ingress keeps the wired renderer advertisement (availability only,
+	// still no construction) with no unavailable reason.
+	w := request(handler, "GET", "/api/v1/capabilities", "127.0.0.1:9270", "", nil)
+	Expect(w.Code).To(Equal(200))
+	localCaps := decoded[capsShape](t, w.Body.Bytes())
+	Expect(localCaps.Features["renderer"]).To(BeTrue(), "local ingress lost the renderer advertisement")
+	Expect(localCaps.Reason).To(BeNil(), "local ingress carried an unavailable reason")
+	bootstrap := decoded[query.Bootstrap](t, request(handler, "GET", "/api/v1/versions/"+version.ID+"/render-bootstrap", "127.0.0.1:9270", "", nil).Body.Bytes())
+	Expect(bootstrap.RendererAvailable).To(BeTrue())
+	Expect(bootstrap.RendererUnavailableReason).To(BeEmpty())
+
+	// Remote Host without Origin and local Host carrying the external Origin
+	// are both remote ingress: flags stay off with the honest reason,
+	// bootstrap keeps the attachment fallback and no session URL, and
+	// open/renew deny 503 FEATURE_NOT_READY retryable false with the exact
+	// reason BEFORE any lazy construction, operation reservation or listener.
+	for name, ingress := range map[string][2]string{
+		"remote-host-no-origin":      {"haeryong.private:9443", ""},
+		"local-host-external-origin": {"127.0.0.1:9270", external},
+	} {
+		w := request(handler, "GET", "/api/v1/capabilities", ingress[0], ingress[1], nil)
+		Expect(w.Code).To(Equal(200))
+		remoteCaps := decoded[capsShape](t, w.Body.Bytes())
+		Expect(remoteCaps.Features["renderer"]).To(BeFalse(), name+": remote ingress advertised the renderer")
+		Expect(remoteCaps.Reason).NotTo(BeNil(), name+": reason missing")
+		Expect(*remoteCaps.Reason).To(Equal(render.ReasonRemoteIngress))
+		remoteBootstrap := decoded[query.Bootstrap](t, request(handler, "GET", "/api/v1/versions/"+version.ID+"/render-bootstrap", ingress[0], ingress[1], nil).Body.Bytes())
+		Expect(remoteBootstrap.RendererAvailable).To(BeFalse(), name+": remote bootstrap available")
+		Expect(remoteBootstrap.Delivery).To(Equal("authenticated_attachment"))
+		Expect(remoteBootstrap.RenderSessionsURL).To(BeEmpty())
+		Expect(remoteBootstrap.RendererUnavailableReason).To(Equal(render.ReasonRemoteIngress))
+		open := request(handler, "POST", "/api/v1/versions/"+version.ID+"/render-sessions", ingress[0], ingress[1], map[string]string{"Idempotency-Key": id(t)})
+		Expect(open.Code).To(Equal(503), name+": remote open status")
+		openFailure := failureOf(open)
+		Expect(openFailure.Error.Code).To(Equal("FEATURE_NOT_READY"), name+": remote open code")
+		Expect(openFailure.Error.Retryable).To(BeFalse(), name+": remote open retryable")
+		Expect(openFailure.Error.Details.Reason).To(Equal(render.ReasonRemoteIngress), name+": remote open reason")
+		Expect(open.Header().Get("Retry-After")).To(BeEmpty(), name+": remote open suggested retry")
+		renew := request(handler, "POST", "/api/v1/versions/"+version.ID+"/render-sessions/"+id(t)+"/renew", ingress[0], ingress[1], nil)
+		Expect(renew.Code).To(Equal(503), name+": remote renew status")
+		renewFailure := failureOf(renew)
+		Expect(renewFailure.Error.Code).To(Equal("FEATURE_NOT_READY"), name+": remote renew code")
+		Expect(renewFailure.Error.Retryable).To(BeFalse(), name+": remote renew retryable")
+		// No remote surface in this matrix constructs the renderer. Close is
+		// exercised separately against a real service in the renderer
+		// persistence specs, including the known-owned remote close.
+	}
+	Expect(calls).To(BeZero(), "classification or a remote open/renew denial constructed the renderer")
+
+	// Defense-in-depth tie rule: when wiring presents equal local/external
+	// hosts (refused by production construction), the local endpoint wins.
+	tie := New(f.query, lazy, func() (string, string) { return "http://127.0.0.1:9443", "https://127.0.0.1:9443" })
+	w = request(tie, "GET", "/api/v1/capabilities", "127.0.0.1:9443", "", nil)
+	Expect(w.Code).To(Equal(200))
+	tieCaps := decoded[capsShape](t, w.Body.Bytes())
+	Expect(tieCaps.Features["renderer"]).To(BeTrue(), "ambiguous tie classified local callers as remote")
+	Expect(tieCaps.Reason).To(BeNil())
+
+	// Nil endpoint wiring keeps the historical all-local default.
+	plain := New(f.query, lazy, nil)
+	w = request(plain, "GET", "/api/v1/capabilities", "127.0.0.1:9270", "", nil)
+	Expect(w.Code).To(Equal(200))
+	plainCaps := decoded[capsShape](t, w.Body.Bytes())
+	Expect(plainCaps.Features["renderer"]).To(BeTrue(), "nil wiring lost the renderer advertisement")
+	Expect(plainCaps.Reason).To(BeNil())
+})
+
 var _ = It("TestActualHTTPExactUnicodeLinksAndRangeValidators", Label("persistence"), func() {
 	t := GinkgoT()
 

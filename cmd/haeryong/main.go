@@ -168,19 +168,24 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 			imports := importer.New(store, core, store, staging.New())
 			configurationCore := appconfig.New(store, core, configpath.Resolver{})
 			queries := query.New(store, core, store)
+			var managementOrigin string
+			var externalOrigin string
+			renderFacade := newRenderFacade(store, core, store, func() string { return managementOrigin })
 			runCtx, cancelRun := context.WithCancel(ctx)
 			var restart atomic.Bool
 			configurationCore.Restart = func() { restart.Store(true); cancelRun() }
 			endpoint := &localcontrol.HTTP{Auth: core, Product: func(origin string) (http.Handler, error) {
+				managementOrigin = origin
 				configurationCore.RuntimeEndpoint = origin
 				configurationCore.ListenerOverride = opt.portSelected
 				configuration, err := store.Configuration(runCtx)
 				if err != nil {
 					return nil, err
 				}
-				return productHandler(core, origin, configuration.Value, productRoutes{httpimports.New(imports), httpv1.New(queries), httpconfig.New(configurationCore)})
+				externalOrigin = configuredExternalOrigin(configuration.Value)
+				return productHandler(core, origin, configuration.Value, productRoutes{httpimports.New(imports), httpv1.New(queries, renderFacade, func() (string, string) { return managementOrigin, externalOrigin }), httpconfig.New(configurationCore)})
 			}}
-			runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: store, Endpoint: endpoint, Work: imports.Run, ListenerPort: func(ctx context.Context) (int, error) {
+			runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: store, Endpoint: endpoint, Work: imports.Run, CloseDependents: renderFacade.Shutdown, ListenerPort: func(ctx context.Context) (int, error) {
 				configuration, e := store.Configuration(ctx)
 				if e != nil {
 					return 0, e

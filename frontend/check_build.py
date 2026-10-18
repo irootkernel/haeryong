@@ -18,12 +18,13 @@ frontend sources without regenerating dist fails `make test`.
 
 Shared input-set rule (keep in sync with internal/webassets/webassets_test.go):
 frontend/index.html, package.json, package-lock.json, tsconfig.json,
-vite.config.ts, vite.native.config.ts and every file under frontend/src/.
+vite.config.ts, vite.native.config.ts, vite.loader.config.ts and every file under frontend/src/.
 """
 import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -34,9 +35,16 @@ FRONTEND = Path(__file__).resolve().parent
 ROOT = FRONTEND.parent
 DIST = ROOT / "internal" / "webassets" / "dist"
 MANIFEST_NAME = "assets.manifest.json"
-NATIVE_MARKER = "NATIVE_TRANSPORT_NOT_IMPLEMENTED"
-FORBIDDEN_BROWSER_MARKERS = ["wails", "window.runtime", "@wailsapp", NATIVE_MARKER]
-FIXED_INPUTS = ["index.html", "package.json", "package-lock.json", "tsconfig.json", "vite.config.ts", "vite.native.config.ts"]
+NATIVE_MARKER = "HAEYONG_NATIVE_TRANSPORT_BOUND"
+FORBIDDEN_BROWSER_MARKERS = [
+    "wails",
+    "window.runtime",
+    "@wailsapp",
+    "NATIVE_TRANSPORT_NOT_IMPLEMENTED",
+    NATIVE_MARKER,
+    "haeryongNativeCall",
+]
+FIXED_INPUTS = ["index.html", "native.html", "package.json", "package-lock.json", "tsconfig.json", "vite.config.ts", "vite.native.config.ts", "vite.loader.config.ts"]
 
 
 def scratch_root():
@@ -103,12 +111,13 @@ def main():
         )
 
     run([str(FRONTEND / "node_modules" / ".bin" / "tsc"), "--noEmit"], 300)
-    run(["node", "--test", "src/client/controller.test.ts", "src/client/native.test.ts", "src/client/http.test.ts", "src/client/transfer.test.ts", "src/client/download.test.ts", "src/app/router.test.ts", "src/app/screens/library.test.ts"], 180)
+    run(["node", "--test", "src/client/controller.test.ts", "src/client/native.test.ts", "src/client/http.test.ts", "src/client/transfer.test.ts", "src/client/download.test.ts", "src/app/router.test.ts", "src/app/screens/library.test.ts", "src/viewer/snapshot.test.ts", "src/viewer/context-transfer.test.ts", "src/viewer/channel.test.ts", "src/viewer/loader.test.ts", "src/app/screens/personal-cas.test.ts", "src/app/screens/personal-operations.test.ts", "src/viewer/render-session.test.ts", "src/client/native-wire.test.ts"], 180)
 
     keep_scratch = None
     try:
         if args.regenerate:
             run([str(FRONTEND / "node_modules" / ".bin" / "vite"), "build"], 300)
+            run([str(FRONTEND / "node_modules" / ".bin" / "vite"), "build", "--config", "vite.loader.config.ts"], 300)
             manifest = dist_manifest(DIST)
             (DIST / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
             print(f"regenerated {DIST} ({len(manifest['files'])} files, inputs {manifest['inputs_digest'][:12]})")
@@ -117,6 +126,7 @@ def main():
         browser = keep_scratch / "dist"
         native = keep_scratch / "dist-native"
         run([str(FRONTEND / "node_modules" / ".bin" / "vite"), "build", "--outDir", str(browser), "--emptyOutDir"], 300)
+        run([str(FRONTEND / "node_modules" / ".bin" / "vite"), "build", "--config", "vite.loader.config.ts", "--outDir", str(browser / "renderer"), "--emptyOutDir"], 300)
         run(
             [
                 str(FRONTEND / "node_modules" / ".bin" / "vite"),
@@ -139,6 +149,21 @@ def main():
         native_js = [path for path in native.rglob("*.js")]
         if not native_js or not any(NATIVE_MARKER in path.read_text(errors="replace") for path in native_js):
             raise SystemExit("native entrypoint build does not contain the native transport marker")
+        # Positive entry-document verification: the native bundle must carry
+        # its own mount document whose module script resolves to an existing
+        # native JS asset carrying the native transport marker. The bundled
+        # asset name is hashed, so the source basename is never required.
+        native_entry = [path for path in native.rglob("*.html")]
+        if not native_entry:
+            raise SystemExit("native entry document missing from the native entrypoint build")
+        mounted = False
+        for path in native_entry:
+            for reference in re.findall(r'src="([^"]+\.js)"', path.read_text(errors="replace")):
+                target = (native / reference.lstrip("/")).resolve()
+                if target.is_file() and NATIVE_MARKER in target.read_text(errors="replace"):
+                    mounted = True
+        if not mounted:
+            raise SystemExit("native entry document does not mount a native JS asset carrying the native transport marker")
 
         manifest = dist_manifest(browser)
         (browser / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")

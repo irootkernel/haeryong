@@ -56,6 +56,8 @@ export interface Capabilities {
   stream_epoch: string;
   unfiled_project_id: string;
   features: Record<string, boolean>;
+  /** Present only when the renderer is unavailable for this request's ingress (remote callers see the loopback construction as unreachable). */
+  renderer_unavailable_reason?: string;
 }
 
 /** Canonical receipt states: "completed" | "failed" (terminal), "reconciling" or pending (unresolved). */
@@ -160,6 +162,59 @@ export interface FileEntryView {
   file_url: string;
   files_url?: string;
   etag: string;
+}
+
+/** Render bootstrap: selected-version context and delivery construction. */
+export interface RenderBootstrapView {
+  version_id: string;
+  viewer_profile: string;
+  default_page: string | null;
+  selected_page: string | null;
+  requested_page: string | null;
+  navigation_path: string | null;
+  files_url: string;
+  selected_file_url: string | null;
+  delivery: string;
+  renderer_available: boolean;
+  render_sessions_url: string;
+  renderer_construction: string;
+  renderer_unavailable_reason?: string;
+}
+
+/** Actual open wire shape (render.Service.Open): one-use handoff offer. */
+export interface RenderSessionView {
+  version_id: string;
+  render_origin: string;
+  session_id: string;
+  handoff: { url: string; secret: string; expires_at: string };
+  lease_expires_at: string;
+}
+
+export type PersonalKind = "reader-preference" | "reading-position" | "page-position";
+
+/** Closed personal wire shape: mandatory nullable page_position_url on every family. */
+export interface PersonalView {
+  exists: boolean;
+  value: unknown;
+  revision: number | null;
+  etag: string | null;
+  required_precondition?: "if_none_match_star";
+  page_position_url: string | null;
+}
+
+export interface ReadingPositionValue {
+  page_path: string | null;
+  page_query: string;
+  page_fragment: string;
+  opened: boolean;
+  first_opened_at: string | null;
+  last_opened_at: string | null;
+}
+
+export interface PagePositionValue {
+  page_query: string;
+  page_fragment: string;
+  position: Record<string, unknown>;
 }
 
 /** Upload checkpoint; opaque beyond the fields the engine recomputes. */
@@ -289,13 +344,15 @@ export class ApiError extends Error {
   readonly code: string;
   readonly retryable: boolean;
   readonly retryAfter: number;
-  constructor(status: number, code: string, retryable: boolean, retryAfter = 0) {
+  readonly details: Record<string, unknown>;
+  constructor(status: number, code: string, retryable: boolean, retryAfter = 0, details: Record<string, unknown> = {}) {
     super(`HTTP ${status} ${code}`);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.retryable = retryable;
     this.retryAfter = retryAfter;
+    this.details = details;
   }
 }
 
@@ -341,6 +398,8 @@ export class UnknownOutcomeError extends Error {
 }
 
 export interface HaeryongClient {
+  /** Trusted public browser origin, never a child-supplied navigation host. */
+  readonly publicOrigin?: string | null;
   pair(deviceLabel: string): Promise<PairingCreated>;
   pollPairing(pairingId: string, pollingSecret: string): Promise<PairingPoll>;
   decidePairing(request: PairingDecisionRequest): Promise<DecisionResult>;
@@ -360,6 +419,12 @@ export interface HaeryongClient {
   documentVersions(documentId: string, cursor?: string): Promise<ListPage<VersionView>>;
   versionDetail(versionId: string): Promise<VersionView>;
   versionFiles(versionId: string, cursor?: string): Promise<ListPage<FileEntryView>>;
+  renderBootstrap(versionId: string, pagePath?: string): Promise<RenderBootstrapView>;
+  renderSessionOpen(versionId: string, operationId: string): Promise<RenderSessionView>;
+  renderSessionRenew(versionId: string, sessionId: string): Promise<void>;
+  renderSessionClose(versionId: string, sessionId: string): Promise<void>;
+  personalGet(kind: PersonalKind, versionId: string, page?: string): Promise<PersonalView>;
+  personalPut(kind: PersonalKind, versionId: string, page: string | null, body: unknown, precondition: { ifMatch: string } | { create: true }, operationId: string): Promise<PersonalView>;
   // Upload discovery and transfer
   listUploads(filter: { state?: UploadStateFilter; unadopted?: boolean; cursor?: string }): Promise<ListPage<UploadSummary>>;
   uploadDetail(uploadId: string): Promise<UploadDetail>;
@@ -375,10 +440,21 @@ export interface HaeryongClient {
   jobGet(jobId: string): Promise<JobView>;
   jobCancel(jobId: string, operationId: string): Promise<DecisionResult>;
   packageStream(versionId: string): Promise<PackageStream>;
+  fileStream?(versionId: string, path: string): Promise<PackageStream>;
+}
+
+/** Public metadata from an authenticated Go-held session, never its bearer. */
+export interface NativeAttachment {
+  attachment_id: string;
+  session: SessionInfo;
+  capabilities: Capabilities;
+  public_origin: string;
 }
 
 /** Transport facet the shell controller uses to bind and invalidate eras. */
 export interface CredentialAware {
+  attachSession?(): Promise<NativeAttachment>;
+  disposeSession?(): Promise<void>;
   setCredential(token: string): void;
   invalidate(): void;
 }

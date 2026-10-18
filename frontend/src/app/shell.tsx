@@ -8,6 +8,7 @@ import { ConnectScreen } from "./connect.tsx";
 import { HomeScreen } from "./screens/home.tsx";
 import { LibraryScreen } from "./screens/library.tsx";
 import { StorageScreen } from "./screens/storage.tsx";
+import { ReaderScreen } from "./screens/reader.tsx";
 import { navigate, safeReturn, useShellRoute } from "./router.tsx";
 import type { ScreenId } from "./router.tsx";
 import "./theme.css";
@@ -93,6 +94,24 @@ function PlaceholderScreen({ screen }: { screen: ScreenId }) {
         </button>
       </div>
     </section>
+  );
+}
+
+/** Reader route binding: decodes the once-encoded page/query/fragment. */
+function ReaderRoute({ controller, path }: { controller: ShellController; path: string }) {
+  const parts = path.split("/");
+  const documentId = parts[2] ?? "";
+  const versionId = parts[4] ?? "";
+  const params = new URLSearchParams(location.search);
+  return (
+    <ReaderScreen
+      controller={controller}
+      documentId={documentId}
+      versionId={versionId}
+      page={params.has("page") ? params.get("page") : null}
+      pageQuery={params.get("page_query") ?? ""}
+      pageFragment={params.get("page_fragment") ?? ""}
+    />
   );
 }
 
@@ -186,6 +205,8 @@ export function App({ controller }: { controller: ShellController }) {
             <HomeScreen controller={controller} />
           ) : screen === "library" ? (
             <LibraryScreen controller={controller} />
+          ) : screen === "reader" && route.path ? (
+            <ReaderRoute controller={controller} path={route.path} />
           ) : screen === "settings" && route.section === "storage" ? (
             <StorageScreen controller={controller} />
           ) : (

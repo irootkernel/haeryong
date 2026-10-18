@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	importer "haeryong.local/haeryong/internal/application/import"
 	appstorage "haeryong.local/haeryong/internal/application/storage"
@@ -31,7 +32,7 @@ func New(core *importer.Service) http.Handler { return &handler{core: core} }
 // and unknown-route responses for APIs outside this adapter's ownership.
 func (*handler) Handles(r *http.Request) bool {
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/")
-	return path == "uploads" || strings.HasPrefix(path, "uploads/") || path == "imports" || path == "packages/validate"
+	return path == "uploads" || strings.HasPrefix(path, "uploads/") || path == "imports" || path == "packages/validate" || path == "contexts" || strings.HasPrefix(path, "contexts/")
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -61,7 +62,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	key := ""
-	keyed := path == "uploads" || path == "imports" || path == "packages/validate" || (len(parts) == 3 && parts[0] == "uploads" && (parts[2] == "complete" || parts[2] == "abandon"))
+	keyed := path == "uploads" || path == "imports" || path == "packages/validate" || path == "contexts" || (len(parts) == 3 && parts[0] == "uploads" && (parts[2] == "complete" || parts[2] == "abandon"))
 	if keyed && r.Method == http.MethodPost {
 		key, err = operationKey(r, path == "packages/validate")
 		if err != nil {
@@ -252,9 +253,144 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			response, err = h.core.Validate(r.Context(), token, key, in)
 		}
 		durable(w, response, err)
+	case path == "contexts" && r.Method == http.MethodPost:
+		if !only(query, "version_id", "page_path", "render_instance_id", "input") {
+			fail(w, session.ErrInvalid)
+			return
+		}
+		contextQuery, err := importer.NormalizeContextQuery(query)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		if contextQuery.Input == "upload" {
+			// The sealed-handle selector is a closed body field, never a query parameter.
+			var in struct {
+				UploadID string `json:"upload_id"`
+			}
+			if err := closedJSON(r.Body, &in, []string{"upload_id"}); err != nil {
+				fail(w, err)
+				return
+			}
+			contextQuery.UploadID = in.UploadID
+		} else {
+			media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+			if err != nil || (media != "application/json" && media != "text/plain") {
+				fail(w, session.ErrInvalid)
+				return
+			}
+			contextQuery.MediaType = media
+		}
+		response, err := h.core.CreateContext(r.Context(), token, key, contextQuery, r.Body)
+		durable(w, response, err)
+	case len(parts) == 2 && parts[0] == "contexts" && r.Method == http.MethodGet:
+		if !only(query) {
+			fail(w, session.ErrInvalid)
+			return
+		}
+		// The fresh-proof mode is selected only by the binding header's
+		// presence; without it the ordinary authorized recovery GET keeps
+		// its exact current behavior, including ignoring standalone
+		// conditional or Range headers.
+		if binding := r.Header.Values("Haeryong-Context-Binding"); len(binding) > 0 {
+			if err := h.proveContextFresh(w, r, token, parts[1], binding); err != nil {
+				fail(w, err)
+			}
+			return
+		}
+		err := h.core.ReadContext(r.Context(), token, parts[1], func(record domain.ContextRecord, handle io.ReadSeeker) error {
+			w.Header().Set("Content-Type", record.MediaType)
+			w.Header().Set("ETag", "\"sha256-"+record.Object.Hash+"\"")
+			w.Header().Set("Content-Length", strconv.FormatInt(record.Object.Size, 10))
+			writer := &guardedWriter{ResponseWriter: w, check: func() error { return h.core.GuardContext(r.Context(), token, parts[1]) }}
+			_, err := io.Copy(writer, handle)
+			if err != nil || writer.err != nil {
+				if writer.started {
+					// Exact bytes already began: abort the response rather
+					// than append an error envelope to protected content.
+					return errStreamStarted
+				}
+				if writer.err != nil {
+					return writer.err
+				}
+				return err
+			}
+			return nil
+		})
+		if errors.Is(err, errStreamStarted) {
+			panic(http.ErrAbortHandler)
+		}
+		if err != nil {
+			// No protected byte was sent; present the ordinary error with
+			// content headers cleared.
+			w.Header().Del("Content-Length")
+			w.Header().Del("ETag")
+			w.Header().Del("Content-Type")
+			fail(w, err)
+		}
 	default:
 		fail(w, domain.ErrNotFound)
 	}
+}
+
+// errStreamStarted marks a protected context body whose first byte already
+// left the handler; the response must abort, never append an error envelope.
+var errStreamStarted = errors.New("context stream already started")
+
+var strongContextETag = regexp.MustCompile(`^"sha256-[0-9a-f]{64}"$`)
+
+// proveContextFresh serves the closed fresh-binding proof mode selected by
+// the Haeryong-Context-Binding request header. The mode requires exactly one
+// strong sha256 If-None-Match naming the expected object digest and rejects
+// a combined Range. Success is a body-less 304 carrying the record's ETag
+// and the fresh-verification marker: current authority, the exact
+// originating session, the persisted tuple and the digest are proved in one
+// transaction and the staged object is never opened for this metadata
+// proof. Its If-None-Match semantics (match is a 304 success, mismatch a
+// 412 binding rejection) are a documented private mode, not standard
+// conditional-GET handling.
+func (h *handler) proveContextFresh(w http.ResponseWriter, r *http.Request, token, id string, binding []string) error {
+	if len(binding) != 1 || binding[0] == "" || len(r.Header.Values("Range")) > 0 {
+		return session.ErrInvalid
+	}
+	match := r.Header.Values("If-None-Match")
+	if len(match) != 1 || !strongContextETag.MatchString(match[0]) {
+		return session.ErrInvalid
+	}
+	expected, err := importer.ParseContextBinding(binding[0])
+	if err != nil {
+		return err
+	}
+	if err := h.core.VerifyContextFresh(r.Context(), token, id, expected, match[0]); err != nil {
+		return err
+	}
+	w.Header().Set("ETag", match[0])
+	w.Header().Set("Haeryong-Context-Verified", "fresh")
+	w.WriteHeader(http.StatusNotModified)
+	return nil
+}
+
+// guardedWriter renews delivery authority around every response write, mirroring the guarded file-delivery writer.
+type guardedWriter struct {
+	http.ResponseWriter
+	check   func() error
+	err     error
+	started bool
+}
+
+func (w *guardedWriter) Write(p []byte) (int, error) {
+	if err := w.check(); err != nil {
+		w.err = err
+		return 0, err
+	}
+	w.started = true
+	if err := http.NewResponseController(w.ResponseWriter).SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		w.err = err
+		return 0, err
+	}
+	n, err := w.ResponseWriter.Write(p)
+	w.err = err
+	return n, err
 }
 
 var uuid = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)

@@ -231,11 +231,26 @@ func main() {
 	recovery := flag.Bool("recovery-only", false, "Only current review route and renderer-operation checks")
 	pathname := flag.Bool("pathname-only", false, "Only frozen pathname transition and direct regression checks")
 	focusUI := flag.Bool("focus-ui-only", false, "Only affected manual recovery UI checks")
+	reader := flag.Bool("reader", false, "ReaderMode: typed production /api/v1 facade over the compiled native shell at a fixed static origin")
+	readerSelfcheck := flag.Bool("reader-selfcheck", false, "ReaderMode harness selfcheck page instead of the app entry")
+	readerPort := flag.String("reader-port", "9271", "Fixed loopback port of the native static origin (no fallback)")
+	readerDist := flag.String("reader-dist", "", "Compiled dist-native directory served at the fixed static origin")
+	readerPath := flag.String("reader-path", "/", "App path (route and query) opened at the native static origin")
+	readerProbe := flag.String("reader-probe", "", "Owned test probe script injected after guard+bootstrap into the actual app (enables the report binding)")
 	flag.Parse()
 	u, e := url.Parse(*base)
 	info, se := os.Stat(*state)
 	if e != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.Port() == "" || u.Path != "" || se != nil || !info.IsDir() || info.Mode().Perm() != 0700 {
 		log.Fatal("exact loopback origin and private state required")
+	}
+	if *reader || *readerSelfcheck {
+		if *readerDist == "" {
+			log.Fatal("--reader-dist is required in ReaderMode")
+		}
+		if err := runReader(*base, *state, *readerDist, *readerPort, *readerPath, *readerSelfcheck, *readerProbe, *closeAfter); err != nil {
+			log.Fatal(err)
+		}
+		return
 	}
 	token, e := nativeSession(*base, *state)
 	if e != nil {

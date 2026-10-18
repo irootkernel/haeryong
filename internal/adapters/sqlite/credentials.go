@@ -25,6 +25,26 @@ func (t *writeTx) PutWorkflowPrincipal(p domain.WorkflowPrincipal) error {
 	}
 	return t.exec("INSERT INTO workflow_principals VALUES(?,?,?,?,1) ON CONFLICT(principal_id) DO UPDATE SET active=excluded.active,scope=excluded.scope,revision=workflow_principals.revision+CASE WHEN workflow_principals.active IS NOT excluded.active OR workflow_principals.scope IS NOT excluded.scope THEN 1 ELSE 0 END WHERE workflow_principals.binding_id=excluded.binding_id", p.ID, p.BindingID, p.Active, jsonBytes(p.Scope))
 }
+func (t *writeTx) ScopedCredential(id string) (domain.ScopedCredential, error) {
+	var c domain.ScopedCredential
+	var scope, permissions []byte
+	var created int64
+	var expires sql.NullInt64
+	e := t.tx.QueryRowContext(t.ctx, "SELECT credential_id,principal_id,token_hash,auth_epoch,scope,permissions,config_revision,created_at,expires_at,revoked,revision FROM scoped_credentials WHERE credential_id=?", id).Scan(&c.ID, &c.PrincipalID, &c.TokenHash, &c.AuthEpoch, &scope, &permissions, &c.ConfigRevision, &created, &expires, &c.Revoked, &c.Revision)
+	if e != nil {
+		return c, notFound(e)
+	}
+	c.CreatedAt = time.UnixMilli(created).UTC()
+	if expires.Valid {
+		v := time.UnixMilli(expires.Int64).UTC()
+		c.ExpiresAt = &v
+	}
+	if e = json.Unmarshal(scope, &c.Scope); e != nil {
+		return c, e
+	}
+	e = json.Unmarshal(permissions, &c.Permissions)
+	return c, e
+}
 func (t *writeTx) ScopedCredentialByHash(hash string) (domain.ScopedCredential, error) {
 	var c domain.ScopedCredential
 	var scope, permissions []byte

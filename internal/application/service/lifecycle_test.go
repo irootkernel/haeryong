@@ -68,6 +68,7 @@ var _ = It("TestStorageReadinessAndShutdownOwnership", Label("integration"), fun
 	s := testSelection(t)
 	endpoint := &endpointStub{}
 	closed := false
+	dependentsClosed := false
 	storage := storageFunc(func(_ context.Context, p Profile) (StorageState, func() error, error) {
 		if writer, err := OpenWriter(s); !errors.Is(err, ErrLocked) {
 			if writer != nil {
@@ -81,6 +82,7 @@ var _ = It("TestStorageReadinessAndShutdownOwnership", Label("integration"), fun
 		}
 
 		return StorageState{Ready: true, State: "test_prepared"}, func() error {
+			Expect(dependentsClosed).To(BeTrue(), "auxiliary listeners must drain before storage closes")
 			closed = true
 			Expect(!endpoint.closed).To(BeFalse(), func() string { return fmt.Sprint("storage closed before endpoint drained") })
 
@@ -93,7 +95,11 @@ var _ = It("TestStorageReadinessAndShutdownOwnership", Label("integration"), fun
 			return nil
 		}, nil
 	})
-	runner := Runner{Selection: s, Port: DefaultPort, Storage: storage, Endpoint: endpoint}
+	runner := Runner{Selection: s, Port: DefaultPort, Storage: storage, Endpoint: endpoint, CloseDependents: func() error {
+		Expect(endpoint.closed).To(BeTrue(), "management endpoint must stop before auxiliary listeners drain")
+		dependentsClosed = true
+		return nil
+	}}
 	err := runner.Run(context.Background(), func(id Identity) {
 		Expect(!id.Storage.Ready).To(BeFalse(), func() string { return fmt.Sprint("storage readiness discarded") })
 
@@ -126,6 +132,20 @@ var _ = It("TestStorageFailureDoesNotAdvertiseOrRetainLock", Label("integration"
 	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 
 	writer.Close()
+})
+
+var _ = It("drains dependent listeners before storage even when startup fails after preparation", Label("integration"), func() {
+	s := testSelection(GinkgoT())
+	dependentClosed, storageClosed := false, false
+	failure := errors.New("listener configuration unavailable")
+	runner := Runner{Selection: s, Port: DefaultPort, Endpoint: &endpointStub{}, Storage: storageFunc(func(context.Context, Profile) (StorageState, func() error, error) {
+		return StorageState{Ready: true}, func() error { Expect(dependentClosed).To(BeTrue()); storageClosed = true; return nil }, nil
+	}), ListenerPort: func(context.Context) (int, error) { return 0, failure }, CloseDependents: func() error { dependentClosed = true; return nil }}
+	Expect(runner.Run(context.Background(), func(Identity) { Fail("failed startup advertised readiness") })).To(MatchError(failure))
+	Expect(storageClosed).To(BeTrue())
+	w, err := OpenWriter(s)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(w.Close()).To(Succeed())
 })
 var _ = It("TestProfilePrivateRecordsAndIdentityBinding", Label("integration"), func() {
 	t := GinkgoT()
