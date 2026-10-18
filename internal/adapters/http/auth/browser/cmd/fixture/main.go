@@ -10,6 +10,18 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"haeryong.local/haeryong/internal/adapters/content/staging"
+	"haeryong.local/haeryong/internal/adapters/foundation"
+	httpauth "haeryong.local/haeryong/internal/adapters/http/auth"
+	httpimports "haeryong.local/haeryong/internal/adapters/http/imports"
+	httpv1 "haeryong.local/haeryong/internal/adapters/http/v1"
+	appauth "haeryong.local/haeryong/internal/application/auth"
+	importer "haeryong.local/haeryong/internal/application/import"
+	"haeryong.local/haeryong/internal/application/query"
+	"haeryong.local/haeryong/internal/application/service"
+	storage "haeryong.local/haeryong/internal/application/storage"
+	"haeryong.local/haeryong/internal/domain"
+	sec "haeryong.local/haeryong/internal/security/session"
 	"net"
 	"net/http"
 	"net/url"
@@ -20,21 +32,30 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
-
-	"haeryong.local/haeryong/internal/adapters/foundation"
-	httpauth "haeryong.local/haeryong/internal/adapters/http/auth"
-	httpv1 "haeryong.local/haeryong/internal/adapters/http/v1"
-	appauth "haeryong.local/haeryong/internal/application/auth"
-	"haeryong.local/haeryong/internal/application/query"
-	"haeryong.local/haeryong/internal/application/service"
-	storage "haeryong.local/haeryong/internal/application/storage"
-	"haeryong.local/haeryong/internal/domain"
-	sec "haeryong.local/haeryong/internal/security/session"
 )
 
 type policyWriter struct {
 	http.ResponseWriter
 	done bool
+}
+
+// apiRoutes dispatches between the query and import adapters exactly like
+// the production router composition.
+type apiRoutes struct {
+	queries *httpv1.Handler
+	imports http.Handler
+}
+
+func (m *apiRoutes) Handles(r *http.Request) bool {
+	return m.queries.Handles(r) || m.imports.(interface{ Handles(*http.Request) bool }).Handles(r)
+}
+
+func (m *apiRoutes) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if m.queries.Handles(r) {
+		m.queries.ServeHTTP(w, r)
+		return
+	}
+	m.imports.ServeHTTP(w, r)
 }
 
 // redactedControlError classifies private-control failures without echoing
@@ -119,14 +140,31 @@ func run() error {
 		hosts = append(hosts, parsed.Host)
 		origins = append(origins, *alias)
 	}
-	// The same product query routes as the daemon keep capabilities live for
-	// shell compatibility gating checks.
+	// The same product query and import routes as the daemon keep
+	// capabilities live for shell compatibility gating and let browser
+	// proofs exercise the real streamed import/publication surface.
 	queries := query.New(store, core, store)
-	handler, err := httpauth.New(core, httpauth.Policy{Hosts: hosts, Origins: origins}, httpv1.New(queries))
+	imports := importer.New(store, core, store, staging.New())
+	api := &apiRoutes{queries: httpv1.New(queries), imports: httpimports.New(imports)}
+	handler, err := httpauth.New(core, httpauth.Policy{Hosts: hosts, Origins: origins}, api)
 	if err != nil {
 		listener.Close()
 		return err
 	}
+	// The import worker owns durable store writes: it is cancelled AND
+	// awaited before the deferred storage close runs (LIFO below), on every
+	// exit path including SIGTERM, so no seal/publication work races the
+	// closing store. The await has no deadline: an unsettled worker leaves
+	// the store unclosed rather than pretending quiescence.
+	workerCtx, stopWorker := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	workerDone := make(chan error, 1)
+	go func() { workerDone <- imports.Run(workerCtx) }()
+	defer func() {
+		stopWorker()
+		if workerError := <-workerDone; workerError != nil && !errors.Is(workerError, context.Canceled) {
+			fmt.Fprintln(os.Stderr, "import worker:", workerError)
+		}
+	}()
 	outer := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/probe-child" && r.Method == "GET" && (r.Host == strings.TrimPrefix(local, "http://") || r.Host == strings.TrimPrefix(remote, "http://")) {
 			w.Header().Set("Cache-Control", "no-store")
@@ -167,6 +205,47 @@ fetch('/api/v1/auth/pairings/arbitrary/approve',{method:'POST',mode:'no-cors',he
 			err := json.Unmarshal(scanner.Bytes(), &input)
 			if err == nil {
 				switch input.Action {
+				case "seed_lists":
+					// Labelled synthetic rows exercise the production read contract;
+					// the later project/lifecycle editing UI is not implemented here.
+					err = store.Write(context.Background(), func(tx storage.WriteTx) error {
+						projects := make([]string, 2)
+						for i, name := range []string{"Fixture project A", "Fixture project B"} {
+							id, e := service.NewID()
+							if e != nil {
+								return e
+							}
+							projects[i] = id
+							if e := tx.CreateProject(domain.Project{ID: id, Name: name, Lifecycle: "active", Revision: 1, PermissionsRevision: 1}); e != nil {
+								return e
+							}
+						}
+						for _, row := range []struct {
+							project          int
+							title, lifecycle string
+						}{
+							{0, "Fixture active A", "active"}, {0, "Fixture archived A", "archived"},
+							{1, "Fixture active B", "active"}, {0, "Fixture hidden trashed document", "trash"},
+						} {
+							id, e := service.NewID()
+							if e != nil {
+								return e
+							}
+							if e := tx.CreateDocument(domain.Document{ID: id, ProjectID: projects[row.project], Title: row.title, Lifecycle: row.lifecycle, Revision: 1}); e != nil {
+								return e
+							}
+						}
+						for i := 0; i < 67; i++ {
+							id, e := service.NewID()
+							if e != nil {
+								return e
+							}
+							if e := tx.CreateDocument(domain.Document{ID: id, ProjectID: projects[0], Title: fmt.Sprintf("Fixture active A %02d", i), Lifecycle: "active", Revision: 1}); e != nil {
+								return e
+							}
+						}
+						return nil
+					})
 				case "advance":
 					offset.Add(int64(time.Duration(input.Seconds) * time.Second))
 				case "approve":

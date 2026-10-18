@@ -82,12 +82,23 @@ button:disabled { color: var(--text-secondary); cursor: not-allowed; opacity: 0.
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
 button.primary:hover:not(:disabled) { filter: brightness(1.05); }
 input[type="text"] { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-height: 44px; width: 100%; }
+select { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-height: 44px; max-width: 100%; }
+input[type="file"] { max-width: 100%; }
+input[type="file"]::file-selector-button { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-height: 44px; cursor: pointer; }
 label.field { display: block; margin: 12px 0; }
 label.field > span { display: block; font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 4px; }
 label.choice { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: 8px 0; }
 label.choice input { width: 18px; height: 18px; }
 
 .form-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+
+.drop-zone { border: 1px dashed var(--border); border-radius: 8px; padding: 24px; text-align: center; color: var(--text-secondary); margin: 12px 0; }
+
+.document-list { list-style: none; margin: 8px 0 0; padding: 0; }
+
+.document-list li { padding: 12px 0; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+
+.home-section { margin: 16px 0; }
 .status { min-height: 1.7em; margin: 8px 0; }
 .status[role="status"], .status[role="alert"] { font-size: 0.9rem; }
 .code-display { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 1.6rem; letter-spacing: 0.25em; background: var(--surface-muted); border: 1px solid var(--border); border-radius: 8px; padding: 12px 20px; margin: 12px 0; }

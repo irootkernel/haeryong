@@ -5,6 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import { NOTICE, ShellController } from "../client/controller.ts";
 import type { ShellState } from "../client/controller.ts";
 import { ConnectScreen } from "./connect.tsx";
+import { HomeScreen } from "./screens/home.tsx";
+import { LibraryScreen } from "./screens/library.tsx";
+import { StorageScreen } from "./screens/storage.tsx";
 import { navigate, safeReturn, useShellRoute } from "./router.tsx";
 import type { ScreenId } from "./router.tsx";
 import "./theme.css";
@@ -164,8 +167,10 @@ export function App({ controller }: { controller: ShellController }) {
           </p>
         </header>
         <Banner state={state} controller={controller} />
-        <main className="shell-content">
-          {route === null ? (
+        <main className="shell-content" key={`${state.capabilities?.library_id ?? ""}:${state.session?.principal_id ?? ""}:${state.capabilities?.runtime_generation ?? ""}`}>
+          {state.phase === "incompatible" ? (
+            <section className="panel"><h1>연결 확인 필요</h1><p>{NOTICE.incompatible}</p></section>
+          ) : route === null ? (
             <section className="panel">
               <h1>열 수 없는 주소</h1>
               <p className="placeholder-note">이 주소의 화면은 사용할 수 없습니다.</p>
@@ -177,6 +182,12 @@ export function App({ controller }: { controller: ShellController }) {
             </section>
           ) : screen === "connect" ? (
             <ConnectScreen controller={controller} state={state} />
+          ) : screen === "home" ? (
+            <HomeScreen controller={controller} />
+          ) : screen === "library" ? (
+            <LibraryScreen controller={controller} />
+          ) : screen === "settings" && route.section === "storage" ? (
+            <StorageScreen controller={controller} />
           ) : (
             <PlaceholderScreen screen={screen} />
           )}

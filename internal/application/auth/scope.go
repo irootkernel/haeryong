@@ -154,6 +154,27 @@ func authorizeScope(tx app.WriteTx, record domain.Session, r domain.Request) err
 			return nil
 		}
 	case "projects", "documents", "versions":
+		// The package archive is an export action with its own scope: the
+		// exact project/version anchors plus package.export authorize it,
+		// while version.read alone does not and package.export alone grants
+		// no ordinary version reads.
+		if parts[2] == "versions" && len(parts) == 5 && parts[4] == "package" && r.Method == "GET" {
+			if !contains(record.Scope.Actions, "package.export") {
+				return domain.ErrDenied
+			}
+			v, e := tx.PublishedVersion(parts[3])
+			if e != nil {
+				return e
+			}
+			d, e := tx.Document(v.DocumentID)
+			if e != nil {
+				return e
+			}
+			if contains(record.Scope.ProjectIDs, d.ProjectID) && contains(record.Scope.VersionIDs, v.ID) {
+				return nil
+			}
+			return domain.ErrNotFound
+		}
 		// Query SQL additionally binds each list to these current allowed anchors.
 		if r.Method == "GET" && (contains(record.Scope.Actions, "version.read") || contains(record.Scope.Actions, "project.read")) {
 			if len(parts) == 3 {

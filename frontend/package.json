@@ -7,9 +7,10 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",
     "build:native": "vite build --config vite.native.config.ts",
-    "test": "node --test src/client/controller.test.ts src/client/native.test.ts src/client/http.test.ts src/app/router.test.ts"
+    "test": "node --test src/client/controller.test.ts src/client/native.test.ts src/client/http.test.ts src/client/transfer.test.ts src/client/download.test.ts src/app/router.test.ts src/app/screens/library.test.ts"
   },
   "dependencies": {
+    "@noble/hashes": "2.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },

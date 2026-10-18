@@ -57,6 +57,13 @@ export interface PendingDecision {
   observed: number;
 }
 
+/** Authority identity a screen flow captured before its async preparation. */
+export interface DispatchAuthority {
+  nonce: number;
+  libraryId: string;
+  runtimeGeneration: string;
+}
+
 /** A revoke whose server outcome is unknown; natural session_id identity. */
 export interface PendingRevoke {
   sessionId: string;
@@ -104,6 +111,37 @@ export class ShellController {
 
   get state(): ShellState {
     return this.#state;
+  }
+
+  /** Shared transport client for screen data flows (read-only handle). */
+  get client(): HaeryongClient & CredentialAware {
+    return this.#client;
+  }
+
+  /**
+   * Synchronous verified-authority gate for screen-initiated protected
+   * dispatches: never runs in a completion path, and an unverified or
+   * replaced authority blocks the dispatch before anything is sent. A flow
+   * that captured an authority token at its start must pass it back; a
+   * verified phase under a DIFFERENT owner/library/generation does not
+   * unblock the old flow.
+   */
+  requireVerifiedDispatch(captured?: DispatchAuthority | null): void {
+    if (this.#state.phase !== "verified" || captured === null) {
+      throw new DispatchBlockedError();
+    }
+    if (
+      captured &&
+      (captured.nonce !== this.#authority || captured.libraryId !== this.#libraryId || captured.runtimeGeneration !== this.#generation)
+    ) {
+      throw new DispatchBlockedError();
+    }
+  }
+
+  /** Authority token to hold across one flow's asynchronous preparation. */
+  captureDispatchAuthority(): DispatchAuthority | null {
+    if (this.#state.phase !== "verified") return null;
+    return { nonce: this.#authority, libraryId: this.#libraryId, runtimeGeneration: this.#generation };
   }
 
   hasCredential(): boolean {

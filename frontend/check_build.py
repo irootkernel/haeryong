@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Frontend build validation and regeneration for TASK-003-01.
+"""Shared frontend build validation and regeneration.
 
 Preparation (once, explicit, never run by validation):
 
@@ -103,7 +103,7 @@ def main():
         )
 
     run([str(FRONTEND / "node_modules" / ".bin" / "tsc"), "--noEmit"], 300)
-    run(["node", "--test", "src/client/controller.test.ts", "src/client/native.test.ts", "src/client/http.test.ts", "src/app/router.test.ts"], 180)
+    run(["node", "--test", "src/client/controller.test.ts", "src/client/native.test.ts", "src/client/http.test.ts", "src/client/transfer.test.ts", "src/client/download.test.ts", "src/app/router.test.ts", "src/app/screens/library.test.ts"], 180)
 
     keep_scratch = None
     try:

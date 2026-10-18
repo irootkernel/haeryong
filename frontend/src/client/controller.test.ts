@@ -115,6 +115,83 @@ class FakeClient implements HaeryongClient, CredentialAware {
     this.calls.push("serviceStatus");
     return Promise.resolve({});
   }
+  // Library/transfer surface: recorded but unused in controller phase tests.
+  listProjects(): Promise<never> {
+    this.calls.push("listProjects");
+    throw new Error("not used in controller tests");
+  }
+  listDocuments(): Promise<never> {
+    this.calls.push("listDocuments");
+    throw new Error("not used in controller tests");
+  }
+  documentDetail(): Promise<never> {
+    this.calls.push("documentDetail");
+    throw new Error("not used in controller tests");
+  }
+  documentVersions(): Promise<never> {
+    this.calls.push("documentVersions");
+    throw new Error("not used in controller tests");
+  }
+  versionDetail(): Promise<never> {
+    this.calls.push("versionDetail");
+    throw new Error("not used in controller tests");
+  }
+  versionFiles(): Promise<never> {
+    this.calls.push("versionFiles");
+    throw new Error("not used in controller tests");
+  }
+  listUploads(): Promise<never> {
+    this.calls.push("listUploads");
+    throw new Error("not used in controller tests");
+  }
+  uploadDetail(): Promise<never> {
+    this.calls.push("uploadDetail");
+    throw new Error("not used in controller tests");
+  }
+  uploadEntries(): Promise<never> {
+    this.calls.push("uploadEntries");
+    throw new Error("not used in controller tests");
+  }
+  uploadRanges(): Promise<never> {
+    this.calls.push("uploadRanges");
+    throw new Error("not used in controller tests");
+  }
+  uploadPins(): Promise<never> {
+    this.calls.push("uploadPins");
+    throw new Error("not used in controller tests");
+  }
+  createUpload(): Promise<never> {
+    this.calls.push("createUpload");
+    throw new Error("not used in controller tests");
+  }
+  putUploadEntry(): Promise<never> {
+    this.calls.push("putUploadEntry");
+    throw new Error("not used in controller tests");
+  }
+  completeUpload(): Promise<never> {
+    this.calls.push("completeUpload");
+    throw new Error("not used in controller tests");
+  }
+  abandonUpload(): Promise<never> {
+    this.calls.push("abandonUpload");
+    throw new Error("not used in controller tests");
+  }
+  importPublish(): Promise<never> {
+    this.calls.push("importPublish");
+    throw new Error("not used in controller tests");
+  }
+  jobGet(): Promise<never> {
+    this.calls.push("jobGet");
+    throw new Error("not used in controller tests");
+  }
+  jobCancel(): Promise<never> {
+    this.calls.push("jobCancel");
+    throw new Error("not used in controller tests");
+  }
+  packageStream(): Promise<never> {
+    this.calls.push("packageStream");
+    throw new Error("not used in controller tests");
+  }
   subscribeEvents(): EventSubscription {
     this.calls.push("subscribeEvents");
     return this.eventsHandler();

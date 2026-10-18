@@ -4,11 +4,11 @@
 
 **Edition prepared:** 2026-10-13
 
-This inventory covers 160 other files: all Markdown documents and Python documentation-check utilities. Paths are relative to docs; sizes and SHA-256 cover exact bytes. MANIFEST.md excludes itself. This is not runtime evidence.
+This inventory covers 161 other files: all Markdown documents and Python documentation-check utilities. Paths are relative to docs; sizes and SHA-256 cover exact bytes. MANIFEST.md excludes itself. This is not runtime evidence.
 
 | File | Bytes | SHA-256 |
 | --- | --- | --- |
-| `README.md` | 17086 | `9b0000c7b8271fc159427223aa7d18773607991be193a78be672291598e3f694` |
+| `README.md` | 17232 | `24e57b5927aeaa67f1cf2a3697b5662f16e19da266724050ad07fff0c6ab4f7b` |
 | `REVIEW-GUIDE.md` | 10105 | `8035dd9c431b7e6abc7adde3b2ae7824df2a97df3ef7b3ca7ce020e3cb0094ad` |
 | `adr/ADR-001.md` | 3239 | `02f3818c7843969ca3aa081fb252983d92f886904383d84d331a49eca57f9987` |
 | `adr/ADR-002.md` | 2987 | `2128dae47cc03f55000633c89bc4e4d06419c91a414230a45fd7e45e8bac759b` |
@@ -86,7 +86,7 @@ This inventory covers 160 other files: all Markdown documents and Python documen
 | `tasks/EPIC-002/TASK-002-05.md` | 4716 | `7fa8d2287f391e084bacda8195da50f766bcfb636cbde0fe3f4c383df75e1d11` |
 | `tasks/EPIC-002/TASK-002-06.md` | 2865 | `aa80e50e0fc3b8bfd8aab6f159eca0f919962834498160a28bc0353f268d5b76` |
 | `tasks/EPIC-003/TASK-003-01.md` | 1918 | `5e0efaf34e1a4d7ebde9884218c9c02a893afac7e83ea44a1347e51831460052` |
-| `tasks/EPIC-003/TASK-003-02.md` | 5576 | `0ddccb11d7f8d4360ca7e862547ca79f01f01ae271f8ed225c3fa3cd490da116` |
+| `tasks/EPIC-003/TASK-003-02.md` | 6025 | `16c1ee3032d90970dec09dab6a2534efc38a0c3171a58cfb8e9f586b8b0eaada` |
 | `tasks/EPIC-003/TASK-003-03.md` | 6038 | `b7df70e6c1578b98bf38e58e4a865e87d62ab570fc6b26590e3b276fc8ea886b` |
 | `tasks/EPIC-003/TASK-003-04.md` | 3205 | `08895119771d0a64d16221fff61d453ed36e4aacfe55b9fac5d1d284115ef6ed` |
 | `tasks/EPIC-003/TASK-003-05.md` | 3161 | `194f59f504de2dd9b08a52e84ec0ea3cec2b293e7567b85c129aec4b46a4ad07` |
@@ -155,6 +155,7 @@ This inventory covers 160 other files: all Markdown documents and Python documen
 | `testing/profile-lifecycle.md` | 19813 | `0cd99bbae086f1a461dfbe547490c5fae91b6a7482c983b88c45843e9f83bf27` |
 | `testing/provider-source-spike.md` | 9399 | `0a47994b293b75a821c9e0435de2b542b48066ac93b3d6a6760830314c8585a7` |
 | `testing/query-cli-configuration.md` | 20978 | `09a13636c3a51570b02814fac2eab7b24f16f9f4647ee3348e7128e77454a925` |
+| `testing/result-transfer.md` | 11464 | `680ab5bcd81f6314231c1189221050ad410398c42d43ec54925d2dc1bc34d2d7` |
 | `testing/stack-spike.md` | 13832 | `a85449001f2bbc45d384be3527b41d0cac1072597dae44aba48183c1e037b51b` |
 | `testing/storage-foundation.md` | 18134 | `96c41c5586426cadb79daaf116d4abd6f1751fb3d9110ff4b075ec7cd20f5c8e` |
 | `testing/test-strategy.md` | 16531 | `2b2f7ccb86ad82ca17c6c8637da38e24a173d4fde8c34cca4b42ea62d33567ec` |

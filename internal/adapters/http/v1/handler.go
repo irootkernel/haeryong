@@ -57,7 +57,7 @@ func (h *Handler) Handles(r *http.Request) bool {
 			return true
 		}
 		if len(p) == 3 {
-			return p[2] == "files" || p[2] == "file" || p[2] == "metadata" || p[2] == "render-bootstrap"
+			return p[2] == "files" || p[2] == "file" || p[2] == "metadata" || p[2] == "render-bootstrap" || p[2] == "package"
 		}
 		return len(p) == 4 && p[2] == "source-evidence"
 	}
@@ -155,6 +155,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		version = p[1]
 	case p[0] == "versions" && len(p) == 3 && (p[2] == "file" || p[2] == "metadata"):
 		h.deliver(w, r, token, p[1], p[2], values)
+		return
+	case p[0] == "versions" && len(p) == 3 && p[2] == "package":
+		h.deliverPackage(w, r, token, p[1])
 		return
 	default:
 		err = domain.ErrNotFound
@@ -305,6 +308,63 @@ func (h *Handler) deliver(w http.ResponseWriter, r *http.Request, token, id, kin
 		w.Header().Del("Content-Disposition")
 		failure(w, r, err)
 	}
+}
+
+// deliverPackage streams the faithful original-directory archive. The archive
+// is a generated representation, so the response carries no Content-Length
+// and no representation digest: payload identity stays with the per-entry
+// bytes_sha256 inventory, never with these wire bytes. A failure before the
+// first byte returns the ordinary JSON registry error; a failure after the
+// body started aborts the connection so a partial archive can never end in
+// the clean EOF a client could mistake for completion.
+func (h *Handler) deliverPackage(w http.ResponseWriter, r *http.Request, token, id string) {
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": "haeryong-" + id + ".zip"}))
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	sink := &packageResponseWriter{ResponseWriter: w, check: func() error { return h.Core.GuardPackage(r.Context(), token, id) }}
+	if err := h.Core.Package(r.Context(), token, id, sink, sink.check); err != nil {
+		if !sink.started {
+			w.Header().Del("Content-Length")
+			failure(w, r, err)
+			return
+		}
+		panic(http.ErrAbortHandler)
+	}
+}
+
+// packageResponseWriter renews export authority and the socket write deadline
+// around every body write, mirroring the guarded file-delivery writer.
+type packageResponseWriter struct {
+	http.ResponseWriter
+	check   func() error
+	started bool
+}
+
+func (w *packageResponseWriter) Write(p []byte) (int, error) {
+	if err := w.check(); err != nil {
+		return 0, err
+	}
+	if err := http.NewResponseController(w.ResponseWriter).SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return 0, err
+	}
+	if !w.started {
+		// The underlying Write commits the headers even when it returns a
+		// partial write or an error, so the response is marked committed
+		// BEFORE that first Write: any first-write or first-flush failure
+		// then aborts the connection instead of appending a canonical JSON
+		// error to an already started body.
+		w.started = true
+	}
+	n, err := w.ResponseWriter.Write(p)
+	if err == nil {
+		// Serialize the headers while the handler is still running so the
+		// archive is a streamed response: the server must not retroactively
+		// compute a Content-Length for a small, fully buffered archive.
+		if flushErr := http.NewResponseController(w.ResponseWriter).Flush(); flushErr != nil && !errors.Is(flushErr, http.ErrNotSupported) {
+			return n, flushErr
+		}
+	}
+	return n, err
 }
 
 // ServeContent decides conditionals/ranges while this wrapper postpones error
