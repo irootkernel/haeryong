@@ -118,6 +118,25 @@ counted as passed CDN coverage. It does not qualify Wails or private ingress.
 The driver closes its browser and daemon and removes its own private state on
 success; a failure receipt identifies retained scratch state for diagnosis.
 
+## Reader evidence browser regression
+
+```sh
+python3 -B internal/adapters/http/auth/browser/check_reader_evidence.py \
+  --browser-cli /absolute/path/to/playwright-cli \
+  --receipt /private/existing-directory/reader-evidence.json \
+  [--screenshot /private/existing-directory/evidence-panel.png]
+```
+
+TASK-003-04's evidence counterpart imports a plain directory plus a same-shape
+directory with exact supplied metadata (an inherited-key evidence id and the
+same region name on two pages). Against the real daemon it exercises the
+VersionHeader identity, keyboard and emulated-touch activation of the changed
+controls, authored/service separation, honest 503 future capabilities and the
+disabled source-check; a labelled local seeded fixture backend proves seeded
+assessment/verification/coverage presentation including later-cursor failure
+and retry, presentation only. [The evidence record](../docs/testing/evidence-presentation.md)
+owns the fixed contract and limits.
+
 ## Native session and JSON adapter foundation
 
 `ShellController.attachNativeSession()` accepts a nonsecret Go attachment

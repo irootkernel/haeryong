@@ -73,3 +73,25 @@ test("cancelling a pending native read closes only its stream and discards its l
   stream.cancel(); finish({ ok: true, value: { data_b64: "AAEC", eof: true } });
   await rejected; await new Promise((resolve) => setImmediate(resolve)); assert.equal(closed, 1);
 });
+
+// TASK-003-04: the metadata open reply carries the strong ETag beside the
+// stream handle; the wire reifies both together and rejects malformed values.
+test("versionSuppliedMetadata converts {stream_id, etag} into a guarded stream plus validator", async () => {
+  const port = createNativePort({ async invoke(operation) {
+    assert.equal(operation, "versionSuppliedMetadata");
+    return { ok: true, value: { stream_id: "s1", etag: '"sha256-abc"' } };
+  } });
+  const opened = await port.call("versionSuppliedMetadata", { version_id: "v1" });
+  assert.equal(opened.etag, '"sha256-abc"');
+  assert.equal(typeof opened.cancel, "function");
+  opened.cancel();
+});
+
+test("versionSuppliedMetadata rejects a malformed validator and keeps null explicit", async () => {
+  const bad = createNativePort({ async invoke() { return { ok: true, value: { stream_id: "s1", etag: 7 } }; } });
+  await assert.rejects(bad.call("versionSuppliedMetadata", { version_id: "v1" }), UncertainResponseError);
+  const empty = createNativePort({ async invoke() { return { ok: true, value: { stream_id: "s1", etag: null } }; } });
+  const opened = await empty.call("versionSuppliedMetadata", { version_id: "v1" });
+  assert.equal(opened.etag, null);
+  opened.cancel();
+});

@@ -339,7 +339,7 @@ func (s *Service) Evidence(ctx context.Context, token, id, evidenceID string) (m
 		if err != nil {
 			return err
 		}
-		out = map[string]any{"version_id": id, "evidence_id": evidenceID, "authored": json.RawMessage(e.Metadata), "source": json.RawMessage(source.Metadata), "availability": "unavailable", "bytes_origin": nil, "reason": "source_read_not_implemented", "service_verification": nil, "verifications_url": "/api/v1/versions/" + id + "/source-evidence/" + url.PathEscape(evidenceID) + "/verifications"}
+		out = map[string]any{"version_id": id, "evidence_id": evidenceID, "authored": json.RawMessage(e.Metadata), "source": json.RawMessage(source.Metadata), "availability": "unavailable", "bytes_origin": nil, "reason": "source_read_not_implemented", "service_verification": nil, "verifications_url": "/api/v1/versions/" + id + "/source-evidence-verifications?evidence_id=" + url.QueryEscape(evidenceID)}
 		return nil
 	})
 	return out, err

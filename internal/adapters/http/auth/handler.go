@@ -345,6 +345,7 @@ GET versions/{id}/package
 GET versions/{id}/source-evidence/{evidence_id}
 POST versions/{id}/source-evidence/{evidence_id}/verifications
 GET versions/{id}/source-evidence/{evidence_id}/verifications
+GET versions/{id}/source-evidence-verifications
 GET versions/{id}/assessments
 GET versions/{id}/assessments/coverage
 GET search

@@ -541,6 +541,66 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 			return nil, werr
 		}
 		return plain(s.request("GET", "/api/v1/versions/"+url.PathEscape(in.VersionID)+"/files", collection(map[string]string{"cursor": in.Cursor}), nil, nil, auth))
+	case "versionSuppliedMetadata":
+		var in struct {
+			VersionID string `json:"version_id"`
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		query := url.Values{}
+		query.Set("kind", "supplied")
+		return s.openMetadataStream(in.VersionID, query, auth)
+	case "versionEvidence":
+		var in struct {
+			VersionID  string `json:"version_id"`
+			EvidenceID string `json:"evidence_id"`
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		return plain(s.request("GET", "/api/v1/versions/"+url.PathEscape(in.VersionID)+"/source-evidence/"+url.PathEscape(in.EvidenceID), nil, nil, nil, auth))
+	case "evidenceVerifications":
+		var in struct {
+			VersionID  string `json:"version_id"`
+			EvidenceID string `json:"evidence_id"`
+			Cursor     string `json:"cursor"`
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		return plain(s.request("GET", "/api/v1/versions/"+url.PathEscape(in.VersionID)+"/source-evidence-verifications", collection(map[string]string{"evidence_id": in.EvidenceID, "cursor": in.Cursor}), nil, nil, auth))
+	case "versionAssessments":
+		var in struct {
+			VersionID   string `json:"version_id"`
+			TargetSetID string `json:"target_set_id"`
+			ScopeKind   string `json:"scope_kind"`
+			PagePath    string `json:"page_path"`
+			RegionID    string `json:"region_id"`
+			Cursor      string `json:"cursor"`
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		switch in.ScopeKind {
+		case "", "version", "page", "region":
+		default:
+			return nil, &wireError{Status: 400, Code: "NATIVE_PAYLOAD_INVALID", Retryable: false}
+		}
+		return plain(s.request("GET", "/api/v1/versions/"+url.PathEscape(in.VersionID)+"/assessments", collection(map[string]string{"target_set_id": in.TargetSetID, "scope_kind": in.ScopeKind, "page_path": in.PagePath, "region_id": in.RegionID, "cursor": in.Cursor}), nil, nil, auth))
+	case "assessmentCoverage":
+		var in struct {
+			VersionID     string `json:"version_id"`
+			CoverageSetID string `json:"coverage_set_id"`
+			Cursor        string `json:"cursor"`
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		if in.CoverageSetID == "" {
+			return nil, &wireError{Status: 400, Code: "NATIVE_PAYLOAD_INVALID", Retryable: false}
+		}
+		return plain(s.request("GET", "/api/v1/versions/"+url.PathEscape(in.VersionID)+"/assessments/coverage", collection(map[string]string{"coverage_set_id": in.CoverageSetID, "cursor": in.Cursor}), nil, nil, auth))
 	case "renderBootstrap":
 		var in struct {
 			VersionID string  `json:"version_id"`
@@ -1108,6 +1168,37 @@ func (s *ReaderService) verifyContextFresh(payload json.RawMessage, auth authori
 	}
 	_, werr := typedResult(result.status, result.body)
 	return nil, werr
+}
+
+// openMetadataStream opens the exact supplied-metadata object stream and
+// returns the immutable object's strong ETag beside the stream handle. The
+// validator travels with the open reply so JavaScript can verify the exact
+// accumulated bytes before parsing them; per-pull attachment/daemon/version
+// guards stay identical to every other stream.
+func (s *ReaderService) openMetadataStream(versionID string, query url.Values, auth authority) (any, *wireError) {
+	epoch, werr := s.currentEpoch(auth)
+	if werr != nil {
+		return nil, werr
+	}
+	result := s.requestRaw("GET", "/api/v1/versions/"+url.PathEscape(versionID)+"/metadata", query, nil, auth, true)
+	if result.werr != nil {
+		return nil, result.werr
+	}
+	if result.status != 200 {
+		_, werr := typedResult(result.status, result.body)
+		result.close()
+		return nil, werr
+	}
+	etag := result.header.Get("ETag")
+	id := randomID()
+	if id == "" {
+		result.close()
+		return nil, networkError()
+	}
+	s.mu.Lock()
+	s.streams[id] = &readerStream{id: id, body: result.response, cancel: result.cancel, auth: auth, versionID: versionID, epoch: epoch}
+	s.mu.Unlock()
+	return map[string]any{"stream_id": id, "etag": etag}, nil
 }
 
 func (s *ReaderService) openStream(versionID, path string, query url.Values, auth authority) (any, *wireError) {

@@ -2,7 +2,11 @@
 // these named operations to a typed Go proxy. The port accepts no arbitrary
 // URLs, filesystem paths or generic method names from imported content.
 import type {
+  AssessmentFilter,
+  AssessmentsView,
   Capabilities,
+  CoverageUnit,
+  EvidenceItemView,
   NativeAttachment,
   ChunkAck,
   CreateUploadRequest,
@@ -23,6 +27,7 @@ import type {
   PairingView,
   ProjectView,
   SessionInfo,
+  SuppliedMetadataStream,
   UploadCheckpoint,
   UploadConfirmedRange,
   UploadDetail,
@@ -30,6 +35,7 @@ import type {
   UploadPin,
   UploadStateFilter,
   UploadSummary,
+  VerificationRecord,
 } from "./types.ts";
 import type {
   DocumentView,
@@ -74,6 +80,11 @@ export type ImportPublishCall = { request: ImportPublishRequest; operation_id: s
 export type JobRequest = { job_id: string };
 export type JobCancelCall = { job_id: string; operation_id: string };
 export type PackageStreamRequest = { version_id: string };
+export type VersionEvidenceRequest = { version_id: string; evidence_id: string };
+export type EvidenceVerificationsRequest = { version_id: string; evidence_id: string; cursor?: string };
+export type VersionAssessmentsRequest = { version_id: string; target_set_id?: string; scope_kind?: "version" | "page" | "region"; page_path?: string; region_id?: string; cursor?: string };
+export type AssessmentCoverageRequest = { version_id: string; coverage_set_id: string; cursor?: string };
+export type SuppliedMetadataProof = { etag: string | null };
 export type CreateContextUploadCall = { binding: ContextBinding; operation_id: string };
 export type ConsumeContextCall = { binding: ContextBinding; upload_id: string; operation_id: string };
 export type VerifyContextFreshCall = { context_ref: string; binding: ContextBinding; bytes_sha256: string };
@@ -89,6 +100,11 @@ export interface NativePort {
   call(operation: "attachSession", payload: {}): Promise<NativeAttachment>;
   call(operation: "disposeSession", payload: { attachment_id: string }): Promise<void>;
   call(operation: "fileStream", payload: { version_id: string; path: string }): Promise<PackageStream>;
+  call(operation: "versionSuppliedMetadata", payload: { version_id: string }): Promise<PackageStream & SuppliedMetadataProof>;
+  call(operation: "versionEvidence", payload: VersionEvidenceRequest): Promise<EvidenceItemView>;
+  call(operation: "evidenceVerifications", payload: EvidenceVerificationsRequest): Promise<ListPage<VerificationRecord>>;
+  call(operation: "versionAssessments", payload: VersionAssessmentsRequest): Promise<AssessmentsView>;
+  call(operation: "assessmentCoverage", payload: AssessmentCoverageRequest): Promise<ListPage<CoverageUnit>>;
   call(operation: "createContextUpload", payload: CreateContextUploadCall): Promise<{ upload_id: string; checkpoint: UploadCheckpoint }>;
   call(operation: "consumeContext", payload: ConsumeContextCall): Promise<DecisionResult>;
   call(operation: "verifyContextFresh", payload: VerifyContextFreshCall): Promise<ContextFreshProof>;
@@ -154,6 +170,11 @@ export const NATIVE_OPERATIONS = [
   "documentVersions",
   "versionDetail",
   "versionFiles",
+  "versionSuppliedMetadata",
+  "versionEvidence",
+  "evidenceVerifications",
+  "versionAssessments",
+  "assessmentCoverage",
   "listUploads",
   "uploadDetail",
   "uploadEntries",
@@ -239,6 +260,29 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
     );
   }
 
+  /**
+   * Stream-open freshness with immediate local cleanup: an open that resolves
+   * in a stale client era (for example a capabilities recheck invalidated the
+   * client while the open was in flight) cancels its OWN acquired stream
+   * before raising, so the Go-side record is released right away instead of
+   * waiting for an unscheduled disposal/window close. The late handle is
+   * never delivered to the caller.
+   */
+  async #freshStream<T extends { cancel(): void }>(open: () => Promise<T>, era: number): Promise<T> {
+    const opened = await open().then(
+      (value) => value,
+      (error) => {
+        if (era !== this.#era) throw new StaleResponseError();
+        throw error;
+      },
+    );
+    if (era !== this.#era) {
+      opened.cancel();
+      throw new StaleResponseError();
+    }
+    return opened;
+  }
+
   pair(deviceLabel: string): Promise<PairingCreated> {
     return this.#fresh(this.#port.call("pair", { device_label: deviceLabel }), this.#era);
   }
@@ -295,9 +339,10 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
 
   async packageStream(versionId: string): Promise<PackageStream> {
     // Same freshness rule as the browser transport: the logical stream is
-    // guarded chunk-by-chunk against the authority era captured here.
+    // guarded chunk-by-chunk against the authority era captured here, and a
+    // stale-era open releases its Go-side stream record immediately.
     const era = this.#era;
-    const result = await this.#fresh(this.#port.call("packageStream", { version_id: versionId }), this.#era);
+    const result = await this.#freshStream(() => this.#port.call("packageStream", { version_id: versionId }), era);
     return {
       body: eraGuardedStream(result.body, () => era !== this.#era),
       cancel: () => result.cancel(),
@@ -306,7 +351,7 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
 
   async fileStream(versionId: string, path: string): Promise<PackageStream> {
     const era = this.#era;
-    const stream = await this.#fresh(this.#port.call("fileStream", { version_id: versionId, path }), era);
+    const stream = await this.#freshStream(() => this.#port.call("fileStream", { version_id: versionId, path }), era);
     return { body: eraGuardedStream(stream.body, () => era !== this.#era), cancel: () => stream.cancel() };
   }
 
@@ -359,6 +404,36 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
     return this.#fresh(this.#port.call("versionFiles", { version_id: versionId, cursor }), this.#era);
   }
 
+  async versionSuppliedMetadata(versionId: string): Promise<SuppliedMetadataStream> {
+    const era = this.#era;
+    const opened = await this.#freshStream(() => this.#port.call("versionSuppliedMetadata", { version_id: versionId }), era);
+    const { etag, ...stream } = opened;
+    return { etag, stream: { body: eraGuardedStream(stream.body, () => era !== this.#era), cancel: stream.cancel } };
+  }
+
+  versionEvidence(versionId: string, evidenceId: string): Promise<EvidenceItemView> {
+    return this.#fresh(this.#port.call("versionEvidence", { version_id: versionId, evidence_id: evidenceId }), this.#era);
+  }
+
+  evidenceVerifications(versionId: string, evidenceId: string, cursor?: string): Promise<ListPage<VerificationRecord>> {
+    return this.#fresh(this.#port.call("evidenceVerifications", { version_id: versionId, evidence_id: evidenceId, cursor }), this.#era);
+  }
+
+  versionAssessments(versionId: string, filter?: AssessmentFilter & { cursor?: string }): Promise<AssessmentsView> {
+    return this.#fresh(this.#port.call("versionAssessments", {
+      version_id: versionId,
+      target_set_id: filter?.targetSetId,
+      scope_kind: filter?.scope?.kind,
+      page_path: filter?.scope?.pagePath,
+      region_id: filter?.scope?.regionId,
+      cursor: filter?.cursor,
+    }), this.#era);
+  }
+
+  assessmentCoverage(versionId: string, coverageSetId: string, cursor?: string): Promise<ListPage<CoverageUnit>> {
+    return this.#fresh(this.#port.call("assessmentCoverage", { version_id: versionId, coverage_set_id: coverageSetId, cursor }), this.#era);
+  }
+
   listUploads(filter: { state?: UploadStateFilter; unadopted?: boolean; cursor?: string }): Promise<ListPage<UploadSummary>> {
     return this.#fresh(this.#port.call("listUploads", { state: filter.state, unadopted: filter.unadopted, cursor: filter.cursor }), this.#era);
   }
@@ -391,10 +466,9 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
     return this.#fresh(this.#port.call("consumeContext", { binding, upload_id: uploadId, operation_id: operationId }), this.#era);
   }
 
-  // Typed fresh-binding proof (M2 maps this closed named operation to the
+  // Typed fresh-binding proof (the closed named native operation maps to the
   // same HTTP header pair Go-side; no byte stream is fabricated here). The
-  // Go bridge is not bound yet, so a call fails honestly as an unknown
-  // operation instead of reporting a fake success.
+  // typed result must carry the exact expected digest as its ETag.
   async verifyContextFresh(contextRef: string, binding: ContextBinding, bytesSha256: string): Promise<void> {
     const proof = await this.#fresh(this.#port.call("verifyContextFresh", { context_ref: contextRef, binding, bytes_sha256: bytesSha256 }), this.#era);
     if (proof?.verified !== true || typeof proof.etag !== "string" || proof.etag !== `"sha256-${bytesSha256}"`) {

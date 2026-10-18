@@ -18,6 +18,12 @@ export interface ViewerProps {
   personal: PersonalOperations;
   onLocation(location: ReaderLocation): void;
   onNotice(message: string): void;
+  /**
+   * Typed page-local region selection carrying the channel's CAPTURED
+   * version/page/host-context identity beside the region id; the host binds
+   * the stored selection to that exact identity and never retags it.
+   */
+  onRegion?(selection: { versionId: string; pagePath: string; context: string | null; regionId: string }): void;
 }
 const uuid = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
 const message = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
@@ -150,7 +156,16 @@ export function IsolatedViewer(props: ViewerProps) {
           },
           location: observe,
           display(type, payload) {
-            callbacks.current.onNotice(type === "region.selected" ? `선택한 영역: ${String(payload.region_id)}` : "페이지 context를 확인했습니다.");
+            // The captured channel identity (this channel's exact page and
+            // the mount's version) travels with the region id; the host
+            // matches the tuple before assigning a selection, so late or
+            // cross-page events never rely on commit ordering.
+            if (type === "region.selected") {
+              callbacks.current.onRegion?.({ versionId: props.versionId, pagePath: page, context: props.context, regionId: String(payload.region_id) });
+              callbacks.current.onNotice(`선택한 영역: ${String(payload.region_id)}`);
+            } else {
+              callbacks.current.onNotice("페이지 context를 확인했습니다.");
+            }
           },
           error: (code, detail) => callbacks.current.onNotice(`페이지 오류(${code}): ${detail}`),
         });

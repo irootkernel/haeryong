@@ -140,6 +140,26 @@ class FakeClient implements HaeryongClient, CredentialAware {
     this.calls.push("versionFiles");
     throw new Error("not used in controller tests");
   }
+  versionSuppliedMetadata(): Promise<never> {
+    this.calls.push("versionSuppliedMetadata");
+    throw new Error("not used in controller tests");
+  }
+  versionEvidence(): Promise<never> {
+    this.calls.push("versionEvidence");
+    throw new Error("not used in controller tests");
+  }
+  evidenceVerifications(): Promise<never> {
+    this.calls.push("evidenceVerifications");
+    throw new Error("not used in controller tests");
+  }
+  versionAssessments(): Promise<never> {
+    this.calls.push("versionAssessments");
+    throw new Error("not used in controller tests");
+  }
+  assessmentCoverage(): Promise<never> {
+    this.calls.push("assessmentCoverage");
+    throw new Error("not used in controller tests");
+  }
   listUploads(): Promise<never> {
     this.calls.push("listUploads");
     throw new Error("not used in controller tests");

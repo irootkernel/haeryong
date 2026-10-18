@@ -232,3 +232,112 @@ test("failed disposal retains its captured attachment for retry after live attac
   await client.disposeSession(); await client.disposeSession();
   assert.deepEqual(fake.calls.filter(([op]) => op === "disposeSession"), [["disposeSession", { attachment_id: "old" }], ["disposeSession", { attachment_id: "old" }]]);
 });
+
+// TASK-003-04 native operations: the metadata open carries the strong ETag
+// beside the reified stream; evidence/history/assessments/coverage forward
+// exact typed payloads to the closed Go facade routes.
+test("versionSuppliedMetadata reifies the stream with the captured ETag", async () => {
+  const fake = port();
+  fake.handlers.set("versionSuppliedMetadata", () => ({ etag: '"sha256-abc"', body: new ReadableStream<Uint8Array>(), cancel() {} }));
+  const client = new NativeHaeryongClient(fake as unknown as NativePort);
+  const opened = await client.versionSuppliedMetadata("v1");
+  assert.equal(opened.etag, '"sha256-abc"');
+  assert.equal(typeof opened.stream.cancel, "function");
+  assert.deepEqual(fake.calls[0], ["versionSuppliedMetadata", { version_id: "v1" }]);
+});
+
+test("a missing ETag travels as null while the stream stays guarded", async () => {
+  const fake = port();
+  fake.handlers.set("versionSuppliedMetadata", () => ({ etag: null, body: new ReadableStream<Uint8Array>(), cancel() {} }));
+  const client = new NativeHaeryongClient(fake as unknown as NativePort);
+  const opened = await client.versionSuppliedMetadata("v1");
+  assert.equal(opened.etag, null);
+});
+
+test("evidence, verification history, assessments and coverage forward exact typed payloads", async () => {
+  const fake = port();
+  fake.handlers.set("versionEvidence", () => ({ version_id: "v1", evidence_id: "e1", authored: {}, source: {}, availability: "unavailable", bytes_origin: null, reason: "source_read_not_implemented", service_verification: null, verifications_url: "/x" }));
+  fake.handlers.set("evidenceVerifications", () => ({ items: [], next_cursor: null }));
+  fake.handlers.set("versionAssessments", () => ({ items: [], next_cursor: null, applicable: null }));
+  fake.handlers.set("assessmentCoverage", () => ({ items: [], next_cursor: null }));
+  const client = new NativeHaeryongClient(fake as unknown as NativePort);
+  await client.versionEvidence("v1", "e1");
+  await client.evidenceVerifications("v1", "e1", "cur");
+  await client.versionAssessments("v1", { targetSetId: "t1", scope: { kind: "page", pagePath: "a.html" }, cursor: "c" });
+  await client.assessmentCoverage("v1", "c1", "cur");
+  assert.deepEqual(fake.calls[0], ["versionEvidence", { version_id: "v1", evidence_id: "e1" }]);
+  assert.deepEqual(fake.calls[1], ["evidenceVerifications", { version_id: "v1", evidence_id: "e1", cursor: "cur" }]);
+  assert.deepEqual(fake.calls[2], ["versionAssessments", { version_id: "v1", target_set_id: "t1", scope_kind: "page", page_path: "a.html", region_id: undefined, cursor: "c" }]);
+  assert.deepEqual(fake.calls[3], ["assessmentCoverage", { version_id: "v1", coverage_set_id: "c1", cursor: "cur" }]);
+});
+
+test("a delayed metadata open in a stale era cancels its own stream and is never delivered", async () => {
+  const fake = port();
+  let releaseOpen: ((value: unknown) => void) | null = null;
+  let cancelled = 0;
+  fake.handlers.set("versionSuppliedMetadata", () => new Promise((resolve) => { releaseOpen = resolve; }));
+  const client = new NativeHaeryongClient(fake as unknown as NativePort);
+  const pending = client.versionSuppliedMetadata("v1");
+  await new Promise((resolve) => setImmediate(resolve));
+  const release = releaseOpen as ((value: unknown) => void) | null;
+  if (release === null) throw new Error("open request was never dispatched");
+  client.invalidate();
+  release({ etag: '"sha256-x"', body: new ReadableStream<Uint8Array>(), cancel() { cancelled += 1; } });
+  await assert.rejects(pending, StaleResponseError);
+  assert.equal(cancelled, 1, "the stale handle must be cancelled exactly once");
+});
+
+test("a newly current metadata stream stays untouched", async () => {
+  const fake = port();
+  let cancelled = 0;
+  fake.handlers.set("versionSuppliedMetadata", () => ({ etag: '"sha256-y"', body: new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new TextEncoder().encode("{}")); controller.close(); } }), cancel() { cancelled += 1; } }));
+  const client = new NativeHaeryongClient(fake as unknown as NativePort);
+  const opened = await client.versionSuppliedMetadata("v1");
+  assert.equal(opened.etag, '"sha256-y"');
+  const read = await opened.stream.body.getReader().read();
+  assert.deepEqual(new TextDecoder().decode(read.value), "{}");
+  assert.equal(cancelled, 0, "a current stream must never be cancelled by the stale guard");
+});
+
+test("a delayed packageStream open in a stale era cancels its own stream; the next current open is untouched", async () => {
+  const fake = port();
+  let cancelled = 0;
+  let currentCancelled = 0;
+  let releases: Array<(value: { body: ReadableStream<Uint8Array>; cancel(): void }) => void> = [];
+  fake.handlers.set("packageStream", () => new Promise((resolve) => { releases.push(resolve); }));
+  const client = new NativeHaeryongClient(fake as unknown as NativePort);
+  const stale = client.packageStream("v1");
+  await new Promise((resolve) => setImmediate(resolve));
+  client.invalidate();
+  const release = releases[releases.length - 1] as ((value: { body: ReadableStream<Uint8Array>; cancel(): void }) => void) | null;
+  if (release === null) throw new Error("open request was never dispatched");
+  release({ body: new ReadableStream<Uint8Array>(), cancel() { cancelled += 1; } });
+  await assert.rejects(stale, StaleResponseError);
+  assert.equal(cancelled, 1, "the discarded package stream must be cancelled exactly once");
+  fake.handlers.set("packageStream", () => ({ body: new ReadableStream<Uint8Array>({ start(controller) { controller.close(); } }), cancel() { currentCancelled += 1; } }));
+  const current = await client.packageStream("v1");
+  await current.body.getReader().read();
+  assert.equal(currentCancelled, 0, "a newly current stream must stay untouched");
+});
+
+test("a delayed fileStream open in a stale era cancels its own stream", async () => {
+  const fake = port();
+  let cancelled = 0;
+  let releases: Array<(value: { body: ReadableStream<Uint8Array>; cancel(): void }) => void> = [];
+  fake.handlers.set("fileStream", () => new Promise((resolve) => { releases.push(resolve); }));
+  const client = new NativeHaeryongClient(fake as unknown as NativePort);
+  const stale = client.fileStream("v1", "a.bin");
+  await new Promise((resolve) => setImmediate(resolve));
+  client.invalidate();
+  const release = releases[releases.length - 1] as ((value: { body: ReadableStream<Uint8Array>; cancel(): void }) => void) | null;
+  if (release === null) throw new Error("open request was never dispatched");
+  release({ body: new ReadableStream<Uint8Array>(), cancel() { cancelled += 1; } });
+  await assert.rejects(stale, StaleResponseError);
+  assert.equal(cancelled, 1, "the discarded file stream must be cancelled exactly once");
+});
+
+test("the new evidence operations are declared in the closed native list", () => {
+  for (const name of ["versionSuppliedMetadata", "versionEvidence", "evidenceVerifications", "versionAssessments", "assessmentCoverage"]) {
+    assert.ok((NATIVE_OPERATIONS as readonly string[]).includes(name), name);
+  }
+});

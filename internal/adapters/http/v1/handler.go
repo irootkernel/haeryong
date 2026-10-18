@@ -111,7 +111,7 @@ func (h *Handler) Handles(r *http.Request) bool {
 			return true
 		}
 		if len(p) == 3 {
-			return p[2] == "files" || p[2] == "file" || p[2] == "metadata" || p[2] == "render-bootstrap" || p[2] == "package"
+			return p[2] == "files" || p[2] == "file" || p[2] == "metadata" || p[2] == "render-bootstrap" || p[2] == "package" || p[2] == "source-evidence"
 		}
 		return len(p) == 4 && p[2] == "source-evidence"
 	}
@@ -156,6 +156,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			allowed = []string{"path", "resolve_link"}
 		case "metadata":
 			allowed = []string{"kind"}
+		case "source-evidence":
+			allowed = nil
+			if len(p) == 3 {
+				allowed = []string{"evidence_id"}
+			}
 		case "render-bootstrap":
 			allowed = []string{"page_path"}
 		case "reading-position", "reader-preference":
@@ -259,6 +264,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case p[0] == "versions" && len(p) == 3 && (p[2] == "reading-position" || p[2] == "reader-preference" || p[2] == "page-position") && r.Method == "PUT":
 		h.personalPut(w, r, token, p[1], p[2], values)
 		return
+	case p[0] == "versions" && len(p) == 3 && p[2] == "source-evidence":
+		if !values.Has("evidence_id") {
+			failure(w, r, &query.Error{Reason: "evidence_id_required"})
+			return
+		}
+		data, err = h.Core.Evidence(r.Context(), token, p[1], values.Get("evidence_id"))
+		version = p[1]
 	case p[0] == "versions" && len(p) == 4:
 		data, err = h.Core.Evidence(r.Context(), token, p[1], p[3])
 		version = p[1]

@@ -108,6 +108,13 @@ export function createNativePort(wire: NativeWire): NativePort {
     }
     const value = await invoke(operation, wirePayload);
     if (operation === "packageStream" || operation === "fileStream") return stream(value);
+    if (operation === "versionSuppliedMetadata") {
+      // The closed metadata open carries the immutable object's strong
+      // validator beside the stream handle; both are reified together.
+      if (!record(value) || (value.etag !== null && typeof value.etag !== "string")) throw invalid();
+      const reified = stream(value);
+      return { body: reified.body, cancel: reified.cancel, etag: value.etag };
+    }
     if (operation === "subscribeEvents") return subscription(value);
     return value;
   };

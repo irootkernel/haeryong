@@ -381,6 +381,70 @@ var _ = It("TestActualHTTPTrustedOriginRangePreflight", Label("persistence"), fu
 
 	}
 })
+var _ = It("preserves opaque authored evidence IDs across query and legacy reads", Label("persistence"), func() {
+	t := GinkgoT()
+	f := newFixture(t)
+	u := f.create()
+	f.put(u, "page.html", "file", []byte("<html>exact evidence identity</html>"))
+	ids := []string{".", "..", "%2e", "a.", "evidence/상세", "a +", "verifications", "source-evidence-verifications"}
+	items := make([]any, 0, len(ids))
+	for _, evidenceID := range ids {
+		items = append(items, map[string]any{"id": evidenceID, "source_id": "source", "capture_status": "reference_only", "path": "page.html"})
+	}
+	v := f.publish(u, map[string]any{
+		"sources":  []any{map[string]any{"id": "source", "kind": "snapshot", "retention_mode": "reference_only", "snapshot_sha256": strings.Repeat("a", 64)}},
+		"evidence": items,
+	})
+	base := "/api/v1/versions/" + v.ID
+	for _, evidenceID := range ids {
+		alias := base + "/source-evidence?evidence_id=" + url.QueryEscape(evidenceID)
+		status, _, body := f.request("GET", alias, nil, nil)
+		want(t, status, 200, body)
+		view := decoded[struct {
+			EvidenceID string `json:"evidence_id"`
+			Authored   struct {
+				ID string `json:"id"`
+			} `json:"authored"`
+			VerificationsURL    string `json:"verifications_url"`
+			ServiceVerification any    `json:"service_verification"`
+		}](t, body)
+		Expect(view.EvidenceID).To(Equal(evidenceID))
+		Expect(view.Authored.ID).To(Equal(evidenceID))
+		Expect(view.ServiceVerification).To(BeNil())
+		Expect(view.VerificationsURL).To(Equal(base + "/source-evidence-verifications?evidence_id=" + url.QueryEscape(evidenceID)))
+		status, _, legacy := f.request("GET", base+"/source-evidence/"+url.PathEscape(evidenceID), nil, nil)
+		want(t, status, 200, legacy)
+		Expect(decoded[map[string]any](t, legacy)).To(Equal(decoded[map[string]any](t, body)))
+		status, _, head := f.request("HEAD", alias, nil, nil)
+		want(t, status, 200, head)
+		Expect(head).To(BeEmpty())
+	}
+	for _, suffix := range []string{"", "?evidence_id=", "?evidence_id=.&evidence_id=..", "?evidence_id=.&cursor=x", "?other=x", "?evidence_id=%zz"} {
+		status, _, body := f.request("GET", base+"/source-evidence"+suffix, nil, nil)
+		want(t, status, 400, body)
+	}
+	status, _, body := f.request("GET", base+"/source-evidence/verifications?evidence_id=.", nil, nil)
+	want(t, status, 400, body) // The legacy item route never accepts alias query keys.
+	status, _, body = f.request("GET", "/api/v1/versions/"+id(t)+"/source-evidence?evidence_id=.", nil, nil)
+	want(t, status, 404, body)
+	owner := f.token
+	f.token = ""
+	status, _, body = f.request("GET", base+"/source-evidence?evidence_id=.", nil, nil)
+	want(t, status, 401, body)
+	f.token = owner
+	reader, _ := f.workflow(domain.CredentialScope{Kind: "workflow", Actions: []string{"version.read"}, ProjectIDs: []string{f.project}, VersionIDs: []string{v.ID}})
+	f.token = reader
+	status, _, body = f.request("GET", base+"/source-evidence?evidence_id=.", nil, nil)
+	want(t, status, 200, body)
+	f.token = owner
+	otherUpload := f.create()
+	f.put(otherUpload, "other.html", "file", []byte("another version"))
+	other := f.publish(otherUpload, nil)
+	f.token = reader
+	status, _, body = f.request("GET", "/api/v1/versions/"+other.ID+"/source-evidence?evidence_id=.", nil, nil)
+	want(t, status, 404, body)
+})
+
 var _ = It("TestActualHTTPFullManifestMetadataAndItemValidators", Label("persistence"), func() {
 	t := GinkgoT()
 

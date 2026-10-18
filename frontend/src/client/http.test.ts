@@ -293,3 +293,116 @@ test("attachment bytes use the exact file query, header credential and streamed 
     await assert.rejects(stale.body.getReader().read(), StaleResponseError);
   } finally { restore(); }
 });
+
+// TASK-003-04 shared presentation adapter operations: fixed routes only,
+// cursor/scope/target typed query bindings, the metadata stream's captured
+// ETag and the envelope's separate applicable freshness summary.
+test("versionSuppliedMetadata exposes the stream with the immutable object's ETag", async () => {
+  const body = JSON.stringify({ version: { source_intent: "historical" } });
+  let requested = "";
+  const restore = stubFetch(async (input) => {
+    requested = String(input);
+    return new Response(body, { status: 200, headers: { ETag: '"sha256-abc"' } });
+  });
+  try {
+    const client = new HttpHaeryongClient();
+    const opened = await client.versionSuppliedMetadata("v1");
+    assert.equal(opened.etag, '"sha256-abc"');
+    const reader = opened.stream.body.getReader();
+    const first = await reader.read();
+    assert.deepEqual(new TextDecoder().decode(first.value), body);
+    assert.equal(first.done, false);
+    opened.stream.cancel();
+    assert.ok(requested.includes("/api/v1/versions/v1/metadata?kind=supplied"), requested);
+  } finally {
+    restore();
+  }
+});
+
+test("versionSuppliedMetadata propagates absent metadata as the typed 404", async () => {
+  const restore = stubFetch(async () => new Response(JSON.stringify({ error: { code: "NOT_FOUND", message: "absent", retryable: false, details: { reason: "metadata_not_supplied" } } }), { status: 404 }));
+  try {
+    const client = new HttpHaeryongClient();
+    await assert.rejects(client.versionSuppliedMetadata("v1"), (error: unknown) => error instanceof ApiError && error.status === 404);
+  } finally {
+    restore();
+  }
+});
+
+test("versionEvidence preserves opaque IDs through actual URL parsing", async () => {
+  const observed: string[] = [];
+  const restore = stubFetch(async (input) => {
+    const request = new Request(new URL(String(input), "http://127.0.0.1:9270"));
+    const url = new URL(request.url);
+    assert.equal(url.pathname, "/api/v1/versions/v1/source-evidence");
+    const id = url.searchParams.get("evidence_id");
+    observed.push(id!);
+    const view = { version_id: "v1", evidence_id: id, authored: { id, capture_status: "reference_only" }, source: {}, availability: "unavailable", bytes_origin: null, reason: "source_read_not_implemented", service_verification: null, verifications_url: "/api/v1/versions/v1/source-evidence-verifications?" + url.searchParams };
+    return new Response(JSON.stringify({ data: view }), { status: 200 });
+  });
+  try {
+    const client = new HttpHaeryongClient();
+    const ids = [".", "..", "%2e", "a.", "evidence/상세", "a +", "x?y#z", "verifications"];
+    for (const id of ids) {
+      const result = await client.versionEvidence("v1", id);
+      assert.equal(result.evidence_id, id);
+      assert.equal(result.authored.id, id);
+      assert.equal(result.reason, "source_read_not_implemented");
+      assert.equal(result.service_verification, null);
+    }
+    assert.deepEqual(observed, ids);
+  } finally {
+    restore();
+  }
+});
+
+test("evidenceVerifications, versionAssessments and assessmentCoverage use the typed query bindings", async () => {
+  const requests: string[] = [];
+  const restore = stubFetch(async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.includes("/source-evidence-verifications")) return new Response(JSON.stringify({ data: { items: [], next_cursor: null } }), { status: 200 });
+    if (url.includes("/assessments/coverage")) return new Response(JSON.stringify({ data: { items: [], next_cursor: null } }), { status: 200 });
+    return new Response(JSON.stringify({ data: { items: [], next_cursor: null, applicable: null } }), { status: 200 });
+  });
+  try {
+    const client = new HttpHaeryongClient();
+    await client.evidenceVerifications("v1", "e/상세", "cursor-2");
+    await client.versionAssessments("v1", { targetSetId: "t1", scope: { kind: "region", pagePath: "a.html", regionId: "개요" }, cursor: "c" });
+    await client.assessmentCoverage("v1", "c1", "page-2");
+    const history = new URL(new Request(new URL(requests[0], "http://127.0.0.1:9270")).url);
+    assert.equal(history.pathname, "/api/v1/versions/v1/source-evidence-verifications");
+    assert.equal(history.searchParams.get("evidence_id"), "e/상세");
+    assert.equal(history.searchParams.get("cursor"), "cursor-2");
+    assert.match(requests[1], /\/api\/v1\/versions\/v1\/assessments\?/);
+    assert.ok(requests[1].includes("target_set_id=t1") && requests[1].includes("scope_kind=region") && requests[1].includes("page_path=a.html") && requests[1].includes("region_id="), requests[1]);
+    assert.match(requests[2], /\/api\/v1\/versions\/v1\/assessments\/coverage\?coverage_set_id=c1&cursor=page-2$/);
+  } finally {
+    restore();
+  }
+});
+
+test("versionAssessments keeps the separately selected applicable summary beside history", async () => {
+  const applicable = { source_intent: "historical", target_set_id: "t1", captured_at: "2026-10-19T00:00:00Z", scope: { kind: "version", page_path: null, region_id: null }, status: "not_assessed", coverage: { coverage_set_id: null, unit_kind: "version", eligible: 0, assessed: 0, complete: false, units_url: null }, assessed_at: null, reassessment_required: false };
+  const restore = stubFetch(async () => new Response(JSON.stringify({ data: { items: [], next_cursor: null, applicable } }), { status: 200 }));
+  try {
+    const client = new HttpHaeryongClient();
+    const page = await client.versionAssessments("v1");
+    assert.deepEqual(page.applicable, applicable);
+    assert.deepEqual(page.items, []);
+  } finally {
+    restore();
+  }
+});
+
+test("FEATURE_NOT_READY from the future catalog surfaces as a typed 503, not a transport failure", async () => {
+  const restore = stubFetch(async () => new Response(JSON.stringify({ error: { code: "FEATURE_NOT_READY", message: "future capability", retryable: false } }), { status: 503 }));
+  try {
+    const client = new HttpHaeryongClient();
+    for (const operation of [client.versionAssessments("v1"), client.assessmentCoverage("v1", "c1"), client.evidenceVerifications("v1", "e1")]) {
+      await assert.rejects(operation, (error: unknown) => error instanceof ApiError && error.status === 503 && error.code === "FEATURE_NOT_READY");
+    }
+  } finally {
+    restore();
+  }
+});

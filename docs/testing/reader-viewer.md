@@ -323,7 +323,10 @@ handler results, compared with an independently constructed expected digest.
 The native handler invocation is programmatic, not a physical-user observation.
 A captured-attachment regression additionally checks that stale disposal cannot
 erase another logout's authenticated renderer cleanup, while the same disposed
-identity can still retry a failed local forget.
+identity can still retry a failed local forget. TASK-003-04 extends the same
+driver with an `evidence` stage (included in its default stage list) for the
+shared Reader's evidence presentation; [the evidence record](evidence-presentation.md)
+owns that contract and its checks.
 
 These are agent-operated functional observations. Native popup target mapping,
 privileged-handler removal and repeated sender/scheme denials are distinguished

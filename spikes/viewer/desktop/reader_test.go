@@ -1,14 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1252,5 +1256,164 @@ func TestReaderStaleDisposeCannotEraseNewLogoutCleanupBearer(t *testing.T) {
 	once.Do(func() { close(release) })
 	if werr := <-done; werr != nil {
 		t.Fatal(werr)
+	}
+}
+
+func TestReaderEvidenceQueriesBuildFixedRoutes(t *testing.T) {
+	service, daemon, _ := newReaderFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/api/v1/versions/v1/source-evidence/e/1":
+			dataReply(w, 200, map[string]any{"version_id": "v1", "evidence_id": "e/1", "authored": map[string]any{"capture_status": "reference_only"}, "source": map[string]any{}, "availability": "unavailable", "bytes_origin": nil, "reason": "source_read_not_implemented", "service_verification": nil, "verifications_url": "/api/v1/versions/v1/source-evidence-verifications?evidence_id=e%2F1"})
+			return true
+		case r.Method == "GET" && r.URL.Path == "/api/v1/versions/v1/source-evidence-verifications":
+			dataReply(w, 200, map[string]any{"items": []any{}, "next_cursor": nil})
+			return true
+		case r.Method == "GET" && r.URL.Path == "/api/v1/versions/v1/assessments":
+			dataReply(w, 200, map[string]any{"items": []any{}, "next_cursor": nil, "applicable": nil})
+			return true
+		case r.Method == "GET" && r.URL.Path == "/api/v1/versions/v1/assessments/coverage":
+			dataReply(w, 200, map[string]any{"items": []any{}, "next_cursor": nil})
+			return true
+		}
+		return false
+	})
+	invokeOK(t, service, "versionEvidence", `{"version_id":"v1","evidence_id":"e/1"}`)
+	invokeOK(t, service, "evidenceVerifications", `{"version_id":"v1","evidence_id":"e1","cursor":"cur-2"}`)
+	invokeOK(t, service, "versionAssessments", `{"version_id":"v1","target_set_id":"t1","scope_kind":"region","page_path":"a.html","region_id":"개요","cursor":"c"}`)
+	invokeOK(t, service, "assessmentCoverage", `{"version_id":"v1","coverage_set_id":"c1","cursor":"page-2"}`)
+	seen := daemon.seen()
+	expect := []string{
+		"GET /api/v1/versions/v1/source-evidence/e%2F1",
+		"GET /api/v1/versions/v1/source-evidence-verifications?cursor=cur-2&evidence_id=e1",
+		"GET /api/v1/versions/v1/assessments?cursor=c&page_path=a.html&region_id=%EA%B0%9C%EC%9A%94&scope_kind=region&target_set_id=t1",
+		"GET /api/v1/versions/v1/assessments/coverage?coverage_set_id=c1&cursor=page-2",
+	}
+	for _, want := range expect {
+		found := false
+		for _, request := range seen {
+			if request == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("missing fixed route %q in %v", want, seen)
+		}
+	}
+	if werr := invokeFail(t, service, "versionAssessments", `{"version_id":"v1","scope_kind":"chapter"}`); werr.Code != "NATIVE_PAYLOAD_INVALID" {
+		t.Fatalf("invalid scope kind must be a typed payload error, got %+v", werr)
+	}
+	if werr := invokeFail(t, service, "assessmentCoverage", `{"version_id":"v1"}`); werr.Code != "NATIVE_PAYLOAD_INVALID" {
+		t.Fatalf("coverage without a coverage set must be a typed payload error, got %+v", werr)
+	}
+}
+
+func TestReaderEvidenceQueriesPreserveOpaqueIDs(t *testing.T) {
+	service, daemon, _ := newReaderFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.Method == "GET" && r.URL.Path == "/api/v1/versions/v1/source-evidence-verifications" {
+			dataReply(w, 200, map[string]any{"items": []any{map[string]any{"verification_id": r.URL.Query().Get("evidence_id")}}, "next_cursor": nil})
+			return true
+		}
+		if r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/api/v1/versions/v1/source-evidence/") {
+			dataReply(w, 200, map[string]any{"evidence_id": strings.TrimPrefix(r.URL.Path, "/api/v1/versions/v1/source-evidence/")})
+			return true
+		}
+		return false
+	})
+	for _, id := range []string{".", "..", "%2e", "evidence/상세", "a +"} {
+		payload := fmt.Sprintf(`{"version_id":"v1","evidence_id":%q,"cursor":"c/2"}`, id)
+		history := invokeOK(t, service, "evidenceVerifications", payload).(map[string]any)
+		if history["items"].([]any)[0].(map[string]any)["verification_id"] != id {
+			t.Fatal("native history changed the exact query ID", id, history)
+		}
+		view := invokeOK(t, service, "versionEvidence", fmt.Sprintf(`{"version_id":"v1","evidence_id":%q}`, id)).(map[string]any)
+		if view["evidence_id"] != id {
+			t.Fatal("native legacy evidence read changed the exact path ID", id, view)
+		}
+		want := "GET /api/v1/versions/v1/source-evidence-verifications?cursor=c%2F2&evidence_id=" + url.QueryEscape(id)
+		found := false
+		for _, request := range daemon.seen() {
+			if request == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatal("native history did not reach the fixed alias with one encoded query ID", want, daemon.seen())
+		}
+	}
+}
+
+func TestReaderSuppliedMetadataStreamCarriesEtagAndExactBytes(t *testing.T) {
+	body := []byte(`{"version":{"source_intent":"historical"},"sources":[],"evidence":[],"regions":[]}`)
+	service, daemon, _ := newReaderFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.Method == "GET" && r.URL.Path == "/api/v1/versions/v1/metadata" && r.URL.Query().Get("kind") == "supplied" {
+			sum := sha256.Sum256(body)
+			w.Header().Set("ETag", `"sha256-`+hex.EncodeToString(sum[:])+`"`)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(200)
+			w.Write(body)
+			return true
+		}
+		return false
+	})
+	opened, ok := invokeOK(t, service, "versionSuppliedMetadata", `{"version_id":"v1"}`).(map[string]any)
+	if !ok || opened["stream_id"] == "" || opened["etag"] == "" {
+		t.Fatalf("metadata open must return a stream handle beside the strong ETag: %+v", opened)
+	}
+	etag, _ := opened["etag"].(string)
+	sum := sha256.Sum256(body)
+	if etag != `"sha256-`+hex.EncodeToString(sum[:])+`"` {
+		t.Fatalf("returned ETag is not the object digest: %s", etag)
+	}
+	streamID, _ := opened["stream_id"].(string)
+	var accumulated []byte
+	for {
+		part, ok := invokeOK(t, service, "streamRead", `{"stream_id":"`+streamID+`","max_bytes":4096}`).(map[string]any)
+		if !ok {
+			t.Fatalf("stream read failed: %+v", part)
+		}
+		if encoded, _ := part["data_b64"].(string); encoded != "" {
+			raw, err := base64.StdEncoding.DecodeString(encoded)
+			if err != nil {
+				t.Fatal(err)
+			}
+			accumulated = append(accumulated, raw...)
+		}
+		if eof, _ := part["eof"].(bool); eof {
+			break
+		}
+	}
+	if !bytes.Equal(accumulated, body) {
+		t.Fatalf("streamed metadata bytes differ: %d bytes", len(accumulated))
+	}
+	found := false
+	for _, request := range daemon.seen() {
+		if request == "GET /api/v1/versions/v1/metadata?kind=supplied" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("metadata open did not use the exact fixed supplied route")
+	}
+}
+
+func TestReaderSuppliedMetadataAbsentIsTypedNotFound(t *testing.T) {
+	service, _, _ := newReaderFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.Method == "GET" && r.URL.Path == "/api/v1/versions/v1/metadata" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(404)
+			w.Write([]byte(`{"error":{"code":"NOT_FOUND","message":"absent","retryable":false,"details":{"reason":"metadata_not_supplied"}}}`))
+			return true
+		}
+		return false
+	})
+	werr := invokeFail(t, service, "versionSuppliedMetadata", `{"version_id":"v1"}`)
+	if werr.Status != 404 || werr.Code != "NOT_FOUND" {
+		t.Fatalf("absent supplied metadata must map to the typed 404, got %+v", werr)
+	}
+	if werr.Details["reason"] != "metadata_not_supplied" {
+		t.Fatalf("typed reason must be preserved: %+v", werr.Details)
 	}
 }

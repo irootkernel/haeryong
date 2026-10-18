@@ -169,21 +169,32 @@ test("F07: different logical contexts never wait on each other", async () => {
   let release!: (value: RenderSessionView) => void;
   const held = new Promise<RenderSessionView>((resolve) => { release = resolve; });
   const journalA = storage(); const journalB = storage();
+  // Hold EXACTLY context A's known key. A suffix fixture would also capture
+  // a random context-B key that happens to end in the same hex digit (1/16),
+  // deadlocking B on A's barrier before the test releases it.
+  const keyA = "00000000-0000-4000-8000-00000000000a";
   const client = {
-    async renderSessionOpen(_version: string, key: string) { if (key.endsWith("a")) return held; return view("b-s"); },
+    async renderSessionOpen(_version: string, key: string) { if (key === keyA) return held; return view("b-s"); },
     async renderSessionRenew() {}, async renderSessionClose() {},
   };
   const leaseA = new RenderSessionLease({ client, version: "version", owner: "owner", context: "a", storage: journalA, guard() {}, failure() {} });
   // Force a distinguishable K per context through the journal.
-  journalA.values.set("haeryong.reader.open.v1:" + JSON.stringify(["owner", "version", "a"]), "00000000-0000-4000-8000-00000000000a");
+  journalA.values.set("haeryong.reader.open.v1:" + JSON.stringify(["owner", "version", "a"]), keyA);
   const startA = leaseA.start();
-  void leaseA.stop();
+  const stoppingA = leaseA.stop();
   const leaseB = new RenderSessionLease({ client, version: "version", owner: "owner", context: "b", storage: journalB, guard() {}, failure() {} });
-  const viewB = await leaseB.start();
-  assert.equal(viewB.session_id, "b-s");
-  release(view("a-s"));
-  await startA.catch(() => undefined);
-  await leaseB.stop();
+  try {
+    const viewB = await leaseB.start();
+    assert.equal(viewB.session_id, "b-s");
+    release(view("a-s"));
+  } finally {
+    // Release every held barrier and stop both leases even when an assertion
+    // fails: a failed assertion must never leave a hanging five-minute run.
+    release(view("a-s"));
+    await startA.catch(() => undefined);
+    await stoppingA.catch(() => undefined);
+    await leaseB.stop().catch(() => undefined);
+  }
 });
 
 function deferred<T>() {

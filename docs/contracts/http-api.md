@@ -57,8 +57,10 @@ In the last column, `K` means a required Idempotency-Key; `N` means a named natu
 | GET /versions/{id}/metadata?kind={kind} | owner or current version.read scope | Stream exact normalized or explicitly supplied metadata; absent supplied metadata is explicit, not an injected payload file | - |
 | GET /versions/{id}/package | owner or current package.export scope | Stream an exact version's directory archive as an attachment, preserving payload paths/bytes; optional service metadata is separate | - |
 | GET /versions/{id}/source-evidence/{evidence_id} | owner or version.read; exact source bytes require current source authority | Immutable authored capture_status plus separate service_verification/history and currently authorized excerpt or typed unavailable state | - |
+| GET /versions/{id}/source-evidence?evidence_id={evidence_id} | same evidence-view authority | Lossless single-item alias for arbitrary nonempty Unicode local IDs; HEAD has the same authority and an empty body | - |
 | POST /versions/{id}/source-evidence/{evidence_id}/verifications | owner with source authority, or current version.read + source.read scopes | Explicit bounded exact-target check; optional expected digest/excerpt, separate durable result, no AI dispatch or provenance rewrite | K |
 | GET /versions/{id}/source-evidence/{evidence_id}/verifications | same evidence-view authority | Cursor verification history, no new source check | - |
+| GET /versions/{id}/source-evidence-verifications?evidence_id={evidence_id} | same evidence-view authority | Canonical lossless history locator with optional cursor; currently an authenticated non-retryable 503 FEATURE_NOT_READY capability | - |
 | GET /versions/{id}/assessments | authorized version/target scope | Published history, target_set_id and version/page/region scope filters, typed coverage and selected applicable summary; no unknown or zero-unit scope is silently aligned | - |
 | GET /versions/{id}/assessments/coverage?coverage_set_id={id} | authorized version/target scope | Cursor fixed required-unit tuples, outcome/reason/discrepancy and contributing assessment_id/target_set_id; counts derive from these records | - |
 | GET /search | scoped authenticated | Title/text/region/topic/source results with eligibility filtering before counts/snippets | - |
@@ -272,3 +274,47 @@ lookup uses `SERVICE_RECOVERING`. Only the transient owner check is automaticall
 retryable among these renderer conditions. Pool exhaustion supplies the explicit
 pool-expansion/restart remedy. A hidden document's delivery denial does not
 revoke a still-valid owner session or become an indefinite transient retry.
+
+## Evidence presentation consumption (TASK-003-04)
+
+The single-item query alias uses the same evidence read, version visibility and
+post-read authority guard as the legacy path form. It accepts exactly one
+nonempty `evidence_id`, decoded once with ordinary URL-query rules; unknown,
+duplicate, empty or malformed query values are 400, and a missing ID is 400
+`evidence_id_required`. The legacy item path continues to reject all query keys.
+Thus `.`, `..`, literal `%2e`, slash-containing and Unicode IDs remain distinct
+without an author naming restriction or double decoding.
+
+The browser uses this item alias; the native Go item read retains the exact
+escaped legacy path. Both clients use the fixed history query alias, and every
+service-composed `verifications_url` names it. This changes a derived locator,
+not stored authored metadata. History remains a GET-only authenticated future
+capability: 503 FEATURE_NOT_READY, retryable false and no Retry-After. HEAD and
+POST on that alias remain unknown (404); the existing verification POST is
+unchanged. The legacy future-history matcher splits an already decoded path,
+so IDs containing `/` do not match its single-ID segment. Current clients and
+returned locators use the query alias to avoid that limitation; no general
+future-route dispatch or source backend is added here.
+
+The implemented `GET /versions/{id}/metadata?kind=supplied` and
+`GET /versions/{id}/source-evidence/{evidence_id}` now also serve the shared
+Reader's evidence presentation. The supplied-metadata stream carries the
+immutable object's strong ETag beside the exact bytes; verifying every supplied
+validator over the complete bytes before parsing is the documented client
+obligation in the
+[registry selection](schema-registry.md#selected-current-evidence-presentation-shapes-task-003-04).
+Evidence item views keep the authored records separate from the current service
+truth — `availability` `unavailable` with reason `source_read_not_implemented`,
+`bytes_origin` null, separate nullable `service_verification` — and never
+perform a fresh source read or upgrade `capture_status`.
+
+The remaining evidence-family reads — verification history, `assessments` and
+`assessments/coverage` — stay in the future-capability catalog and return 503
+`FEATURE_NOT_READY`; the shared browser/native clients render explicit
+unavailable states for them rather than deriving summaries. The fixed consumer
+query names (`target_set_id`, `scope_kind`, `page_path`, `region_id`, `cursor`,
+`coverage_set_id`) and the assessments page's typed `applicable` member are
+selected in the
+[registry](schema-registry.md#selected-current-evidence-presentation-shapes-task-003-04);
+the Check source evidence action stays capability-disabled until TASK-004-01
+supplies the authorized source reader and verification operation.

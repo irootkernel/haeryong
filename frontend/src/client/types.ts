@@ -337,6 +337,128 @@ export interface PackageStream {
   cancel(): void;
 }
 
+/**
+ * Exact supplied-metadata stream plus the immutable object's strong validator.
+ * The bytes are verified against this ETag (and the version's supplied
+ * metadata digest when present) before anything parses them.
+ */
+export interface SuppliedMetadataStream {
+  etag: string | null;
+  stream: PackageStream;
+}
+
+/**
+ * Immutable authored evidence item plus the separately composed service view.
+ * `authored`/`source` are the exact stored metadata records; availability,
+ * bytes_origin and reason describe the CURRENT service truth (before
+ * TASK-004-01: unavailable with reason source_read_not_implemented), and
+ * service_verification/verifications_url expose the separate later checks
+ * without ever upgrading the author's capture_status.
+ */
+export interface EvidenceItemView {
+  version_id: string;
+  evidence_id: string;
+  authored: Record<string, unknown>;
+  source: Record<string, unknown>;
+  availability: string;
+  bytes_origin: string | null;
+  reason: string | null;
+  service_verification: Record<string, unknown> | null;
+  verifications_url: string;
+}
+
+/**
+ * One durable verification history record (registry shape; every field beyond
+ * the identity set is presented only when actually present).
+ */
+export interface VerificationRecord {
+  verification_id: string;
+  outcome: string;
+  checked_at: string | null;
+  verified_at: string | null;
+  reason?: string | null;
+  [key: string]: unknown;
+}
+
+/** One published assessment history record (registry shape). */
+export interface AssessmentRecord {
+  assessment_id: string;
+  version_id: string;
+  scope: { kind: string; page_path: string | null; region_id: string | null };
+  target_set_id: string | null;
+  state?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * One fixed required coverage unit tuple with its latest applicable outcome.
+ * Counts and aggregate status derive ONLY from these records.
+ */
+export interface CoverageUnit {
+  kind: string;
+  page_path: string | null;
+  region_id: string | null;
+  outcome: string;
+  reason: string | null;
+  discrepancy?: unknown;
+  assessment_id: string | null;
+  target_set_id: string | null;
+}
+
+/** Scope filter for the shared assessment-history presentation adapter. */
+export interface AssessmentScope {
+  kind: "version" | "page" | "region";
+  pagePath?: string;
+  regionId?: string;
+}
+
+export interface AssessmentFilter {
+  targetSetId?: string;
+  scope?: AssessmentScope;
+}
+
+/**
+ * Fixed required-coverage summary carried with the applicable freshness view.
+ * `complete` is the recorded overlay badge only — the UI always re-derives
+ * counts from the enumerated unit records and never turns zero/unknown
+ * coverage aligned.
+ */
+export interface FreshnessCoverage {
+  coverage_set_id: string | null;
+  unit_kind: string;
+  eligible: number;
+  assessed: number;
+  complete: boolean;
+  units_url: string | null;
+}
+
+/**
+ * The separately selected applicable freshness summary from the assessments
+ * resource. Never inferred from an unrelated latest history item; with no
+ * actual captured target the service reports target_set_id/captured_at/
+ * coverage_set_id null with status not_assessed and complete false.
+ */
+export interface ApplicableFreshness {
+  source_intent: string | null;
+  target_set_id: string | null;
+  captured_at: string | null;
+  scope: { kind: string; page_path: string | null; region_id: string | null };
+  status: string;
+  coverage: FreshnessCoverage;
+  assessed_at: string | null;
+  reassessment_required: boolean;
+}
+
+/**
+ * Assessment-history envelope: cursor pages of published records PLUS the
+ * selected applicable summary as its own typed member. The summary is absent
+ * (null) only when the response does not carry one; the UI then shows an
+ * honest unknown state rather than deriving one from history items.
+ */
+export interface AssessmentsView extends ListPage<AssessmentRecord> {
+  applicable: ApplicableFreshness | null;
+}
+
 export type UploadStateFilter = "open" | "sealing" | "sealed" | "abandoned";
 
 export class ApiError extends Error {
@@ -419,6 +541,12 @@ export interface HaeryongClient {
   documentVersions(documentId: string, cursor?: string): Promise<ListPage<VersionView>>;
   versionDetail(versionId: string): Promise<VersionView>;
   versionFiles(versionId: string, cursor?: string): Promise<ListPage<FileEntryView>>;
+  /** Exact supplied-metadata bytes with their strong validator; absent metadata rejects 404 metadata_not_supplied. */
+  versionSuppliedMetadata(versionId: string): Promise<SuppliedMetadataStream>;
+  versionEvidence(versionId: string, evidenceId: string): Promise<EvidenceItemView>;
+  evidenceVerifications(versionId: string, evidenceId: string, cursor?: string): Promise<ListPage<VerificationRecord>>;
+  versionAssessments(versionId: string, filter?: AssessmentFilter & { cursor?: string }): Promise<AssessmentsView>;
+  assessmentCoverage(versionId: string, coverageSetId: string, cursor?: string): Promise<ListPage<CoverageUnit>>;
   renderBootstrap(versionId: string, pagePath?: string): Promise<RenderBootstrapView>;
   renderSessionOpen(versionId: string, operationId: string): Promise<RenderSessionView>;
   renderSessionRenew(versionId: string, sessionId: string): Promise<void>;

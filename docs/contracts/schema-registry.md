@@ -270,3 +270,67 @@ These additive selections make previously provisional production read shapes con
 | Status staging | decimal staging_bytes, nonnegative pending_upload_count, pending_uploads_url |
 
 Lists retain data.items and nullable data.next_cursor. Version manifests hold full generated authored metadata; compact version summaries do not omit metadata from that stream. Independent mutable revision is distinct from timestamps, immutable sequences and auth/project access generations. Current config plans expose plan_id, base_config_revision, expires_at, scope, normalized_changes, affected_permissions_revisions and impact; internal effective policy/principal ownership are not credential-bearing public fields.
+
+## Selected current evidence-presentation shapes (TASK-003-04)
+
+Evidence item reads support the fixed
+`/versions/{id}/source-evidence?evidence_id=...` alias with exactly one nonempty,
+once-decoded ID and the same authority as the legacy path. Both SDKs' history
+operation and all returned `verifications_url` locators use
+`/versions/{id}/source-evidence-verifications?evidence_id=...` with optional
+`cursor`, preserving dot, literal-percent, slash and Unicode identities. This
+history alias is currently only an authenticated GET future-capability 503;
+it implements no history backend or verification action. Its POST and HEAD
+methods remain unknown (404).
+
+These additive selections fix the shared presentation adapter's current consumer
+contract for the typed evidence query operations and the supplied-metadata
+bridge. They select field names and envelope composition only; no enum,
+authority, error mapping or schema version changes, and no production
+assessment/verification backend is introduced — verification history,
+`assessments` and `assessments/coverage` remain future capabilities (503
+FEATURE_NOT_READY) until their ordered owners.
+
+The assessments consumer query uses exactly `target_set_id`, `scope_kind`
+(`version`|`page`|`region`), `page_path`, `region_id` and `cursor`; the coverage
+consumer query uses exactly `coverage_set_id` and `cursor`. Each assessments
+response page is the ordinary list envelope plus one typed `applicable` member:
+the service-selected applicable freshness view, or explicit null when the
+response carries none. Consumers never infer the summary from history items; a
+null member is an honest unknown, and the recorded coverage summary and status
+badge are displayed but re-derived from the enumerated fixed required-unit
+records that match the coverage set's selected `unit_kind` and scope structure.
+
+| View | Selected fields |
+| --- | --- |
+| Assessments page | `data.items` (history: `assessment_id`, `version_id`, `scope {kind,page_path,region_id}`, `target_set_id`, optional `state`), `data.next_cursor`, nullable `data.applicable` |
+| Applicable freshness | `source_intent`, `target_set_id`, `captured_at`, `scope {kind,page_path,region_id}`, `status`, `coverage {coverage_set_id,unit_kind,eligible,assessed,complete,units_url}`, `assessed_at`, `reassessment_required` |
+| Coverage unit row | `kind`, `page_path`, `region_id`, `outcome`, `reason`, `discrepancy`, `assessment_id`, `target_set_id` |
+| Verification history row | `verification_id`, `outcome`, `checked_at`, `verified_at`, `reason` when applicable |
+| Evidence item view | `version_id`, `evidence_id`, `authored`, `source`, `availability`, `bytes_origin`, `reason`, `service_verification`, `verifications_url` |
+| Supplied metadata stream | exact bytes plus the immutable object's strong ETag (`"sha256-<64 hex>"`) |
+
+Current evidence-item service truth composes `availability` `unavailable` with
+reason `source_read_not_implemented`, `bytes_origin` null and
+`service_verification` null; it never upgrades authored `capture_status` or
+performs a fresh source read. `units_url` is consumed as data: the request is
+rebuilt from typed fields only when it names the exact fixed local route for
+the same version and coverage set; foreign or protocol-relative references are
+rejected, and an absolute URL is accepted only on the current service origin.
+Capture ID/time are recorded facts; an unknown or `not_assessed` view cannot
+become aligned from them alone.
+
+The supplied-metadata validator bridge is named per transport layer: the raw
+HTTP `GET /versions/{id}/metadata?kind=supplied` carries exact bytes with the
+ETag response header; the closed native operation `versionSuppliedMetadata`
+returns `{stream_id, etag}` from the Go facade; the JSON native wire reifies
+that handle into a lower-level `NativePort` result of `{body, cancel, etag}`
+(final bytes delivered before the clean-EOF acknowledgement) which
+`NativeHaeryongClient` narrows to the public `HaeryongClient` shape
+`{etag, stream}`. Clients compare every supplied validator (that ETag, plus
+`version.supplied_metadata_sha256` when present) over the fully received bytes
+before parsing; with no usable validator the bytes are rejected as an
+independent metadata error. The parsed supplied object keeps the author's
+source intent on `version.source_intent`; region identity stays page-local
+(`page_path` plus nonempty id); and local IDs are arbitrary nonempty Unicode
+strings preserved exactly, with inherited object-key names read as absent.

@@ -1,11 +1,15 @@
 import type {
+  AssessmentFilter,
+  AssessmentsView,
   Capabilities,
   ChunkAck,
+  CoverageUnit,
   CreateUploadRequest,
   DecisionResult,
   DeviceSession,
   EntryChunk,
   EventSubscription,
+  EvidenceItemView,
   HaeryongClient,
   ImportPublishRequest,
   JobView,
@@ -18,6 +22,7 @@ import type {
   PairingView,
   ProjectView,
   SessionInfo,
+  SuppliedMetadataStream,
   UploadCheckpoint,
   UploadConfirmedRange,
   UploadDetail,
@@ -25,6 +30,7 @@ import type {
   UploadPin,
   UploadStateFilter,
   UploadSummary,
+  VerificationRecord,
 } from "./types.ts";
 import type {
   DocumentView,
@@ -184,6 +190,53 @@ export class HttpHaeryongClient implements HaeryongClient {
 
   versionFiles(versionId: string, cursor?: string): Promise<ListPage<FileEntryView>> {
     return this.#request("GET", this.#collection(`/api/v1/versions/${encodeURIComponent(versionId)}/files`, { cursor }));
+  }
+
+  async versionSuppliedMetadata(versionId: string): Promise<SuppliedMetadataStream> {
+    // Same fixed authenticated stream path as file delivery, plus the
+    // immutable object's strong ETag captured at open for byte verification
+    // before any parse.
+    const controller = new AbortController();
+    const era = this.#era;
+    const headers = new Headers();
+    if (this.#credential) headers.set("Authorization", "Bearer " + this.#credential);
+    const response = await fetch(`/api/v1/versions/${encodeURIComponent(versionId)}/metadata?kind=supplied`, { credentials: "omit", redirect: "error", headers, signal: controller.signal });
+    if (era !== this.#era) {
+      response.body?.cancel().catch(() => undefined);
+      throw new StaleResponseError();
+    }
+    if (!response.ok || !response.body) {
+      throw await this.#apiError(response, era, response.status === 503);
+    }
+    return {
+      etag: response.headers.get("ETag"),
+      stream: {
+        body: eraGuardedStream(response.body, () => era !== this.#era),
+        cancel: () => controller.abort(),
+      },
+    };
+  }
+
+  versionEvidence(versionId: string, evidenceId: string): Promise<EvidenceItemView> {
+    return this.#request("GET", this.#collection(`/api/v1/versions/${encodeURIComponent(versionId)}/source-evidence`, { evidence_id: evidenceId }));
+  }
+
+  evidenceVerifications(versionId: string, evidenceId: string, cursor?: string): Promise<ListPage<VerificationRecord>> {
+    return this.#request("GET", this.#collection(`/api/v1/versions/${encodeURIComponent(versionId)}/source-evidence-verifications`, { evidence_id: evidenceId, cursor }));
+  }
+
+  versionAssessments(versionId: string, filter?: AssessmentFilter & { cursor?: string }): Promise<AssessmentsView> {
+    const params: Record<string, string | undefined> = { target_set_id: filter?.targetSetId, cursor: filter?.cursor };
+    if (filter?.scope) {
+      params.scope_kind = filter.scope.kind;
+      if (filter.scope.pagePath !== undefined) params.page_path = filter.scope.pagePath;
+      if (filter.scope.regionId !== undefined) params.region_id = filter.scope.regionId;
+    }
+    return this.#request("GET", this.#collection(`/api/v1/versions/${encodeURIComponent(versionId)}/assessments`, params));
+  }
+
+  assessmentCoverage(versionId: string, coverageSetId: string, cursor?: string): Promise<ListPage<CoverageUnit>> {
+    return this.#request("GET", this.#collection(`/api/v1/versions/${encodeURIComponent(versionId)}/assessments/coverage`, { coverage_set_id: coverageSetId, cursor }));
   }
 
   renderBootstrap(versionId: string, pagePath?: string): Promise<RenderBootstrapView> {
