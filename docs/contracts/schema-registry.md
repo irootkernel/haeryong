@@ -334,3 +334,84 @@ independent metadata error. The parsed supplied object keeps the author's
 source intent on `version.source_intent`; region identity stays page-local
 (`page_path` plus nonempty id); and local IDs are arbitrary nonempty Unicode
 strings preserved exactly, with inherited object-key names read as absent.
+
+## Selected current native onboarding shapes (TASK-003-05)
+
+These are closed native transport operations, not additional public HTTP routes.
+The trusted main frame names an operation; Go retains selection, polling secret
+and bearer authority. The native `pair` request is `{device_label}` and its result
+is `{pairing_id, code, expires_at}`. Native `pollPairing` accepts `{pairing_id}`
+and returns `{state, session?}`; an approved result contains only
+`session_id`, `principal_id`, `library_id` and `device_label` in that session.
+The browser's existing full pairing responses and real polling-secret request
+remain separate. A native client never forwards a browser polling-secret argument.
+
+| Operation | Request | Result |
+| --- | --- | --- |
+| serviceDiscovery | `{}` | `{state, profile, endpoint?, library_id?, instance_id?, detail?}` |
+| startDaemonOffer | `{}` | `{started, discovery}` using the same discovery shape |
+| adoptPairing | `{pairing_id}` | `{adopted: true, durability: "confirmed"\|"unconfirmed"}` |
+| abandonPairingAttempt | `{pairing_id}` | `{abandoned: true}` or the typed committed/failed outcome |
+
+Discovery states are `verified`, `uninitialized`, `daemon_stopped`,
+`discovery_corrupt`, `identity_mismatch` and `profile_error`. Starting is an
+explicit offer only for `daemon_stopped`, preserving the exact default-profile
+selection and absolute sibling binary; it never initializes or migrates a library.
+Attachment requires the product API and signed library/endpoint binding, with
+`NATIVE_NO_CREDENTIAL` distinguishing an unpaired boot from explicit logout.
+
+The local attempt transitions from `pending` through `adopting` to `adopted`,
+`failed`, `store_failed` or `store_uncertain`. Stop before commit prevents
+activation. A committed attempt reports `NATIVE_PAIRING_ALREADY_ADOPTED`;
+failed/uncertain adoption reports `NATIVE_PAIRING_ADOPT_FAILED`, rather than a
+false successful Stop. Exact readback after a credential replacement error is
+committed with unconfirmed durability. An indeterminate readback reports
+`NATIVE_CREDENTIAL_STORE_UNCERTAIN` with no active candidate and no assertion
+that the remembered store is empty. A known non-consuming poll rate limit
+preserves the attempt and its real Retry-After; uncertain single-use redemption
+requires a new pairing. See [the implementation record](../testing/desktop-companion.md)
+for current verification bounds and remaining native delivery work.
+
+## Selected current native filesystem shapes (TASK-003-05)
+
+The M3 operations are closed native transport operations over opaque,
+purpose/attachment/generation-bound handles; they add no public HTTP route and
+no arbitrary JavaScript path/URL/filesystem proxy. Every handle resolves
+relative names inside the owner-selected `os.Root`; source entries capture the
+exact dev/ino, size, nanosecond mtime, kind and link text at enumeration, and
+file reads re-verify that identity before and after each ranged read.
+
+| Operation | Request | Result |
+| --- | --- | --- |
+| chooseImportSource | `{mode: directory\|archive\|file}` | `{handle, selection_name, mode, entries, limits}` or `{canceled: true}` |
+| sourceEntries | `{handle, cursor?}` | `{items: [{path, kind, size?, link_target?}], next_cursor}` (local cursoring of the captured enumeration) |
+| readSourceRange | `{handle, path, offset, length}` | `{bytes_b64}`; the 1MiB bound is chunk granularity |
+| releaseSource | `{handle}` | idempotent same-era success |
+| sourceVerifyStable | `{handle}` | `{stable}` plus `changed_path` when unstable |
+| chooseDownloadDestination | `{suggested_name, mode: directory\|save-file}` | `{handle, label, exists}` (exact probe) or `{canceled: true}` |
+| destOpen | `{handle, intent?}` | `{opened: true}`; intent carries `replace` and `expected {sha256, byte_size}` |
+| destWrite | `{handle, bytes_b64}` | `{written}` |
+| destClose | `{handle}` | `{published: true, durability: confirmed\|unconfirmed}` |
+| destAbort | `{handle}` | `{aborted: true}`, idempotent; `{aborted: false, published: true}` after publication |
+
+Typed failures stay closed: `NATIVE_HANDLE_STALE` (unknown/replaced era),
+`NATIVE_SESSION_REPLACED` (a late picker result after its era or picker lease
+was invalidated), `NATIVE_SOURCE_CHANGED` (captured-identity mismatch),
+`NATIVE_DESTINATION_CONFLICT` (existing target under the default no-replace
+publication), `NATIVE_DESTINATION_VERIFICATION_FAILED` (pre-publication
+digest/size mismatch), `NATIVE_VALIDATOR_MISSING` (a file download whose
+delivered representation carried no usable Repr-Digest),
+`NATIVE_CLOSE_UNCERTAIN` (unobserved close), `NATIVE_CLEANUP_FAILED` (an
+own-temp cleanup failure, disclosed with the exact surviving path even beside
+a primary failure) and `NATIVE_PATH_INVALID` (unrepresentable names or link
+targets, rejected before any JSON replacement).
+
+The delivered file validator travels per transport layer exactly like the
+supplied-metadata one: the raw file GET response carries `Repr-Digest` and
+`Content-Length`; the native `fileStream` open returns
+`{stream_id, validator?}` where a malformed or absent proof is omitted; the
+JSON native wire reifies it beside the guarded stream; the shared
+`PackageStream` exposes it as an optional member that the browser transport
+never sets, and the download engine binds it to the writable attempt as the
+pre-publication `expected`. Archive package streams never claim a validator;
+their completion claim stays a clean end plus byte count.

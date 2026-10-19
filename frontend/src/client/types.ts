@@ -43,10 +43,66 @@ export interface PairingCreated extends PairingView {
   polling_secret: string;
 }
 
+/**
+ * Native Go-held pairing creation: the polling secret stays in Go memory,
+ * so the reduced native reply carries only the comparison-facing fields.
+ * Browser clients keep receiving the full PairingCreated shape.
+ */
+export interface NativePairingCreated {
+  pairing_id: string;
+  code: string;
+  expires_at: string;
+}
+
 export interface PairingPoll {
   state: string;
   session?: SessionInfo;
   token?: string;
+}
+
+/**
+ * Native Go-held pairing poll: the redeemed bearer never crosses the wire
+ * (no token member) and the approved session is the reduced Go-reported
+ * identity subset, never a fabricated full SessionInfo.
+ */
+export interface NativePairingPoll {
+  state: string;
+  session?: {
+    session_id: string;
+    principal_id: string;
+    library_id: string;
+    device_label: string;
+  };
+}
+
+/** Typed adoption outcome of the explicit native adoptPairing operation. */
+export interface PairingAdoption {
+  adopted: true;
+  durability: "confirmed" | "unconfirmed";
+}
+
+/** Signed local service discovery states reported by the native facade. */
+export type DaemonDiscoveryState =
+  | "verified"
+  | "uninitialized"
+  | "daemon_stopped"
+  | "discovery_corrupt"
+  | "identity_mismatch"
+  | "profile_error";
+
+export interface DaemonDiscovery {
+  state: DaemonDiscoveryState;
+  profile: string;
+  endpoint?: string;
+  library_id?: string;
+  instance_id?: string;
+  detail?: string;
+}
+
+/** Explicit owner-requested sibling-daemon start through the exact argv. */
+export interface DaemonStartOffer {
+  started: boolean;
+  discovery: DaemonDiscovery;
 }
 
 export interface Capabilities {
@@ -330,11 +386,62 @@ export interface ImportPublishRequest {
   base_version_id?: string | null;
 }
 
-/** Authenticated streaming archive; the only download transport shape. */
+/**
+ * Authenticated streaming archive; the only download transport shape.
+ * `validator` is present only when the delivered representation itself
+ * carried a strong validator (file GET Repr-Digest + Content-Length through
+ * the native facade); the browser transport never sets it.
+ */
 export interface PackageStream {
   /** Streamed archive bytes; completion requires a clean end plus close(). */
   body: ReadableStream<Uint8Array>;
   cancel(): void;
+  /** Strong content validator of the SAME delivered response, when provided. */
+  validator?: { sha256: string; byte_size: number };
+}
+
+/** One captured entry of an owner-selected native source tree. */
+export interface NativeSourceEntry {
+  path: string;
+  kind: "file" | "directory" | "symlink";
+  size?: number;
+  link_target?: string;
+}
+
+/** Local cursor page of the captured source enumeration. */
+export interface NativeSourceEntryPage {
+  items: NativeSourceEntry[];
+  next_cursor: string | null;
+}
+
+/** Owner-selected native import source (opaque, purpose/era-bound handle). */
+export interface NativeSourceSelection {
+  handle: string;
+  selection_name: string;
+  mode: "directory" | "archive" | "file";
+  entries: NativeSourceEntryPage;
+  limits: { empty_directories_represented: boolean; symlinks_represented: boolean };
+  canceled?: true;
+}
+
+/** Owner-selected native download destination (exact existence probe). */
+export interface NativeDestinationSelection {
+  handle: string;
+  label: string;
+  exists: boolean;
+  canceled?: true;
+}
+
+/** Typed publication outcome of the native destination close. */
+export interface NativeDestCloseResult {
+  published: true;
+  durability: "confirmed" | "unconfirmed";
+}
+
+/** Owner-consented write intent for one destination attempt. */
+export interface NativeDestIntent {
+  replace?: boolean;
+  expected?: { sha256: string; byte_size: number };
 }
 
 /**
@@ -522,8 +629,10 @@ export class UnknownOutcomeError extends Error {
 export interface HaeryongClient {
   /** Trusted public browser origin, never a child-supplied navigation host. */
   readonly publicOrigin?: string | null;
-  pair(deviceLabel: string): Promise<PairingCreated>;
-  pollPairing(pairingId: string, pollingSecret: string): Promise<PairingPoll>;
+  /** Browser clients receive the full creation reply; the native Go-held flow returns the reduced secret-free shape. */
+  pair(deviceLabel: string): Promise<PairingCreated | NativePairingCreated>;
+  /** The browser validates its actual polling secret; the native flow names only the pairing it still owns. */
+  pollPairing(pairingId: string, pollingSecret?: string): Promise<PairingPoll | NativePairingPoll>;
   decidePairing(request: PairingDecisionRequest): Promise<DecisionResult>;
   currentSession(): Promise<SessionInfo>;
   capabilities(): Promise<Capabilities>;
@@ -585,6 +694,11 @@ export interface CredentialAware {
   disposeSession?(): Promise<void>;
   setCredential(token: string): void;
   invalidate(): void;
+  /** Native-only onboarding operations; the browser client never implements them. */
+  adoptPairing?(pairingId: string): Promise<PairingAdoption>;
+  abandonPairing?(pairingId: string): Promise<void>;
+  serviceDiscovery?(): Promise<DaemonDiscovery>;
+  startDaemonOffer?(): Promise<DaemonStartOffer>;
 }
 
 /**

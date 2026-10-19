@@ -3,9 +3,10 @@
 // private status, logout). Writes are offered only in the verified phase;
 // disconnected/degraded keeps the credential and shows disabled controls.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { NOTICE, ShellController } from "../client/controller.ts";
+import { NATIVE_PAIRING_NOTICES, NOTICE, ShellController, nativeDaemonStateLabel, nativePairingNotice } from "../client/controller.ts";
 import type { ShellState } from "../client/controller.ts";
-import type { DeviceSession, PairingCreated } from "../client/types.ts";
+import type { DaemonDiscovery, DeviceSession } from "../client/types.ts";
+import { ApiError } from "../client/types.ts";
 
 export const CONNECT_COPY = {
   heading: "Haeryong 연결",
@@ -18,6 +19,8 @@ export const CONNECT_COPY = {
   waitingButton: "승인 기다리는 중",
   stopWaiting: "대기 중단",
   stopped: "대기를 중단했습니다. 로컬 대기 정보만 폐기되며, 서버 요청은 만료되거나 거절될 때까지 유지됩니다.",
+  stopping: "대기 중단 결과를 확인하는 중입니다.",
+  stopUnknown: "대기 중단 여부를 확인하지 못했습니다. 연결 상태를 다시 확인하거나 새 코드를 요청하세요.",
   waiting: "승인을 기다리는 중입니다. 아래 코드를 비교하세요.",
   expired: "연결 요청이 만료되었습니다. 새 코드를 요청하세요.",
   rejected: "연결 요청이 거절되었습니다. 확인 후 새 코드를 요청하세요.",
@@ -49,7 +52,8 @@ export const CONNECT_COPY = {
 
 interface PendingPairing {
   pairingId: string;
-  pollingSecret: string;
+  /** Browser pairing only: the native Go-held flow never carries a secret. */
+  pollingSecret?: string;
   code: string;
   expiresAt: number;
 }
@@ -61,16 +65,31 @@ function readRememberDefault(): boolean {
   return content.includes("remember-device=false") ? false : true;
 }
 
+export const NATIVE_CONNECT_COPY = {
+  storageNote: "이 앱은 보호된 로컬 저장소에 연결 자격을 저장합니다. 앱을 다시 실행해도 연결이 유지되며, 로그아웃하면 이 앱에서 정리됩니다.",
+  daemonHeading: "데몬 상태",
+  refreshDaemon: "데몬 상태 새로고침",
+  startDaemon: "데몬 시작",
+  startingDaemon: "데몬을 시작하는 중…",
+} as const;
+
 export function ConnectScreen({ controller, state }: { controller: ShellController; state: ShellState }) {
-  const [label, setLabel] = useState("Browser");
+  const nativeVariant = controller.nativeSessionAvailable;
+  const [label, setLabel] = useState(nativeVariant ? "Desktop" : "Browser");
   const [remember, setRemember] = useState(readRememberDefault);
   const [pending, setPending] = useState<PendingPairing | null>(null);
   const [flowMessage, setFlowMessage] = useState("");
   const [remaining, setRemaining] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [restoreFocusAfterPending, setRestoreFocusAfterPending] = useState(false);
+  const [daemon, setDaemon] = useState<DaemonDiscovery | null>(null);
+  const [daemonBusy, setDaemonBusy] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<PendingPairing | null>(null);
+  const stoppingRef = useRef<PendingPairing | null>(null);
+  const adoptingRef = useRef<PendingPairing | null>(null);
+  const createIntent = useRef(0);
   const submitButtonRef = useRef<HTMLButtonElement | null>(null);
   const stopButtonRef = useRef<HTMLButtonElement | null>(null);
   const rememberRef = useRef(remember);
@@ -82,16 +101,14 @@ export function ConnectScreen({ controller, state }: { controller: ShellControll
       timer.current = null;
     }
   };
-  const stopWaiting = useCallback((message: string) => {
+
+  useEffect(() => () => {
     clearTimer();
     pendingRef.current = null;
-    setPending(null);
-    setRemaining("");
-    setFlowMessage(message);
-    setRestoreFocusAfterPending(true);
+    stoppingRef.current = null;
+    adoptingRef.current = null;
+    createIntent.current++;
   }, []);
-
-  useEffect(() => () => clearTimer(), []);
 
   useEffect(() => {
     // Disabling the focused submit button during pairing would strand keyboard
@@ -108,6 +125,51 @@ export function ConnectScreen({ controller, state }: { controller: ShellControll
     }
   }, [pending, restoreFocusAfterPending]);
 
+  const clearPending = useCallback((message: string) => {
+    clearTimer();
+    pendingRef.current = null;
+    setPending(null);
+    setRemaining("");
+    setFlowMessage(message);
+    setRestoreFocusAfterPending(true);
+  }, []);
+
+  // An explicit USER stop abandons the Go-held attempt truthfully; local
+  // clears (expiry, rejection, completed adoption) never fire an abandon.
+  const stopWaiting = useCallback(
+    async (message: string) => {
+      const current = pendingRef.current;
+      if (!current || stoppingRef.current) return;
+      clearTimer();
+      pendingRef.current = null;
+      if (!controller.nativeSessionAvailable) {
+        clearPending(message);
+        return;
+      }
+      stoppingRef.current = current;
+      setStopping(true);
+      setFlowMessage(CONNECT_COPY.stopping);
+      try {
+        const outcome = await controller.abandonPairing(current.pairingId);
+        if (stoppingRef.current !== current) return;
+        if (outcome === "already-adopted") {
+          clearPending(NATIVE_PAIRING_NOTICES.alreadyAdopted);
+          await controller.attachNativeSession();
+        } else {
+          clearPending(outcome === "adopt-failed" ? NATIVE_PAIRING_NOTICES.adoptFailed : message);
+        }
+      } catch (error) {
+        if (stoppingRef.current === current) clearPending(nativePairingNotice(error) ?? CONNECT_COPY.stopUnknown);
+      } finally {
+        if (stoppingRef.current === current) {
+          stoppingRef.current = null;
+          setStopping(false);
+        }
+      }
+    },
+    [controller, clearPending],
+  );
+
   const poll = useCallback(
     async (delay: number) => {
       clearTimer();
@@ -123,15 +185,41 @@ export function ConnectScreen({ controller, state }: { controller: ShellControll
       try {
         const result = await controller.pollPairing(current.pairingId, current.pollingSecret);
         if (pendingRef.current !== current) return;
-        if (result.token) {
-          stopWaiting("");
+        if ("token" in result && result.token) {
+          clearPending("");
           await controller.acceptPairing(result.token, rememberRef.current);
+        } else if (result.state === "approved" && controller.nativeSessionAvailable) {
+          // Native Go-held redemption: the bearer never crossed the wire, so
+          // the still-owned attempt is adopted explicitly and then attaches.
+          // A foreground event can legitimately hold a SECOND poll of the
+          // same attempt while the first is still in flight; per-attempt
+          // adoption ownership keeps exactly one adopt/attach owner so an
+          // overlapping approved reply cannot race a duplicate adoption or
+          // overwrite the first reply's truthful outcome.
+          if (adoptingRef.current === current) return;
+          adoptingRef.current = current;
+          try {
+            await controller.adoptPairing(current.pairingId);
+            if (pendingRef.current !== current) return;
+            clearPending("");
+            await controller.attachNativeSession();
+          } catch (adoptError) {
+            if (pendingRef.current !== current) return;
+            if (adoptError instanceof ApiError && adoptError.code === "NATIVE_PAIRING_ALREADY_ADOPTED") {
+              clearPending("");
+              await controller.attachNativeSession();
+              return;
+            }
+            clearPending(nativePairingNotice(adoptError) ?? CONNECT_COPY.issuanceLost);
+          } finally {
+            if (adoptingRef.current === current) adoptingRef.current = null;
+          }
         } else if (result.state === "pending") {
           schedule(2100);
         } else if (result.state === "expired") {
-          stopWaiting(CONNECT_COPY.expired);
+          clearPending(CONNECT_COPY.expired);
         } else {
-          stopWaiting(CONNECT_COPY.rejected);
+          clearPending(CONNECT_COPY.rejected);
         }
       } catch (error) {
         if (pendingRef.current !== current) return;
@@ -140,10 +228,10 @@ export function ConnectScreen({ controller, state }: { controller: ShellControll
           schedule(retryAfter * 1000);
           return;
         }
-        stopWaiting(CONNECT_COPY.issuanceLost);
+        clearPending(nativePairingNotice(error) ?? CONNECT_COPY.issuanceLost);
       }
     },
-    [controller, stopWaiting],
+    [controller, clearPending],
   );
 
   useEffect(() => {
@@ -167,14 +255,17 @@ export function ConnectScreen({ controller, state }: { controller: ShellControll
 
   const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (submitting || pending || controller.hasCredential()) return;
+    if (submitting || stopping || pending || controller.hasCredential()) return;
+    const intent = ++createIntent.current;
     setSubmitting(true);
     setFlowMessage("");
     try {
-      const created: PairingCreated = await controller.pair(label);
+      const created = await controller.pair(label);
+      if (intent !== createIntent.current) return;
       const entry: PendingPairing = {
         pairingId: created.pairing_id,
-        pollingSecret: created.polling_secret,
+        // The native Go-held flow carries no polling secret to JavaScript.
+        pollingSecret: "polling_secret" in created ? created.polling_secret : undefined,
         code: created.code,
         expiresAt: Date.parse(created.expires_at),
       };
@@ -183,16 +274,16 @@ export function ConnectScreen({ controller, state }: { controller: ShellControll
       setFlowMessage(CONNECT_COPY.waiting);
       void poll(2100);
     } catch (error) {
-      setFlowMessage(errorMessage(error));
+      if (intent === createIntent.current) setFlowMessage(nativePairingNotice(error) ?? errorMessage(error));
     } finally {
-      setSubmitting(false);
+      if (intent === createIntent.current) setSubmitting(false);
     }
   };
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === "Escape" && pending) {
       event.preventDefault();
-      stopWaiting(CONNECT_COPY.stopped);
+      void stopWaiting(CONNECT_COPY.stopped);
     }
   };
 
@@ -200,18 +291,66 @@ export function ConnectScreen({ controller, state }: { controller: ShellControll
   const ownerTools = state.phase === "verified";
   const degradedTools = state.phase === "degraded" || state.phase === "incompatible";
 
+  const refreshDaemon = useCallback(async () => {
+    if (!controller.nativeSessionAvailable) return;
+    try {
+      setDaemon(await controller.serviceDiscovery());
+    } catch {
+      setDaemon(null);
+    }
+  }, [controller]);
+
+  useEffect(() => {
+    if (nativeVariant) void refreshDaemon();
+  }, [nativeVariant, refreshDaemon]);
+
+  const startDaemon = async () => {
+    if (daemonBusy) return;
+    setDaemonBusy(true);
+    try {
+      const result = await controller.startDaemonOffer();
+      setDaemon(result.discovery);
+      if (result.discovery.state === "verified") {
+        await controller.attachNativeSession();
+      }
+    } catch (error) {
+      setFlowMessage(nativePairingNotice(error) ?? errorMessage(error));
+    } finally {
+      setDaemonBusy(false);
+    }
+  };
+
   return (
     <section className="panel" onKeyDown={onKeyDown}>
       <h1>{CONNECT_COPY.heading}</h1>
-      <p className="hint">{CONNECT_COPY.intro}</p>
+      <p className="hint">{nativeVariant ? "이 앱을 개인 서재에 연결합니다." : CONNECT_COPY.intro}</p>
       <p className="hint">
-        {CONNECT_COPY.endpointLabel}: <span className="muted-code">{location.origin}</span>
+        {CONNECT_COPY.endpointLabel}: <span className="muted-code" data-testid="connect-endpoint">{nativeVariant ? controller.client.publicOrigin ?? daemon?.endpoint ?? "서비스 연결 정보를 확인하세요." : location.origin}</span>
       </p>
-      <p className="hint">{CONNECT_COPY.securityNote}</p>
+      <p className="hint">{nativeVariant ? NATIVE_CONNECT_COPY.storageNote : CONNECT_COPY.securityNote}</p>
       <p className="status" role="status" aria-label="연결 상태">
         {state.notice}
       </p>
       {state.localCleanupPending && <button type="button" onClick={() => void controller.retryLocalCleanup()}>연결 자격 정리 다시 시도</button>}
+
+      {nativeVariant && (
+        <div>
+          <h2>{NATIVE_CONNECT_COPY.daemonHeading}</h2>
+          <p className="hint" role="status" data-testid="daemon-state">
+            {daemon ? nativeDaemonStateLabel(daemon.state) : "데몬 상태를 알 수 없습니다."}
+          </p>
+          <div className="form-row">
+            <button type="button" onClick={() => void refreshDaemon()} disabled={daemonBusy}>
+              {NATIVE_CONNECT_COPY.refreshDaemon}
+            </button>
+            {daemon?.state === "daemon_stopped" && (
+              <button type="button" className="primary" onClick={() => void startDaemon()} disabled={daemonBusy}>
+                {daemonBusy ? NATIVE_CONNECT_COPY.startingDaemon : NATIVE_CONNECT_COPY.startDaemon}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {needsPairing && (
         <form onSubmit={onSubmit}>
@@ -227,27 +366,29 @@ export function ConnectScreen({ controller, state }: { controller: ShellControll
               onChange={(event) => setLabel(event.target.value)}
             />
           </label>
-          <label className="choice">
-            <input
-              type="checkbox"
-              checked={remember}
-              aria-label={CONNECT_COPY.rememberLabel}
-              disabled={submitting || pending !== null}
-              onChange={(event) => setRemember(event.target.checked)}
-            />
-            <span>{CONNECT_COPY.rememberLabel}</span>
-          </label>
+          {!nativeVariant && (
+            <label className="choice">
+              <input
+                type="checkbox"
+                checked={remember}
+                aria-label={CONNECT_COPY.rememberLabel}
+                disabled={submitting || pending !== null}
+                onChange={(event) => setRemember(event.target.checked)}
+              />
+              <span>{CONNECT_COPY.rememberLabel}</span>
+            </label>
+          )}
           <div className="form-row">
             <button
               type="submit"
               className="primary"
               ref={submitButtonRef}
-              disabled={submitting || pending !== null || state.phase === "checking"}
+              disabled={submitting || stopping || pending !== null || state.phase === "checking"}
             >
               {pending || submitting ? CONNECT_COPY.waitingButton : CONNECT_COPY.requestButton}
             </button>
             {pending && (
-              <button type="button" ref={stopButtonRef} onClick={() => stopWaiting(CONNECT_COPY.stopped)}>
+              <button type="button" ref={stopButtonRef} disabled={stopping} onClick={() => void stopWaiting(CONNECT_COPY.stopped)}>
                 {CONNECT_COPY.stopWaiting}
               </button>
             )}

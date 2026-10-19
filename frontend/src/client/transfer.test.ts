@@ -28,6 +28,7 @@ import {
 import type { ImportJournal, JournalStore } from "./transfer.ts";
 import type { HaeryongClient, ListPage, OperationView, UploadCheckpoint, UploadDetail } from "./types.ts";
 import { ApiError } from "./types.ts";
+import type { FileLike, PlannedEntry, PlannedInput } from "./transfer.ts";
 
 function fileFrom(path: string, bytes: Uint8Array): File {
   const file = new File([bytes as unknown as BlobPart], path.slice(path.lastIndexOf("/") + 1));
@@ -35,10 +36,10 @@ function fileFrom(path: string, bytes: Uint8Array): File {
   return file;
 }
 
-function fakeDirectoryUpload(files: [string, Uint8Array][]): { input: ReturnType<typeof planFromFolder>; files: Map<string, File> } {
+function fakeDirectoryUpload(files: [string, Uint8Array][]): { input: ReturnType<typeof planFromFolder>; files: Map<string, FileLike> } {
   const picked = files.map(([path, bytes]) => fileFrom(path, bytes));
   const input = planFromFolder(picked, "root");
-  const map = new Map<string, File>();
+  const map = new Map<string, FileLike>();
   for (const entry of input.entries) if (entry.file) map.set(entry.path, entry.file);
   return { input, files: map };
 }
@@ -49,6 +50,7 @@ interface PutCall {
   offset: number;
   final: boolean;
   digest: string;
+  chunkSha256?: string;
   bytes: Uint8Array;
 }
 
@@ -722,4 +724,96 @@ test("multi-chunk and resumed journals keep one ACK state per actual range inten
   assert.ok(stored.entries["a.bin"].chunks.every(c => c.acked));
   assert.equal(stored.entries["a.bin"].declaredSha256, original);
   assert.deepEqual(fake.puts.map(p => p.offset), [0, 2, 4, 6, 8, 10]);
+});
+
+// --- TASK-003-05 M3: structural FileLike inputs and the first-S gate ---
+
+function structuralEntry(path: string, bytes: Uint8Array): PlannedEntry {
+  const like = {
+    size: bytes.byteLength,
+    slice(start: number, end: number) {
+      return {
+        arrayBuffer: async (): Promise<ArrayBuffer> => {
+          const view = bytes.slice(start, end);
+          return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength) as ArrayBuffer;
+        },
+      };
+    },
+  };
+  return { path, kind: "file", size: bytes.byteLength, file: like };
+}
+
+test("a structural (non-File) native entry flows through the same shared engine byte-for-byte", async () => {
+  const fake = new FakeClient();
+  const journal = new FakeJournal();
+  const engine = new TransferEngine(client(fake), journal, { chunkSize: 4 });
+  const bytes = new Uint8Array([10, 20, 30, 40, 50, 60, 70]);
+  const input: PlannedInput = {
+    mode: "file",
+    selectionName: "native.html",
+    entries: [structuralEntry("_input", bytes)],
+    limits: { emptyDirectoriesRepresented: true, symlinksRepresented: true },
+  };
+  const record = await engine.begin("lib", "p1", { kind: "new", projectId: "proj-1" }, input);
+  const done = await engine.transfer(record, input);
+  assert.equal(done.phase, "sealing");
+  const chunks = fake.puts.filter((put) => put.kind === "file" && put.bytes.byteLength > 0);
+  assert.deepEqual(chunks.map((put) => put.offset), [0, 4]);
+  const joined = new Uint8Array([...chunks.flatMap((put) => [...put.bytes])]);
+  assert.deepEqual([...joined], [...bytes]);
+  for (const put of chunks) {
+    const digest = createHash("sha256").update(put.bytes).digest("hex");
+    assert.equal(put.chunkSha256, digest);
+  }
+});
+
+test("the first-completion gate runs only for a new first S and blocks before any persistence or dispatch", async () => {
+  const fake = new FakeClient();
+  const journal = new FakeJournal();
+  const engine = new TransferEngine(client(fake), journal, { chunkSize: 4 });
+  const bytes = new Uint8Array([1, 2, 3, 4, 5]);
+  const input: PlannedInput = {
+    mode: "file",
+    selectionName: "native.html",
+    entries: [structuralEntry("_input", bytes)],
+    limits: { emptyDirectoriesRepresented: true, symlinksRepresented: true },
+  };
+  const record = await engine.begin("lib", "p1", { kind: "new", projectId: "proj-1" }, input);
+  let gateCalls = 0;
+  const failingGate = async (): Promise<void> => {
+    gateCalls += 1;
+    throw new ApiError(409, "NATIVE_SOURCE_CHANGED", false, 0, { changed_path: "_input" });
+  };
+  await assert.rejects(
+    engine.transfer(record, input, { verifyInputStable: failingGate }),
+    (error: unknown) => error instanceof ApiError && error.code === "NATIVE_SOURCE_CHANGED",
+  );
+  assert.equal(gateCalls, 1);
+  assert.equal(fake.completeCalls.length, 0);
+  const stored = journal.records.get(record.importKey as string) as ImportJournal;
+  assert.equal(stored.completeCheckpoint, null);
+  assert.equal(stored.phase, "transferring");
+
+  // A stored-checkpoint recovery (response loss) replays the SAME S with no
+  // input, no handle and no gate call.
+  stored.phase = "completing";
+  stored.completeCheckpoint = emptyCheckpoint(2);
+  stored.completeKey = "s-kept";
+  journal.save(stored);
+  const beforeGate = gateCalls;
+  const sealed = await engine.complete(stored, { verifyInputStable: failingGate });
+  assert.equal(gateCalls, beforeGate);
+  assert.equal(fake.completeCalls.length, 1);
+  assert.equal(fake.completeCalls[0].key, "s-kept");
+  assert.equal(sealed.phase, "sealing");
+
+  // A known settlement resets to a fresh first S: the gate runs again.
+  engine.markSealSettled(stored);
+  const passingGate = async (): Promise<void> => {
+    gateCalls += 1;
+  };
+  await engine.complete(stored, { verifyInputStable: passingGate });
+  assert.equal(gateCalls, beforeGate + 1);
+  assert.equal(fake.completeCalls.length, 2);
+  assert.notEqual(fake.completeCalls[1].key, "s-kept");
 });

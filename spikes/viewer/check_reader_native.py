@@ -25,7 +25,8 @@ proof={'scope':__doc__,'runtime':str(work),'complete':False,'selected_stages':so
 state=work/'state';state.mkdir(mode=0o700)
 def fingerprints():
     paths=sorted([p for folder in ['cmd','internal'] for p in (REPO/folder).rglob('*.go') if not p.name.endswith('_test.go')]+[REPO/'go.mod',REPO/'go.sum']+[p for p in (REPO/'internal/webassets/dist').rglob('*') if p.is_file()]
-                 +[REPO/'spikes/viewer/desktop/main.go',REPO/'spikes/viewer/desktop/reader.go',REPO/'spikes/viewer/desktop/guard_darwin.go',REPO/'spikes/viewer/desktop/guard_darwin.m',REPO/'spikes/viewer/desktop/go.mod',REPO/'spikes/viewer/desktop/go.sum']
+                 +[p for p in (REPO/'desktop').rglob('*') if p.is_file()]
+                 +[REPO/'spikes/viewer/desktop/main.go',REPO/'spikes/viewer/desktop/reader_mode.go',REPO/'spikes/viewer/desktop/go.mod',REPO/'spikes/viewer/desktop/go.sum']
                  +[REPO/'frontend/native.html',REPO/'frontend/vite.native.config.ts',REPO/'frontend/src/native-main.tsx',REPO/'frontend/src/client/native-bridge.ts',REPO/'frontend/src/client/native-wire.ts',REPO/'frontend/src/client/native.ts'])
     return {str(p.relative_to(REPO)):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
 def receipts(pid):
@@ -222,16 +223,17 @@ for(let i=0;i<6;i++){try{await fetch('wails://denied/'+i);}catch(e){}}
         (async()=>{try{
           const acquired=await window.navigator.locks.request("haeryong-native-host-probe",()=>Promise.resolve("acquired")).then(v=>v==="acquired").catch(()=>false);
           log("weblock.acquired-same-origin",acquired,{});
-          const caps=await call("capabilities");const session=await call("currentSession");
-          if(!caps.ok||!session.ok)throw Error("bridge metadata unavailable");
-          const owner=JSON.stringify([caps.value.library_id,session.value.principal_id,session.value.session_id]);
-          const version=location.pathname.split("/versions/")[1]||"";
-          // Wait for the verified shell first, then read the REAL current
-          // base; both the wire precondition and the journal's INTERNAL
-          // camelCase conditions are constructed from that same captured
-          // base — nothing invented.
+          // The shared shell attaches asynchronously: the verified wait must
+          // precede the metadata calls or they race NATIVE_SESSION_NOT_ATTACHED.
           const ready=await new Promise((resolve)=>{const deadline=Date.now()+30000;const check=()=>{const el=document.querySelector('.service-state[data-state="verified"]');if(el)resolve(true);else if(Date.now()>deadline)resolve(false);else setTimeout(check,250);};check();});
           log("shell.verified-before-seed",ready,{});
+          const caps=await call("capabilities");const session=await call("currentSession");
+          if(!caps.ok||!session.ok)throw Error("bridge metadata unavailable: "+JSON.stringify({caps:caps.error||null,session:session.error||null}));
+          const owner=JSON.stringify([caps.value.library_id,session.value.principal_id,session.value.session_id]);
+          const version=location.pathname.split("/versions/")[1]||"";
+          // Read the REAL current base; both the wire precondition and the
+          // journal's INTERNAL camelCase conditions are constructed from that
+          // same captured base — nothing invented.
           const get=await call("personalGet",{kind:"reading-position",version_id:version});
           if(!get.ok)throw Error("personalGet unavailable");
           const base=get.value;

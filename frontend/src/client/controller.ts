@@ -6,11 +6,59 @@
 //   incompatible    - service contract (api_version/library identity) not understood
 // Writes are only offered in `verified`. Responses from an earlier
 // credential/library/generation run are discarded, never applied.
-import type { Capabilities, CredentialAware, DeviceSession, HaeryongClient, OperationView, PairingCreated, PairingDecisionRequest, PairingPoll, PairingView, SessionInfo } from "./types.ts";
+import type { Capabilities, CredentialAware, DaemonDiscovery, DaemonStartOffer, DeviceSession, HaeryongClient, NativePairingCreated, NativePairingPoll, OperationView, PairingAdoption, PairingCreated, PairingDecisionRequest, PairingPoll, PairingView, SessionInfo } from "./types.ts";
 import { ApiError, DispatchBlockedError, NetworkError, StaleResponseError, SUPPORTED_API_VERSION, UncertainResponseError } from "./types.ts";
 import type { CredentialStore } from "./store.ts";
 
 export type ShellPhase = "checking" | "unauthenticated" | "verified" | "degraded" | "incompatible";
+
+/** Truthful native pairing/adoption failure notices (Korean UI copy). */
+export const NATIVE_PAIRING_NOTICES = {
+  stale: "연결 시도가 무효화되었습니다. 다시 연결하세요.",
+  alreadyAdopted: "연결이 이미 완료되었습니다.",
+  adoptFailed: "연결 채택이 실패하여 중단으로 처리하지 못했습니다. 화면 상태를 확인하세요.",
+  storeFailed: "연결 자격을 저장하지 못했습니다. 저장되지 않은 상태이니 새로 연결을 시작해야 합니다.",
+  storeUncertain: "연결 자격 저장 결과를 확인할 수 없습니다. 앱을 다시 시작하면 자동으로 연결되며, 저장되지 않았다면 다시 연결해야 합니다.",
+  libraryMismatch: "연결하려는 서재가 이 프로필과 일치하지 않아 연결하지 않았습니다.",
+  apiIncompatible: "지원하지 않는 서비스 계약입니다. 이 서비스와는 안전하게 사용할 수 없습니다.",
+  credentialMismatched: "저장된 연결 자격이 현재 서비스 결속과 일치하지 않습니다. 다시 연결하세요.",
+  daemonUnavailable: "로컬 서비스에 연결할 수 없습니다. 데몬 상태를 확인한 뒤 다시 시도하세요.",
+} as const;
+
+/**
+ * Maps a native pairing/poll/adoption ApiError to its truthful notice, at
+ * BOTH poll and adoption time. Returns null for unmapped errors so callers
+ * keep their existing generic handling (e.g. issuanceLost).
+ */
+export function nativePairingNotice(error: unknown): string | null {
+  if (!(error instanceof ApiError)) return null;
+  switch (error.code) {
+    case "NATIVE_PAIRING_ATTEMPT_STALE": return NATIVE_PAIRING_NOTICES.stale;
+    case "NATIVE_PAIRING_ALREADY_ADOPTED": return NATIVE_PAIRING_NOTICES.alreadyAdopted;
+    case "NATIVE_PAIRING_ADOPT_FAILED": return NATIVE_PAIRING_NOTICES.adoptFailed;
+    case "NATIVE_CREDENTIAL_STORE_FAILED": return NATIVE_PAIRING_NOTICES.storeFailed;
+    case "NATIVE_CREDENTIAL_STORE_UNCERTAIN": return NATIVE_PAIRING_NOTICES.storeUncertain;
+    case "NATIVE_LIBRARY_MISMATCH": return NATIVE_PAIRING_NOTICES.libraryMismatch;
+    case "NATIVE_API_INCOMPATIBLE": return NATIVE_PAIRING_NOTICES.apiIncompatible;
+    case "NATIVE_CREDENTIAL_MISMATCHED": return NATIVE_PAIRING_NOTICES.credentialMismatched;
+    case "NATIVE_DAEMON_UNAVAILABLE": return NATIVE_PAIRING_NOTICES.daemonUnavailable;
+    default: return null;
+  }
+}
+
+/** Korean labels for the signed local service discovery states. */
+export function nativeDaemonStateLabel(state: string): string {
+  switch (state) {
+    case "verified": return "로컬 서비스가 확인되었습니다.";
+    case "uninitialized": return "이 프로필은 아직 초기화되지 않았습니다. CLI로 `haeryong init`을 실행한 뒤 다시 시도하세요.";
+    case "daemon_stopped": return "로컬 데몬이 실행 중이 아닙니다.";
+    case "discovery_corrupt": return "로컬 서비스 기록을 신뢰할 수 없습니다. 프로필을 확인하세요.";
+    case "identity_mismatch": return "로컬 서비스 신원이 서명된 결속과 일치하지 않습니다.";
+    case "profile_error": return "프로필을 읽을 수 없습니다.";
+    case "FEATURE_NOT_READY": return "이 빌드에서는 데몬 상태 확인을 제공하지 않습니다.";
+    default: return "데몬 상태를 알 수 없습니다.";
+  }
+}
 
 export interface ShellState {
   phase: ShellPhase;
@@ -20,6 +68,13 @@ export interface ShellState {
   memoryOnly: boolean;
   storageAvailable: boolean;
   notice: string;
+  /**
+   * Runtime-only informational cleanup alerts (M3 C2): exact surviving
+   * destination temp paths whose cleanup failed after the owning panel was
+   * gone. Deduplicated by path, never persisted, never claiming the cleanup
+   * done; cleared at every authority transition.
+   */
+  cleanupAlerts: string[];
   /** Unresolved write intents kept in owner-scope memory across UI phase changes. */
   pendingDecision: PendingDecision | null;
   pendingRevokes: PendingRevoke[];
@@ -96,6 +151,41 @@ export class ShellController {
   #eventsRecheckAt = 0;
   #eventsTimer: ReturnType<typeof setTimeout> | null = null;
   #timer: ReturnType<typeof setInterval> | null = null;
+  #attaching = false;
+
+  /**
+   * Informational runtime cleanup alert (M3 C2): a destination temp whose
+   * cleanup failed after the owning panel was already gone. NOT a protected
+   * dispatch and NOT an authority grant: the check compares the captured
+   * authority identity (nonce/library/generation) NON-THROWINGLY and simply
+   * drops a report whose era was replaced, so a fire-and-forget catch can
+   * never turn into an unhandled rejection. A temporarily degraded or
+   * checking phase under the SAME authority still receives the alert — the
+   * surviving path must stay visible to the owner. Duplicate paths dedupe;
+   * no fixed content limit, no handles, no transfer state.
+   */
+  reportRuntimeCleanupFailure(failure: { code?: string; details?: { temp?: string } }, captured: DispatchAuthority | null): boolean {
+    if (captured === null) return false;
+    if (
+      captured.nonce !== this.#authority ||
+      captured.libraryId !== this.#libraryId ||
+      captured.runtimeGeneration !== this.#generation
+    ) {
+      return false;
+    }
+    const tempPath = typeof failure?.details?.temp === "string" && failure.details.temp !== "" ? failure.details.temp : "";
+    if (!this.#state.cleanupAlerts.includes(tempPath)) {
+      this.#apply({ cleanupAlerts: [...this.#state.cleanupAlerts, tempPath] });
+    }
+    return true;
+  }
+
+  /** Owner dismissal of one informational cleanup alert; never claims the cleanup done. */
+  dismissRuntimeCleanupAlert(tempPath: string): void {
+    if (this.#state.cleanupAlerts.includes(tempPath)) {
+      this.#apply({ cleanupAlerts: this.#state.cleanupAlerts.filter((path) => path !== tempPath) });
+    }
+  }
 
   constructor(client: HaeryongClient & CredentialAware, store: CredentialStore, options: ShellControllerOptions = {}) {
     this.#client = client;
@@ -108,6 +198,7 @@ export class ShellController {
       memoryOnly: false,
       storageAvailable: store.storageAvailable,
       notice: NOTICE.unauthenticated,
+      cleanupAlerts: [],
       pendingDecision: null,
       pendingRevokes: [],
       localCleanupPending: false,
@@ -194,9 +285,35 @@ export class ShellController {
       capabilities: null,
       memoryOnly: false,
       notice,
+      // An authority transition retires every shown cleanup alert: reports
+      // from the replaced era are dropped by the identity check anyway, and
+      // the old era's temps belong to its Go-side teardown now.
+      cleanupAlerts: [],
       pendingDecision: null,
       pendingRevokes: [],
     });
+  }
+
+  /**
+   * True when a native transport re-observes an already-processed
+   * authentication-loss outcome while NO effective JavaScript-side authority
+   * exists (no live attachment, no bearer token, no stored credential). Go
+   * retains a revoked remembered credential and its file across a normal
+   * disposal, so a foreground recheck can observe the same 401 repeatedly
+   * while the owner is already pairing again. Such a recheck is idempotent:
+   * it must not invalidate the transport era — a still-owned native pairing
+   * poll would otherwise be discarded as stale and the owner forced into a
+   * fresh pairing. The FIRST loss of real authority (an active attachment, a
+   * retained token or a stored credential) keeps the full clearing path
+   * below, as do genuine library/generation boundaries and explicit logout.
+   */
+  #nativeAuthRecheckIdempotent(code: string): boolean {
+    if (typeof this.#client.attachSession !== "function") return false;
+    if (this.#nativeAttachment !== null || this.#token !== "" || this.#store.read() !== null) return false;
+    return (
+      code === "NATIVE_NO_CREDENTIAL" || code === "SESSION_REVOKED" ||
+      code === "SESSION_EXPIRED" || code === "NATIVE_SESSION_LOGGED_OUT"
+    );
   }
 
   #failure(error: unknown, run: number): void {
@@ -208,6 +325,27 @@ export class ShellController {
     }
     if (error instanceof ApiError) {
       if (error.status === 401) {
+        if (this.#nativeAuthRecheckIdempotent(error.code)) {
+          // Retire this verification run without touching the transport era,
+          // the Go-held attempt slot, the store or a pending local-cleanup
+          // obligation; the visible state stays the plain unauthenticated
+          // truth for the observed outcome.
+          this.#run += 1;
+          this.#closeEvents();
+          this.#apply({
+            phase: "unauthenticated",
+            session: null,
+            capabilities: null,
+            notice: this.#state.localCleanupPending
+              ? NOTICE.logoutLocalFailure
+              : error.code === "SESSION_REVOKED"
+                ? NOTICE.revoked
+                : error.code === "SESSION_EXPIRED"
+                  ? NOTICE.expired
+                  : NOTICE.unauthenticated,
+          });
+          return;
+        }
         if (error.code === "SESSION_REVOKED") {
           this.#clearCredential(NOTICE.revoked);
           return;
@@ -216,7 +354,30 @@ export class ShellController {
           this.#clearCredential(NOTICE.expired);
           return;
         }
+        if (error.code === "NATIVE_NO_CREDENTIAL") {
+          // A native first boot without a remembered credential is the plain
+          // unauthenticated state — not an invalid stored credential.
+          this.#clearCredential(NOTICE.unauthenticated);
+          return;
+        }
         this.#clearCredential(NOTICE.invalidCredential);
+        return;
+      }
+      if (
+        error.status === 409 &&
+        (error.code === "NATIVE_API_INCOMPATIBLE" || error.code === "NATIVE_LIBRARY_MISMATCH" || error.code === "NATIVE_CREDENTIAL_MISMATCHED")
+      ) {
+        // A permanent Go binding pin is a blocked/incompatible state, never a
+        // transient service problem: Go refused the attachment, so no
+        // effective authority exists and no write may proceed. The truthful
+        // typed notice reuses the existing native pairing notice map.
+        this.#closeEvents();
+        this.#apply({
+          phase: "incompatible",
+          session: null,
+          capabilities: null,
+          notice: nativePairingNotice(error) ?? NOTICE.incompatible,
+        });
         return;
       }
       this.#apply({ phase: "degraded", notice: NOTICE.serviceRecovering });
@@ -229,21 +390,41 @@ export class ShellController {
 
   async attachNativeSession(): Promise<void> {
     if (!this.#client.attachSession) throw new Error("Native session attachment is unavailable.");
-    const run = ++this.#run;
+    if (this.#attaching) return;
+    this.#attaching = true;
     try {
-      const attached = await this.#client.attachSession();
-      if (run !== this.#run) return;
-      if (this.#nativeAttachment !== attached.attachment_id) {
-        this.#nativeAttachment = attached.attachment_id;
-        this.#token = ""; this.#boundCredential = "";
-        this.#authority++; this.#client.invalidate(); this.#closeEvents();
-        this.#apply({ phase: "checking", notice: NOTICE.checking, localCleanupPending: false });
-      }
-      await this.verify();
-    } catch (error) { this.#failure(error, run); }
+      const run = ++this.#run;
+      try {
+        const attached = await this.#client.attachSession();
+        if (run !== this.#run) return;
+        if (this.#nativeAttachment !== attached.attachment_id) {
+          this.#nativeAttachment = attached.attachment_id;
+          this.#token = ""; this.#boundCredential = "";
+          this.#authority++; this.#client.invalidate(); this.#closeEvents();
+          this.#apply({ phase: "checking", notice: NOTICE.checking, localCleanupPending: false, cleanupAlerts: [] });
+        }
+        await this.verify();
+      } catch (error) { this.#failure(error, run); }
+    } finally {
+      this.#attaching = false;
+    }
   }
 
   async verify(): Promise<void> {
+    // A native transport with no live attachment reattaches first: an
+    // explicit retry, the periodic recheck and post-recovery reconnects must
+    // all reach the Go-held credential again instead of a dead end. The
+    // reentrancy guard keeps the in-flight attach's own verify() call from
+    // starting a second attach, and an outstanding logout's local-cleanup
+    // obligation is never silently reauthenticated over.
+    if (
+      this.#nativeAttachment === null && typeof this.#client.attachSession === "function" &&
+      !this.#attaching && !this.#state.localCleanupPending
+    ) {
+      await this.attachNativeSession();
+      return;
+    }
+    if (this.#attaching && this.#nativeAttachment === null) return;
     const native = this.#nativeAttachment !== null;
     const token = native ? "" : this.#token || this.#store.read() || "";
     if (!native && !token) {
@@ -269,6 +450,7 @@ export class ShellController {
       this.#client.invalidate();
       this.#boundCredential = token;
       this.#authority += 1;
+      this.#apply({ cleanupAlerts: [] });
     }
     const run = ++this.#run;
     // `checking` is an initial/new-authority loading state. A same-authority
@@ -312,6 +494,7 @@ export class ShellController {
     }
     if (libraryChanged) {
       this.#authority += 1;
+      this.#apply({ cleanupAlerts: [] });
     }
     this.#generation = capabilities.runtime_generation;
     this.#libraryId = capabilities.library_id;
@@ -326,6 +509,9 @@ export class ShellController {
       capabilities,
       memoryOnly: !remembered,
       notice: generationChanged ? NOTICE.generationChanged : remembered ? NOTICE.verifiedRemembered : NOTICE.verifiedMemory,
+      // A runtime-generation boundary retires shown cleanup alerts with the
+      // rest of the previous generation's confirmed data.
+      ...(generationChanged ? { cleanupAlerts: [] } : {}),
       pendingDecision,
       pendingRevokes,
     });
@@ -537,12 +723,46 @@ export class ShellController {
   }
 
   /** Thin transport pass-throughs used by the pairing flow and owner tools. */
-  pair(deviceLabel: string): Promise<PairingCreated> {
+  pair(deviceLabel: string): Promise<PairingCreated | NativePairingCreated> {
     return this.#client.pair(deviceLabel);
   }
 
-  pollPairing(pairingId: string, pollingSecret: string): Promise<PairingPoll> {
+  pollPairing(pairingId: string, pollingSecret?: string): Promise<PairingPoll | NativePairingPoll> {
     return this.#client.pollPairing(pairingId, pollingSecret);
+  }
+
+  /** Explicit native adoption of the still-owned approved pairing attempt. */
+  async adoptPairing(pairingId: string): Promise<PairingAdoption> {
+    if (!this.#client.adoptPairing) throw new Error("Native pairing adoption is unavailable.");
+    return this.#client.adoptPairing(pairingId);
+  }
+
+  /** Explicit user Stop: the local Go-held attempt is abandoned truthfully. */
+  async abandonPairing(pairingId: string): Promise<"abandoned" | "already-adopted" | "adopt-failed"> {
+    if (!this.#client.abandonPairing) throw new Error("Native pairing cancellation is unavailable.");
+    try {
+      await this.#client.abandonPairing(pairingId);
+      return "abandoned";
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "NATIVE_PAIRING_ALREADY_ADOPTED") return "already-adopted";
+      if (error instanceof ApiError && error.code === "NATIVE_PAIRING_ADOPT_FAILED") return "adopt-failed";
+      // A stale attempt (replaced/expired server-side) is already gone
+      // locally; the stop is still truthful.
+      if (error instanceof ApiError && error.code === "NATIVE_PAIRING_ATTEMPT_STALE") return "abandoned";
+      throw error;
+    }
+  }
+
+  /** Signed local service discovery through the native facade. */
+  async serviceDiscovery(): Promise<DaemonDiscovery> {
+    if (!this.#client.serviceDiscovery) throw new Error("Native service discovery is unavailable.");
+    return this.#client.serviceDiscovery();
+  }
+
+  /** Explicit owner-requested sibling-daemon start; never silent. */
+  async startDaemonOffer(): Promise<DaemonStartOffer> {
+    if (!this.#client.startDaemonOffer) throw new Error("Native daemon start offer is unavailable.");
+    return this.#client.startDaemonOffer();
   }
 
   listSessions(): Promise<DeviceSession[]> {

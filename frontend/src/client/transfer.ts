@@ -257,12 +257,22 @@ export interface InputLimits {
   symlinksRepresented: boolean;
 }
 
+/**
+ * Structural file surface the shared engine consumes. The browser File
+ * satisfies it natively; the native adapter provides lazy ranges over the
+ * opaque source handle. One engine, no second import path.
+ */
+export interface FileLike {
+  readonly size: number;
+  slice(start: number, end: number): { arrayBuffer(): Promise<ArrayBuffer> };
+}
+
 export interface PlannedEntry {
   path: string;
   kind: "file" | "directory" | "symlink";
   size?: number;
   linkTarget?: string;
-  file?: File;
+  file?: FileLike;
 }
 
 export interface PlannedInput {
@@ -336,7 +346,7 @@ export async function sha256Bytes(bytes: Uint8Array): Promise<string> {
   return toHex(new Uint8Array(digest));
 }
 
-export async function sha256Range(file: File, offset: number, length: number, check?: () => void): Promise<string> {
+export async function sha256Range(file: FileLike, offset: number, length: number, check?: () => void): Promise<string> {
   if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length < 0 || offset > file.size || length > file.size - offset) {
     throw new ReselectionMismatchError("the requested byte range cannot be read exactly from the selected file");
   }
@@ -404,6 +414,15 @@ export interface TransferCallbacks {
   shouldContinue?: () => boolean;
   /** Synchronous verified-authority gate invoked before every protected dispatch. */
   guard?: () => void;
+  /**
+   * First-completion source stability gate (native owner-selected inputs).
+   * Invoked ONLY when this would be the upload's first completion intent
+   * (completeCheckpoint === null), BEFORE the checkpoint is captured or
+   * persisted; a throw blocks the completion dispatch while staging stays
+   * retained. Recovery with a stored checkpoint replays the SAME S without
+   * any input or source handle.
+   */
+  verifyInputStable?: () => Promise<void>;
 }
 
 export interface EngineOptions {
@@ -562,7 +581,7 @@ export class TransferEngine {
     callbacks: TransferCallbacks,
     onAck: (bytes: number) => void,
   ): Promise<void> {
-    const file = entry.file as File;
+    const file = entry.file as FileLike;
     const confirmed: Interval[] = [...(coverage?.get(entry.path) ?? [])];
     const gaps = gapsBetween(confirmed, file.size);
     // One state per exact range intent. A cumulative array appended to the
@@ -664,6 +683,15 @@ export class TransferEngine {
   async complete(record: ImportJournal, callbacks: TransferCallbacks): Promise<ImportJournal> {
     if (record.uploadId === null) throw new Error("completion requires an upload");
     if (record.completeCheckpoint === null) {
+      // First completion intent for this S key: the owner-selected input
+      // must still match its captured identity BEFORE anything is captured,
+      // persisted or dispatched. A known settlement later resets the
+      // checkpoint (markSealSettled) and the reselected input re-passes this
+      // gate as a new first S; a stored checkpoint (response-loss recovery)
+      // skips straight to the same-S replay below with no input at all.
+      if (callbacks.verifyInputStable) {
+        await callbacks.verifyInputStable();
+      }
       const detail = await this.#client.uploadDetail(record.uploadId);
       record.completeCheckpoint = nextCheckpoint(detail.checkpoint);
       record.phase = "completing";
@@ -947,7 +975,7 @@ export interface VerificationResult {
  * knowledge never limits the checks.
  */
 export async function verifyReselection(client: HaeryongClient, uploadId: string, input: PlannedInput, journalEntries?: Record<string, JournalEntryRecord>, retries = 2, check?: () => void): Promise<VerificationResult> {
-  const files = new Map<string, File>();
+  const files = new Map<string, FileLike>();
   for (const entry of input.entries) {
     if (entry.kind === "file" && entry.file) files.set(entry.path, entry.file);
   }

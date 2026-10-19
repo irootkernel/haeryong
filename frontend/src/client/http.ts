@@ -422,7 +422,11 @@ export class HttpHaeryongClient implements HaeryongClient {
     return this.#request("POST", "/api/v1/auth/pairings", { device_label: deviceLabel });
   }
 
-  pollPairing(pairingId: string, pollingSecret: string): Promise<PairingPoll> {
+  /** The browser validates its actual polling secret on every poll. */
+  pollPairing(pairingId: string, pollingSecret: string | undefined): Promise<PairingPoll> {
+    if (pollingSecret === undefined) {
+      throw new Error("browser pairing requires its polling secret");
+    }
     return this.#request("POST", `/api/v1/auth/pairings/${encodeURIComponent(pairingId)}/poll`, {
       polling_secret: pollingSecret,
     });

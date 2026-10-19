@@ -314,8 +314,14 @@ closed-session case preserves real dead-receipt recovery. Each driver checks
 stable source/embed inputs and closes its browser and daemon.
 
 The portable [native Reader check](../../spikes/viewer/check_reader_native.py)
-uses the existing beta.28 harness and real tagged test daemon. Its declared
-five-stage run covers 23 raw-facade rows, actual shared App interaction and
+uses the existing beta.28 harness and real tagged test daemon. Since the
+TASK-003-05 facade lift, the closed typed `ReaderService` and the Darwin
+main-frame guard live in the separately pinned `desktop/` module
+(`haeryong.local/haeryong/desktop`); the spike keeps only the thin harness
+wiring (fixed static origin, guard/bridge bootstrap, selfcheck page, probe
+gating) and references that package through a local module replace, so the
+root module stays Wails-free. Its declared
+six-stage run covers 23 raw-facade rows, actual shared App interaction and
 context, labelled pending-request persistence/replay across restart, and a
 forced window crash followed by a healthy attachment. The app's 960,131-byte
 context contains actual local module/Worker, external Preact, WASM and authored

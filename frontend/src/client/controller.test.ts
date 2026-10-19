@@ -2,8 +2,10 @@
 // client scripts session/capabilities outcomes and records every call.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { NOTICE, ShellController } from "./controller.ts";
+import { NOTICE, ShellController, nativeDaemonStateLabel, nativePairingNotice } from "./controller.ts";
 import type { PendingDecision } from "./controller.ts";
+import { NativeHaeryongClient } from "./native.ts";
+import type { NativePort } from "./native.ts";
 import { MemoryCredentialStore } from "./store.ts";
 import { ApiError, DispatchBlockedError, NetworkError, StaleResponseError, UncertainResponseError } from "./types.ts";
 import type {
@@ -1301,5 +1303,336 @@ test("native local forget failure stays visible through disposal and no-token ve
   await controller.retryLocalCleanup(); assert.equal(controller.state.localCleanupPending, true);
   allow = true; await controller.retryLocalCleanup();
   assert.equal(controller.state.localCleanupPending, false); assert.equal(controller.state.notice, NOTICE.logoutAckUnknown); assert.equal(disposals, 3);
+  controller.stop();
+});
+
+test("nativePairingNotice maps every typed onboarding failure at poll and adoption time", () => {
+  const codes: Array<[string, RegExp]> = [
+    ["NATIVE_PAIRING_ATTEMPT_STALE", /무효화/],
+    ["NATIVE_PAIRING_ALREADY_ADOPTED", /이미 완료/],
+    ["NATIVE_PAIRING_ADOPT_FAILED", /채택이 실패/],
+    ["NATIVE_CREDENTIAL_STORE_FAILED", /저장하지 못했습니다/],
+    ["NATIVE_CREDENTIAL_STORE_UNCERTAIN", /확인할 수 없습니다/],
+    ["NATIVE_LIBRARY_MISMATCH", /서재.*일치하지 않/],
+    ["NATIVE_API_INCOMPATIBLE", /지원하지 않는 서비스 계약/],
+    ["NATIVE_CREDENTIAL_MISMATCHED", /결속과 일치하지 않/],
+    ["NATIVE_DAEMON_UNAVAILABLE", /로컬 서비스에 연결할 수 없/],
+  ];
+  for (const [code, pattern] of codes) {
+    assert.match(nativePairingNotice(new ApiError(409, code, false)) ?? "", pattern);
+  }
+  assert.equal(nativePairingNotice(new ApiError(0, "NETWORK_ERROR", true)), null);
+  assert.equal(nativePairingNotice(new Error("not typed")), null);
+});
+
+test("nativeDaemonStateLabel labels every signed discovery state honestly", () => {
+  assert.match(nativeDaemonStateLabel("verified"), /확인되었습니다/);
+  assert.match(nativeDaemonStateLabel("uninitialized"), /초기화되지 않/);
+  assert.match(nativeDaemonStateLabel("daemon_stopped"), /실행 중이 아닙니다/);
+  assert.match(nativeDaemonStateLabel("discovery_corrupt"), /신뢰할 수 없/);
+  assert.match(nativeDaemonStateLabel("identity_mismatch"), /일치하지 않/);
+  assert.match(nativeDaemonStateLabel("profile_error"), /읽을 수 없/);
+  assert.match(nativeDaemonStateLabel("FEATURE_NOT_READY"), /제공하지 않/);
+  assert.match(nativeDaemonStateLabel("anything-else"), /알 수 없/);
+});
+
+test("native no-credential boot maps to the plain unauthenticated state", async () => {
+  const fake = new FakeClient();
+  fake.sessionHandler = async () => { throw new ApiError(401, "NATIVE_NO_CREDENTIAL", false); };
+  fake.capabilitiesHandler = async () => { throw new ApiError(401, "NATIVE_NO_CREDENTIAL", false); };
+  const native = Object.assign(fake, {
+    async attachSession() { throw new ApiError(401, "NATIVE_NO_CREDENTIAL", false); },
+  });
+  const controller = new ShellController(native, new MemoryCredentialStore());
+  await controller.attachNativeSession();
+  assert.equal(controller.state.phase, "unauthenticated");
+  assert.equal(controller.state.notice, NOTICE.unauthenticated);
+  controller.stop();
+});
+
+test("verify on a detached native transport reattaches instead of dead-ending", async () => {
+  const fake = new FakeClient();
+  let attaches = 0;
+  const native = Object.assign(fake, {
+    async attachSession() { attaches++; return { attachment_id: "native-" + attaches, session: sessionInfo(), capabilities: capabilities(), public_origin: "http://127.0.0.1:9270" }; },
+  });
+  const controller = new ShellController(native, new MemoryCredentialStore());
+  await controller.verify();
+  assert.equal(attaches, 1);
+  assert.equal(controller.state.phase, "verified");
+  controller.stop();
+});
+
+test("controller adoptPairing and abandonPairing map truthful outcomes", async () => {
+  const fake = new FakeClient();
+  const adopted: string[] = [];
+  const abandoned: string[] = [];
+  let abandonOutcome: "ok" | "already" | "failed" | "stale" = "ok";
+  const native = Object.assign(fake, {
+    async attachSession() { return { attachment_id: "native", session: sessionInfo(), capabilities: capabilities(), public_origin: "http://127.0.0.1:9270" }; },
+    async adoptPairing(pairingId: string) { adopted.push(pairingId); return { adopted: true as const, durability: "confirmed" as const }; },
+    async abandonPairing(pairingId: string) {
+      abandoned.push(pairingId);
+      if (abandonOutcome === "already") throw new ApiError(409, "NATIVE_PAIRING_ALREADY_ADOPTED", false);
+      if (abandonOutcome === "failed") throw new ApiError(409, "NATIVE_PAIRING_ADOPT_FAILED", false);
+      if (abandonOutcome === "stale") throw new ApiError(409, "NATIVE_PAIRING_ATTEMPT_STALE", false);
+    },
+  });
+  const controller = new ShellController(native, new MemoryCredentialStore());
+  const adoption = await controller.adoptPairing("p1");
+  assert.equal(adoption.adopted, true);
+  assert.deepEqual(adopted, ["p1"]);
+  assert.equal(await controller.abandonPairing("p1"), "abandoned");
+  abandonOutcome = "already";
+  assert.equal(await controller.abandonPairing("p1"), "already-adopted");
+  abandonOutcome = "failed";
+  assert.equal(await controller.abandonPairing("p1"), "adopt-failed");
+  abandonOutcome = "stale";
+  assert.equal(await controller.abandonPairing("p1"), "abandoned");
+  assert.deepEqual(abandoned, ["p1", "p1", "p1", "p1"]);
+  controller.stop();
+});
+
+// --- TASK-003-05 M2 C2: native foreground recheck idempotence and pin errors ---
+// These drive the REAL NativeHaeryongClient era machinery (not just helper
+// mappings): a held poll captures its era at call time and survives only when
+// a no-authority recheck stops invalidating the transport.
+
+class NativeScenarioPort {
+  calls: string[] = [];
+  credentialState: "none" | "live" | "revoked" = "none";
+  attachOverride: "" | "logged-out" = "";
+  attachFailure: unknown | null = null;
+  forgetFails = false;
+  pollGate: Promise<void> | null = null;
+  pollCalls = 0;
+
+  async call(operation: string, _payload: Record<string, unknown>): Promise<unknown> {
+    this.calls.push(operation);
+    switch (operation) {
+      case "attachSession": {
+        if (this.attachFailure instanceof Error || this.attachFailure instanceof ApiError) throw this.attachFailure;
+        if (this.attachOverride === "logged-out") throw new ApiError(401, "NATIVE_SESSION_LOGGED_OUT", false);
+        if (this.credentialState === "none") throw new ApiError(401, "NATIVE_NO_CREDENTIAL", false);
+        if (this.credentialState === "revoked") throw new ApiError(401, "SESSION_REVOKED", false);
+        return { attachment_id: "native-1", session: sessionInfo(), capabilities: capabilities(), public_origin: "http://127.0.0.1:9270" };
+      }
+      case "currentSession":
+        // Models another device revoking the Go-held credential while the
+        // attachment is live; the token and file stay until an explicit
+        // logout forgets them.
+        if (this.credentialState === "revoked") throw new ApiError(401, "SESSION_REVOKED", false);
+        return sessionInfo();
+      case "capabilities":
+        return capabilities();
+      case "pair":
+        return { pairing_id: "pair-c2", code: "246810", expires_at: new Date(Date.now() + 300_000).toISOString() };
+      case "pollPairing": {
+        this.pollCalls++;
+        if (this.pollGate) await this.pollGate;
+        return { state: "approved", session: { session_id: "sess-1", principal_id: "owner", library_id: "lib-1", device_label: "tester" } };
+      }
+      case "adoptPairing":
+        // Adoption installs the captured endpoint/bearer pair together.
+        this.credentialState = "live";
+        return { adopted: true, durability: "confirmed" };
+      case "disposeSession":
+        if (this.forgetFails) throw new ApiError(500, "NATIVE_LOCAL_FORGET_FAILED", true);
+        return;
+      case "revokeOwnSession":
+        return;
+      case "subscribeEvents":
+        return { closed: new Promise<void>(() => {}), close() {} };
+      default:
+        throw new Error("unused operation in scenario: " + operation);
+    }
+  }
+}
+
+function nativeScenarioController(port: NativeScenarioPort): ShellController {
+  return new ShellController(new NativeHaeryongClient(port as unknown as NativePort), new MemoryCredentialStore());
+}
+
+test("a native no-credential foreground recheck keeps a still-owned held poll alive", async () => {
+  const port = new NativeScenarioPort();
+  const controller = nativeScenarioController(port);
+  await controller.attachNativeSession();
+  assert.equal(controller.state.phase, "unauthenticated");
+  assert.equal(controller.state.notice, NOTICE.unauthenticated);
+  // A REAL era-captured native poll, held in flight like a foreground switch.
+  const gate = { resolve: null as null | (() => void) };
+  port.pollGate = new Promise<void>((resolve) => { gate.resolve = resolve; });
+  const poll = controller.pollPairing("pair-c2");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(port.pollCalls, 1);
+  // The App foreground handler path calls verify() while the poll is held.
+  await controller.verify();
+  assert.equal(controller.state.phase, "unauthenticated");
+  assert.equal(port.calls.filter((call) => call === "attachSession").length, 2);
+  port.pollGate = null;
+  gate.resolve!();
+  const result = await poll;
+  assert.equal(result.state, "approved");
+  await controller.adoptPairing("pair-c2");
+  await controller.attachNativeSession();
+  assert.equal(controller.state.phase, "verified");
+  assert.equal(port.calls.includes("disposeSession"), false);
+  controller.stop();
+});
+
+test("a repeated revoked remembered credential recheck keeps the new pairing poll alive; the first loss still cleans and stales old work", async () => {
+  const port = new NativeScenarioPort();
+  port.credentialState = "live";
+  const controller = nativeScenarioController(port);
+  await controller.attachNativeSession();
+  assert.equal(controller.state.phase, "verified");
+  const authority = controller.captureDispatchAuthority();
+  // An in-flight poll from the live era, then another device revokes A; the
+  // retained dead credential keeps answering attach with SESSION_REVOKED.
+  let release!: () => void;
+  port.pollGate = new Promise<void>((resolve) => { release = resolve; });
+  const oldPoll = controller.pollPairing("pair-old");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  port.credentialState = "revoked";
+  await controller.verify();
+  assert.equal(controller.state.phase, "unauthenticated");
+  assert.equal(controller.hasCredential(), false);
+  assert.equal(port.calls.includes("disposeSession"), true);
+  assert.throws(() => controller.requireVerifiedDispatch(authority), DispatchBlockedError);
+  port.pollGate = null;
+  release();
+  await assert.rejects(() => oldPoll, StaleResponseError);
+  // The owner pairs again; repeated no-authority rechecks of the retained
+  // revoked A must be idempotent and leave the new held poll owned.
+  let releaseB!: () => void;
+  port.pollGate = new Promise<void>((resolve) => { releaseB = resolve; });
+  const newPoll = controller.pollPairing("pair-new");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const disposesBefore = port.calls.filter((call) => call === "disposeSession").length;
+  await controller.verify();
+  assert.equal(controller.state.phase, "unauthenticated");
+  assert.equal(controller.state.notice, NOTICE.revoked);
+  assert.equal(port.calls.filter((call) => call === "disposeSession").length, disposesBefore);
+  port.pollGate = null;
+  releaseB();
+  const approved = await newPoll;
+  assert.equal(approved.state, "approved");
+  await controller.adoptPairing("pair-new");
+  await controller.attachNativeSession();
+  assert.equal(controller.state.phase, "verified");
+  controller.stop();
+});
+
+test("permanent native attach pin errors surface an accurate incompatible state without pairing or authority", async () => {
+  const cases: Array<[string, RegExp]> = [
+    ["NATIVE_API_INCOMPATIBLE", /지원하지 않는 서비스 계약/],
+    ["NATIVE_LIBRARY_MISMATCH", /서재가 이 프로필과 일치하지 않/],
+    ["NATIVE_CREDENTIAL_MISMATCHED", /결속과 일치하지 않/],
+  ];
+  for (const [code, pattern] of cases) {
+    const port = new NativeScenarioPort();
+    port.attachFailure = new ApiError(409, code, false);
+    const controller = nativeScenarioController(port);
+    await controller.attachNativeSession();
+    assert.equal(controller.state.phase, "incompatible");
+    assert.match(controller.state.notice, pattern);
+    assert.equal(controller.hasCredential(), false);
+    assert.throws(() => controller.requireVerifiedDispatch(), DispatchBlockedError);
+    assert.equal(port.calls.includes("pair"), false);
+    controller.stop();
+  }
+});
+
+test("native attach network failure and generic service errors keep the transient degraded mapping", async () => {
+  const port = new NativeScenarioPort();
+  port.attachFailure = new NetworkError();
+  const controller = nativeScenarioController(port);
+  await controller.attachNativeSession();
+  assert.equal(controller.state.phase, "degraded");
+  assert.equal(controller.state.notice, NOTICE.disconnected);
+  port.attachFailure = new ApiError(500, "INTERNAL", false);
+  await controller.verify();
+  assert.equal(controller.state.phase, "degraded");
+  assert.equal(controller.state.notice, NOTICE.serviceRecovering);
+  controller.stop();
+});
+
+test("an already-no-authority logged-out recheck keeps the local-cleanup obligation visible and never reattaches over it", async () => {
+  const port = new NativeScenarioPort();
+  port.credentialState = "live";
+  const controller = nativeScenarioController(port);
+  await controller.attachNativeSession();
+  assert.equal(controller.state.phase, "verified");
+  port.forgetFails = true;
+  port.credentialState = "none";
+  await controller.logout();
+  assert.equal(controller.state.localCleanupPending, true);
+  // verify() is guarded by the cleanup obligation: no attach happens at all.
+  const attachesBefore = port.calls.filter((call) => call === "attachSession").length;
+  await controller.verify();
+  assert.equal(port.calls.filter((call) => call === "attachSession").length, attachesBefore);
+  // A direct attach observes the Go logged-out state; the idempotent branch
+  // keeps the pending obligation and its truthful notice.
+  port.attachOverride = "logged-out";
+  await controller.attachNativeSession();
+  assert.equal(controller.state.phase, "unauthenticated");
+  assert.equal(controller.state.localCleanupPending, true);
+  assert.equal(controller.state.notice, NOTICE.logoutLocalFailure);
+  controller.stop();
+});
+
+// --- TASK-003-05 M3 C2: runtime cleanup alerts ---
+
+test("runtime cleanup alerts record exact paths, dedupe, dismiss and survive a same-authority degraded phase", async () => {
+  const fake = new FakeClient();
+  const controller = new ShellController(fake, new MemoryCredentialStore());
+  await controller.acceptPairing("owner-token", true);
+  assert.equal(controller.state.phase, "verified");
+  const authority = controller.captureDispatchAuthority();
+  const reported = controller.reportRuntimeCleanupFailure(
+    { code: "NATIVE_CLEANUP_FAILED", details: { temp: "/tmp/.haeryong-abc.partial" } },
+    authority,
+  );
+  assert.equal(reported, true);
+  assert.deepEqual(controller.state.cleanupAlerts, ["/tmp/.haeryong-abc.partial"]);
+  // A different path joins without a fixed limit; the same path dedupes.
+  controller.reportRuntimeCleanupFailure({ code: "NATIVE_CLEANUP_FAILED", details: { temp: "/tmp/.haeryong-def.partial" } }, authority);
+  controller.reportRuntimeCleanupFailure({ code: "NATIVE_CLEANUP_FAILED", details: { temp: "/tmp/.haeryong-abc.partial" } }, authority);
+  assert.deepEqual(controller.state.cleanupAlerts, ["/tmp/.haeryong-abc.partial", "/tmp/.haeryong-def.partial"]);
+  // An unobserved abort reply (no path) still records an honest entry.
+  controller.reportRuntimeCleanupFailure({ code: "NETWORK_ERROR" }, authority);
+  assert.equal(controller.state.cleanupAlerts.length, 3);
+  // A temporarily degraded phase under the SAME authority keeps the alerts.
+  fake.sessionHandler = async () => { throw new NetworkError(); };
+  await controller.verify();
+  assert.equal(controller.state.phase, "degraded");
+  assert.equal(controller.state.cleanupAlerts.length, 3);
+  // Dismissal is informational only and never claims the cleanup done.
+  controller.dismissRuntimeCleanupAlert("/tmp/.haeryong-abc.partial");
+  assert.deepEqual(controller.state.cleanupAlerts, ["/tmp/.haeryong-def.partial", ""]);
+  controller.stop();
+});
+
+test("a replaced authority drops late cleanup reports and every authority transition clears shown alerts", async () => {
+  const fake = new FakeClient();
+  const controller = new ShellController(fake, new MemoryCredentialStore());
+  await controller.acceptPairing("owner-token", true);
+  const oldAuthority = controller.captureDispatchAuthority();
+  controller.reportRuntimeCleanupFailure({ code: "NATIVE_CLEANUP_FAILED", details: { temp: "/tmp/.haeryong-old.partial" } }, oldAuthority);
+  assert.equal(controller.state.cleanupAlerts.length, 1);
+  // A generation change clears the shown alerts with the old generation's data.
+  fake.capabilitiesHandler = async () => capabilities({ runtime_generation: "g2" });
+  await controller.verify();
+  assert.equal(controller.state.cleanupAlerts.length, 0);
+  // A late report from the replaced identity is dropped, never reinserted.
+  assert.equal(controller.reportRuntimeCleanupFailure({ code: "NATIVE_CLEANUP_FAILED", details: { temp: "/tmp/.haeryong-old.partial" } }, oldAuthority), false);
+  assert.equal(controller.state.cleanupAlerts.length, 0);
+  // The fresh authority can report its own path.
+  const fresh = controller.captureDispatchAuthority();
+  assert.equal(controller.reportRuntimeCleanupFailure({ code: "NATIVE_CLEANUP_FAILED", details: { temp: "/tmp/.haeryong-new.partial" } }, fresh), true);
+  // A credential rebinding clears the alerts again.
+  await controller.acceptPairing("other-token", true);
+  assert.equal(controller.state.cleanupAlerts.length, 0);
+  assert.equal(controller.reportRuntimeCleanupFailure({ code: "NATIVE_CLEANUP_FAILED", details: { temp: "/x" } }, fresh), false);
   controller.stop();
 });

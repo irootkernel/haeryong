@@ -107,7 +107,26 @@ export function createNativePort(wire: NativeWire): NativePort {
       wirePayload = { ...payload, chunk: { ...chunk, bytes_b64: encodeBytes(bytes) } };
     }
     const value = await invoke(operation, wirePayload);
-    if (operation === "packageStream" || operation === "fileStream") return stream(value);
+    if (operation === "packageStream") return stream(value);
+    if (operation === "fileStream") {
+      // The delivered file representation may carry its own strong validator
+      // beside the stream handle. A malformed validator is dropped rather
+      // than half-trusted: the download adapter then fails typed
+      // (NATIVE_VALIDATOR_MISSING) instead of saving unverified bytes.
+      let validator: { sha256: string; byte_size: number } | undefined;
+      if (record(value)) {
+        const candidate: unknown = value.validator;
+        if (
+          record(candidate) &&
+          typeof candidate.sha256 === "string" && /^[0-9a-f]{64}$/.test(candidate.sha256) &&
+          typeof candidate.byte_size === "number" && Number.isSafeInteger(candidate.byte_size) && candidate.byte_size >= 0
+        ) {
+          validator = { sha256: candidate.sha256, byte_size: candidate.byte_size };
+        }
+      }
+      const reified = stream(value);
+      return validator ? { body: reified.body, cancel: reified.cancel, validator } : reified;
+    }
     if (operation === "versionSuppliedMetadata") {
       // The closed metadata open carries the immutable object's strong
       // validator beside the stream handle; both are reified together.

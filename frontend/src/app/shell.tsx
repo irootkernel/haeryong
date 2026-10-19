@@ -57,8 +57,27 @@ function NavLink({ screen, path, label, current }: { screen: ScreenId; path: str
 }
 
 function Banner({ state, controller }: { state: ShellState; controller: ShellController }) {
+  // Cleanup alerts render independently of the auth banner branches: a
+  // surviving destination temp path must stay visible even while degraded
+  // or incompatible, instead of being masked by the early returns.
+  const cleanup = state.cleanupAlerts.length > 0 && (
+    <div className="banner" data-tone="warning" role="alert" data-testid="cleanup-alerts">
+      {state.cleanupAlerts.map((tempPath) => (
+        <p key={tempPath} data-testid="cleanup-alert">
+          {tempPath === ""
+            ? "이전 내려받기 선택의 정리 여부를 확인할 수 없습니다. 임시 파일이 남아 있을 수 있으니 확인 후 직접 삭제할 수 있습니다."
+            : `이전 내려받기 흐름이 화면을 벗어난 뒤 임시 파일 정리에 실패했습니다. 남아 있을 수 있는 경로: ${tempPath}`}
+          {" "}창/연결을 닫으면 정리가 다시 시도됩니다.
+          <button type="button" onClick={() => controller.dismissRuntimeCleanupAlert(tempPath)}>
+            이 알림 닫기
+          </button>
+        </p>
+      ))}
+    </div>
+  );
+  let authBanner: React.ReactNode = null;
   if (state.phase === "degraded") {
-    return (
+    authBanner = (
       <div className="banner" data-tone="warning" role="alert">
         <p>{NOTICE.disconnected}</p>
         <button type="button" onClick={() => void controller.verify()}>
@@ -66,15 +85,22 @@ function Banner({ state, controller }: { state: ShellState; controller: ShellCon
         </button>
       </div>
     );
-  }
-  if (state.phase === "incompatible") {
-    return (
+  } else if (state.phase === "incompatible") {
+    authBanner = (
       <div className="banner" data-tone="danger" role="alert">
-        <p>{NOTICE.incompatible}</p>
+        <p>{state.notice}</p>
       </div>
     );
   }
-  return null;
+  if (cleanup && authBanner) {
+    return (
+      <div>
+        {cleanup}
+        {authBanner}
+      </div>
+    );
+  }
+  return cleanup || authBanner;
 }
 
 function PlaceholderScreen({ screen }: { screen: ScreenId }) {
@@ -148,7 +174,13 @@ export function App({ controller }: { controller: ShellController }) {
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [controller]);
 
-  if (state.phase === "unauthenticated" || state.phase === "checking") {
+  // A native first boot can have an initialized but stopped daemon. Its
+  // signed discovery fails before any session is attached; keep the
+  // explicit start/retry controls reachable instead of showing an empty
+  // last-confirmed library. Previously attached sessions keep their shell.
+  const nativeBootUnavailable = controller.nativeSessionAvailable && state.phase === "degraded"
+    && state.session === null && state.capabilities === null;
+  if (state.phase === "unauthenticated" || state.phase === "checking" || nativeBootUnavailable) {
     return (
       <main className="shell-content">
         <ConnectScreen controller={controller} state={state} />
@@ -188,7 +220,7 @@ export function App({ controller }: { controller: ShellController }) {
         <Banner state={state} controller={controller} />
         <main className="shell-content" key={`${state.capabilities?.library_id ?? ""}:${state.session?.principal_id ?? ""}:${state.capabilities?.runtime_generation ?? ""}`}>
           {state.phase === "incompatible" ? (
-            <section className="panel"><h1>연결 확인 필요</h1><p>{NOTICE.incompatible}</p></section>
+            <section className="panel"><h1>연결 확인 필요</h1><p>{state.notice}</p></section>
           ) : route === null ? (
             <section className="panel">
               <h1>열 수 없는 주소</h1>

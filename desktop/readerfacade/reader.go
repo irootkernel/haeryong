@@ -1,9 +1,13 @@
-// ReaderMode for the reused pinned beta28 harness. This mode registers ONLY
-// the typed ReaderService binding and rejects the legacy generic fixture
-// bindings and message kinds: there is no arbitrary URL/path/method proxy.
-// Every operation is a fixed production /api/v1 route built Go-side with the
-// Go-held credential; JavaScript never receives a bearer.
-package main
+// Package readerfacade is the single shared ReaderMode facade for the reused
+// pinned beta28 harness and the future production desktop companion. It
+// registers ONLY the typed ReaderService binding and rejects the legacy
+// generic fixture bindings and message kinds: there is no arbitrary
+// URL/path/method proxy. Every operation is a fixed production /api/v1 route
+// built Go-side with the Go-held credential; JavaScript never receives a
+// bearer. The separately pinned spike keeps only thin harness wiring
+// (static origin, guard/bridge bootstrap, selfcheck page) around this
+// package; harness-only diagnostics registration stays with the spike.
+package readerfacade
 
 import (
 	"bytes"
@@ -16,8 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,11 +27,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
-	"github.com/wailsapp/wails/v3/pkg/events"
+	"haeryong.local/haeryong/desktop/onboarding"
+	"haeryong.local/haeryong/internal/adapters/client"
 )
 
 // wireError is the closed error envelope the native wire expects.
@@ -97,19 +98,106 @@ type ReaderService struct {
 	streams      map[string]*readerStream
 	subs         map[string]*readerSubscription
 	renders      []renderRef
-	receipts     []map[string]any
+	diagnostics  ReceiptObserver
 	client       *http.Client
+	// M3 owner-selected filesystem handles (TASK-003-05): opaque,
+	// purpose/attachment/generation-bound; never a path/URL proxy.
+	sources map[string]*sourceHandle
+	dests   map[string]*destHandle
+	picker  *PickerPresenter
+	// fsEpoch invalidates in-flight picker leases across owned cleanup and
+	// activation transitions without touching session semantics: a picker
+	// result that arrives after CloseOwned/activation cannot register.
+	fsEpoch uint64
+	// onboarding owns the Go-held pairing attempt, signed discovery, the
+	// explicit start offer and the protected production credential. Nil (the
+	// reused harness constructor) keeps pair/poll honestly unimplemented.
+	onboarding *onboarding.Onboarding
+	// logoutInvalidatedGen is the pairing attempt generation captured at the
+	// logout intent: attempts at or before it can never activate afterwards.
+	logoutInvalidatedGen uint64
+	// testAfterRememberedLoad pauses the remembered-credential installation
+	// between its load and its install lock hold. Same-package barrier tests
+	// only; never set outside tests.
+	testAfterRememberedLoad func()
 }
 
-func newReaderService(base, state, token string) *ReaderService {
-	return &ReaderService{
+// NewReaderService builds the shared typed facade over the exact trusted
+// daemon origin with a Go-held bearer. The reused harness constructor keeps
+// the historical receipt-file diagnostics (the six-stage native proof reads
+// them as its evidence channel).
+func NewReaderService(base, state, token string) *ReaderService {
+	service := &ReaderService{
 		base: base, state: state, token: token,
 		streams: map[string]*readerStream{}, subs: map[string]*readerSubscription{},
+		sources: map[string]*sourceHandle{}, dests: map[string]*destHandle{},
 		// Browser parity: redirect:"error". The Go-held bearer is never
 		// forwarded to any other listener through a redirect.
 		client: &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return errRedirectRejected
 		}},
+	}
+	service.installFileReceipts()
+	return service
+}
+
+// NewReaderServiceWithOnboarding is the production companion constructor: the
+// Go-held bearer may be empty (first boot — attach loads the remembered
+// credential through the signed binding, or reports the typed
+// NATIVE_NO_CREDENTIAL state) and the adopted credential's binding installs
+// the base URL together with the bearer at activation. The onboarding
+// instance carries the selection, credential namespace and product API pin.
+// Production is DIAGNOSTIC-FREE: the receipt-file observer the harness
+// constructor installs is removed here, so an unflagged production
+// companion performs no diagnostic writes at all.
+func NewReaderServiceWithOnboarding(base, state, token string, onboarding *onboarding.Onboarding) *ReaderService {
+	service := NewReaderService(base, state, token)
+	service.SetDiagnostics(nil)
+	if onboarding != nil {
+		service.onboarding = onboarding
+	}
+	return service
+}
+
+// ReceiptObserver receives one fully-built receipt entry (pid/event/at plus
+// the event's rows). The facade invokes it while holding its own mutex, so
+// an observer must never call back into the service. A nil observer means
+// no diagnostic effect at all.
+type ReceiptObserver func(entry map[string]any)
+
+// SetDiagnostics installs (or, with nil, removes) the receipt observer. This
+// is the Go-side configuration seam for harness and explicitly flagged test
+// builds; production keeps the observer-free construction.
+func (s *ReaderService) SetDiagnostics(observer ReceiptObserver) {
+	s.mu.Lock()
+	s.diagnostics = observer
+	s.mu.Unlock()
+}
+
+// installFileReceipts installs the historical harness receipt persistence:
+// the exact native-reader-receipts-<pid>.json array under the state
+// directory, written after every entry like before.
+func (s *ReaderService) installFileReceipts() {
+	s.SetDiagnostics(FileReceiptObserver(s.state))
+}
+
+// FileReceiptObserver returns the historical harness receipt-file observer
+// for explicitly flagged test builds of embedders (the companion test
+// build). Production embedders never call it.
+func FileReceiptObserver(stateDir string) ReceiptObserver {
+	var (
+		entriesMu sync.Mutex
+		entries   []map[string]any
+	)
+	return func(entry map[string]any) {
+		entriesMu.Lock()
+		defer entriesMu.Unlock()
+		entries = append(entries, entry)
+		encoded, err := json.MarshalIndent(entries, "", " ")
+		if err != nil {
+			return
+		}
+		os.WriteFile(filepath.Join(stateDir, fmt.Sprintf("native-reader-receipts-%d.json", os.Getpid())), encoded, 0600)
 	}
 }
 
@@ -118,20 +206,27 @@ var errRedirectRejected = errors.New("native client rejects redirects")
 func (s *ReaderService) receipt(event string, rows map[string]any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.receiptLocked(event, rows)
+}
+
+// receiptLocked emits one receipt entry; the caller already holds s.mu.
+func (s *ReaderService) receiptLocked(event string, rows map[string]any) {
+	if s.diagnostics == nil {
+		return
+	}
 	entry := map[string]any{"pid": os.Getpid(), "event": event, "at": time.Now().UTC()}
 	for key, value := range rows {
 		entry[key] = value
 	}
-	s.receipts = append(s.receipts, entry)
-	encoded, err := json.MarshalIndent(s.receipts, "", " ")
-	if err != nil {
-		return
-	}
-	os.WriteFile(filepath.Join(s.state, fmt.Sprintf("native-reader-receipts-%d.json", os.Getpid())), encoded, 0600)
+	s.diagnostics(entry)
 }
 
 type authority struct {
-	token        string
+	token string
+	// endpoint travels WITH the bearer: an adoption activation installs a
+	// new base and token together, and every request must use the exact pair
+	// its caller captured — never a later mixed combination.
+	endpoint     string
 	attachmentID string
 	gen          uint64
 }
@@ -145,7 +240,15 @@ func (s *ReaderService) authority() (authority, *wireError) {
 	if s.attachmentID == "" {
 		return authority{}, &wireError{Status: 401, Code: "NATIVE_SESSION_NOT_ATTACHED", Retryable: false}
 	}
-	return authority{token: s.token, attachmentID: s.attachmentID, gen: s.generation}, nil
+	return authority{token: s.token, endpoint: s.base, attachmentID: s.attachmentID, gen: s.generation}, nil
+}
+
+// snapshotAuthority captures the current token/base/generation under one lock
+// hold for bootstrap and cleanup paths that do not require an attachment.
+func (s *ReaderService) snapshotAuthority() authority {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return authority{token: s.token, endpoint: s.base, attachmentID: s.attachmentID, gen: s.generation}
 }
 
 func (s *ReaderService) currentGeneration() uint64 {
@@ -162,7 +265,7 @@ func (s *ReaderService) currentToken() string {
 
 // request performs one fixed production request. Routes are always built here.
 func (s *ReaderService) request(method, path string, query url.Values, headers map[string]string, body []byte, auth authority) outcome {
-	target := s.base + path
+	target := auth.endpoint + path
 	if len(query) != 0 {
 		target += "?" + query.Encode()
 	}
@@ -275,7 +378,31 @@ func typedResult(status int, data []byte) (any, *wireError) {
 // obligation. A file holding a DIFFERENT credential is never unlinked (a late
 // old retry cannot destroy a newer binding's credential). Callers hold mu;
 // receipt() locks internally, so the receipt writes happen AFTER unlocking.
+//
+// Production (onboarding configured) forgets the protected selection-scoped
+// client.Credential file: the stored bearer must match the forgotten one
+// exactly before the unlink; a foreign or unreadable binding stays intact.
 func (s *ReaderService) forgetCredentialFileLocked() {
+	if s.onboarding != nil {
+		outcome, err := s.onboarding.Forget(s.logoutBearer)
+		switch {
+		case err == nil && outcome == onboarding.ForgetForgotten:
+			s.forgetDone = true
+			s.forgetErr = ""
+			s.receiptLocked("logoutLocalForget", map[string]any{"status": "forgotten"})
+		case err == nil && outcome == onboarding.ForgetForeign:
+			s.forgetDone = false
+			s.forgetErr = "credential file now holds a different credential; left intact"
+			s.receiptLocked("logoutLocalForget", map[string]any{"status": "foreign-credential-intact"})
+		default:
+			s.forgetDone = false
+			if err != nil {
+				s.forgetErr = err.Error()
+			}
+			s.receiptLocked("logoutLocalForget", map[string]any{"status": "local-forget-failed", "io_error": s.forgetErr})
+		}
+		return
+	}
 	path := filepath.Join(s.state, "native-session")
 	raw, readErr := os.ReadFile(path)
 	switch {
@@ -285,13 +412,13 @@ func (s *ReaderService) forgetCredentialFileLocked() {
 			// newer binding intact and record it truthfully.
 			s.forgetDone = false
 			s.forgetErr = "credential file now holds a different credential; left intact"
-			s.receipts = append(s.receipts, map[string]any{"pid": os.Getpid(), "event": "logoutLocalForget", "at": time.Now().UTC(), "status": "foreign-credential-intact"})
+			s.receiptLocked("logoutLocalForget", map[string]any{"status": "foreign-credential-intact"})
 			return
 		}
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			s.forgetDone = false
 			s.forgetErr = err.Error()
-			s.receipts = append(s.receipts, map[string]any{"pid": os.Getpid(), "event": "logoutLocalForget", "at": time.Now().UTC(), "status": "local-forget-failed", "io_error": err.Error()})
+			s.receiptLocked("logoutLocalForget", map[string]any{"status": "local-forget-failed", "io_error": err.Error()})
 			return
 		}
 	case os.IsNotExist(readErr):
@@ -299,12 +426,12 @@ func (s *ReaderService) forgetCredentialFileLocked() {
 	default:
 		s.forgetDone = false
 		s.forgetErr = readErr.Error()
-		s.receipts = append(s.receipts, map[string]any{"pid": os.Getpid(), "event": "logoutLocalForget", "at": time.Now().UTC(), "status": "local-forget-failed", "io_error": readErr.Error()})
+		s.receiptLocked("logoutLocalForget", map[string]any{"status": "local-forget-failed", "io_error": readErr.Error()})
 		return
 	}
 	s.forgetDone = true
 	s.forgetErr = ""
-	s.receipts = append(s.receipts, map[string]any{"pid": os.Getpid(), "event": "logoutLocalForget", "at": time.Now().UTC(), "status": "forgotten"})
+	s.receiptLocked("logoutLocalForget", map[string]any{"status": "forgotten"})
 }
 
 func randomID() string {
@@ -354,8 +481,75 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 		}
 		return nil, nil
 	case "pair", "pollPairing":
-		// Task05 onboarding is explicitly out of scope for ReaderMode.
-		return nil, &wireError{Status: 501, Code: "FEATURE_NOT_READY", Retryable: false}
+		// Without a configured onboarding instance (the reused harness
+		// constructor) pairing stays honestly unimplemented.
+		if s.onboarding == nil {
+			return nil, &wireError{Status: 501, Code: "FEATURE_NOT_READY", Retryable: false}
+		}
+		if operation == "pair" {
+			var in struct {
+				DeviceLabel string `json:"device_label"`
+			}
+			if werr := decodePayload(payload, &in); werr != nil {
+				return nil, werr
+			}
+			value, oerr := s.onboarding.CreatePairing(context.Background(), in.DeviceLabel)
+			return value, onboardingWireError(oerr)
+		}
+		var in struct {
+			PairingID string `json:"pairing_id"`
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		// The polling secret stays Go-side: JavaScript names only the
+		// pairing it still owns.
+		value, oerr := s.onboarding.PollPairing(context.Background(), in.PairingID)
+		return value, onboardingWireError(oerr)
+	case "serviceDiscovery":
+		if s.onboarding == nil {
+			return nil, &wireError{Status: 501, Code: "FEATURE_NOT_READY", Retryable: false}
+		}
+		return s.onboarding.Discover(context.Background()), nil
+	case "startDaemonOffer":
+		if s.onboarding == nil {
+			return nil, &wireError{Status: 501, Code: "FEATURE_NOT_READY", Retryable: false}
+		}
+		value, oerr := s.onboarding.StartDaemonOffer(context.Background())
+		if oerr != nil {
+			return nil, onboardingWireError(oerr)
+		}
+		return value, nil
+	case "adoptPairing":
+		if s.onboarding == nil {
+			return nil, &wireError{Status: 501, Code: "FEATURE_NOT_READY", Retryable: false}
+		}
+		var in struct {
+			PairingID string `json:"pairing_id"`
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		value, oerr := s.onboarding.Adopt(context.Background(), in.PairingID, s.activateAdoptedCredential)
+		if oerr != nil {
+			return nil, onboardingWireError(oerr)
+		}
+		return value, nil
+	case "abandonPairingAttempt":
+		if s.onboarding == nil {
+			return nil, &wireError{Status: 501, Code: "FEATURE_NOT_READY", Retryable: false}
+		}
+		var in struct {
+			PairingID string `json:"pairing_id"`
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		value, oerr := s.onboarding.Abandon(in.PairingID)
+		if oerr != nil {
+			return nil, onboardingWireError(oerr)
+		}
+		return value, nil
 	}
 
 	auth, werr := s.authority()
@@ -448,10 +642,20 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 		// local I/O failure can never be masked by the server outcome. The
 		// captured bearer lives on only inside this revoke attempt and the
 		// later owned cleanup; a late response can never mark a NEWER
-		// attachment, and a new attach resets the intent flag.
+		// attachment, and a new attach resets the intent flag. The pairing
+		// attempt generation is captured at the intent so every in-flight
+		// adoption of that era is invalidated (discarded after the lock) —
+		// only attempts started AFTER the logout survive.
+		var invalidatedAttemptGen uint64
+		var discardInflight bool
 		s.mu.Lock()
 		mine := s.attachmentID != "" && s.attachmentID == auth.attachmentID && s.generation == auth.gen
 		if mine {
+			if s.onboarding != nil {
+				invalidatedAttemptGen = s.onboarding.AttemptGeneration()
+				discardInflight = true
+			}
+			s.logoutInvalidatedGen = invalidatedAttemptGen
 			s.logoutSeen = true
 			s.logoutBearer = s.token
 			s.forgetAttachmentID = auth.attachmentID
@@ -463,6 +667,11 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 		localFailed := s.forgetNeeded && !s.forgetDone
 		forgetErr := s.forgetErr
 		s.mu.Unlock()
+		if discardInflight {
+			// Quiesce activation and drop any attempt of the logged-out era
+			// OUTSIDE the facade mutex (established facade.mu→o.mu only).
+			s.onboarding.DiscardAttemptUpTo(invalidatedAttemptGen)
+		}
 		if localFailed {
 			// The local error cannot wait for an unknown network outcome.
 			// This one captured revoke continues independently; its eventual
@@ -909,7 +1118,7 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 		if werr := decodePayload(payload, &in); werr != nil {
 			return nil, werr
 		}
-		return s.openStream(in.VersionID, "/api/v1/versions/"+url.PathEscape(in.VersionID)+"/package", nil, auth)
+		return s.openStream(in.VersionID, "/api/v1/versions/"+url.PathEscape(in.VersionID)+"/package", nil, auth, false)
 	case "fileStream":
 		var in struct {
 			VersionID string `json:"version_id"`
@@ -920,7 +1129,30 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 		}
 		query := url.Values{}
 		query.Set("path", in.Path)
-		return s.openStream(in.VersionID, "/api/v1/versions/"+url.PathEscape(in.VersionID)+"/file", query, auth)
+		// The delivered file representation carries its own strong validator
+		// (Repr-Digest + Content-Length) beside the stream handle; rendering
+		// behavior is unchanged, the download adapter consumes it.
+		return s.openStream(in.VersionID, "/api/v1/versions/"+url.PathEscape(in.VersionID)+"/file", query, auth, true)
+	case "chooseImportSource":
+		return s.chooseImportSource(payload, auth)
+	case "sourceEntries":
+		return s.sourceEntries(payload)
+	case "readSourceRange":
+		return s.readSourceRange(payload)
+	case "releaseSource":
+		return s.releaseSource(payload)
+	case "sourceVerifyStable":
+		return s.sourceVerifyStable(payload)
+	case "chooseDownloadDestination":
+		return s.chooseDownloadDestination(payload, auth)
+	case "destOpen":
+		return s.destOpen(payload)
+	case "destWrite":
+		return s.destWrite(payload)
+	case "destClose":
+		return s.destClose(payload)
+	case "destAbort":
+		return s.destAbort(payload)
 	case "streamRead":
 		return s.streamRead(payload)
 	case "streamCancel":
@@ -953,12 +1185,47 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 }
 
 func (s *ReaderService) attach() (any, *wireError) {
-	auth := authority{token: s.currentToken(), attachmentID: "bootstrap"}
+	auth := s.snapshotAuthority()
 	if auth.token == "" {
-		// A forgotten (explicitly logged-out) credential must never
-		// reauthenticate; a same-process reload or a pending logout cannot
-		// restore it.
-		return nil, &wireError{Status: 401, Code: "NATIVE_SESSION_LOGGED_OUT", Retryable: false}
+		if s.logoutPending() {
+			// A forgotten (explicitly logged-out) credential must never
+			// reauthenticate; a same-process reload or a pending logout cannot
+			// restore it.
+			return nil, &wireError{Status: 401, Code: "NATIVE_SESSION_LOGGED_OUT", Retryable: false}
+		}
+		if s.onboarding == nil {
+			// The reused harness constructor without a credential is the
+			// honest not-yet-paired state; only a real logout ever claims the
+			// logged-out state.
+			return nil, &wireError{Status: 401, Code: "NATIVE_NO_CREDENTIAL", Retryable: false}
+		}
+		// M4-A2 remembered boot/reattach: resolve the signed binding FIRST,
+		// then install the exact stored endpoint+bearer pair. True absence
+		// stays the honest typed first boot; a stopped daemon, a pin/endpoint
+		// mismatch and an unreadable store all propagate typed instead of
+		// being discarded into an empty boot.
+		installed, werr := s.loadRememberedCredential()
+		if werr != nil {
+			return nil, werr
+		}
+		if !installed {
+			return nil, &wireError{Status: 401, Code: "NATIVE_NO_CREDENTIAL", Retryable: false}
+		}
+		auth = s.snapshotAuthority()
+	}
+	// The signed onboarding binding resolves and validates FIRST — before any
+	// bearer-bearing request leaves the process. A facade whose captured
+	// endpoint does not match the signed binding, or whose pin cannot be
+	// resolved, fails typed with ZERO bearer deliveries; the mismatched
+	// listener never receives the credential.
+	if s.onboarding != nil {
+		bindingEndpoint, _, werr := s.onboarding.ResolveBinding(context.Background())
+		if werr != nil {
+			return nil, onboardingWireError(werr)
+		}
+		if bindingEndpoint != auth.endpoint {
+			return nil, &wireError{Status: 409, Code: "NATIVE_CREDENTIAL_MISMATCHED", Retryable: false, Details: map[string]any{"captured_endpoint": auth.endpoint, "binding_endpoint": bindingEndpoint}}
+		}
 	}
 	sessionResult := s.request("GET", "/api/v1/session", nil, nil, nil, auth)
 	if sessionResult.werr != nil {
@@ -968,25 +1235,242 @@ func (s *ReaderService) attach() (any, *wireError) {
 	if capsResult.werr != nil {
 		return nil, capsResult.werr
 	}
+	// The captured token/endpoint pair must still be current AFTER the async
+	// session/capability reads: a concurrent adoption activation or logout
+	// replaces both together, and this attach must never publish an
+	// attachment that resurrects the replaced context.
+	if !s.contextCurrent(auth) {
+		return nil, &wireError{Status: 409, Code: "NATIVE_SESSION_REPLACED", Retryable: false}
+	}
+	// The resolved pin also gates the product API and the session/capabilities
+	// library identity before any attachment is issued.
+	if s.onboarding != nil {
+		if werr := s.verifyBindingIdentity(sessionResult.value, capsResult.value); werr != nil {
+			return nil, werr
+		}
+	}
 	attachment := randomID()
 	if attachment == "" {
 		return nil, networkError()
 	}
 	s.mu.Lock()
+	// Final ownership check before the era transition: the captured
+	// generation and attachment must still own the process. A concurrent
+	// attach or dispose of the same era cannot be overwritten or resurrected.
+	if !s.contextCurrentLocked(auth) {
+		s.mu.Unlock()
+		return nil, &wireError{Status: 409, Code: "NATIVE_SESSION_REPLACED", Retryable: false}
+	}
+	previousAttachment := s.attachmentID
 	s.generation++
 	s.attachmentID = attachment
+	// A successful re-attach is a filesystem-era boundary too: pending picker
+	// leases die and the PREVIOUS attachment's owner-selected handles are
+	// detached now (their anchored roots and unfinished temps drain outside
+	// the lock) instead of silently outliving the era in the handle maps.
+	s.fsEpoch++
 	s.logoutSeen = false
 	s.mu.Unlock()
+	s.releaseOwnedHandles(previousAttachment)
 	s.receipt("attachSession", map[string]any{"attachment_prefix": attachment[:8]})
 	return map[string]any{
 		"attachment_id": attachment,
 		"session":       sessionResult.value,
 		"capabilities":  capsResult.value,
-		"public_origin": s.base,
+		"public_origin": auth.endpoint,
 	}, nil
 }
 
+// contextCurrent rechecks the captured context (token, endpoint, generation
+// and attachment ownership) against the live service state.
+func (s *ReaderService) contextCurrent(auth authority) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.contextCurrentLocked(auth)
+}
+
+func (s *ReaderService) contextCurrentLocked(auth authority) bool {
+	// The generation is bumped by attach publication, owned disposal and
+	// adoption activation. A revokeOwnSession INTENT does not bump it, so
+	// the logout flags (logoutSeen/forgetNeeded) gate the empty-token path
+	// independently (M4-A2); token+base+generation together prove the
+	// captured context still owns the process.
+	return s.token == auth.token && s.base == auth.endpoint && s.generation == auth.gen
+}
+
+// loadRememberedCredential resolves the selection's remembered binding
+// through the signed verified binding and installs the exact stored
+// endpoint+bearer pair (M4-A2). The credential read runs outside the mutex;
+// installation happens under one continuous lock hold that re-verifies the
+// EXACT pre-load state: the token stayed empty (no adoption activation and
+// no concurrent remembered install intervened), the generation stayed at
+// its pre-load value (no attach publication, owned disposal or activation
+// replaced the era) and no logout intent became visible. The logout flags
+// are checked independently because a revokeOwnSession intent itself does
+// NOT bump the generation. A late load that lost any of these races is
+// rejected typed WITHOUT touching the current authority.
+func (s *ReaderService) loadRememberedCredential() (bool, *wireError) {
+	// Entry snapshot under ONE continuous lock hold (M4-A2): the empty-token
+	// state, the generation and the logout flags are captured TOGETHER
+	// before the credential read leaves the mutex, so the install guards
+	// compare against an atomically captured precondition instead of the
+	// caller's earlier snapshot.
+	s.mu.Lock()
+	preEmptyToken := s.token == ""
+	preGen := s.generation
+	preLogoutSeen := s.logoutSeen
+	preForgetNeeded := s.forgetNeeded
+	s.mu.Unlock()
+	switch {
+	case preLogoutSeen || preForgetNeeded:
+		// A logout intent landed between the caller's check and this entry:
+		// the honest answer is the logged-out state, never a load.
+		return false, &wireError{Status: 401, Code: "NATIVE_SESSION_LOGGED_OUT", Retryable: false}
+	case !preEmptyToken:
+		// A concurrent installation already owns the process; this load is
+		// stale and must not touch the current authority.
+		return false, &wireError{Status: 409, Code: "NATIVE_SESSION_REPLACED", Retryable: false}
+	}
+	credential, found, oerr := s.onboarding.RememberedCredential(context.Background())
+	if oerr != nil {
+		return false, onboardingWireError(oerr)
+	}
+	if !found {
+		return false, nil
+	}
+	if s.testAfterRememberedLoad != nil {
+		s.testAfterRememberedLoad()
+	}
+	s.mu.Lock()
+	if s.token != "" || s.generation != preGen || s.logoutSeen || s.forgetNeeded {
+		s.mu.Unlock()
+		return false, &wireError{Status: 409, Code: "NATIVE_SESSION_REPLACED", Retryable: false}
+	}
+	// The endpoint and the bearer travel together from the SAME credential
+	// read; the base is never recomposed from later discovery state.
+	s.base = credential.Endpoint
+	s.token = credential.Token
+	s.generation++
+	// The installation is a filesystem-era boundary for picker leases too:
+	// a panel result captured before the installation can never register.
+	s.fsEpoch++
+	s.mu.Unlock()
+	s.receipt("rememberedActivation", map[string]any{"endpoint": credential.Endpoint})
+	return true, nil
+}
+
+// logoutPending reports whether an explicit logout intent is currently
+// outstanding (RAM bearer cleared and the local forget unresolved).
+func (s *ReaderService) logoutPending() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.logoutSeen || s.forgetNeeded
+}
+
+// verifyBindingIdentity enforces the product API pin and the library triple
+// (session == capabilities == signed discovery) BEFORE effective authority.
+func (s *ReaderService) verifyBindingIdentity(session, caps any) *wireError {
+	sessionView, ok := session.(map[string]any)
+	if !ok {
+		return uncertain(0)
+	}
+	capsView, ok := caps.(map[string]any)
+	if !ok {
+		return uncertain(0)
+	}
+	sessionLibrary, _ := sessionView["library_id"].(string)
+	capsLibrary, _ := capsView["library_id"].(string)
+	apiVersion, _ := capsView["api_version"].(string)
+	if apiVersion != s.onboarding.ProductAPI() {
+		return &wireError{Status: 409, Code: "NATIVE_API_INCOMPATIBLE", Retryable: false, Details: map[string]any{"api_version": apiVersion, "expected": s.onboarding.ProductAPI()}}
+	}
+	if sessionLibrary != capsLibrary {
+		return &wireError{Status: 409, Code: "NATIVE_LIBRARY_MISMATCH", Retryable: false, Details: map[string]any{"session_library": sessionLibrary, "caps_library": capsLibrary}}
+	}
+	if expected := s.onboarding.ExpectedLibrary(); expected == "" || capsLibrary != expected {
+		return &wireError{Status: 409, Code: "NATIVE_LIBRARY_MISMATCH", Retryable: false, Details: map[string]any{"caps_library": capsLibrary, "expected_library": expected}}
+	}
+	return nil
+}
+
+// activateAdoptedCredential installs the ADOPTED credential exactly as
+// captured at its commit: the endpoint and bearer travel together from the
+// attempt's own binding — never recomposed from later discovery state. The
+// onboarding package invokes it under its activation mutex only; it never
+// takes the onboarding mutex and is never called from DiscardAttempt.
+//
+// Installing a new credential is an era transition: the old attachment and
+// its owned streams are invalidated before the new pair becomes visible, so
+// no old handle can act under the new token. An explicit logout whose
+// captured bearer IS this credential wins over the late activation; a logout
+// of a DIFFERENT (older) credential does not block a fresh authorized
+// relogin, and the old local-forget obligation is preserved untouched.
+func (s *ReaderService) activateAdoptedCredential(credential client.Credential, attemptGen uint64) {
+	s.mu.Lock()
+	if (s.logoutSeen || s.forgetNeeded) && (attemptGen <= s.logoutInvalidatedGen || s.logoutBearer == credential.Token) {
+		// The owner explicitly logged out while this adoption's attempt was
+		// in flight (its generation was invalidated at the intent) or logged
+		// out exactly this credential; it must not be resurrected.
+		s.mu.Unlock()
+		s.receipt("adoptActivationSuppressed", map[string]any{"reason": "logout-invalidated-attempt"})
+		return
+	}
+	previousToken := s.token
+	previousBase := s.base
+	s.base = credential.Endpoint
+	s.token = credential.Token
+	// Era transition: invalidate the old attachment and detach its owned
+	// filesystem handles (their anchored roots and unfinished temps) so
+	// nothing outlives the replaced context; drain them outside the lock.
+	s.generation++
+	previousAttachment := s.attachmentID
+	s.attachmentID = ""
+	s.fsEpoch++
+	s.logoutSeen = false
+	streams := make([]*readerStream, 0, len(s.streams))
+	for _, owned := range s.streams {
+		streams = append(streams, owned)
+	}
+	s.streams = map[string]*readerStream{}
+	s.subs = map[string]*readerSubscription{}
+	renders := s.renders
+	s.renders = nil
+	s.mu.Unlock()
+	s.releaseOwnedHandles(previousAttachment)
+	for _, stream := range streams {
+		stream.cancel()
+		stream.body.Close()
+	}
+	if len(renders) > 0 {
+		// Renderer deliveries opened under the replaced credential close with
+		// THAT credential's exact bearer and endpoint, both captured before
+		// the replacement.
+		auth := authority{token: previousToken, endpoint: previousBase}
+		for _, ref := range renders {
+			s.request("POST", "/api/v1/versions/"+url.PathEscape(ref.VersionID)+"/render-sessions/"+url.PathEscape(ref.SessionID)+"/close", nil, nil, []byte("{}"), auth)
+		}
+	}
+	s.receipt("adoptActivation", map[string]any{"endpoint": credential.Endpoint})
+}
+
+// onboardingWireError maps the onboarding typed failure onto the closed wire
+// envelope, preserving Retry-After for known non-consuming rate limits.
+func onboardingWireError(oerr *onboarding.Error) *wireError {
+	if oerr == nil {
+		return nil
+	}
+	return &wireError{Status: oerr.Status, Code: oerr.Code, Retryable: oerr.Retryable, RetryAfter: oerr.RetryAfter, Details: oerr.Details}
+}
+
 func (s *ReaderService) dispose(captured string) *wireError {
+	// Capture the pairing attempt generation BEFORE the transition so an
+	// owned disposal discards only attempts of this era; a relogin attempt
+	// created concurrently afterwards survives.
+	var attemptGen uint64
+	tracksAttempts := s.onboarding != nil
+	if tracksAttempts {
+		attemptGen = s.onboarding.AttemptGeneration()
+	}
 	s.mu.Lock()
 	mine := s.attachmentID != "" && captured != "" && captured == s.attachmentID
 	// A stale old-attachment callback must never erase or close handles that
@@ -1009,6 +1493,7 @@ func (s *ReaderService) dispose(captured string) *wireError {
 		s.renders = nil
 	}
 	cleanupBearer := s.token
+	cleanupEndpoint := s.base
 	ownsForget := captured != "" && captured == s.forgetAttachmentID
 	forgetStillNeeded := false
 	forgetErr := ""
@@ -1035,20 +1520,32 @@ func (s *ReaderService) dispose(captured string) *wireError {
 		dropped = s.forgetDone
 	}
 	s.mu.Unlock()
+	// Disposal releases the owner-selected filesystem handles of the captured
+	// attachment era (an anchored root, plus best-effort own-temp cleanup);
+	// a stale old-attachment disposal never touches a newer era's handles.
+	s.releaseOwnedHandles(captured)
 	for _, stream := range streams {
 		stream.cancel()
 		stream.body.Close()
 	}
 	if len(renders) > 0 {
 		// Disposal closes owned renderer deliveries explicitly under their
-		// captured version/session identity.
-		auth := authority{token: cleanupBearer}
+		// captured version/session identity; the endpoint travels with the
+		// captured cleanup bearer.
+		auth := authority{token: cleanupBearer, endpoint: cleanupEndpoint}
 		for _, ref := range renders {
 			s.request("POST", "/api/v1/versions/"+url.PathEscape(ref.VersionID)+"/render-sessions/"+url.PathEscape(ref.SessionID)+"/close", nil, nil, []byte("{}"), auth)
 		}
 		s.receipt("disposeClosedRenders", map[string]any{"count": len(renders)})
 	}
 	s.receipt("disposeSession", map[string]any{"captured_match": mine, "credential_file_dropped": dropped && dropFile})
+	if mine && tracksAttempts {
+		// Owned disposal quiesces any in-flight Go-held pairing attempt of
+		// this era BEFORE the owned cleanup continues, outside the facade
+		// mutex (established facade.mu→o.mu only; actMu is never taken
+		// under the facade mutex).
+		s.onboarding.DiscardAttemptUpTo(attemptGen)
+	}
 	if forgetStillNeeded {
 		// A failed local forget is a CLOSED typed local failure: the disposal
 		// cannot honestly claim completion while the credential file survives.
@@ -1201,7 +1698,7 @@ func (s *ReaderService) openMetadataStream(versionID string, query url.Values, a
 	return map[string]any{"stream_id": id, "etag": etag}, nil
 }
 
-func (s *ReaderService) openStream(versionID, path string, query url.Values, auth authority) (any, *wireError) {
+func (s *ReaderService) openStream(versionID, path string, query url.Values, auth authority, withValidator bool) (any, *wireError) {
 	// Capture the daemon stream epoch at open time; every pull reverifies it.
 	epoch, werr := s.currentEpoch(auth)
 	if werr != nil {
@@ -1221,10 +1718,20 @@ func (s *ReaderService) openStream(versionID, path string, query url.Values, aut
 		result.close()
 		return nil, networkError()
 	}
+	reply := map[string]any{}
+	if withValidator {
+		// Same delivered representation only: absent/malformed proof yields
+		// no validator and the download adapter fails typed (never a silent
+		// unverified save). Archive package streams never claim one.
+		if sum, size, ok := parseFileValidator(result.header); ok {
+			reply["validator"] = map[string]any{"sha256": sum, "byte_size": size}
+		}
+	}
 	s.mu.Lock()
 	s.streams[id] = &readerStream{id: id, body: result.response, cancel: result.cancel, auth: auth, versionID: versionID, epoch: epoch}
 	s.mu.Unlock()
-	return map[string]any{"stream_id": id}, nil
+	reply["stream_id"] = id
+	return reply, nil
 }
 
 // currentEpoch reads the liveness poll's server-era metadata. The poll stays
@@ -1408,9 +1915,9 @@ func (s *ReaderService) eventsPoll(payload json.RawMessage, auth authority) (any
 	return map[string]any{"closed": false}, nil
 }
 
-// closeOwned is the normal window-close path: explicit typed closes for every
+// CloseOwned is the normal window-close path: explicit typed closes for every
 // renderer delivery and stream this attachment still owns.
-func (s *ReaderService) closeOwned() {
+func (s *ReaderService) CloseOwned() {
 	s.mu.Lock()
 	renders := s.renders
 	s.renders = nil
@@ -1420,10 +1927,30 @@ func (s *ReaderService) closeOwned() {
 	}
 	s.streams = map[string]*readerStream{}
 	token := s.token
+	endpoint := s.base
+	// Window close also drops the owner-selected filesystem handles of the
+	// current attachment era: anchored roots close and private destination
+	// temps get best-effort own-temp cleanup (never publication), so a late
+	// panel result cannot feed a replaced era.
+	ownedAttachment := s.attachmentID
+	// A picker held across window close must never register afterwards; the
+	// epoch invalidates chooser leases without changing session semantics.
+	s.fsEpoch++
+	var attemptGen uint64
+	tracksAttempts := s.onboarding != nil
+	if tracksAttempts {
+		attemptGen = s.onboarding.AttemptGeneration()
+	}
 	s.mu.Unlock()
+	s.releaseOwnedHandles(ownedAttachment)
+	if tracksAttempts {
+		// Window close drops any unadopted Go-held candidate of this era
+		// before the owned cleanup; called outside the facade mutex.
+		s.onboarding.DiscardAttemptUpTo(attemptGen)
+	}
 	rows := []map[string]any{}
 	for _, ref := range renders {
-		result := s.request("POST", "/api/v1/versions/"+url.PathEscape(ref.VersionID)+"/render-sessions/"+url.PathEscape(ref.SessionID)+"/close", nil, nil, []byte("{}"), authority{token: token})
+		result := s.request("POST", "/api/v1/versions/"+url.PathEscape(ref.VersionID)+"/render-sessions/"+url.PathEscape(ref.SessionID)+"/close", nil, nil, []byte("{}"), authority{token: token, endpoint: endpoint})
 		rows = append(rows, map[string]any{"version_id": ref.VersionID, "session_id": ref.SessionID, "status": result.status})
 	}
 	for _, stream := range streams {
@@ -1453,25 +1980,6 @@ func (s *ReaderService) SelfcheckReport(in struct {
 	return map[string]any{"written": true, "count": len(rows)}, nil
 }
 
-const nativeBootstrapReader = `(()=>{if(window.haeryongNativeCall)return;let calls=new Map();window.haeryongNativeReply=m=>{let p=calls.get(m.id);if(p){calls.delete(m.id);m.error?p.reject(new Error(m.error)):p.resolve(m.value);}};window.haeryongNativeCall=(methodID,args=[])=>new Promise((resolve,reject)=>{let id=crypto.randomUUID();calls.set(id,{resolve,reject});window.webkit.messageHandlers.external.postMessage(JSON.stringify({kind:'haeyong.native',id,object:0,method:0,args:{'call-id':id,methodID,args}}));});window.dispatchEvent(new Event('haeryong-native-bridge'));})();`
-
-func readerCredential(state string) (string, error) {
-	path := filepath.Join(state, "native-session")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return "", errors.New("no prepaired native credential in state; ReaderMode performs no pairing")
-	}
-	token := strings.TrimSpace(string(raw))
-	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0600 {
-		return "", errors.New("native credential file must stay mode 0600")
-	}
-	if token == "" {
-		return "", errors.New("empty native credential file")
-	}
-	return token, nil
-}
-
 type rawResult struct {
 	status   int
 	body     []byte
@@ -1493,7 +2001,7 @@ func (r rawResult) close() {
 // requestRaw either keeps the response body open (stream opens) or reads it
 // fully and exposes headers for exact fresh-proof verification.
 func (s *ReaderService) requestRaw(method, path string, query url.Values, headers map[string]string, auth authority, keepBody bool) rawResult {
-	target := s.base + path
+	target := auth.endpoint + path
 	if len(query) != 0 {
 		target += "?" + query.Encode()
 	}
@@ -1525,320 +2033,3 @@ func (s *ReaderService) requestRaw(method, path string, query url.Values, header
 	}
 	return rawResult{status: response.StatusCode, body: data, header: response.Header}
 }
-
-func runReader(base, state, dist, port string, appPath string, selfcheck bool, probePath string, closeAfter time.Duration) error {
-	token, err := readerCredential(state)
-	if err != nil {
-		return err
-	}
-	// Test-owned probe instrumentation: enabled ONLY when the driver passes an
-	// explicit probe script, injected into the ACTUAL compiled app after the
-	// guard and bridge bootstrap. It grants the imported child nothing.
-	var probeScript string
-	if probePath != "" {
-		raw, err := os.ReadFile(probePath)
-		if err != nil {
-			return fmt.Errorf("reader probe script unreadable: %w", err)
-		}
-		probeScript = string(raw)
-	}
-	address := "127.0.0.1:" + port
-	listener, err := net.Listen("tcp", address)
-	if err != nil {
-		// No silent fallback: the fixed static origin must be exactly this.
-		return fmt.Errorf("fixed native static origin %s unavailable: %w", address, err)
-	}
-	service := newReaderService(base, state, token)
-	origin := "http://" + address
-	originURL, err := url.Parse(origin)
-	if err != nil {
-		return err
-	}
-	withSelfcheck := selfcheck
-	schemeDenied := &atomic.Int64{}
-	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		if withSelfcheck && r.URL.Path == "/-selfcheck.html" {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			io.WriteString(w, readerSelfcheckPage)
-			return
-		}
-		clean := filepath.Clean("/" + r.URL.Path)
-		if strings.Contains(clean, "..") {
-			http.Error(w, "not found", 404)
-			return
-		}
-		candidate := filepath.Join(dist, clean)
-		if info, err := os.Stat(candidate); err != nil || info.IsDir() {
-			// SPA routing fallback: only the compiled entry document.
-			entry := filepath.Join(dist, "index.html")
-			if _, err := os.Stat(entry); err != nil {
-				entry = filepath.Join(dist, "native.html")
-			}
-			http.ServeFile(w, r, entry)
-			return
-		}
-		http.ServeFile(w, r, candidate)
-	})}
-	go func() {
-		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
-			log.Printf("native static origin ended: %v", err)
-		}
-	}()
-	defer server.Close()
-
-	transport := &fixtureTransport{}
-	application.RegisterBindingMethodID((*ReaderService).Invoke, 701100)
-	allowReport := selfcheck || probeScript != ""
-	if allowReport {
-		application.RegisterBindingMethodID((*ReaderService).SelfcheckReport, 701101)
-	}
-	var app *application.App
-	// The pinned SDK runs each raw message handler and window event in its
-	// own goroutine (application.go:705/717), so the guard-ready publication
-	// must be synchronized, not a plain bool.
-	var guardReady atomic.Bool
-	app = application.New(application.Options{
-		Name: "Haeryong Reader native", Transport: transport,
-		Services: []application.Service{application.NewService(service)},
-		Mac:      application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true},
-		Assets: application.AssetOptions{Middleware: func(next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				http.Error(w, "native scheme endpoints remain disabled", 403)
-				schemeDenied.Add(1)
-			})
-		}},
-		RawMessageHandler: func(window application.Window, message string, originInfo *application.OriginInfo) {
-			if originInfo == nil || !originInfo.IsMainFrame || !guardReady.Load() {
-				return
-			}
-			sender, err := url.Parse(originInfo.Origin)
-			if err != nil || sender.Scheme != originURL.Scheme || sender.Host != originURL.Host {
-				return
-			}
-			var envelope struct {
-				Kind, ID       string
-				Object, Method int
-				Args           json.RawMessage
-			}
-			if json.Unmarshal([]byte(message), &envelope) != nil || envelope.Kind != "haeyong.native" {
-				// ReaderMode rejects the legacy generic fixture kind.
-				return
-			}
-			if envelope.Object != 0 || envelope.Method != 0 {
-				return
-			}
-			// Closed method whitelist: only the typed ReaderService invoke (and
-			// the selfcheck report in the explicit selfcheck mode) dispatch.
-			// The pinned SDK gives a nonempty args.methodName precedence over
-			// methodID, so a name must never accompany an allowed ID.
-			var call struct {
-				MethodID   int    `json:"methodID"`
-				MethodName string `json:"methodName"`
-			}
-			if json.Unmarshal(envelope.Args, &call) != nil {
-				return
-			}
-			allowed := call.MethodName == "" && (call.MethodID == 701100 || (allowReport && call.MethodID == 701101))
-			if !allowed {
-				return
-			}
-			var request application.RuntimeRequest
-			if json.Unmarshal([]byte(message), &request) != nil {
-				return
-			}
-			request.WebviewWindowID = uint32(window.ID())
-			response, err := transport.processor.HandleRuntimeCallWithIDs(context.Background(), &request)
-			value := map[string]any{"id": envelope.ID, "value": response}
-			if err != nil {
-				value["error"] = err.Error()
-			}
-			encoded, _ := json.Marshal(value)
-			application.InvokeSync(func() { evalNative(window, "window.haeryongNativeReply("+string(encoded)+")") })
-		},
-	})
-	target := origin + appPath
-	if selfcheck {
-		// The harness selfcheck page receives its parameters through the
-		// query carried by --reader-path.
-		target = origin + "/-selfcheck.html" + appPath
-	}
-	options := application.WebviewWindowOptions{Title: "Haeryong Reader native", Width: 1180, Height: 880, URL: target}
-	options.Mac.WebviewPreferences.JavaScriptCanOpenWindowsAutomatically.Set(true)
-	window := app.Window.NewWithOptions(options)
-	window.RegisterHook(events.Common.WindowClosing, func(_ *application.WindowEvent) {
-		service.closeOwned()
-		// Final guard statistics at close time: imported-frame denials and
-		// scheme rejections accumulate after the navigation-time snapshot.
-		application.InvokeSync(func() {
-			stats := guardStats()
-			stats["pid"] = os.Getpid()
-			stats["scheme_denied"] = schemeDenied.Load()
-			encoded, _ := json.Marshal(stats)
-			os.WriteFile(filepath.Join(state, "native-guard.json"), encoded, 0600)
-		})
-	})
-	window.OnWindowEvent(events.Mac.WebViewDidFinishNavigation, func(_ *application.WindowEvent) {
-		application.InvokeSync(func() {
-			if !installGuard(window, origin) {
-				log.Print("native guard installation failed")
-				window.Close()
-				return
-			}
-			// The facade exists only after the guard: the bridge bootstrap is
-			// injected here, once per navigation, without replacing the guard.
-			guardReady.Store(true)
-			evalNative(window, nativeBootstrapReader)
-			stats := guardStats()
-			stats["pid"] = os.Getpid()
-			stats["scheme_denied"] = schemeDenied.Load()
-			encoded, _ := json.Marshal(stats)
-			os.WriteFile(filepath.Join(state, "native-guard.json"), encoded, 0600)
-			// Test-owned instrumentation over the ACTUAL compiled app: the
-			// probe runs only after the guard and bridge exist and adds no
-			// privilege for imported content.
-			if probeScript != "" {
-				evalNative(window, "(async()=>{"+probeScript+"})()")
-			}
-		})
-	})
-	if closeAfter > 0 {
-		go func() { time.Sleep(closeAfter); window.Close(); time.Sleep(time.Second); app.Quit() }()
-	}
-	return app.Run()
-}
-
-const readerSelfcheckPage = `<!doctype html><meta charset=utf-8><title>Haeryong native selfcheck</title><body style="font-family:system-ui;padding:24px"><h1>Haeryong Reader native selfcheck</h1><div id=out style="white-space:pre-wrap"></div>
-<script>
-window.__pageError=null;
-window.onerror=(m,s,l,c)=>{window.__pageError=String(m)+"@"+l+":"+c;};
-window.addEventListener('unhandledrejection',e=>{window.__pageError=String(e.reason&&(e.reason.stack||e.reason.message||e.reason));});
-window.__progress=[];
-window.__done=false;
-const params=new URLSearchParams(location.search);
-const version=params.get("version")||"";
-const call=(op,payload={})=>window.haeryongNativeCall(701100,[{Operation:op,Payload:payload}]);
-const rows=[];const log=(name,ok,detail={})=>{rows.push({name,status:ok?"pass":"fail",detail});document.getElementById("out").textContent+=name+": "+(ok?"pass":"FAIL "+JSON.stringify(detail))+"\\n";};
-const step=(name)=>{window.__progress.push(name);};
-const report=async()=>{try{const r=await window.haeryongNativeCall(701101,[{Rows:[...rows,{name:"page.progress",status:"pass",detail:{steps:window.__progress}},{name:"page.error",status:window.__pageError?"fail":"pass",detail:{error:window.__pageError}},{name:"page.done",status:window.__done?"pass":"pending",detail:{}}]}]);return !!(r&&r.written===true);}catch(e){return false;}};
-setInterval(()=>{void report();},2000);
-const b64=(bytes)=>{let binary="";for(let i=0;i<bytes.length;i+=0x8000)binary+=String.fromCharCode(...bytes.subarray(i,i+0x8000));return btoa(binary);};
-const hex=(buffer)=>[...new Uint8Array(buffer)].map(b=>b.toString(16).padStart(2,"0")).join("");
-const noReply=(envelope)=>new Promise((resolve)=>{
-  // Only wrap the REAL installed reply handler; never restore an undefined
-  // capture from before the bridge bootstrap.
-  const original=window.haeryongNativeReply;
-  if(typeof original!=="function"){resolve(false);return;}
-  let done=false;
-  const restore=()=>{window.haeryongNativeReply=original;};
-  const timer=setTimeout(()=>{if(!done){done=true;restore();resolve(true);}},700);
-  window.haeryongNativeReply=(m)=>{if(!done&&m.id===envelope.id){done=true;clearTimeout(timer);restore();resolve(false);return;}original(m);};
-  window.webkit.messageHandlers.external.postMessage(JSON.stringify(envelope));
-});
-(async()=>{try{
-  step("start");
-  // The Go harness injects the bridge after the guard on navigation finish;
-  // wait for the actual callable bridge before any wrapper runs.
-  const bridgeReady=await new Promise((resolve)=>{const deadline=Date.now()+15000;const check=()=>{if(typeof window.haeryongNativeCall==="function"&&typeof window.haeryongNativeReply==="function")resolve(true);else if(Date.now()>deadline)resolve(false);else setTimeout(check,100);};check();});
-  log("bridge.ready",bridgeReady,{});
-  if(!bridgeReady)throw Error("native bridge was never injected");
-  const legacyIgnored=await noReply({kind:"fixture.runtime",id:"legacy-1",object:0,method:0,args:{"call-id":"legacy-1",methodID:701005,args:[]}});
-  log("dispatch.legacy-kind-ignored",legacyIgnored,{});
-  step("legacy-probe");
-  const namedIgnored=await noReply({kind:"haeyong.native",id:"named-1",object:0,method:0,args:{"call-id":"named-1",methodID:701100,methodName:"Probe",args:[]}});
-  log("dispatch.methodname-shadow-ignored",namedIgnored,{});
-  step("named-probe");
-  const attach=await call("attachSession");
-  step("attach-replied");
-  log("attach.verified",attach.ok&&typeof attach.value.attachment_id==="string"&&attach.value.public_origin===params.get("base"),attach.error||{origin:attach.value&&attach.value.public_origin});
-  const caps=await call("capabilities");step("caps-replied");log("capabilities.read",caps.ok,caps.error||{});
-  const current=await call("currentSession");step("session-replied");log("session.read",current.ok&&current.value.library_id===attach.value.session.library_id,{});
-  const pairing=await call("pair",{device_label:"native"});step("pair-replied");log("pairing.feature_not_ready",!pairing.ok&&pairing.error.status===501,pairing.error||{});
-  const projects=await call("listProjects");step("projects-replied");log("projects.read",projects.ok&&!!projects.value&&Array.isArray(projects.value.items)&&projects.value.items.length>0,projects.error||{});
-  if(projects.ok&&projects.value&&Array.isArray(projects.value.items)&&projects.value.items.length){
-    const projectId=projects.value.items[0].project_id;
-    const created=await call("createUpload",{request:{purpose:"result",input_mode:"file",selection_name:"native-selfcheck.html",target:{project_id:projectId,document_id:null}},operation_id:self.crypto.randomUUID()});
-    step("upload-create-replied");
-    log("upload.create",created.ok&&!!created.value.upload_id,created.error||{});
-    if(created.ok){
-      const bytes=new TextEncoder().encode("<!doctype html><meta charset=utf-8><title>native upload</title><h1>native typed upload</h1>");
-      const digest=hex(await crypto.subtle.digest("SHA-256",bytes));
-      const entry=await call("putUploadEntry",{upload_id:created.value.upload_id,chunk:{path:"_input",kind:"file",offset:0,bytes_b64:b64(bytes),chunkSha256:digest,totalLength:bytes.length,final:true}});
-      step("entry-replied");
-      log("upload.entry-final",entry.ok&&entry.value.accepted_offset===String(bytes.length),entry.error||entry.value);
-      const detail=await call("uploadDetail",{upload_id:created.value.upload_id});
-      step("detail-replied");
-      if(detail.ok&&detail.value.state==="open"&&detail.value.checkpoint){
-        const checkpoint=detail.value.checkpoint;
-        const completed=await call("completeUpload",{upload_id:created.value.upload_id,checkpoint:{generation:checkpoint.generation+1,inventory_sha256:checkpoint.inventory_sha256,accepted_bytes:checkpoint.accepted_bytes,complete_input:true},operation_id:self.crypto.randomUUID()});
-        step("complete-replied");
-        log("upload.complete",completed.ok,completed.error||completed.value);
-        // Sealing is asynchronous: poll the real upload state like the
-        // browser transfer before dispatching the publish.
-        let sealed=false;
-        for(let i=0;i<40;i++){
-          const poll=await call("uploadDetail",{upload_id:created.value.upload_id});
-          if(poll.ok&&poll.value.state==="sealed"){sealed=true;break;}
-          if(!poll.ok||poll.value.state==="open"||poll.value.state==="abandoned")break;
-          await new Promise(r=>setTimeout(r,500));
-        }
-        log("upload.sealed",sealed,{});
-        if(sealed){
-          const published=await call("importPublish",{request:{upload_id:created.value.upload_id,document_id:null},operation_id:self.crypto.randomUUID()});
-          step("publish-replied");
-          log("import.publish-dispatched",published.ok,published.error||published.value);
-        }
-      }else{
-        log("upload.detail-open",false,detail.error||detail.value);
-      }
-    }
-  }
-  const unknownStream=await call("streamRead",{stream_id:"not-owned",max_bytes:1024});log("stream.foreign-typed-error",!unknownStream.ok&&unknownStream.error.status===404,unknownStream.error||{});
-  if(version){
-    const opened=await call("fileStream",{version_id:version,path:params.get("file")||"attachment.bin"});
-    log("stream.opened",opened.ok&&!!opened.value.stream_id,opened.error||{});
-    if(opened.ok){
-      const expected=Uint8Array.from({length:256*513},(_,i)=>i%256);
-      let total=0,bytesOk=true,sawNonemptyEof=false,sawEmptyEof=false;
-      for(;;){
-        const part=await call("streamRead",{stream_id:opened.value.stream_id,max_bytes:65536});
-        if(!part.ok){log("stream.read-typed-error",false,part.error);break;}
-        const v=part.value;
-        if(v.data_b64!==null){
-          const bytes=Uint8Array.from(atob(v.data_b64),c=>c.charCodeAt(0));
-          if(bytes.length>65536){bytesOk=false;break;}
-          let same=total+bytes.length<=expected.length;
-          for(let i=0;same&&i<bytes.length;i++)same=bytes[i]===expected[total+i];
-          if(!same){bytesOk=false;break;}
-          total+=bytes.length;
-          if(v.eof)sawNonemptyEof=bytes.length>0;
-        }else if(v.eof)sawEmptyEof=true;
-        if(v.eof)break;
-      }
-      log("stream.allbytes-exact-eof",bytesOk&&total===expected.length&&(sawNonemptyEof||sawEmptyEof),{total});
-    }
-    const before=await call("attachSession");
-    // A FRESH owned stream of the old era, still in flight.
-    const eraStream=await call("fileStream",{version_id:version,path:params.get("file")||"attachment.bin"});
-    // A genuinely NEW attachment era WITHOUT disposal must invalidate the old
-    // era's owned stream with the typed 409.
-    const newer=await call("attachSession");
-    const stale=await call("streamRead",{stream_id:(eraStream.ok?eraStream.value.stream_id:""),max_bytes:1024});
-    log("era.attach-replacement-409",newer.ok&&eraStream.ok&&!stale.ok&&stale.error.status===409,stale.error||{});
-    log("era.reattach-new-attachment",newer.ok&&newer.value.attachment_id!==before.value.attachment_id,{});
-    // Disposal physically closes every owned stream of that attachment and
-    // leaves no attachment: any later operation of that context fails closed
-    // with the typed 401, never a clean completion.
-    const ownedStream=await call("fileStream",{version_id:version,path:params.get("file")||"attachment.bin"});
-    const disposed=await call("disposeSession",{attachment_id:newer.value.attachment_id});
-    const dropped=await call("streamRead",{stream_id:(ownedStream.ok?ownedStream.value.stream_id:""),max_bytes:1024});
-    log("era.post-dispose-fails-closed",disposed.ok&&ownedStream.ok&&!dropped.ok&&dropped.error.status===401,dropped.error||{});
-    await call("attachSession");
-  }
-}catch(error){log("selfcheck.exception",false,String(error));}
-window.__done=true;
-let reported=false;
-for(let i=0;i<3&&!reported;i++)reported=await report();
-log("report.written",reported,{});
-await report();
-})();</script>`

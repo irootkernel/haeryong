@@ -1,4 +1,4 @@
-package main
+package readerfacade
 
 import (
 	"bytes"
@@ -64,7 +64,7 @@ func newReaderFixture(t *testing.T, handler func(w http.ResponseWriter, r *http.
 	if err := os.WriteFile(credential, []byte("test-owner-credential\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	service := newReaderService(server.URL, state, "test-owner-credential")
+	service := NewReaderService(server.URL, state, "test-owner-credential")
 	// Attach once so protected operations have a current authority. The
 	// caller's specific handler runs first so per-test faults are never
 	// masked by these defaults.
@@ -624,7 +624,7 @@ func TestReaderTransportFailureIsNetworkError(t *testing.T) {
 	closed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	base := closed.URL
 	closed.Close()
-	orphan := newReaderService(base, t.TempDir(), "token")
+	orphan := NewReaderService(base, t.TempDir(), "token")
 	if _, werr := orphan.attach(); werr == nil || werr.Code != "NETWORK_ERROR" {
 		t.Fatal("transport failure must map to NETWORK_ERROR", werr)
 	}
@@ -641,7 +641,7 @@ func TestReaderRejectsRedirectsWithBearerParity(t *testing.T) {
 		dataReply(w, 200, map[string]any{"session_id": "s1"})
 	}))
 	defer server.Close()
-	service := newReaderService(server.URL, t.TempDir(), "secret-token")
+	service := NewReaderService(server.URL, t.TempDir(), "secret-token")
 	werr := invokeFail(t, service, "attachSession", "{}")
 	if werr == nil || werr.Code != "NETWORK_ERROR" {
 		t.Fatal("redirect must be rejected like the browser redirect:error parity", werr)
@@ -954,20 +954,26 @@ func TestReaderLocalForgetFailsHonestlyAndStaysRetryable(t *testing.T) {
 	if _, err := os.Stat(credential); err != nil {
 		t.Fatal("the credential file must still exist after the failed local forget")
 	}
-	// RAM is already blocked: attach cannot reuse the forgotten bearer.
-	service.mu.Lock()
-	before := len(service.receipts)
-	service.mu.Unlock()
+	// RAM is already blocked: attach cannot reuse the forgotten bearer. A
+	// capture observer proves the blocked attach emits no attachment receipt.
+	var captureMu sync.Mutex
+	attachments := 0
+	service.SetDiagnostics(func(entry map[string]any) {
+		captureMu.Lock()
+		defer captureMu.Unlock()
+		if entry["event"] == "attachSession" {
+			attachments++
+		}
+	})
 	if werr := invokeFail(t, service, "attachSession", "{}"); werr.Code != "NATIVE_SESSION_LOGGED_OUT" {
 		t.Fatal("RAM forget must block reauthentication immediately", werr)
 	}
-	service.mu.Lock()
-	for _, receipt := range service.receipts[before:] {
-		if receipt["event"] == "attachSession" {
-			t.Error("blocked attach cannot produce an attachment")
-		}
+	captureMu.Lock()
+	blockedAttachments := attachments
+	captureMu.Unlock()
+	if blockedAttachments != 0 {
+		t.Error("blocked attach cannot produce an attachment")
 	}
-	service.mu.Unlock()
 	// Restore permission; the disposal retries the obligation and completes.
 	failedDispose := invokeFail(t, service, "disposeSession", fmt.Sprintf(`{"attachment_id":%q}`, attachment["attachment_id"]))
 	if failedDispose.Code != "NATIVE_LOCAL_FORGET_FAILED" {
@@ -1174,8 +1180,27 @@ func TestReaderLocalForgetErrorDoesNotWaitForHangingRevoke(t *testing.T) {
 		}
 		return false
 	})
-	// Defers execute before fixture cleanup, even on a fatal assertion.
-	defer close(release)
+	// The local result must not wait for the hanging remote revoke. Test
+	// cleanup does wait for its final observation before fixture directories
+	// are removed; the historical file observer could otherwise recreate a
+	// receipt while TempDir cleanup was removing that directory.
+	finished := make(chan struct{})
+	started := false
+	service.SetDiagnostics(func(entry map[string]any) {
+		if entry["event"] == "revokeOwnSession" {
+			close(finished)
+		}
+	})
+	t.Cleanup(func() {
+		close(release)
+		if started {
+			select {
+			case <-finished:
+			case <-time.After(3 * time.Second):
+				t.Error("best-effort revoke did not finish before fixture cleanup")
+			}
+		}
+	})
 	defer os.Chmod(state, 0700)
 	service.state = state
 	service.mu.Lock()
@@ -1186,6 +1211,7 @@ func TestReaderLocalForgetErrorDoesNotWaitForHangingRevoke(t *testing.T) {
 	}
 	attachment := invokeOK(t, service, "attachSession", "{}").(map[string]any)
 	done := make(chan *wireError, 1)
+	started = true
 	go func() { _, werr := service.invoke("revokeOwnSession", nil); done <- werr }()
 	select {
 	case werr := <-done:

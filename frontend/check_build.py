@@ -111,7 +111,7 @@ def main():
         )
 
     run([str(FRONTEND / "node_modules" / ".bin" / "tsc"), "--noEmit"], 300)
-    run(["node", "--test", "src/client/controller.test.ts", "src/client/native.test.ts", "src/client/http.test.ts", "src/client/transfer.test.ts", "src/client/download.test.ts", "src/app/router.test.ts", "src/app/screens/library.test.ts", "src/viewer/snapshot.test.ts", "src/viewer/context-transfer.test.ts", "src/viewer/channel.test.ts", "src/viewer/loader.test.ts", "src/app/screens/personal-cas.test.ts", "src/app/screens/personal-operations.test.ts", "src/app/screens/evidence-view.test.ts", "src/app/screens/source-queries.test.ts", "src/viewer/render-session.test.ts", "src/client/native-wire.test.ts"], 180)
+    run(["node", "--test", "src/client/controller.test.ts", "src/client/native.test.ts", "src/client/http.test.ts", "src/client/transfer.test.ts", "src/client/download.test.ts", "src/client/native-fs.test.ts", "src/app/router.test.ts", "src/app/screens/library.test.ts", "src/viewer/snapshot.test.ts", "src/viewer/context-transfer.test.ts", "src/viewer/channel.test.ts", "src/viewer/loader.test.ts", "src/app/screens/personal-cas.test.ts", "src/app/screens/personal-operations.test.ts", "src/app/screens/evidence-view.test.ts", "src/app/screens/source-queries.test.ts", "src/viewer/render-session.test.ts", "src/client/native-wire.test.ts"], 180)
 
     keep_scratch = None
     try:

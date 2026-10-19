@@ -95,3 +95,26 @@ test("versionSuppliedMetadata rejects a malformed validator and keeps null expli
   assert.equal(opened.etag, null);
   opened.cancel();
 });
+
+test("fileStream reifies the delivered strong validator beside the guarded stream", async () => {
+  const sha = "a".repeat(64);
+  const port = createNativePort({ async invoke(operation) {
+    assert.equal(operation, "fileStream");
+    return { ok: true, value: { stream_id: "s1", validator: { sha256: sha, byte_size: 12 } } };
+  } });
+  const opened = await port.call("fileStream", { version_id: "v1", path: "a.html" });
+  assert.deepEqual(opened.validator, { sha256: sha, byte_size: 12 });
+  assert.equal(typeof opened.cancel, "function");
+  opened.cancel();
+});
+
+test("a malformed fileStream validator is dropped, never half-trusted; packageStream never carries one", async () => {
+  const malformed = createNativePort({ async invoke() { return { ok: true, value: { stream_id: "s1", validator: { sha256: "zz", byte_size: -1 } } }; } });
+  const opened = await malformed.call("fileStream", { version_id: "v1", path: "a.html" });
+  assert.equal(opened.validator, undefined);
+  opened.cancel();
+  const archive = createNativePort({ async invoke() { return { ok: true, value: { stream_id: "s2", validator: { sha256: "b".repeat(64), byte_size: 3 } } }; } });
+  const archiveOpened = await archive.call("packageStream", { version_id: "v1" });
+  assert.equal("validator" in archiveOpened, false);
+  archiveOpened.cancel();
+});

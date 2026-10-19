@@ -13,6 +13,13 @@ guard, with no default runtime HTTP transport. All `wails://` asset requests
 are rejected. A popup uses the SDK-provided configuration copy with a new,
 empty user-content controller. It cannot inherit the native message handler.
 
+Since the TASK-003-05 facade lift, the shared typed ReaderService facade and
+the Darwin guard live in the separately pinned repository `desktop/` module
+(`haeryong.local/haeryong/desktop`, same `v3.0.0-beta.28` pin); this spike
+keeps only the thin harness wiring — the fixed static origin, guard/bridge
+bootstrap, selfcheck page and probe gating — and imports that package through
+a local module `replace`. The root Go module stays Wails-free.
+
 ## Run an owned experiment
 
 Create an owner-only state directory under the verified mounted RootKernel

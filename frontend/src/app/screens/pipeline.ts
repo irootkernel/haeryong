@@ -15,6 +15,8 @@ export interface PipelineHooks {
   onProgress?: TransferCallbacks["onProgress"];
   shouldContinue?: () => boolean;
   guard?: () => void;
+  /** First-completion source stability gate; flows into the engine's completion. */
+  verifyInputStable?: TransferCallbacks["verifyInputStable"];
   waitMs?: (ms: number) => Promise<void>;
   /** Journal-less recovery stops at sealed instead of publishing. */
   stopAtSealed?: boolean;
@@ -54,6 +56,7 @@ export async function runImportPipeline(client: HaeryongClient, engine: Transfer
       onProgress: hooks.onProgress,
       onNotice: hooks.onNotice,
       shouldContinue: hooks.shouldContinue,
+      verifyInputStable: hooks.verifyInputStable,
     });
   }
   if (current.phase === "completing") {

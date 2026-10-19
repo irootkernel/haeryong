@@ -1,4 +1,4 @@
-package main
+package readerfacade
 
 /*
 #cgo LDFLAGS: -framework Cocoa -framework WebKit
@@ -16,17 +16,17 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-func installGuard(w application.Window, origin string) bool {
+func InstallGuard(w application.Window, origin string) bool {
 	v := C.CString(origin)
 	defer C.free(unsafe.Pointer(v))
 	return C.hy_install(w.NativeWindow(), v) == 1
 }
-func evalNative(w application.Window, script string) {
+func EvalNative(w application.Window, script string) {
 	v := C.CString(script)
 	defer C.free(unsafe.Pointer(v))
 	C.hy_eval(w.NativeWindow(), v)
 }
-func guardStats() map[string]any {
+func GuardStats() map[string]any {
 	p := C.hy_stats()
 	defer C.free(unsafe.Pointer(p))
 	var out map[string]any

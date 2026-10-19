@@ -33,7 +33,65 @@ test("pair forwards an exact typed payload", async () => {
   assert.deepEqual(fake.calls, [["pair", { device_label: "Desktop" }]]);
 });
 
-test("pollPairing and decidePairing carry their exact fields", async () => {
+test("native pair/poll reduced Go-held shapes never carry a secret or bearer", async () => {
+  const fake = port();
+  fake.handlers.set("pair", () => ({ pairing_id: "p1", code: "123", expires_at: "2026-10-19T00:00:00Z" }));
+  fake.handlers.set("pollPairing", () => ({
+    state: "approved",
+    session: { session_id: "s1", principal_id: "owner", library_id: "lib", device_label: "Desktop" },
+  }));
+  const client = new NativeHaeryongClient(fake as unknown as NativePort);
+  const created = await client.pair("Desktop");
+  assert.equal("polling_secret" in created, false);
+  // The native poll names only the pairing it still owns: no secret member.
+  const approved = await client.pollPairing("p1");
+  assert.equal("token" in approved, false);
+  assert.equal(approved.state, "approved");
+  assert.deepEqual(fake.calls[1], ["pollPairing", { pairing_id: "p1" }]);
+});
+
+test("adoptPairing, abandonPairing, serviceDiscovery and startDaemonOffer forward exact typed payloads", async () => {
+  const fake = port();
+  fake.handlers.set("adoptPairing", () => ({ adopted: true, durability: "confirmed" }));
+  fake.handlers.set("abandonPairingAttempt", () => ({ abandoned: true }));
+  fake.handlers.set("serviceDiscovery", () => ({ state: "daemon_stopped", profile: "default" }));
+  fake.handlers.set("startDaemonOffer", () => ({ started: true, discovery: { state: "verified", profile: "default" } }));
+  const client = new NativeHaeryongClient(fake as unknown as NativePort);
+  const adoption = await client.adoptPairing("p1");
+  assert.equal(adoption.adopted, true);
+  await client.abandonPairing("p1");
+  const discovery = await client.serviceDiscovery();
+  assert.equal(discovery.state, "daemon_stopped");
+  const offer = await client.startDaemonOffer();
+  assert.equal(offer.started, true);
+  assert.deepEqual(fake.calls, [
+    ["adoptPairing", { pairing_id: "p1" }],
+    ["abandonPairingAttempt", { pairing_id: "p1" }],
+    ["serviceDiscovery", {}],
+    ["startDaemonOffer", {}],
+  ]);
+});
+
+test("onboarding operations become stale across an authority era change", async () => {
+  const fake = port();
+  fake.handlers.set("adoptPairing", () => ({ adopted: true, durability: "confirmed" }));
+  fake.handlers.set("abandonPairingAttempt", () => ({ abandoned: true }));
+  fake.handlers.set("serviceDiscovery", () => ({ state: "verified", profile: "default" }));
+  fake.handlers.set("startDaemonOffer", () => ({ started: false, discovery: { state: "verified", profile: "default" } }));
+  const client = new NativeHaeryongClient(fake as unknown as NativePort);
+  const adoptions = client.adoptPairing("p1");
+  const abandons = client.abandonPairing("p1");
+  const discoveries = client.serviceDiscovery();
+  const offers = client.startDaemonOffer();
+  client.invalidate();
+  await assert.rejects(adoptions, StaleResponseError);
+  await assert.rejects(abandons, StaleResponseError);
+  await assert.rejects(discoveries, StaleResponseError);
+  await assert.rejects(offers, StaleResponseError);
+});
+
+
+test("native polling uses its Go-held secret and decisions carry their exact fields", async () => {
   const fake = port();
   fake.handlers.set("pollPairing", () => ({ state: "pending" }));
   fake.handlers.set("decidePairing", () => ({ kind: "committed", body: {} }));
@@ -47,7 +105,7 @@ test("pollPairing and decidePairing carry their exact fields", async () => {
     operation_id: "op-1",
     action: "approve",
   });
-  assert.deepEqual(fake.calls[0], ["pollPairing", { pairing_id: "p1", polling_secret: "secret" }]);
+  assert.deepEqual(fake.calls[0], ["pollPairing", { pairing_id: "p1" }]);
   assert.deepEqual(fake.calls[1], [
     "decidePairing",
     {
@@ -340,4 +398,20 @@ test("the new evidence operations are declared in the closed native list", () =>
   for (const name of ["versionSuppliedMetadata", "versionEvidence", "evidenceVerifications", "versionAssessments", "assessmentCoverage"]) {
     assert.ok((NATIVE_OPERATIONS as readonly string[]).includes(name), name);
   }
+});
+
+test("the ten M3 filesystem operations are declared and a delivered file validator survives the era wrapper", async () => {
+  for (const name of ["chooseImportSource", "sourceEntries", "readSourceRange", "releaseSource", "sourceVerifyStable", "chooseDownloadDestination", "destOpen", "destWrite", "destClose", "destAbort"]) {
+    assert.ok((NATIVE_OPERATIONS as readonly string[]).includes(name), name);
+  }
+  const fake = port();
+  const sha = "c".repeat(64);
+  fake.handlers.set("fileStream", () => ({ body: new ReadableStream<Uint8Array>(), cancel() {}, validator: { sha256: sha, byte_size: 7 } }));
+  fake.handlers.set("destWrite", () => ({ written: 3 }));
+  const client = new NativeHaeryongClient(fake as unknown as NativePort);
+  const opened = await client.fileStream("v1", "a.bin");
+  assert.deepEqual(opened.validator, { sha256: sha, byte_size: 7 });
+  const written = await client.destWrite("dest-1", new Uint8Array([1, 2, 3]));
+  assert.equal(written.written, 3);
+  assert.deepEqual(fake.calls[fake.calls.length - 1], ["destWrite", { handle: "dest-1", bytes_b64: "AQID" }]);
 });

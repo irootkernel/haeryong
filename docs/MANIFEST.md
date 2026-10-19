@@ -4,11 +4,11 @@
 
 **Edition prepared:** 2026-10-13
 
-This inventory covers 163 other files: all Markdown documents and Python documentation-check utilities. Paths are relative to docs; sizes and SHA-256 cover exact bytes. MANIFEST.md excludes itself. This is not runtime evidence.
+This inventory covers 164 other files: all Markdown documents and Python documentation-check utilities. Paths are relative to docs; sizes and SHA-256 cover exact bytes. MANIFEST.md excludes itself. This is not runtime evidence.
 
 | File | Bytes | SHA-256 |
 | --- | --- | --- |
-| `README.md` | 17968 | `821ff8ae307d527015dd15507cdcbf92380cbc7d07169fca323b63f534c4c658` |
+| `README.md` | 18546 | `9a9f2ee3b15391cf0a04c800da32a050c74da8c9aa9e46f3e62d70e437d73160` |
 | `REVIEW-GUIDE.md` | 10105 | `8035dd9c431b7e6abc7adde3b2ae7824df2a97df3ef7b3ca7ce020e3cb0094ad` |
 | `adr/ADR-001.md` | 3239 | `02f3818c7843969ca3aa081fb252983d92f886904383d84d331a49eca57f9987` |
 | `adr/ADR-002.md` | 2987 | `2128dae47cc03f55000633c89bc4e4d06419c91a414230a45fd7e45e8bac759b` |
@@ -36,7 +36,7 @@ This inventory covers 163 other files: all Markdown documents and Python documen
 | `contracts/import-workflow.md` | 22997 | `1708ac04c794b0261d06c7fed7188c6018621a096b09b6c349d587f848f43b56` |
 | `contracts/jobs-events.md` | 23182 | `4307ca9aea762c5bebd09e5af6583e3a7b53109d8a46329a9f291c868871a7af` |
 | `contracts/package.md` | 28325 | `e1e5d00bc5f725df31f4ba99b9a1a3be081c01cf28179c08ae7ca4075ea5d337` |
-| `contracts/schema-registry.md` | 62972 | `57637aeeca510bcebdccdcd7ecfdcbd4650ea8772f01a75a563e5844cbd1ffbd` |
+| `contracts/schema-registry.md` | 68424 | `2e871692b673a3d4a0b06066af48180aff3ceda9530db717704447c8462c6912` |
 | `contracts/source-access.md` | 17699 | `fb02db27b1a9d2d8af91c1d897dff8eff2d8fc2889bc3d186f99a8f4147c89ae` |
 | `contracts/viewer-protocol.md` | 31954 | `2ddd38825f2a12ef4367d74f0e37b3d62f8f3b306abc010eaa61b8718d0d6a7a` |
 | `data-model.md` | 36317 | `311f58c333191304caf57dee997579b26ab93ca7044d236360972b3eea85882e` |
@@ -89,7 +89,7 @@ This inventory covers 163 other files: all Markdown documents and Python documen
 | `tasks/EPIC-003/TASK-003-02.md` | 6025 | `16c1ee3032d90970dec09dab6a2534efc38a0c3171a58cfb8e9f586b8b0eaada` |
 | `tasks/EPIC-003/TASK-003-03.md` | 7017 | `59fe0dc033b3518e9d88c2280055198fc78c0388bfe3dc382a5820ff870ed76f` |
 | `tasks/EPIC-003/TASK-003-04.md` | 4315 | `de6d1ba8f0de5ed809699362080a911707f0b3a9b3ea21485d5f016d5f40e745` |
-| `tasks/EPIC-003/TASK-003-05.md` | 3161 | `194f59f504de2dd9b08a52e84ec0ea3cec2b293e7567b85c129aec4b46a4ad07` |
+| `tasks/EPIC-003/TASK-003-05.md` | 4871 | `6a9cb606143719a408d345155100eb11ad44aec2b376851c3f86cceb7467cda5` |
 | `tasks/EPIC-003/TASK-003-06.md` | 2993 | `615b6ddfbb376cdc2bd2716d69a90c0995ee274e0d6169a0be5a59377c6ee112` |
 | `tasks/EPIC-004/TASK-004-01.md` | 5089 | `1b913e88a1f9147c8013eba75605d2c125213701fee9db0f7b4310e8ab151660` |
 | `tasks/EPIC-004/TASK-004-02.md` | 2784 | `1397ec53218941e834cabc1fa6f31570e224d3c1df56d4eb6ae19d2110cbe94d` |
@@ -146,6 +146,7 @@ This inventory covers 163 other files: all Markdown documents and Python documen
 | `testing/contract-cases.md` | 20706 | `a35d5d88cd4295a88a5c578a3c2c6dad32684ea374cb53eb733932b1e3c32b8d` |
 | `testing/contract-freeze.md` | 20707 | `8de4e1701a044078341ca7285cc54481a2f3218cb0bed7017b6ae601c608385b` |
 | `testing/contract-ui-actions.md` | 13666 | `4e311bf258322f68fc2670431c341fe5920cda8f6b158d9aef6e5c60c60f0917` |
+| `testing/desktop-companion.md` | 30985 | `20c836f8721bf93b7b354c36b795a9c785031833ad4d56ea737692b096bc4748` |
 | `testing/epic-002-foundation-gate.md` | 4875 | `cdcbc0aa872cb81e6858db2c2e3937f15008aec72872a2441e7657bb349cdfab` |
 | `testing/evidence-presentation.md` | 18554 | `83d514c7fba43c1a1a48291eea12ec9558d896cd9442d78ff3ec0bf729b48aec` |
 | `testing/fixtures.md` | 24872 | `78dc4f6d9c56b19f978a8278fa6e4f7d4a351af0d4359d7667e7cdc74b839bcf` |
@@ -156,7 +157,7 @@ This inventory covers 163 other files: all Markdown documents and Python documen
 | `testing/profile-lifecycle.md` | 19813 | `0cd99bbae086f1a461dfbe547490c5fae91b6a7482c983b88c45843e9f83bf27` |
 | `testing/provider-source-spike.md` | 9399 | `0a47994b293b75a821c9e0435de2b542b48066ac93b3d6a6760830314c8585a7` |
 | `testing/query-cli-configuration.md` | 20978 | `09a13636c3a51570b02814fac2eab7b24f16f9f4647ee3348e7128e77454a925` |
-| `testing/reader-viewer.md` | 26067 | `7c8bd749fe5c8e67d3bb5fd0cce9dea64269b22b5dcf68ec663e12d183863150` |
+| `testing/reader-viewer.md` | 26469 | `a95a730c5d80cd2678b74bd7f934a8b71d120ccf6d8a8dd65a72294c22efa3bd` |
 | `testing/result-transfer.md` | 11464 | `680ab5bcd81f6314231c1189221050ad410398c42d43ec54925d2dc1bc34d2d7` |
 | `testing/stack-spike.md` | 13832 | `a85449001f2bbc45d384be3527b41d0cac1072597dae44aba48183c1e037b51b` |
 | `testing/storage-foundation.md` | 18134 | `96c41c5586426cadb79daaf116d4abd6f1751fb3d9110ff4b075ec7cd20f5c8e` |

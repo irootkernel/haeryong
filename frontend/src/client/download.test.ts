@@ -224,3 +224,77 @@ test("directory targets detect existence exactly; save-picker targets never clai
   const savePicker = savePickerTarget({ name: "x.zip" } as unknown as FileSystemFileHandle);
   assert.equal(await savePicker.exists(), null);
 });
+
+// --- TASK-003-05 M3: consent intent, delivered validator and honest warnings ---
+
+class IntentRecordingTarget {
+  openedIntents: Array<{ replace?: boolean; expected?: { sha256: string; byte_size: number } } | undefined> = [];
+  writable: RecordingWritable & { closeWarning?: string };
+  constructor(closeWarning?: string) {
+    this.writable = Object.assign(new RecordingWritable(), {
+      close: async (): Promise<void | { warning?: string }> => {
+        if (this.writable.failClose) throw new Error("close failed");
+        this.writable.closed = true;
+        return closeWarning ? { warning: closeWarning } : undefined;
+      },
+    });
+  }
+  label = "recorded";
+  async exists(): Promise<boolean | null> {
+    return false;
+  }
+  async openWritable(intent?: { replace?: boolean; expected?: { sha256: string; byte_size: number } }) {
+    this.openedIntents.push(intent);
+    return this.writable;
+  }
+}
+
+test("the stream's own validator and the owner's replace consent reach the writable attempt", async () => {
+  const validator = { sha256: "b".repeat(64), byte_size: 4 };
+  const stream = { ...streamOf([new Uint8Array([1, 2, 3, 4])]), validator };
+  const target = new IntentRecordingTarget();
+  const result = await downloadPackage(clientWith(stream as PackageStream), "ver-1", target, {}, { replace: true });
+  assert.equal(result.bytes, 4);
+  assert.equal(result.warning, undefined);
+  assert.deepEqual(target.openedIntents, [{ replace: true, expected: validator }]);
+  assert.equal(target.writable.closed, true);
+});
+
+test("a stream without a validator opens without an expected proof; browser targets ignore the intent", async () => {
+  const target = new IntentRecordingTarget();
+  const result = await downloadPackage(clientWith(streamOf([new Uint8Array([9])])), "ver-1", target);
+  assert.equal(result.bytes, 1);
+  assert.deepEqual(target.openedIntents, [{}]);
+});
+
+test("a committed close warning travels to the done result as an honest non-failure", async () => {
+  const warning = "게시는 완료되었으나 디스크 동기화 확인에 실패했습니다.";
+  const target = new IntentRecordingTarget(warning);
+  const result = await downloadPackage(clientWith(streamOf([new Uint8Array([5, 6])])), "ver-1", target);
+  assert.equal(result.warning, warning);
+  assert.equal(target.writable.closed, true);
+  assert.equal(target.writable.aborted, false);
+});
+
+test("a failed abort on the failure path is preserved beside the primary failure", async () => {
+  const target = new IntentRecordingTarget();
+  target.writable.failWrite = true;
+  target.writable.abort = async () => {
+    target.writable.aborted = true;
+    const failure = new Error("cleanup failed") as Error & { code?: string; details?: { temp?: string } };
+    failure.code = "NATIVE_CLEANUP_FAILED";
+    failure.details = { temp: "/tmp/.haeryong-zzz.partial" };
+    throw failure;
+  };
+  let caught: PackageDownloadIncomplete | undefined;
+  await downloadPackage(clientWith(streamOf([new Uint8Array([1])])), "ver-1", target).catch((error) => {
+    caught = error as PackageDownloadIncomplete;
+  });
+  assert.ok(caught);
+  assert.equal(caught.stage, "write");
+  const cleanup = caught.cleanupError as { code?: string; details?: { temp?: string } };
+  assert.equal(cleanup.code, "NATIVE_CLEANUP_FAILED");
+  assert.equal(cleanup.details?.temp, "/tmp/.haeryong-zzz.partial");
+  assert.equal(target.writable.closed, false);
+  assert.equal(target.writable.aborted, true);
+});

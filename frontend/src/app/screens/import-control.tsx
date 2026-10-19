@@ -15,6 +15,8 @@ import { BrowserJournalStore, DispatchRecordError, ImportJobError, JournalReadEr
 import type { ImportJournal, PlannedInput, TransferProgress } from "../../client/transfer.ts";
 import { ApiError, DispatchBlockedError } from "../../client/types.ts";
 import type { DocumentView, ProjectView } from "../../client/types.ts";
+import { planFromNativeSource, verifyNativeSourceStable } from "../../client/native-fs.ts";
+import type { NativeFsClient } from "../../client/native-fs.ts";
 import { JOURNAL_UNAVAILABLE_NOTICE, runImportPipeline } from "./pipeline.ts";
 
 export interface PreselectedDocument {
@@ -86,6 +88,7 @@ function phaseLabel(kind: Stage["kind"]): string {
 
 export function ImportControl({ controller, projects, documents, preselected, onFinished, onClose }: ImportControlProps) {
   const client = controller.client;
+  const nativeFs = typeof (client as unknown as Partial<NativeFsClient>).chooseImportSource === "function" ? (client as unknown as NativeFsClient) : null;
   const [stage, setStage] = useState<Stage>({ kind: "configure" });
   const [progress, setProgress] = useState<TransferProgress | null>(null);
   const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null);
@@ -135,6 +138,17 @@ export function ImportControl({ controller, projects, documents, preselected, on
   useEffect(() => {
     if (preselected) void resolveBase(preselected.documentId);
   }, [preselected?.documentId, preselected?.projectId, resolveBase]);
+
+  // The projects prop can arrive after mount (the Library loads it once per
+  // mount/epoch): the mount-time initializer then captured ''. Fill the
+  // default target exactly once when the list arrives and no choice exists
+  // yet — a preselected target and an explicit owner choice (any non-empty
+  // projectId) are never reset, and later list identities never override a
+  // selection.
+  useEffect(() => {
+    if (preselected) return;
+    setProjectId((current) => (current === "" && projects.length > 0 ? projects[0].project_id : current));
+  }, [preselected, projects]);
 
   // An interrupted create whose acknowledgement was lost: the original U is
   // replayed, never replaced with a new begin/new identity. Reload recovery
@@ -202,8 +216,51 @@ export function ImportControl({ controller, projects, documents, preselected, on
     void searchDocuments("", null);
   }, [mode, searchDocuments]);
 
+  // Native owner-selected source (TASK-003-05 M3): the opaque Go handle
+  // backs one PlannedInput through the SAME engine; the handle stays owned
+  // for reselection verification until an explicit new selection, unmount
+  // or publication releases it. Late picks are epoch-guarded so a result
+  // arriving after the control left the screen (or a newer choice) never
+  // owns a handle or resurrects UI state.
+  const [nativePicking, setNativePicking] = useState(false);
+  const [nativeMode, setNativeMode] = useState<"directory" | "archive" | "file">("directory");
+  const nativeSourceRef = useRef<string | null>(null);
+  const mountedRef = useRef(true);
+  const pickEpochRef = useRef(0);
+  // Synchronous pending-ownership token: exactly one native pick in flight.
+  const nativePickingRef = useRef<symbol | null>(null);
+  const releaseNativeSource = useCallback(
+    async (next: string | null) => {
+      const previous = nativeSourceRef.current;
+      nativeSourceRef.current = next;
+      if (previous && previous !== next && nativeFs) {
+        try {
+          await nativeFs.releaseSource(previous);
+        } catch {
+          // A failed release is typed by Go; the handle dies with its era.
+        }
+      }
+    },
+    [nativeFs],
+  );
+  useEffect(() => {
+    // StrictMode-safe lifecycle: each effect (re)mount restores liveness and
+    // invalidates in-flight picks; only the real unmount releases the handle.
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      pickEpochRef.current += 1;
+      void releaseNativeSource(null);
+    };
+  }, [releaseNativeSource]);
+
   const onFolderPicked = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
+    // EVERY browser input path — including an emptied/cancelled file dialog
+    // — is a new selection intent: it synchronously invalidates any in-flight
+    // native pick (epoch) and releases a previously owned native handle.
+    pickEpochRef.current += 1;
+    void releaseNativeSource(null);
     setLimitsNote("폴더 선택(FileList)은 빈 디렉터리와 심볼릭 링크를 표현하지 못합니다. 전체 트리 보존이 필요하면 ZIP 경로를 사용하세요.");
     if (!files || files.length === 0) {
       setPlanned(null);
@@ -212,23 +269,100 @@ export function ImportControl({ controller, projects, documents, preselected, on
     const first = files[0] as File & { webkitRelativePath?: string };
     const root = (first.webkitRelativePath ?? first.name).split("/")[0];
     setPlanned(planFromFolder([...files], root));
-  }, []);
+  }, [releaseNativeSource]);
 
   const onArchivePicked = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
+    pickEpochRef.current += 1;
+    void releaseNativeSource(null);
     const file = files?.[0];
     if (!file) { setPlanned(null); setLimitsNote("선택된 파일이 없습니다. 가져올 입력을 다시 선택하세요."); return; }
     setPlanned(planFromArchive(file));
     setLimitsNote("ZIP 입력은 디렉터리 항목과 링크를 포함해 전체 트리를 보존합니다.");
-  }, []);
+  }, [releaseNativeSource]);
 
   const onSinglePicked = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
+    pickEpochRef.current += 1;
+    void releaseNativeSource(null);
     const file = files?.[0];
     if (!file) { setPlanned(null); setLimitsNote("선택된 파일이 없습니다. 가져올 입력을 다시 선택하세요."); return; }
     setPlanned(planFromSingleFile(file));
     setLimitsNote("단일 파일 가져오기는 선택한 파일만 포함합니다. 관련 파일이 필요하면 폴더/ZIP을 사용하세요.");
-  }, []);
+  }, [releaseNativeSource]);
+
+  const onNativePicked = useCallback(
+    async (mode: "directory" | "archive" | "file") => {
+      if (!nativeFs) return;
+      // Synchronous pending ownership: exactly one native pick is in flight;
+      // a duplicate click is rejected before any state or ref mutation.
+      const pendingToken = Symbol("native-pick");
+      if (nativePickingRef.current !== null) return;
+      nativePickingRef.current = pendingToken;
+      // Each native pick is a new selection intent (invalidates older picks).
+      const epoch = ++pickEpochRef.current;
+      setNativePicking(true);
+      try {
+        const planned = await planFromNativeSource(nativeFs, mode);
+        if (!mountedRef.current || epoch !== pickEpochRef.current) {
+          // The control left the screen or a newer choice superseded this
+          // one: release ONLY this late result's handle; no UI state changes.
+          if (!("canceled" in planned)) {
+            try {
+              await nativeFs.releaseSource(planned.handle);
+            } catch {
+              // Typed by Go; the handle dies with its era.
+            }
+          }
+          return;
+        }
+        if ("canceled" in planned) {
+          setLimitsNote("네이티브 선택이 취소되었습니다.");
+          return;
+        }
+        // Installs the new handle in the ref, then awaits the PREVIOUS
+        // handle's release — unmount or a newer intent can happen during
+        // that await, so the post-await state is rechecked below before
+        // any UI record.
+        await releaseNativeSource(planned.handle);
+        if (!mountedRef.current || epoch !== pickEpochRef.current) {
+          // Stale after the awaited release: clean up ONLY this flow's own
+          // handle and only if it is still the owned one — a newer intent
+          // (browser pick, empty input, unmount, restart) already cleared
+          // the ref and released it; a stale flow never touches a newer
+          // selection, records no UI and starts no new operation.
+          if (nativeSourceRef.current === planned.handle) {
+            void releaseNativeSource(null);
+          }
+          return;
+        }
+        setPlanned(planned.input);
+        setLimitsNote("네이티브 선택은 빈 디렉터리와 심볼릭 링크를 포함해 선택한 트리를 그대로 반영합니다.");
+      } catch (error) {
+        // The same staleness predicate as the success path: an error from a
+        // superseded pick (browser B / empty input changed the epoch) must
+        // not overwrite the CURRENT selection's limits note or any UI state.
+        if (mountedRef.current && epoch === pickEpochRef.current) {
+          setLimitsNote(error instanceof Error ? error.message : String(error));
+        }
+      } finally {
+        // Only the current owner clears the pending latch: a stale flow
+        // never clears a newer pick's busy state.
+        if (nativePickingRef.current === pendingToken) {
+          nativePickingRef.current = null;
+          if (mountedRef.current) setNativePicking(false);
+        }
+      }
+    },
+    [nativeFs, releaseNativeSource],
+  );
+  const nativeVerifyGate = useCallback((): (() => Promise<void>) | undefined => {
+    const owned = nativeSourceRef.current;
+    if (!owned || !nativeFs) return undefined;
+    // The gate runs ONLY when the shared engine reaches its first new S;
+    // building hooks never triggers a verification.
+    return () => verifyNativeSourceStable(nativeFs, owned);
+  }, [nativeFs]);
 
   const runPipeline = useCallback(
     async (journal: ImportJournal, input: PlannedInput | null, flowGuard?: () => void) => {
@@ -239,6 +373,7 @@ export function ImportControl({ controller, projects, documents, preselected, on
         guard: useGuard,
         onProgress: setProgress,
         shouldContinue: () => !cancelRef.current,
+        verifyInputStable: nativeVerifyGate(),
         onStage: (stageKind, record) => {
           journalRef.current = record;
           if (stageKind === "abandoned") {
@@ -262,6 +397,7 @@ export function ImportControl({ controller, projects, documents, preselected, on
         onNotice: setRecoveryNotice,
       });
       if (current.phase === "published" && current.versionId) {
+        void releaseNativeSource(null);
         onFinished?.(current.target.documentId ?? "", current.versionId);
       }
     },
@@ -396,6 +532,7 @@ export function ImportControl({ controller, projects, documents, preselected, on
         guard: flowGuard,
         onProgress: setProgress,
         shouldContinue: () => !cancelRef.current,
+        verifyInputStable: nativeVerifyGate(),
       });
       journalRef.current = resumed;
       await runPipeline(resumed, planned, flowGuard);
@@ -537,8 +674,9 @@ export function ImportControl({ controller, projects, documents, preselected, on
     cancelRef.current = false;
     journalRef.current = null;
     setRecoveryNotice(null);
+    void releaseNativeSource(null);
     if (mode === "existing" && documentId) void resolveBase(documentId);
-  }, [documentId, mode, resolveBase]);
+  }, [documentId, mode, releaseNativeSource, resolveBase]);
 
   const busy = stage.kind === "transferring" || stage.kind === "sealing" || stage.kind === "publishing";
   const baseReady = mode === "new" || (mode === "existing" && base.kind === "resolved" && base.base !== null && documentId !== "");
@@ -637,6 +775,21 @@ export function ImportControl({ controller, projects, documents, preselected, on
               <input type="file" accept=".html,.htm" onChange={onSinglePicked} disabled={busy} />
             </label>
           </div>
+          {nativeFs ? (
+            <div className="form-row">
+              <label>
+                네이티브 선택
+                <select value={nativeMode} onChange={(event) => setNativeMode(event.target.value as "directory" | "archive" | "file")} disabled={busy || nativePicking}>
+                  <option value="directory">폴더(전체 트리)</option>
+                  <option value="archive">ZIP 파일</option>
+                  <option value="file">단일 파일</option>
+                </select>
+              </label>
+              <button type="button" disabled={busy || nativePicking} onClick={() => void onNativePicked(nativeMode)}>
+                {nativePicking ? "네이티브 선택 대기 중…" : "시스템 선택기로 선택"}
+              </button>
+            </div>
+          ) : null}
           <div className="form-row">
             {recovery && (planned || recovery.phase !== "prepared") ? (
               <button type="button" className="primary" onClick={() => void continueRecovered()}>

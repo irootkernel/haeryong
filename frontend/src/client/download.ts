@@ -19,6 +19,8 @@ import type { HaeryongClient, PackageStream } from "./types.ts";
 
 export class PackageDownloadIncomplete extends Error {
   readonly stage: "reader" | "write" | "close" | "cancelled";
+  /** Preserved typed failure of the abort/cleanup attempt on the failed path, when the destination reported one. */
+  cleanupError?: unknown;
   constructor(stage: PackageDownloadIncomplete["stage"], cause?: unknown) {
     super(`package download incomplete at ${stage}`);
     this.name = "PackageDownloadIncomplete";
@@ -30,7 +32,7 @@ export class PackageDownloadIncomplete extends Error {
 /** Minimal writable destination surface (FileSystemWritableFileStream-like). */
 export interface WritableDestination {
   write(bytes: Uint8Array): Promise<void>;
-  close(): Promise<void>;
+  close(): Promise<void | { warning?: string }>;
   abort?(): Promise<void>;
 }
 
@@ -63,7 +65,12 @@ export interface DownloadTarget {
    * existence is undetectable and never claimed either way.
    */
   exists(): Promise<boolean | null>;
-  openWritable(): Promise<WritableDestination>;
+  /**
+   * Open one writable attempt. `intent` carries the owner's explicit
+   * replace consent and, when the delivered representation provides one,
+   * the strong expected validator; browser targets ignore it.
+   */
+  openWritable(intent?: { replace?: boolean; expected?: { sha256: string; byte_size: number } }): Promise<WritableDestination>;
   /** Human label for conflict dialogs and progress notices. */
   label: string;
 }
@@ -71,9 +78,18 @@ export interface DownloadTarget {
 /**
  * Stream the authenticated archive into a destination. The destination is
  * opened only after the caller's consent/acquisition/conflict steps; this
- * function never acquires handles itself.
+ * function never acquires handles itself. A stream that carries its own
+ * strong validator (native file delivery) binds it to the writable attempt
+ * so nothing unverified is published; the owner's replace consent travels
+ * alongside. Completion may carry an honest durability warning.
  */
-export async function downloadPackage(client: Pick<HaeryongClient, "packageStream">, versionId: string, target: DownloadTarget, callbacks: DownloadCallbacks = {}): Promise<{ bytes: number }> {
+export async function downloadPackage(
+  client: Pick<HaeryongClient, "packageStream">,
+  versionId: string,
+  target: DownloadTarget,
+  callbacks: DownloadCallbacks = {},
+  intent: { replace?: boolean } = {},
+): Promise<{ bytes: number; warning?: string }> {
   let stream: PackageStream;
   try {
     stream = await client.packageStream(versionId);
@@ -83,7 +99,9 @@ export async function downloadPackage(client: Pick<HaeryongClient, "packageStrea
   let writable: WritableDestination;
   try {
     callbacks.guard?.();
-    writable = await target.openWritable();
+    const openIntent: { replace?: boolean; expected?: { sha256: string; byte_size: number } } = { ...intent };
+    if (stream.validator) openIntent.expected = stream.validator;
+    writable = await target.openWritable(openIntent);
   } catch (cause) {
     stream.cancel();
     throw new PackageDownloadIncomplete("write", cause);
@@ -116,18 +134,30 @@ export async function downloadPackage(client: Pick<HaeryongClient, "packageStrea
     }
   } catch (cause) {
     // Reader or destination failure: abort the swap (never close), cancel the
-    // stream and surface an explicitly incomplete outcome.
-    await writable.abort?.().catch(() => undefined);
+    // stream and surface an explicitly incomplete outcome. A FAILED abort is
+    // preserved beside the primary failure (its typed code/details carry the
+    // exact surviving temp path) instead of being swallowed.
+    let cleanupFailure: unknown;
+    try {
+      await writable.abort?.();
+    } catch (abortError) {
+      cleanupFailure = abortError;
+    }
     stream.cancel();
-    throw cause instanceof PackageDownloadIncomplete ? cause : new PackageDownloadIncomplete("reader", cause);
+    const incomplete = cause instanceof PackageDownloadIncomplete ? cause : new PackageDownloadIncomplete("reader", cause);
+    if (cleanupFailure !== undefined) incomplete.cleanupError = cleanupFailure;
+    throw incomplete;
   }
   try {
-    await writable.close();
+    const closed = await writable.close();
+    // A committed publication may still report an honest durability warning
+    // (for example a failed directory fsync); it is never a failure and
+    // never retried as a close.
+    return { bytes, warning: closed && typeof closed === "object" && typeof closed.warning === "string" ? closed.warning : undefined };
   } catch (cause) {
     // A failed close never counts as completion even after a clean stream end.
     throw new PackageDownloadIncomplete("close", cause);
   }
-  return { bytes };
 }
 
 /** FSA availability for the streaming destination transport. */

@@ -11,15 +11,20 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { PreselectionHarness } from "./app/screens/preselect-harness.tsx";
 import { FirstCommitHarness, RealCallerHarness } from "./app/screens/first-commit-harness.tsx";
+import { NativeAppHarness, NativePairingHarness } from "./app/screens/native-pairing-harness.tsx";
 
 const params = new URLSearchParams(location.search);
 const mode = params.get("mode");
 createRoot(document.getElementById("root")!).render(
   mode === "committest" ? <FirstCommitHarness /> : (
     mode === "real" ? <RealCallerHarness documentId={params.get("doc") ?? ""} versionId={params.get("ver") ?? ""} /> : (
-      <StrictMode>
-        <PreselectionHarness />
-      </StrictMode>
+      mode === "nativepairing" ? <NativePairingHarness /> : (
+        mode === "nativeapp" ? <NativeAppHarness /> : (
+          <StrictMode>
+            <PreselectionHarness />
+          </StrictMode>
+        )
+      )
     )
   ),
 );

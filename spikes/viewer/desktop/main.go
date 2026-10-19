@@ -24,6 +24,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
+	facade "haeryong.local/haeryong/desktop/readerfacade"
 )
 
 type fixtureTransport struct{ processor *application.MessageProcessor }
@@ -55,7 +56,7 @@ func (s *BoundaryFixture) Wait(milliseconds int) error {
 func (s *BoundaryFixture) Probe() map[string]any {
 	count := s.calls.Add(1)
 	var stats map[string]any
-	application.InvokeSync(func() { stats = guardStats() })
+	application.InvokeSync(func() { stats = facade.GuardStats() })
 	return map[string]any{"binding_calls": count, "native_guard": stats, "native_scheme_denials": s.schemeDenied.Load(), "dispatch": "Wails v3.0.0-beta.28 MessageProcessor -> registered binding"}
 }
 
@@ -295,7 +296,7 @@ func main() {
 			value["error"] = e.Error()
 		}
 		encoded, _ := json.Marshal(value)
-		application.InvokeSync(func() { evalNative(window, "window.fixtureNativeReply("+string(encoded)+")") })
+		application.InvokeSync(func() { facade.EvalNative(window, "window.fixtureNativeReply("+string(encoded)+")") })
 	}})
 	target := *base + "/?native=1&autorun=1"
 	if *focus {
@@ -320,14 +321,14 @@ func main() {
 	window.RegisterHook(events.Common.WindowClosing, func(_ *application.WindowEvent) { service.closeRenderers() })
 	window.OnWindowEvent(events.Mac.WebViewDidFinishNavigation, func(_ *application.WindowEvent) {
 		application.InvokeSync(func() {
-			if !installGuard(window, *base) {
+			if !facade.InstallGuard(window, *base) {
 				log.Print("native guard installation failed")
 				window.Close()
 				return
 			}
-			evalNative(window, nativeBootstrap)
-			stats, _ := json.Marshal(guardStats())
-			statsMap := guardStats()
+			facade.EvalNative(window, nativeBootstrap)
+			stats, _ := json.Marshal(facade.GuardStats())
+			statsMap := facade.GuardStats()
 			statsMap["pid"] = os.Getpid()
 			stats, _ = json.Marshal(statsMap)
 			os.WriteFile(filepath.Join(*state, "native-guard.json"), stats, 0600)

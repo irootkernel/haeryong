@@ -15,6 +15,9 @@ import type { DispatchAuthority, ShellController } from "../../client/controller
 import { directoryTarget, destinationTransportSupport, downloadPackage, packageFileName, savePickerTarget } from "../../client/download.ts";
 import type { DownloadTarget } from "../../client/download.ts";
 import { PackageDownloadIncomplete } from "../../client/download.ts";
+import { nativeDownloadTarget } from "../../client/native-fs.ts";
+import type { NativeFsClient } from "../../client/native-fs.ts";
+import type { NativeDestinationSelection } from "../../client/types.ts";
 
 interface DownloadPanelProps {
   controller: ShellController;
@@ -29,7 +32,7 @@ type PanelStage =
   | { kind: "permission"; directory: FileSystemDirectoryHandle }
   | { kind: "conflict"; target: DownloadTarget }
   | { kind: "downloading"; bytes: number }
-  | { kind: "done"; bytes: number }
+  | { kind: "done"; bytes: number; warning?: string }
   | { kind: "incomplete"; stage: string; detail: string }
   | { kind: "unavailable-transport" };
 
@@ -44,19 +47,94 @@ function formatBytes(bytes: number): string {
 export function DownloadPanel({ controller, versionId, filePath }: DownloadPanelProps) {
   const client = controller.client;
   const support = destinationTransportSupport();
+  const nativeFs = typeof (client as unknown as Partial<NativeFsClient>).chooseDownloadDestination === "function" ? (client as unknown as NativeFsClient) : null;
   const suggestedName = filePath?.split("/").at(-1) ?? packageFileName(versionId);
   const [stage, setStage] = useState<PanelStage>({ kind: "idle" });
   const [customName, setCustomName] = useState(suggestedName);
   const [consented, setConsented] = useState(false);
   const [permissionState, setPermissionState] = useState<PermissionState | null>(null);
+  const [acquireBusy, setAcquireBusy] = useState(false);
   const cancelRef = useRef(false);
   const authorityRef = useRef<DispatchAuthority | null>(null);
   const resultRef = useRef(false);
-  useEffect(() => () => { cancelRef.current = true; }, []);
+  // Late-choice/lifecycle ownership (M3 C2/C3 F4): a picker or download that
+  // resolves after the panel left the screen must never write, publish or
+  // resurrect UI state; a discarded native selection is aborted explicitly.
+  const mountedRef = useRef(true);
+  const pickEpochRef = useRef(0);
+  const nativeSelectionRef = useRef<{ handle: string; authority: DispatchAuthority | null } | null>(null);
+  // Single-flight ownership (M3 C3 F4): the ENTIRE destination acquisition
+  // plus its download effect is one synchronous-owner flight. A duplicate
+  // chooser/effect entry is rejected BEFORE any ref mutation or chooser
+  // call, so a second handle can never be created, overwrite the owned one
+  // or reset a live cancel. The conflict-replace re-entry takes its own
+  // flight after the acquisition flight ends at the conflict stop.
+  const flightRef = useRef<symbol | null>(null);
+
+  const acquireFlight = (): symbol | null => {
+    if (flightRef.current !== null) return null;
+    const token = Symbol("download-flight");
+    flightRef.current = token;
+    return token;
+  };
+  const releaseFlight = (token: symbol): void => {
+    if (flightRef.current === token) flightRef.current = null;
+  };
+  useEffect(() => {
+    // StrictMode-safe lifecycle: each effect (re)mount restores liveness and
+    // invalidates prior picks; only the real unmount leaves it dead.
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      pickEpochRef.current += 1;
+      cancelRef.current = true;
+      const owned = nativeSelectionRef.current;
+      nativeSelectionRef.current = null;
+      if (owned) {
+        // Best effort after unmount: a typed Go cleanup failure cannot render
+        // in this dead component, so it routes to the controller's runtime
+        // cleanup alert under the authority THAT selection was captured with
+        // (never the mutable ref at catch time; a replaced authority drops
+        // the report instead of reinserting an old era's path).
+        void nativeFs?.destAbort(owned.handle).catch((error: unknown) => {
+          controller.reportRuntimeCleanupFailure(error as { code?: string; details?: { temp?: string } }, owned.authority);
+        });
+      }
+    };
+  }, [controller, nativeFs]);
+
+  /**
+   * Explicitly discard a not-yet-published native selection (new-name
+   * choice, replacement, unmount). While mounted the abort is AWAITED and a
+   * typed cleanup failure keeps the obligation: the handle stays owned for
+   * retry and the exact surviving temp path is shown; nothing is claimed
+   * released. Returns the typed failure when cleanup did not complete.
+   */
+  const discardNativeSelection = useCallback(async (): Promise<{ code?: string; details?: { temp?: string } } | null> => {
+    const owned = nativeSelectionRef.current;
+    if (!owned || !nativeFs) return null;
+    try {
+      await nativeFs.destAbort(owned.handle);
+      if (nativeSelectionRef.current === owned) nativeSelectionRef.current = null;
+      return null;
+    } catch (error) {
+      // Retain the handle: the discard is not done, and a later discard or
+      // era teardown must retry the removal with the same typed path.
+      return error as { code?: string; details?: { temp?: string } };
+    }
+  }, [nativeFs]);
+
+  /** Typed cleanup-failure copy preserving the exact surviving temp path. */
+  const cleanupDetail = useCallback((failure: { code?: string; details?: { temp?: string } }): string => {
+    if (failure.code === "NATIVE_CLEANUP_FAILED" && failure.details?.temp) {
+      return `임시 파일 정리에 실패했습니다. 남아 있을 수 있는 경로: ${failure.details.temp} 다시 시도하면 정리를 재시도합니다.`;
+    }
+    return "선택한 이전 대상을 중단하지 못했습니다. 다시 시도하면 정리를 재시도합니다.";
+  }, []);
 
   const beginConsent = useCallback(() => {
-    setStage(support.savePicker || support.directoryDrop ? { kind: "consent" } : { kind: "unavailable-transport" });
-  }, [support.directoryDrop, support.savePicker]);
+    setStage(support.savePicker || support.directoryDrop || nativeFs !== null ? { kind: "consent" } : { kind: "unavailable-transport" });
+  }, [support.directoryDrop, support.savePicker, nativeFs]);
 
   /**
    * Explicit owner reset after a stopped flow (done or incomplete): consent,
@@ -66,6 +144,7 @@ export function DownloadPanel({ controller, versionId, filePath }: DownloadPanel
   const resetForNewDownload = useCallback(() => {
     resultRef.current = false;
     cancelRef.current = false;
+    pickEpochRef.current += 1; // An explicit reset is a new intent: old picks die.
     setConsented(false);
     setPermissionState(null);
     setCustomName(suggestedName);
@@ -81,35 +160,177 @@ export function DownloadPanel({ controller, versionId, filePath }: DownloadPanel
     setStage({ kind: "acquire" });
   }, [controller]);
 
-  const startDownload = useCallback(
-    async (target: DownloadTarget) => {
+  /**
+   * Internal download effect body (M3 C3): callers either already own the
+   * single-flight token (the native acquisition flow calling straight into
+   * its own effect — never a self-reject) or are the external entry below.
+   */
+  const runDownloadEffect = useCallback(
+    async (target: DownloadTarget, intent: { replace?: boolean } = {}) => {
       if (resultRef.current) return;
+      if (!mountedRef.current) return; // A left panel never starts or resumes a real effect.
       cancelRef.current = false;
       setStage({ kind: "downloading", bytes: 0 });
       try {
-        const result = await downloadPackage(filePath === undefined ? client : { packageStream: (id) => {
-          if (!client.fileStream) throw new Error("현재 연결은 첨부 파일 스트리밍을 지원하지 않습니다.");
-          return client.fileStream(id, filePath);
-        } }, versionId, target, {
-          guard: () => controller.requireVerifiedDispatch(authorityRef.current),
-          shouldContinue: () => !cancelRef.current,
-          onProgress: (bytes) => {
-            if (!resultRef.current) setStage({ kind: "downloading", bytes });
+        // A single-file native delivery MUST carry its own strong validator
+        // (Repr-Digest of the same response); without it the save fails
+        // typed instead of silently writing unverified bytes.
+        const transport =
+          filePath === undefined
+            ? client
+            : {
+                packageStream: (id: string) => {
+                  const streamPromise = client.fileStream
+                    ? client.fileStream(id, filePath)
+                    : Promise.reject(new Error("현재 연결은 첨부 파일 스트리밍을 지원하지 않습니다."));
+                  return streamPromise.then((stream) => {
+                    if (nativeFs && !stream.validator) {
+                      stream.cancel();
+                      const failure = new Error("이 파일의 검증 정보(Repr-Digest)가 없어 검증된 저장을 진행할 수 없습니다.");
+                      (failure as Error & { code?: string }).code = "NATIVE_VALIDATOR_MISSING";
+                      throw failure;
+                    }
+                    return stream;
+                  });
+                },
+              };
+        const result = await downloadPackage(transport, versionId, target, {
+          guard: () => {
+            // The synchronous authority gate also refuses to open a
+            // writable after the panel left the screen (effect guard before
+            // any destination mutation).
+            controller.requireVerifiedDispatch(authorityRef.current);
+            if (!mountedRef.current) throw new Error("내려받기 화면을 벗어나 전송을 중단했습니다.");
           },
-        });
+          shouldContinue: () => mountedRef.current && !cancelRef.current,
+          onProgress: (bytes) => {
+            if (mountedRef.current && !resultRef.current) setStage({ kind: "downloading", bytes });
+          },
+        }, intent);
+        if (!mountedRef.current) return;
         resultRef.current = true;
-        setStage({ kind: "done", bytes: result.bytes });
+        // A published attempt reached its terminal state Go-side; this panel
+        // no longer owes a discard for it.
+        nativeSelectionRef.current = null;
+        setStage({ kind: "done", bytes: result.bytes, warning: result.warning });
       } catch (error) {
         if (resultRef.current) return; // A completed result is never reset by a late stale flow.
+        if (!mountedRef.current) return; // No UI resurrection after unmount.
         if (error instanceof PackageDownloadIncomplete) {
-          setStage({ kind: "incomplete", stage: error.stage, detail: "전송이 완료되지 않았습니다. 부분 결과는 완료로 표시되지 않습니다." });
+          const code = (error.cause as { code?: string } | undefined)?.code;
+          if (code === "NATIVE_CLOSE_UNCERTAIN") {
+            setStage({ kind: "incomplete", stage: error.stage, detail: "완료 여부를 확인할 수 없습니다. 대상에 이미 파일이 있을 수 있으니 확인 후 다시 시도하세요." });
+            return;
+          }
+          if (code === "NATIVE_VALIDATOR_MISSING") {
+            setStage({ kind: "incomplete", stage: error.stage, detail: (error.cause as Error).message });
+            return;
+          }
+          if (code === "NATIVE_DESTINATION_CONFLICT" && error.stage === "close") {
+            // The target appeared between the probe and publication: the
+            // original stays untouched and the owner decides again through
+            // the explicit conflict path (consented replace or a new name).
+            setStage({ kind: "conflict", target });
+            return;
+          }
+          const cleanup = error.cleanupError as { code?: string; details?: { temp?: string } } | undefined;
+          let detail = "전송이 완료되지 않았습니다. 부분 결과는 완료로 표시되지 않습니다.";
+          if (cleanup?.code === "NATIVE_CLEANUP_FAILED" && cleanup.details?.temp) {
+            detail += ` 임시 파일 정리에 실패했습니다. 남아 있을 수 있는 경로: ${cleanup.details.temp}`;
+          } else if (code === "NATIVE_CLEANUP_FAILED") {
+            const temp = (error.cause as { details?: { temp?: string } } | undefined)?.details?.temp;
+            if (temp) detail += ` 임시 파일 정리에 실패했습니다. 남아 있을 수 있는 경로: ${temp}`;
+          }
+          setStage({ kind: "incomplete", stage: error.stage, detail });
           return;
         }
         setStage({ kind: "incomplete", stage: "reader", detail: error instanceof Error ? error.message : String(error) });
       }
     },
-    [client, controller, versionId, filePath],
+    [client, controller, versionId, filePath, nativeFs],
   );
+
+  /**
+   * External download entry (conflict-replace consent, browser save picker,
+   * dropped directory): takes the single-flight for its own effect. A
+   * duplicate entry while a flight is active is rejected synchronously —
+   * no cancel reset, no second effect.
+   */
+  const startDownload = useCallback(
+    async (target: DownloadTarget, intent: { replace?: boolean } = {}) => {
+      const token = acquireFlight();
+      if (token === null) return;
+      try {
+        await runDownloadEffect(target, intent);
+      } finally {
+        releaseFlight(token);
+      }
+    },
+    [runDownloadEffect],
+  );
+
+  // Native owner-selected destination (TASK-003-05 M3): exact existence
+  // probe, private sibling temp, default no-replace publication and explicit
+  // consented replace — through the same shared download engine. The WHOLE
+  // acquisition+effect holds one single-flight token (duplicate chooser
+  // clicks are rejected before any chooser call); the nested effect call
+  // reuses this flight's ownership instead of taking a second one.
+  const acquireNativeDestination = useCallback(async () => {
+    if (!nativeFs) return;
+    const token = acquireFlight();
+    if (token === null) return;
+    setAcquireBusy(true);
+    const epoch = pickEpochRef.current;
+    // THAT operation's authority: captured before any await so a late
+    // failure reports under the era that owned the choice, never the
+    // mutable ref read after the fact.
+    const operationAuthority = authorityRef.current;
+    try {
+      controller.requireVerifiedDispatch(operationAuthority);
+      // Discard any PREVIOUS selection BEFORE choosing a new one: a failed
+      // old cleanup retains the old handle for retry and stops this flow —
+      // a second fresh handle is never created (and never leaked) while the
+      // previous obligation is unresolved.
+      const previousFailure = await discardNativeSelection();
+      if (previousFailure) {
+        if (mountedRef.current) setStage({ kind: "incomplete", stage: "write", detail: cleanupDetail(previousFailure) });
+        return;
+      }
+      // The awaited discard may have outlived this screen or intent.
+      if (!mountedRef.current || epoch !== pickEpochRef.current) return;
+      const selection: NativeDestinationSelection = await nativeFs.chooseDownloadDestination(customName || suggestedName, "save-file");
+      if (!mountedRef.current || epoch !== pickEpochRef.current) {
+        // The panel left the screen or a newer choice superseded this one:
+        // abort the late selection's handle; no stage change, no download.
+        // A failed abort routes its typed path to the runtime cleanup alert
+        // (dropped only when that authority was replaced).
+        if (!selection.canceled) {
+          void nativeFs.destAbort(selection.handle).catch((error: unknown) => {
+            controller.reportRuntimeCleanupFailure(error as { code?: string; details?: { temp?: string } }, operationAuthority);
+          });
+        }
+        return;
+      }
+      if (selection.canceled) {
+        setStage({ kind: "acquire" });
+        return;
+      }
+      nativeSelectionRef.current = { handle: selection.handle, authority: operationAuthority };
+      const target = nativeDownloadTarget(nativeFs, selection);
+      if (selection.exists) {
+        setStage({ kind: "conflict", target });
+        return;
+      }
+      // This flight already owns the effect slot: run the body directly
+      // (never a second token, never a self-reject).
+      await runDownloadEffect(target);
+    } catch (error) {
+      if (mountedRef.current) setStage({ kind: "incomplete", stage: "write", detail: error instanceof Error ? error.message : String(error) });
+    } finally {
+      releaseFlight(token);
+      if (mountedRef.current) setAcquireBusy(false);
+    }
+  }, [cleanupDetail, controller, customName, discardNativeSelection, nativeFs, runDownloadEffect, suggestedName]);
 
   const acquireSavePicker = useCallback(async () => {
     const picker = (globalThis as { showSaveFilePicker?: (options: unknown) => Promise<FileSystemFileHandle> }).showSaveFilePicker;
@@ -180,12 +401,34 @@ export function DownloadPanel({ controller, versionId, filePath }: DownloadPanel
     async (action: "replace" | "new-name") => {
       if (stage.kind !== "conflict") return;
       if (action === "replace") {
-        await startDownload(stage.target);
+        // The owner explicitly consented to replacing the exact existing
+        // target; only this consent ever reaches the destination attempt.
+        await startDownload(stage.target, { replace: true });
         return;
       }
-      setStage({ kind: "acquire" });
+      // Choosing a different name discards this selection: the abort is
+      // awaited and an unresolved cleanup keeps its typed path visible
+      // instead of silently advancing.
+      const token = acquireFlight();
+      if (token === null) return;
+      const epoch = pickEpochRef.current;
+      setAcquireBusy(true);
+      try {
+        const failure = await discardNativeSelection();
+        if (!mountedRef.current || epoch !== pickEpochRef.current || flightRef.current !== token) return;
+        if (failure) {
+          setStage({ kind: "incomplete", stage: "write", detail: cleanupDetail(failure) });
+          return;
+        }
+        setStage({ kind: "acquire" });
+      } finally {
+        if (flightRef.current === token) {
+          releaseFlight(token);
+          if (mountedRef.current) setAcquireBusy(false);
+        }
+      }
     },
-    [stage, startDownload],
+    [cleanupDetail, discardNativeSelection, stage, startDownload],
   );
 
   return (
@@ -211,7 +454,9 @@ export function DownloadPanel({ controller, versionId, filePath }: DownloadPanel
       {stage.kind === "consent" ? (
         <>
           <p className="hint" role="alert" data-testid="download-consent">
-            선택한 이름의 파일이 이미 있으면 — 빈 파일도 포함입니다 — 내용이 교체될 수 있습니다. Haeryong은 기존 존재 여부를 감지하거나 이전 내용을 보존할 수 없습니다. 교체를 원하지 않으면 다른 이름을 사용하세요. 엄격한 덮어쓰기 금지가 필요하면 CLI(<span className="muted-code">haeryong files download --version … --output …</span>)를 사용하세요.
+            {nativeFs
+              ? "시스템 선택기로 저장 위치를 정합니다. 같은 이름의 파일이 이미 있으면 정확히 감지되며, 기본적으로 기존 파일은 절대 덮어쓰지 않습니다. 교체는 충돌 화면에서 명시적으로 동의할 때에만 진행되고, 그 전까지 원본은 그대로 보존됩니다."
+              : <>선택한 이름의 파일이 이미 있으면 — 빈 파일도 포함입니다 — 내용이 교체될 수 있습니다. Haeryong은 기존 존재 여부를 감지하거나 이전 내용을 보존할 수 없습니다. 교체를 원하지 않으면 다른 이름을 사용하세요. 엄격한 덮어쓰기 금지가 필요하면 CLI(<span className="muted-code">haeryong files download --version … --output …</span>)를 사용하세요.</>}
           </p>
           <div className="form-row">
             <label className="choice">
@@ -232,7 +477,12 @@ export function DownloadPanel({ controller, versionId, filePath }: DownloadPanel
               파일 이름
               <input type="text" value={customName} onChange={(event) => setCustomName(event.target.value)} />
             </label>
-            {support.savePicker ? (
+            {nativeFs ? (
+              <button type="button" className="primary" disabled={acquireBusy} onClick={() => void acquireNativeDestination()}>
+                저장 위치 선택 (시스템 저장 대화상자)
+              </button>
+            ) : null}
+            {support.savePicker && !nativeFs ? (
               <button type="button" className="primary" onClick={() => void acquireSavePicker()}>
                 저장 위치 선택 (시스템 저장 대화상자)
               </button>
@@ -267,10 +517,10 @@ export function DownloadPanel({ controller, versionId, filePath }: DownloadPanel
             대상 폴더에 같은 이름의 파일이 이미 있습니다. 교체(동의한 경우)하거나 다른 이름을 사용하세요. 자동으로 이름을 바꾸지 않습니다.
           </p>
           <div className="form-row">
-            <button type="button" className="primary" onClick={() => void resolveConflict("replace")}>
+            <button type="button" className="primary" disabled={acquireBusy} onClick={() => void resolveConflict("replace")}>
               동의하고 교체
             </button>
-            <button type="button" onClick={() => void resolveConflict("new-name")}>
+            <button type="button" disabled={acquireBusy} onClick={() => void resolveConflict("new-name")}>
               다른 이름 사용
             </button>
           </div>
@@ -296,6 +546,7 @@ export function DownloadPanel({ controller, versionId, filePath }: DownloadPanel
       {stage.kind === "done" ? (
         <p className="status" role="status" data-testid="download-done">
           완료: {formatBytes(stage.bytes)}를 지정한 대상에 기록했습니다.
+          {stage.warning ? ` ${stage.warning}` : ""}
         </p>
       ) : null}
       {stage.kind === "incomplete" ? (

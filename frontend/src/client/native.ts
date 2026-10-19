@@ -6,6 +6,8 @@ import type {
   AssessmentsView,
   Capabilities,
   CoverageUnit,
+  DaemonDiscovery,
+  DaemonStartOffer,
   EvidenceItemView,
   NativeAttachment,
   ChunkAck,
@@ -19,8 +21,16 @@ import type {
   ImportPublishRequest,
   JobView,
   ListPage,
+  NativePairingCreated,
+  NativePairingPoll,
+  NativeDestCloseResult,
+  NativeDestIntent,
+  NativeDestinationSelection,
+  NativeSourceEntryPage,
+  NativeSourceSelection,
   OperationView,
   PackageStream,
+  PairingAdoption,
   PairingCreated,
   PairingDecisionRequest,
   PairingPoll,
@@ -47,11 +57,21 @@ import type {
   PersonalView,
 } from "./types.ts";
 import { StaleResponseError } from "./types.ts";
+import { encodeBytes } from "./native-wire.ts";
 import { eraGuardedStream } from "./stream.ts";
 import type { ContextBinding } from "./context-types.ts";
 
 export type PairRequest = { device_label: string };
-export type PollPairingRequest = { pairing_id: string; polling_secret: string };
+export type PollPairingRequest = { pairing_id: string };
+export type ChooseImportSourceRequest = { mode: "directory" | "archive" | "file" };
+export type SourceEntriesRequest = { handle: string; cursor?: string };
+export type ReadSourceRangeRequest = { handle: string; path: string; offset: number; length: number };
+export type ReleaseSourceRequest = { handle: string };
+export type SourceVerifyStableRequest = { handle: string };
+export type ChooseDownloadDestinationRequest = { suggested_name: string; mode: "directory" | "save-file" };
+export type DestOpenRequest = { handle: string; intent?: NativeDestIntent };
+export type DestWriteRequest = { handle: string; bytes_b64: string };
+export type DestHandleRequest = { handle: string };
 export type DecidePairingPayload = {
   code: string;
   origin: string;
@@ -108,8 +128,12 @@ export interface NativePort {
   call(operation: "createContextUpload", payload: CreateContextUploadCall): Promise<{ upload_id: string; checkpoint: UploadCheckpoint }>;
   call(operation: "consumeContext", payload: ConsumeContextCall): Promise<DecisionResult>;
   call(operation: "verifyContextFresh", payload: VerifyContextFreshCall): Promise<ContextFreshProof>;
-  call(operation: "pair", payload: PairRequest): Promise<PairingCreated>;
-  call(operation: "pollPairing", payload: PollPairingRequest): Promise<PairingPoll>;
+  call(operation: "pair", payload: PairRequest): Promise<NativePairingCreated>;
+  call(operation: "pollPairing", payload: PollPairingRequest): Promise<NativePairingPoll>;
+  call(operation: "adoptPairing", payload: { pairing_id: string }): Promise<PairingAdoption>;
+  call(operation: "abandonPairingAttempt", payload: { pairing_id: string }): Promise<{ abandoned: true }>;
+  call(operation: "serviceDiscovery", payload: {}): Promise<DaemonDiscovery>;
+  call(operation: "startDaemonOffer", payload: {}): Promise<DaemonStartOffer>;
   call(operation: "decidePairing", payload: PairingDecisionRequest & DecidePairingPayload): Promise<DecisionResult>;
   call(operation: "currentSession", payload: {}): Promise<SessionInfo>;
   call(operation: "capabilities", payload: {}): Promise<Capabilities>;
@@ -139,6 +163,16 @@ export interface NativePort {
   call(operation: "jobGet", payload: JobRequest): Promise<JobView>;
   call(operation: "jobCancel", payload: JobCancelCall): Promise<DecisionResult>;
   call(operation: "packageStream", payload: PackageStreamRequest): Promise<PackageStream>;
+  call(operation: "chooseImportSource", payload: ChooseImportSourceRequest): Promise<NativeSourceSelection>;
+  call(operation: "sourceEntries", payload: SourceEntriesRequest): Promise<NativeSourceEntryPage>;
+  call(operation: "readSourceRange", payload: ReadSourceRangeRequest): Promise<{ bytes_b64: string }>;
+  call(operation: "releaseSource", payload: ReleaseSourceRequest): Promise<void>;
+  call(operation: "sourceVerifyStable", payload: SourceVerifyStableRequest): Promise<{ stable: boolean; changed_path?: string }>;
+  call(operation: "chooseDownloadDestination", payload: ChooseDownloadDestinationRequest): Promise<NativeDestinationSelection>;
+  call(operation: "destOpen", payload: DestOpenRequest): Promise<{ opened: true }>;
+  call(operation: "destWrite", payload: DestWriteRequest): Promise<{ written: number }>;
+  call(operation: "destClose", payload: DestHandleRequest): Promise<NativeDestCloseResult>;
+  call(operation: "destAbort", payload: DestHandleRequest): Promise<{ aborted: boolean; published?: boolean }>;
   call(operation: "renderBootstrap", payload: RenderBootstrapRequest): Promise<RenderBootstrapView>;
   call(operation: "renderSessionOpen", payload: RenderSessionOpenCall): Promise<RenderSessionView>;
   call(operation: "renderSessionRenew", payload: RenderSessionRouteCall): Promise<void>;
@@ -154,6 +188,10 @@ export const NATIVE_OPERATIONS = [
   "verifyContextFresh",
   "pair",
   "pollPairing",
+  "adoptPairing",
+  "abandonPairingAttempt",
+  "serviceDiscovery",
+  "startDaemonOffer",
   "decidePairing",
   "currentSession",
   "capabilities",
@@ -188,6 +226,16 @@ export const NATIVE_OPERATIONS = [
   "jobGet",
   "jobCancel",
   "packageStream",
+  "chooseImportSource",
+  "sourceEntries",
+  "readSourceRange",
+  "releaseSource",
+  "sourceVerifyStable",
+  "chooseDownloadDestination",
+  "destOpen",
+  "destWrite",
+  "destClose",
+  "destAbort",
   "renderBootstrap",
   "renderSessionOpen",
   "renderSessionRenew",
@@ -283,12 +331,30 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
     return opened;
   }
 
-  pair(deviceLabel: string): Promise<PairingCreated> {
+  pair(deviceLabel: string): Promise<PairingCreated | NativePairingCreated> {
     return this.#fresh(this.#port.call("pair", { device_label: deviceLabel }), this.#era);
   }
 
-  pollPairing(pairingId: string, pollingSecret: string): Promise<PairingPoll> {
-    return this.#fresh(this.#port.call("pollPairing", { pairing_id: pairingId, polling_secret: pollingSecret }), this.#era);
+  pollPairing(pairingId: string, _pollingSecret?: string): Promise<PairingPoll | NativePairingPoll> {
+    // The polling secret stays Go-side: the native flow names only the
+    // pairing it still owns and never fabricates a secret.
+    return this.#fresh(this.#port.call("pollPairing", { pairing_id: pairingId }), this.#era);
+  }
+
+  adoptPairing(pairingId: string): Promise<PairingAdoption> {
+    return this.#fresh(this.#port.call("adoptPairing", { pairing_id: pairingId }), this.#era);
+  }
+
+  abandonPairing(pairingId: string): Promise<void> {
+    return this.#fresh(this.#port.call("abandonPairingAttempt", { pairing_id: pairingId }), this.#era).then(() => undefined);
+  }
+
+  serviceDiscovery(): Promise<DaemonDiscovery> {
+    return this.#fresh(this.#port.call("serviceDiscovery", {}), this.#era);
+  }
+
+  startDaemonOffer(): Promise<DaemonStartOffer> {
+    return this.#fresh(this.#port.call("startDaemonOffer", {}), this.#era);
   }
 
   decidePairing(request: PairingDecisionRequest): Promise<DecisionResult> {
@@ -352,7 +418,13 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
   async fileStream(versionId: string, path: string): Promise<PackageStream> {
     const era = this.#era;
     const stream = await this.#freshStream(() => this.#port.call("fileStream", { version_id: versionId, path }), era);
-    return { body: eraGuardedStream(stream.body, () => era !== this.#era), cancel: () => stream.cancel() };
+    // The delivered representation's strong validator (when present)
+    // survives the era wrapper beside the guarded body.
+    return {
+      body: eraGuardedStream(stream.body, () => era !== this.#era),
+      cancel: () => stream.cancel(),
+      ...(stream.validator ? { validator: stream.validator } : {}),
+    };
   }
 
   renderBootstrap(versionId: string, pagePath?: string): Promise<RenderBootstrapView> {
@@ -498,6 +570,49 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
 
   jobCancel(jobId: string, operationId: string): Promise<DecisionResult> {
     return this.#fresh(this.#port.call("jobCancel", { job_id: jobId, operation_id: operationId }), this.#era);
+  }
+
+  // Owner-selected filesystem operations (TASK-003-05 M3). Every call is
+  // era-guarded like the rest of the transport; the Go facade additionally
+  // binds each opaque handle to its attachment/generation and purpose.
+  chooseImportSource(mode: "directory" | "archive" | "file"): Promise<NativeSourceSelection> {
+    return this.#fresh(this.#port.call("chooseImportSource", { mode }), this.#era);
+  }
+
+  sourceEntries(handle: string, cursor?: string): Promise<NativeSourceEntryPage> {
+    return this.#fresh(this.#port.call("sourceEntries", { handle, cursor }), this.#era);
+  }
+
+  readSourceRange(handle: string, path: string, offset: number, length: number): Promise<{ bytes_b64: string }> {
+    return this.#fresh(this.#port.call("readSourceRange", { handle, path, offset, length }), this.#era);
+  }
+
+  releaseSource(handle: string): Promise<void> {
+    return this.#fresh(this.#port.call("releaseSource", { handle }), this.#era);
+  }
+
+  sourceVerifyStable(handle: string): Promise<{ stable: boolean; changed_path?: string }> {
+    return this.#fresh(this.#port.call("sourceVerifyStable", { handle }), this.#era);
+  }
+
+  chooseDownloadDestination(suggestedName: string, mode: "directory" | "save-file"): Promise<NativeDestinationSelection> {
+    return this.#fresh(this.#port.call("chooseDownloadDestination", { suggested_name: suggestedName, mode }), this.#era);
+  }
+
+  destOpen(handle: string, intent?: NativeDestIntent): Promise<{ opened: true }> {
+    return this.#fresh(this.#port.call("destOpen", { handle, intent }), this.#era);
+  }
+
+  destWrite(handle: string, bytes: Uint8Array): Promise<{ written: number }> {
+    return this.#fresh(this.#port.call("destWrite", { handle, bytes_b64: encodeBytes(bytes) }), this.#era);
+  }
+
+  destClose(handle: string): Promise<NativeDestCloseResult> {
+    return this.#fresh(this.#port.call("destClose", { handle }), this.#era);
+  }
+
+  destAbort(handle: string): Promise<{ aborted: boolean; published?: boolean }> {
+    return this.#fresh(this.#port.call("destAbort", { handle }), this.#era);
   }
 
   subscribeEvents(): EventSubscription {
