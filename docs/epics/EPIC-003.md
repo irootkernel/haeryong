@@ -2,7 +2,7 @@
 id: "EPIC-003"
 type: "epic"
 title: "Shared reader and Wails client"
-status: "in_progress"
+status: "done"
 depends_on: ["EPIC-002"]
 completion_requires: ["TASK-003-01","TASK-003-02","TASK-003-03","TASK-003-04","TASK-003-05","TASK-003-06"]
 ---
@@ -45,3 +45,12 @@ C02, C03, C04, M08, M10, M14, M15, M17, M19. See [traceability](../testing/trace
 ## Handoff
 
 Production html_js_v1 compatibility, local render-byte integrity and evidence-navigation/JavaScript walkthrough, with external dependencies and untested devices stated explicitly. Use the [Epic gate template](../templates/epic-gate.md) as an index to actual artifacts and identify the exact next task.
+
+## Accepted closeout
+
+The [shared Reader and Wails gate](../testing/epic-003-reader-gate.md) indexes
+the six verified member commits, actual integrated behavior, independent
+assembled review and measured limits. Main's delegated Task acceptance is
+separate from Master's actual overall Epic acceptance for this closeout.
+The exit decision is `pass`; no required failure or not-run check is waived.
+TASK-004-01 is the next ordered implementation and is not activated here.
