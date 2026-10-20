@@ -243,6 +243,8 @@ func main() {
 
 	options := application.WebviewWindowOptions{Title: "Haeryong", Width: 1180, Height: 880, URL: origin + *appPath}
 	options.Mac.WebviewPreferences.JavaScriptCanOpenWindowsAutomatically.Set(true)
+	// Include links and controls in this WebView's keyboard navigation.
+	options.Mac.WebviewPreferences.TabFocusesLinks.Set(true)
 	window := app.Window.NewWithOptions(options)
 
 	// The production picker presenter: real Wails NSOpenPanel/NSSavePanel

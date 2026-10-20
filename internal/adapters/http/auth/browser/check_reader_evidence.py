@@ -148,7 +148,7 @@ try:
   facts.regionBlockSelected=await page.locator('.evidence-region[data-selected="true"]').first().getAttribute('data-selected');
   // Navigating to the second page clears the selection and shows ONLY that
   // page's own same-named region, never the first page's binding.
-  await page.locator('aside[aria-label="페이지 및 파일 목록"]').getByRole('link',{name:'nested/second.html',exact:true}).click();
+  await page.locator('dialog[aria-label="페이지 및 파일 목록"]').getByRole('link',{name:'nested/second.html',exact:true}).click();
   await page.frameLocator('iframe[title="결과 뷰어"]').getByRole('heading',{name:'둘째 페이지',exact:true}).waitFor({timeout:20000});
   await page.getByText('둘째 개요',{exact:true}).waitFor({timeout:10000});
   facts.secondPageOwnRegion=true;
@@ -517,9 +517,9 @@ try:
    if(SCREENSHOT)await t.screenshot({path:SCREENSHOT,fullPage:true});
    // Delayed second-page response: navigate away before it arrives and prove
    // the late reply never relabels the newly selected first page.
-   await t.locator('aside[aria-label="페이지 및 파일 목록"]').getByRole('link',{name:'nested/second.html',exact:true}).tap();
+   await t.locator('dialog[aria-label="페이지 및 파일 목록"]').getByRole('link',{name:'nested/second.html',exact:true}).tap();
    await t.frameLocator('iframe[title="결과 뷰어"]').getByRole('heading',{name:'둘째 페이지',exact:true}).waitFor({timeout:20000});
-   await t.locator('aside[aria-label="페이지 및 파일 목록"]').getByRole('link',{name:'first.html',exact:true}).tap();
+   await t.locator('dialog[aria-label="페이지 및 파일 목록"]').getByRole('link',{name:'first.html',exact:true}).tap();
    await t.frameLocator('iframe[title="결과 뷰어"]').getByRole('heading',{name:'근거 첫 페이지',exact:true}).waitFor({timeout:20000});
    await t.getByText('기록된 배지',{exact:false}).first().waitFor({timeout:10000});
    await t.waitForTimeout(4000);
@@ -745,7 +745,7 @@ try:
    // navigate() path that bypasses mirror() — the exact defect route.
    const beforeSidebar=scopeCount();
    await t.evaluate(()=>window.__armReal('sidebar-second'));
-   await t.locator('aside[aria-label="페이지 및 파일 목록"]').getByRole('link',{name:'nested/second.html',exact:true}).click();
+   await t.locator('dialog[aria-label="페이지 및 파일 목록"]').getByRole('link',{name:'nested/second.html',exact:true}).click();
    await t.waitForFunction(tag=>(window.__realCommitLog||[]).some(e=>e.tag===tag),'sidebar-second',{timeout:10000});
    const sidebar=await t.evaluate(tag=>(window.__realCommitLog||[]).find(e=>e.tag===tag),'sidebar-second');
    facts.realSidebarFirstCommitRegionCleared=!sidebar.panelH2.includes('영역 overview');

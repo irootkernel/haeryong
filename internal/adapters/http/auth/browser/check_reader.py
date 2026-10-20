@@ -107,7 +107,7 @@ try:
    await page.getByText('기본 페이지를 저장했습니다.',{exact:true}).waitFor();
    const pointerAfterDefault=await personal('reading-position');
    if(pointerAfterDefault.etag!==pointerBeforeDefault.etag)throw Error('default changed last-opened pointer');
-   await page.locator('aside[aria-label="페이지 및 파일 목록"]').getByRole('link',{name:'first.html',exact:true}).click();
+   await page.locator('dialog[aria-label="페이지 및 파일 목록"]').getByRole('link',{name:'first.html',exact:true}).click();
    await page.frameLocator('iframe').locator('#heading').waitFor();
    if(opens.length!==initialOpens+1)throw Error('host selection should open exactly one delivery');
    await waitPersonal('reading-position',null,v=>v.value.page_path==='first.html');

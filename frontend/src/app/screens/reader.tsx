@@ -6,13 +6,14 @@ import { ApiError } from "../../client/types.ts";
 import type { DocumentView, FileEntryView, PagePositionValue, ProjectView, ReadingPositionValue, RenderBootstrapView, VersionView } from "../../client/types.ts";
 import { IsolatedViewer } from "../../viewer/isolated-viewer.tsx";
 import type { ReaderLocation } from "../../viewer/isolated-viewer.tsx";
+import { Sheet } from "../sheet.tsx";
 import { BrowserPersonalJournal, PersonalOperations, personalKey } from "./personal-operations.ts";
 import type { PersonalTarget } from "./personal-operations.ts";
 import { ImportControl } from "./import-control.tsx";
 import { DownloadPanel } from "./download-panel.tsx";
 import { VersionHeader } from "./version-header.tsx";
 import { SourcePanel } from "./source-panel.tsx";
-import { acceptRegionSelection, parseSuppliedMetadata, readStream, regionSelectionMatches, verifyMetadataBytes, type MetadataState } from "./evidence-view.ts";
+import { acceptRegionFocusResult, acceptRegionSelection, parseSuppliedMetadata, readStream, regionRequestStale, regionSelectionMatches, regionsOfPage, verifyMetadataBytes, type MetadataState } from "./evidence-view.ts";
 import { navigate } from "../router.tsx";
 
 interface ReaderProps {
@@ -27,8 +28,23 @@ type FileList = { items: FileEntryView[]; cursor: string | null; busy: boolean; 
 type Selection = { context: string; bootstrap: RenderBootstrapView; location: ReaderLocation | null; restore?: { scroll_x?: unknown; scroll_y?: unknown } };
 const errorText = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
 const html = (path: string) => /\.html?$/i.test(path);
+/** Local Files filter over ALREADY LOADED entries only; the cursor hint keeps
+ *  incomplete coverage honest and this is never server Library search. */
+const filterMatches = (item: FileEntryView, filter: string): boolean => { const query = filter.trim().toLowerCase(); return query === "" || item.path.toLowerCase().includes(query); };
 const contextOf = (): string | null => typeof history.state?.haeryongReaderContext === "string" ? history.state.haeryongReaderContext as string : null;
 const locationHash = () => globalThis.location.hash;
+/** Live CSS breakpoint mirror; the layout itself stays pure CSS so no view is
+ *  ever remounted by a resize — this only picks sheet-vs-column semantics. */
+function useMedia(query: string): boolean {
+  const [matches, setMatches] = useState(() => matchMedia(query).matches);
+  useEffect(() => {
+    const media = matchMedia(query);
+    const onChange = () => setMatches(media.matches);
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, [query]);
+  return matches;
+}
 function readerURL(document: string, version: string, location: ReaderLocation): string {
   const query = new URLSearchParams({ page: location.page });
   if (location.query) query.set("page_query", location.query);
@@ -71,12 +87,46 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
   const [issue, setIssue] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
-  const [download, setDownload] = useState<string | null>(null);
+  const [download, setDownload] = useState<{ versionId: string; path: string } | null>(null);
+  const downloadRegion = useRef<HTMLDivElement | null>(null);
+  // A file choice and its consent belong to the selected version. Discard it
+  // on a version switch; the render guard also covers the first B commit.
+  useEffect(() => { setDownload(null); }, [versionId]);
+  useEffect(() => {
+    if (download?.versionId !== versionId) return;
+    const region = downloadRegion.current;
+    const files = document.getElementById("reader-files-panel");
+    const focus = () => { region?.focus(); region?.scrollIntoView({ block: "nearest" }); };
+    // The Files sheet closes through its native dialog effect. If it still
+    // owns the top layer, wait for the actual close event before moving focus.
+    if (files instanceof HTMLDialogElement && files.matches(":modal")) {
+      files.addEventListener("close", focus, { once: true });
+      return () => files.removeEventListener("close", focus);
+    }
+    focus();
+  }, [download, versionId]);
   const [reload, setReload] = useState(0);
   const [suppliedMetaBox, setSuppliedMetaBox] = useState<{ versionId: string; state: MetadataState }>(() => ({ versionId, state: { kind: "loading" } }));
   const [suppliedMetaReload, setSuppliedMetaReload] = useState(0);
   const [regionSelection, setRegionSelection] = useState<{ versionId: string; pagePath: string; context: string | null; reload: number; regionId: string } | null>(null);
-  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
+  const [filesFilter, setFilesFilter] = useState("");
+  // ≥1280px: Context is the declared 340px third column while open. 768–1279:
+  // Context overlays the reader. <768: single column; Files and Context are
+  // full-height sheets. One state drives every mode, so existing panel
+  // drivers keep their click-to-open semantics at any viewport.
+  const wideLayout = useMedia("(min-width: 1280px)");
+  const phoneLayout = useMedia("(max-width: 767px)");
+  const filesVisible = !phoneLayout || filesOpen;
+  const filesModal = phoneLayout && filesOpen;
+  const contextVisible = contextOpen;
+  const contextModal = !wideLayout && contextOpen;
+  // Exactly ONE modal at a time: opening either panel closes the other, and a
+  // breakpoint crossing that would make both modal resolves by closing Files.
+  useEffect(() => { if (phoneLayout && filesOpen && contextOpen) setFilesOpen(false); }, [phoneLayout, filesOpen, contextOpen]);
+  // Host region outline → real in-frame region focus through the live channel.
+  const regionFocus = useRef<((regionId: string) => boolean) | null>(null);
   const frameSelection = useRef<Selection | null>(null);
   const locationRef = useRef<ReaderLocation | null>(null);
   const restoreRef = useRef<{ context: string; position: Selection["restore"] } | null>(null);
@@ -256,6 +306,45 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
       setRegionSelection({ versionId: event.versionId, pagePath: event.pagePath, context: event.context, reload, regionId: event.regionId });
     }
   };
+  // Host outline selection: bind the exact current page's region context
+  // first (no source/evidence privilege), then attempt REAL in-frame focus.
+  // While the Context sheet is modal the background is inert, so the focus
+  // request waits for the dialog's ACTUAL close event (never elapsed
+  // frames); a stale route, an explicit same-context reload, a replaced
+  // channel handle or an unmounted Reader cancels the pending request.
+  const reloadRef = useRef(reload);
+  reloadRef.current = reload;
+  const selectRegion = (region: { id: string; label?: unknown }) => {
+    if (currentPage === null) { setNotice("페이지가 열려 있지 않아 영역을 선택할 수 없습니다."); return; }
+    setRegionSelection({ versionId, pagePath: currentPage, context, reload, regionId: region.id });
+    const captured = { versionId, context, page: currentPage, reload, handle: regionFocus.current as unknown };
+    const cancelled = () => regionRequestStale(captured, {
+      live: live.current,
+      versionId: currentRoute.current.versionId,
+      context: currentRoute.current.context,
+      page: locationRef.current?.page ?? null,
+      reload: reloadRef.current,
+      handle: regionFocus.current as unknown,
+    });
+    const attempt = () => {
+      if (cancelled()) return;
+      if (regionFocus.current?.(region.id) !== true) setNotice("페이지 채널이 아직 준비되지 않아 영역 초점을 요청하지 못했습니다.");
+    };
+    if (contextModal) {
+      setContextOpen(false);
+      const node = document.getElementById("reader-context-panel");
+      if (node === null) return;
+      const onClosed = () => { cleanupClose(); if (!cancelled()) attempt(); };
+      const cleanupClose = () => { node.removeEventListener("close", onClosed); clearTimeout(failsafe); };
+      node.addEventListener("close", onClosed);
+      // Bounded failsafe only: a dialog that never emits close must not leak
+      // the listener forever; cancellation still governs any late attempt.
+      const failsafe = setTimeout(() => {
+        cleanupClose();
+        if (!cancelled() && node instanceof HTMLDialogElement && !node.open) attempt();
+      }, 2000);
+    } else attempt();
+  };
   const continueReading = async () => {
     const authority = controller.captureDispatchAuthority();
     const route = currentRoute.current;
@@ -297,9 +386,8 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
     <header className="reader-header"><div><h1>{currentVersion?.title_snapshot ?? docInfo?.document.title ?? "결과 읽기"}</h1><p className="muted-code">{versionId}</p>
         <VersionHeader version={currentVersion} pagePath={currentPage} metadata={suppliedMeta.kind === "ready" ? suppliedMeta.metadata : null} />
         {suppliedMeta.kind === "error" && <div className="banner" data-tone="warning" role="alert"><p>공급 메타데이터를 확인하지 못했습니다: {suppliedMeta.problem} — 결과 읽기에는 영향이 없습니다.</p><button onClick={() => setSuppliedMetaReload((value) => value + 1)}>메타데이터 다시 불러오기</button></div>}
-      </div>
-      <div className="form-row"><button onClick={() => void continueReading()}>이어서 읽기</button><button disabled={!selection?.location} onClick={() => void setDefault().catch((error) => setNotice(errorText(error)))}>기본 페이지로 지정</button><button onClick={() => void setDefault(true).catch((error) => setNotice(errorText(error)))}>기본 페이지 설정 해제</button><button aria-expanded={evidenceOpen} onClick={() => setEvidenceOpen((value) => !value)}>근거 패널</button><button disabled={!currentDocInfo} onClick={() => setImportOpen(true)}>새 버전 가져오기</button></div>
-    </header>
+      </div></header>
+    <div className="form-row reader-actions"><button onClick={() => void continueReading()}>이어서 읽기</button><button disabled={!selection?.location} onClick={() => void setDefault().catch((error) => setNotice(errorText(error)))}>기본 페이지로 지정</button><button onClick={() => void setDefault(true).catch((error) => setNotice(errorText(error)))}>기본 페이지 설정 해제</button><button id="reader-files-toggle" className="narrow-only" aria-expanded={filesOpen} aria-controls="reader-files-panel" onClick={() => { setContextOpen(false); setFilesOpen((value) => !value); }}>파일 목록</button><button id="reader-context-toggle" aria-expanded={contextOpen} aria-controls="reader-context-panel" onClick={() => { setFilesOpen(false); setContextOpen((value) => !value); }}>근거 패널</button><button disabled={!currentDocInfo} onClick={() => setImportOpen(true)}>새 버전 가져오기</button></div>
     {notice && <p role="status">{notice}</p>}
     {entries.map((entry) => <div className="banner" data-tone="warning" key={personalKey(entry.target)}>
       <p>{entry.target.version.slice(0, 8)} · {{ "reader-preference": "기본 페이지", "reading-position": "마지막 연 페이지", "page-position": "페이지 위치" }[entry.target.kind]}{entry.target.page ? ` · ${entry.target.page}` : ""}: {entry.issue ?? (personal.recoverable(entry.target) ? "이전 화면의 저장 결과가 확인되지 않았습니다. 원래 요청으로 다시 확인하세요." : entry.conflict ? "다른 기기에서 변경된 상태입니다. 유지할 값을 선택하세요." : "저장 결과를 확인하는 중입니다.")}</p>
@@ -308,16 +396,24 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
     {detailIssue && <div className="banner" data-tone="warning" role="alert"><p>문서 정보를 불러오지 못했습니다: {detailIssue}</p><button onClick={() => setDetailGeneration((value) => value + 1)}>문서 정보 다시 불러오기</button></div>}
     {issue && <div className="banner" role="alert"><p>페이지를 열지 못했습니다: {issue}</p><button onClick={() => { frameSelection.current = null; setReload((value) => value + 1); }}>다시 불러오기</button></div>}
     {selection && !selection.bootstrap.renderer_available && <div className="banner" role="alert"><p>렌더러를 사용할 수 없습니다: {selection.bootstrap.renderer_unavailable_reason}</p><p>페이지와 원본 파일은 아래 목록에서 확인할 수 있습니다.</p></div>}
-    <div className="reader-body"><aside className="reader-side" aria-label="페이지 및 파일 목록"><h2>페이지</h2><ul>{files.items.filter((item) => item.kind === "file" && html(item.path)).map((item) => <li key={item.path}><a href={readerURL(documentId, versionId, { page: item.path, query: "", fragment: "" })} onClick={(event) => { if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigate(readerURL(documentId, versionId, { page: item.path, query: "", fragment: "" })); }}>{item.path}</a></li>)}</ul>
-      <h2>파일</h2><ul>{files.items.filter((item) => !(item.kind === "file" && html(item.path))).map((item) => <li key={item.path}>{item.kind === "file" ? <button className="link" onClick={() => setDownload(item.path)}>{item.path}</button> : <span>{item.path} ({item.kind})</span>}</li>)}</ul>
+    <div className="reader-body"><Sheet id="reader-files-panel" openerId="reader-files-toggle" className="reader-side" closeOnEscape={phoneLayout} open={filesVisible} modal={filesModal} label="페이지 및 파일 목록" onClose={() => setFilesOpen(false)}><h2>페이지 및 파일</h2>
+      <label className="field" htmlFor="reader-files-filter"><span>불러온 항목 필터</span><input id="reader-files-filter" type="text" value={filesFilter} onChange={(event) => setFilesFilter(event.target.value)} placeholder="페이지·파일 이름으로 좁히기" /></label>
+      {files.cursor !== null && filesFilter.trim() !== "" && <p className="hint" role="note">필터는 지금까지 불러온 항목에만 적용됩니다. ‘더 불러오기’로 나머지 항목을 먼저 확인하세요.</p>}
+      {phoneLayout && <button onClick={() => setFilesOpen(false)}>파일 목록 닫기</button>}
+      <h3>페이지</h3><ul>{files.items.filter((item) => item.kind === "file" && html(item.path) && filterMatches(item, filesFilter)).map((item) => <li key={item.path}><a aria-current={item.path === currentPage ? "page" : undefined} href={readerURL(documentId, versionId, { page: item.path, query: "", fragment: "" })} onClick={(event) => { if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigate(readerURL(documentId, versionId, { page: item.path, query: "", fragment: "" })); if (filesModal) setFilesOpen(false); }}>{item.path}</a></li>)}</ul>
+      <h3>파일</h3><ul>{files.items.filter((item) => !(item.kind === "file" && html(item.path)) && filterMatches(item, filesFilter)).map((item) => <li key={item.path}>{item.kind === "file" ? <button className="link" onClick={() => { setDownload({ versionId, path: item.path }); setFilesOpen(false); }}>{item.path}</button> : <span>{item.path} ({item.kind})</span>}</li>)}</ul>
       {files.issue && <div role="alert"><p>파일 목록 오류: {files.issue}</p><button onClick={() => { if (files.cursor) void more(); else { const own = ++filesGeneration.current; setFiles((old) => ({ ...old, busy: true })); void client.versionFiles(versionId).then((page) => { if (own === filesGeneration.current) setFiles({ items: page.items, cursor: page.next_cursor, busy: false, issue: null }); }).catch((error) => { if (own === filesGeneration.current) setFiles((old) => ({ ...old, busy: false, issue: errorText(error) })); }); } }}>목록 다시 불러오기</button></div>}{files.busy && <p role="status">목록을 불러오는 중…</p>}{files.cursor && <button disabled={files.busy} onClick={() => void more()}>더 불러오기</button>}
-    </aside>
-    {selection?.bootstrap.renderer_available && selection.location && context !== null && selection.context === context ? <IsolatedViewer key={JSON.stringify([versionId, selection.context, reload])} controller={controller} owner={owner} context={selection.context} documentId={documentId} versionId={versionId} initial={selection.location} restore={selection.restore} personal={personal} onLocation={mirror} onNotice={setNotice} onRegion={captureRegion} /> : !issue && !selection ? <p role="status">결과를 확인하는 중…</p> : selection?.location === null ? <p>페이지를 선택하거나 원본 파일을 내려받으세요.</p> : null}
-    </div>
-    {evidenceOpen && <section className="reader-evidence" aria-label="근거 패널">
+    </Sheet>
+    {selection?.bootstrap.renderer_available && selection.location && context !== null && selection.context === context ? <IsolatedViewer key={JSON.stringify([versionId, selection.context, reload])} controller={controller} owner={owner} context={selection.context} documentId={documentId} versionId={versionId} initial={selection.location} restore={selection.restore} personal={personal} focusHandle={regionFocus} onLocation={mirror} onNotice={setNotice} onRegion={captureRegion} onRegionFocus={(result) => { if (!acceptRegionFocusResult(result, { versionId, pagePath: currentPage })) return; if (!result.found) setNotice(`선언된 영역 ${result.regionId}에 대응하는 문서 요소를 찾지 못했습니다. 영역 ID는 메타데이터의 논리 식별자이며 읽기에는 영향이 없습니다.`); else if (!result.focused) setNotice(`영역 ${result.regionId}에 초점을 맞추지 못했습니다(오버레이가 열려 있거나 페이지가 초점을 받을 수 없습니다). 본문에서 방향키로 읽은 뒤 영역을 다시 선택하면 초점이 이동하는 경우가 있습니다.`); else setNotice(`영역 ${result.regionId}에 초점을 맞췄습니다.`); }} /> : !issue && !selection ? <p role="status">결과를 확인하는 중…</p> : selection?.location === null ? <p>페이지를 선택하거나 원본 파일을 내려받으세요.</p> : null}
+    <Sheet id="reader-context-panel" openerId="reader-context-toggle" className="reader-context" open={contextVisible} modal={contextModal} label="문맥 및 근거 패널" onClose={() => setContextOpen(false)}>
+      {!wideLayout && <button onClick={() => setContextOpen(false)}>문맥 닫기</button>}
+      {suppliedMeta.kind === "ready" && currentPage !== null && regionsOfPage(suppliedMeta.metadata, currentPage).length > 0 && <div className="region-outline"><h3>영역 개요(현재 페이지)</h3><ul>{regionsOfPage(suppliedMeta.metadata, currentPage).map((region) => <li key={region.id}><button className="link" data-selected={regionId === region.id ? "true" : undefined} aria-current={regionId === region.id ? "true" : undefined} onClick={() => selectRegion(region)}>{typeof region.label === "string" && region.label !== "" ? region.label : region.id}</button></li>)}</ul><p className="hint">영역을 선택하면 해당 페이지의 문맥이 그 영역에 묶이고, 페이지 요소에 실제 초점을 시도해 결과를 알립니다. 좁은 화면에서는 문맥 패널이 닫힌 뒤 초점이 시도됩니다. 선언된 영역이 문서 요소와 연결되지 않아도 읽기·페이지 문맥은 그대로 유지됩니다.</p></div>}
+      <div className="reader-evidence">
       <SourcePanel controller={controller} version={currentVersion} versionId={versionId} pagePath={currentPage} regionId={regionId} contextKey={`${context ?? "initial"}:${reload}`} metadata={suppliedMeta} />
-    </section>}
-    {download !== null && <div><button onClick={() => setDownload(null)}>파일 내려받기 닫기</button><DownloadPanel key={versionId + ":" + download} controller={controller} versionId={versionId} filePath={download} /></div>}
+      </div>
+    </Sheet>
+    </div>
+    {download?.versionId === versionId && <div ref={downloadRegion} role="region" aria-label="선택한 파일 내려받기" tabIndex={-1}><button onClick={() => setDownload(null)}>파일 내려받기 닫기</button><DownloadPanel key={download.versionId + ":" + download.path} controller={controller} versionId={download.versionId} filePath={download.path} /></div>}
     {importOpen && currentDocInfo && <section><button onClick={() => setImportOpen(false)}>가져오기 패널 닫기</button><ImportControl key={`${epoch}|${currentDocInfo.document.project_id}|${documentId}`} controller={controller} projects={currentDocInfo.projects} documents={[currentDocInfo.document]} preselected={{ projectId: currentDocInfo.document.project_id, documentId }} onFinished={() => setImportOpen(false)} onClose={() => setImportOpen(false)} /></section>}
   </div>;
 }

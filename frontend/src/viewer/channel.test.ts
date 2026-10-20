@@ -41,6 +41,29 @@ test("window handshake requires the exact frame, origin and immutable page befor
   } finally { f.close(); }
 });
 
+test("region.focused carries only the typed honest result and never a dispatch ack or upgrade", async () => {
+  const f = fixture();
+  try {
+    f.connect();
+    f.send("viewer.ready", { profile: "html_js_v1" }); await until(() => f.counts().ready === 1);
+    f.send("region.focused", { region_id: "overview", found: true, focused: false });
+    await until(() => f.display.length === 1);
+    assert.equal(f.display[0]!.region_id, "overview");
+    assert.equal(f.display[0]!.found, true);
+    assert.equal(f.display[0]!.focused, false);
+    // Missing region_id is not a typed region message and is ignored.
+    f.send("region.focused", { found: true, focused: true });
+    await wait();
+    assert.equal(f.display.length, 1);
+    // A disposed channel's port is closed: even a well-formed stale ack from
+    // the old page cannot reach display after disposal.
+    f.host.dispose();
+    f.send("region.focused", { region_id: "stale", found: true, focused: true });
+    await wait();
+    assert.equal(f.display.length, 1);
+  } finally { f.close(); }
+});
+
 test("forged management calls, buffers, wrong binding and stale sequence cannot update display or dispatch staging", async () => {
   const f = fixture();
   try {

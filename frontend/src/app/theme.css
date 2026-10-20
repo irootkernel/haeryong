@@ -59,7 +59,7 @@ a { color: var(--accent); }
 .shell-content { padding: 24px; flex: 1 1 auto; min-width: 0; }
 
 .nav-group-label { font-size: 0.75rem; letter-spacing: 0.08em; color: var(--text-secondary); margin: 12px 8px 4px; }
-.nav-link { display: block; padding: 8px 12px; border-radius: 8px; text-decoration: none; color: var(--text-primary); min-height: 44px; line-height: 1.4; }
+.nav-link { display: block; padding: 8px 12px; border-radius: 8px; text-decoration: none; color: var(--text-primary); min-width: 44px; min-height: 44px; line-height: 1.4; }
 .nav-link:hover { background: var(--surface-muted); }
 .nav-link[aria-current="page"] { background: var(--surface-muted); color: var(--accent); font-weight: 600; }
 
@@ -77,12 +77,23 @@ a { color: var(--accent); }
 .banner p { margin: 0; }
 
 button { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 16px; min-height: 44px; cursor: pointer; }
+/* Semantic link actions (exact-version Library 읽기) keep the same 44px
+   reachable target and button-like box while preserving href semantics. */
+a.action-link { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text-primary); text-decoration: none; }
+a.action-link:hover { background: var(--surface-muted); }
 button:hover:not(:disabled) { background: var(--surface-muted); }
 button:disabled { color: var(--text-secondary); cursor: not-allowed; opacity: 0.6; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
 button.primary:hover:not(:disabled) { filter: brightness(1.05); }
 input[type="text"] { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-height: 44px; width: 100%; }
-select { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-height: 44px; max-width: 100%; }
+/* Selects opt out of system appearance so the shared 44px control floor is a
+   real box on every client: measured 23px before in the native viewer and
+   ~45px after this change. A currentColor gradient draws the themed chevron
+   in both color schemes; semantics, values and selection stay unchanged. */
+select { appearance: none; -webkit-appearance: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; padding-right: 2.25rem; min-height: 44px; max-width: 100%; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 1.05rem) calc(50% + 2px), calc(100% - 0.7rem) calc(50% + 2px);
+  background-size: 0.35rem 0.35rem, 0.35rem 0.35rem; background-repeat: no-repeat; }
 input[type="file"] { max-width: 100%; }
 input[type="file"]::file-selector-button { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-height: 44px; cursor: pointer; }
 label.field { display: block; margin: 12px 0; }
@@ -109,12 +120,28 @@ label.choice input { width: 18px; height: 18px; }
 .unknown-note { color: var(--warning-text); font-size: 0.875rem; }
 .placeholder-note { color: var(--text-secondary); }
 
+.narrow-only { display: none; }
+@media (min-width: 768px) and (max-width: 1279px) {
+  /* Tablet: compact navigation rail; the reader stays primary. */
+  .shell-sidebar { width: 72px; flex: 0 0 auto; padding: 12px 8px; }
+  .nav-group-label { display: none; }
+  .nav-link { padding: 10px 6px; text-align: center; }
+  .shell-content { padding: 16px; }
+}
 @media (max-width: 767px) {
   .shell { flex-direction: column; }
-  .shell-sidebar { width: auto; flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--border); padding: 8px; }
+  .shell-sidebar { width: auto; flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--border); padding: 8px; padding-left: max(8px, env(safe-area-inset-left)); padding-right: max(8px, env(safe-area-inset-right)); }
   .nav-group-label { display: none; }
   .nav-link { padding: 6px 10px; }
-  .shell-content { padding: 16px; }
+  .shell-content { padding: 16px; padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+  .shell-header { flex-wrap: wrap; }
+  .service-indicator { min-width: 0; flex-wrap: wrap; }
+  .panel { min-width: 0; overflow-wrap: anywhere; }
+  .narrow-only { display: inline-block; }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* No host chrome transitions are defined; any future one must stop here. */
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
 
 /* Reader host chrome stays outside the unprivileged document. */
@@ -123,14 +150,26 @@ label.choice input { width: 18px; height: 18px; }
 .reader-body { display: grid; grid-template-columns: minmax(10rem, 16rem) minmax(0, 1fr); gap: 1rem; align-items: start; }
 .reader-side { overflow-wrap: anywhere; max-height: 75vh; overflow: auto; padding: 1rem; background: var(--surface, #fff); border: 1px solid var(--line, #ddd); border-radius: .75rem; }
 .reader-side h2 { font-size: 1rem; }
+.reader-side h3 { font-size: .95rem; margin: .75rem 0 .25rem; }
 .reader-side ul { padding-left: 1.25rem; }
 .reader-side li { margin-bottom: .5rem; }
+.reader-side li a, .reader-side li button.link { min-height: 44px; display: inline-flex; align-items: center; }
+.reader-side li a[aria-current="page"] { font-weight: 700; color: var(--accent); }
 .reader-content { min-width: 0; }
+.reader-actions { margin-bottom: 1rem; }
+.reader-context { min-width: 0; overflow-wrap: anywhere; }
+.region-outline { margin-bottom: 1rem; padding: .75rem; background: var(--surface-muted); border: 1px solid var(--border); border-radius: .5rem; }
+.region-outline h3 { margin: 0 0 .5rem; font-size: .95rem; }
+.region-outline ul { list-style: none; margin: 0; padding: 0; }
+.region-outline li + li { margin-top: .25rem; }
+.region-outline button.link { min-height: 44px; display: flex; width: 100%; text-align: left; align-items: center; }
+.region-outline button.link[data-selected="true"] { font-weight: 700; color: var(--accent); }
+.region-outline .hint { margin: .5rem 0 0; }
 
 .version-header { margin: .25rem 0; }
 .version-header p { margin: 0; }
 .version-sources { margin: .25rem 0 0; padding-left: 1.25rem; }
-.reader-evidence { margin-top: 1rem; }
+.reader-evidence { margin-top: 0; }
 .source-panel { padding: 1rem; background: var(--surface, #fff); border: 1px solid var(--line, #ddd); border-radius: .75rem; overflow-wrap: anywhere; }
 .source-panel h2 { font-size: 1.05rem; }
 .source-panel h3 { font-size: 1rem; }
@@ -141,5 +180,41 @@ label.choice input { width: 18px; height: 18px; }
 .evidence-detail { margin: .25rem 0 .5rem 1rem; padding-left: .75rem; border-left: 2px solid var(--line, #ddd); }
 .assessment-block { margin-top: 1rem; }
 
-.reader-frame { display: block; width: 100%; height: 75vh; min-height: 28rem; border: 1px solid var(--line, #ddd); border-radius: .5rem; background: white; }
-@media (max-width: 760px) { .reader-body { grid-template-columns: 1fr; } .reader-side { max-height: 16rem; } .reader-frame { height: 70vh; } }
+.reader-frame { display: block; width: 100%; height: max(10rem, calc(100dvh - 13rem)); border: 1px solid var(--line, #ddd); border-radius: .5rem; background: white; }
+
+@media (min-width: 768px) {
+  /* Non-modal open dialogs must be ordinary IN-FLOW grid items: the UA
+     default (absolute/fit-content/margin:auto) would pull the Files column
+     out of the grid and shrink columns. Phone keeps :modal fixed sheets. */
+  dialog.reader-side { position: static; margin: 0; width: auto; min-width: 0; max-width: none; height: auto; }
+  /* S1: EXPLICIT stable slots. Implicit placement can transiently drop the
+     Reader into Files' column while media changes apply before a persistent
+     dialog's real modal<->column transition, driving the unintended narrow
+     intermediate width. Fixed slots keep each child in its own track. */
+  dialog.reader-side { grid-column: 1; grid-row: 1; }
+  .reader-content { grid-column: 2; grid-row: 1; }
+}
+@media (min-width: 1280px) {
+  /* Declared wide layout: Files side, flexible reader and the 340px Context
+     * column whenever the Context dialog is open; closed keeps two columns. */
+  .reader-body:has(dialog.reader-context[open]) { grid-template-columns: minmax(10rem, 16rem) minmax(0, 1fr) min(340px, 30vw); }
+  dialog.reader-context { position: static; margin: 0; width: auto; min-width: 0; max-width: none; height: auto; max-height: 75vh; overflow: auto; padding: 1rem; background: var(--surface, #fff); border: 1px solid var(--line, #ddd); border-radius: .75rem; }
+  dialog.reader-context { grid-column: 3; grid-row: 1; }
+}
+@media (min-width: 768px) and (max-width: 1279px) {
+  /* Tablet: the Context dialog overlays the reader (modal, background inert). */
+  dialog.reader-context:modal { position: fixed; top: 0; right: 0; bottom: 0; left: auto; width: min(340px, 92vw); height: 100dvh; max-height: none; margin: 0; z-index: 30; overflow: auto; padding: 1rem; padding-right: max(1rem, env(safe-area-inset-right)); background: var(--surface, #fff); border-left: 1px solid var(--border); border-radius: 0; box-shadow: -8px 0 24px rgb(0 0 0 / .18); }
+  dialog.reader-context:modal::backdrop { background: rgb(0 0 0 / .25); }
+}
+@media (max-width: 767px) {
+  /* Phone: one reading column; Files and Context become full-height sheets.
+     The Reader holds the single column's explicit slot (S1). */
+  .reader-body { grid-template-columns: minmax(0, 1fr); }
+  .reader-content { grid-column: 1; grid-row: 1; }
+  .reader-actions { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10; background: var(--canvas); padding: .5rem 0; border-bottom: 1px solid var(--border); }
+  dialog.reader-side:modal { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-height: none; margin: 0; z-index: 40; overflow: auto; border-radius: 0; padding: 1rem; padding-top: max(1rem, env(safe-area-inset-top)); }
+  dialog.reader-side:modal::backdrop { background: rgb(0 0 0 / .3); }
+  dialog.reader-context:modal { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-height: none; margin: 0; z-index: 40; overflow: auto; padding: 1rem; padding-top: max(1rem, env(safe-area-inset-top)); background: var(--surface, #fff); border-radius: 0; }
+  dialog.reader-context:modal::backdrop { background: rgb(0 0 0 / .3); }
+  .reader-frame { height: max(10rem, calc(100dvh - 15rem)); }
+}

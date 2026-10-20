@@ -9,7 +9,7 @@ export interface ChannelOptions {
   guard(): void;
   contexts(binding: PageBinding, guard: () => void): ContextTransferHost;
   ready(payload: DisplayContext): void;
-  display(type: "state.changed" | "region.selected", payload: DisplayContext): void;
+  display(type: "state.changed" | "region.selected" | "region.focused", payload: DisplayContext): void;
   error(code: string, message: string): void;
   position?(correlationId: string, snapshot: { scroll_x?: unknown; scroll_y?: unknown }): void;
   positionApplied?(correlationId: string, result: Record<string, unknown>): void;
@@ -99,8 +99,8 @@ export class ViewerChannel {
       }
       return;
     }
-    if (type === "state.changed" || type === "region.selected") {
-      if (type === "region.selected" && typeof payload.region_id !== "string") return;
+    if (type === "state.changed" || type === "region.selected" || type === "region.focused") {
+      if (type !== "state.changed" && typeof payload.region_id !== "string") return;
       if (payload.context_ref !== undefined && typeof payload.context_ref !== "string") return;
       this.#received = data.sequence as number;
       this.#displaySequence = data.sequence as number;

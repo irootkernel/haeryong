@@ -18,7 +18,7 @@
 package main
 
 /*
-#cgo LDFLAGS: -framework Cocoa
+#cgo LDFLAGS: -framework Cocoa -framework WebKit
 #include <stdlib.h>
 
 void hyAutomationPerformCloseWindow(const char *title);
@@ -30,6 +30,10 @@ void hyAutomationArmMenuSelection(const char *itemTitle);
 void hyAutomationObserveWindowByTitle(const char *title);
 void hyAutomationTryCompletePanel(const char *directory, const char *name, int save);
 void hyAutomationTryCancelPanel(void);
+void hyAutomationInstallChildProbe(const char *title, const char *source);
+void hyAutomationResizeWindow(const char *title, double width, double height);
+void hyAutomationSnapshot(const char *title, const char *path);
+void hyAutomationKeyPress(const char *title, const char *key, int shift, const char *text);
 */
 import "C"
 
@@ -39,8 +43,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
+	"unicode/utf8"
 	"unsafe"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -49,6 +56,7 @@ import (
 var (
 	automationScript = flag.String("automation-script", "", "Owned automation script JSON for the public own-process AppKit proof (tagged builds only)")
 	automationOut    = flag.String("automation-out", "", "Automation results JSON path (tagged builds only)")
+	childProbePath   = flag.String("child-probe", "", "Owned child-observer JavaScript (explicit dual-tag test instrumentation only)")
 )
 
 type automationEvent struct {
@@ -97,6 +105,11 @@ type automationStepSpec struct {
 	Name       string `json:"name"`
 	Save       bool   `json:"save"`
 	TimeoutMs  int    `json:"timeout_ms"`
+	Width      int    `json:"width"`
+	Height     int    `json:"height"`
+	Key        string `json:"key"`
+	Shift      bool   `json:"shift"`
+	Characters string `json:"characters"`
 }
 
 type automationStepResult struct {
@@ -121,6 +134,9 @@ func writeReport(out string, report *automationReport) {
 
 func runAutomation(app *application.App, window application.Window) error {
 	if *automationScript == "" {
+		if *childProbePath != "" {
+			return fmt.Errorf("--child-probe requires --automation-script")
+		}
 		return nil
 	}
 	if *automationOut == "" {
@@ -134,6 +150,10 @@ func runAutomation(app *application.App, window application.Window) error {
 	if err := json.Unmarshal(raw, &steps); err != nil {
 		return fmt.Errorf("automation script must be a JSON array of steps: %w", err)
 	}
+	probe, err := readOwnedChildProbe(*childProbePath)
+	if err != nil {
+		return err
+	}
 	automationEventsMu.Lock()
 	automationEvents = make(chan automationEvent, 256)
 	automationEventsMu.Unlock()
@@ -142,6 +162,34 @@ func runAutomation(app *application.App, window application.Window) error {
 	C.free(unsafe.Pointer(bundle))
 	writeReport(*automationOut, report)
 	go func() {
+		if probe != "" {
+			installed := false
+			for start := time.Now(); time.Since(start) < 30*time.Second; {
+				title, source := C.CString("Haeryong"), C.CString(probe)
+				C.hyAutomationInstallChildProbe(title, source)
+				C.free(unsafe.Pointer(title))
+				C.free(unsafe.Pointer(source))
+				value, observed := waitForEvent(7, 3*time.Second)
+				if observed && value == 1 {
+					installed = true
+					break
+				}
+				if observed && value < 0 {
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+			report.Steps = append(report.Steps, automationStepResult{
+				Action: "installChildProbe", OK: installed,
+				Detail: map[string]any{"installed": installed, "content_world": "haeryong.task006.observer"},
+			})
+			writeReport(*automationOut, report)
+			if !installed {
+				report.Complete = true
+				writeReport(*automationOut, report)
+				return
+			}
+		}
 		for _, step := range steps {
 			result := automationStepResult{Action: step.Action}
 			switch step.Action {
@@ -171,6 +219,54 @@ func runAutomation(app *application.App, window application.Window) error {
 					}
 					time.Sleep(100 * time.Millisecond)
 				}
+			case "resizeWindow":
+				if step.Width <= 0 || step.Height <= 0 {
+					result.Detail = map[string]any{"error": "positive content width/height required"}
+					break
+				}
+				title := C.CString(step.Label)
+				C.hyAutomationResizeWindow(title, C.double(step.Width), C.double(step.Height))
+				C.free(unsafe.Pointer(title))
+				value, observed := waitForEvent(8, 10*time.Second)
+				result.OK = observed && value == 1
+				result.Detail = map[string]any{"requested_width": step.Width, "requested_height": step.Height, "dispatch_observed": result.OK}
+			case "snapshot":
+				if !validSnapshotName(step.Name) {
+					result.Detail = map[string]any{"error": "snapshot name must be one local filename component"}
+					break
+				}
+				directory := filepath.Join(diagnosticOutputDir, "snapshots")
+				if err := os.MkdirAll(directory, 0700); err != nil {
+					result.Detail = map[string]any{"error": "snapshot directory unavailable"}
+					break
+				}
+				path := filepath.Join(directory, step.Name+".png")
+				title, target := C.CString(step.Label), C.CString(path)
+				C.hyAutomationSnapshot(title, target)
+				C.free(unsafe.Pointer(title))
+				C.free(unsafe.Pointer(target))
+				bytes, observed := waitForEvent(9, 30*time.Second)
+				info, err := os.Stat(path)
+				result.OK = observed && bytes > 0 && err == nil && info.Mode().IsRegular() && info.Size() == bytes
+				if result.OK {
+					if err := os.Chmod(path, 0600); err != nil {
+						result.OK = false
+					}
+				}
+				result.Detail = map[string]any{"png": path, "bytes": bytes}
+			case "keyPress":
+				if !validAutomationKey(step.Key, step.Characters) {
+					result.Detail = map[string]any{"error": "unsupported key or empty/invalid text"}
+					break
+				}
+				title, key, text := C.CString(step.Label), C.CString(step.Key), C.CString(step.Characters)
+				C.hyAutomationKeyPress(title, key, boolToInt(step.Shift), text)
+				C.free(unsafe.Pointer(title))
+				C.free(unsafe.Pointer(key))
+				C.free(unsafe.Pointer(text))
+				value, observed := waitForEvent(10, 10*time.Second)
+				result.OK = observed && value == 1
+				result.Detail = map[string]any{"key": step.Key, "shift": step.Shift, "dispatch_observed": result.OK}
 			case "windowDetails":
 				title := C.CString(step.Label)
 				C.hyAutomationWindowDetails(title)
@@ -268,6 +364,14 @@ func runAutomation(app *application.App, window application.Window) error {
 			}
 			report.Steps = append(report.Steps, result)
 			writeReport(*automationOut, report)
+			if !result.OK {
+				// A failed action terminates the script: no later action may
+				// fire at an unintended target. Complete marks the report as
+				// finished, never as a pass.
+				report.Complete = true
+				writeReport(*automationOut, report)
+				return
+			}
 		}
 		report.Complete = true
 		writeReport(*automationOut, report)
@@ -284,4 +388,42 @@ func boolToInt(value bool) C.int {
 
 func init() {
 	automationAttach = runAutomation
+}
+
+// These validate only test controls, never imported content.
+func validSnapshotName(name string) bool {
+	return name != "" && name != "." && name != ".." && filepath.Base(name) == name && !strings.ContainsRune(name, 0)
+}
+func validAutomationKey(key, text string) bool {
+	switch key {
+	case "tab", "return", "space", "escape", "left", "right", "up", "down":
+		return true
+	case "text":
+		return text != "" && utf8.ValidString(text) && !strings.ContainsRune(text, 0)
+	}
+	return false
+}
+func readOwnedChildProbe(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	if !filepath.IsAbs(path) {
+		return "", fmt.Errorf("--child-probe must be absolute")
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", fmt.Errorf("child probe unavailable: %w", err)
+	}
+	owner, ok := info.Sys().(*syscall.Stat_t)
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || !ok || owner.Uid != uint32(os.Getuid()) {
+		return "", fmt.Errorf("child probe must be an owned private regular file")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("child probe unreadable: %w", err)
+	}
+	if len(raw) == 0 || !utf8.Valid(raw) || strings.ContainsRune(string(raw), 0) {
+		return "", fmt.Errorf("child probe must be nonempty UTF-8 JavaScript text")
+	}
+	return string(raw), nil
 }

@@ -469,6 +469,16 @@ host (17.6 minutes); an earlier run with an unknown-cause authentication
 failure is preserved without a cause-fixed or known-harmless claim, followed
 by focused failure-retry and two-owner diagnostics that both passed.
 
+The production companion sets the public Wails `TabFocusesLinks` webview
+preference, including links and controls in this app's own WebView keyboard
+navigation; it changes no system or host-wide keyboard policy. Measured with
+real keys, host controls became reachable at both window sizes. A separate
+wide-window run activated an authored skip link with Tab+Enter and observed
+the parent fragment mirror; skip behavior remains authored. The
+tagged automation harness terminates its script at the first failed action
+and records the terminal report as finished, never as a pass; a failed-step
+sentinel negative confirmed that later actions never execute.
+
 Native qualification on this available Darwin host established the
 automatic tagged filesystem scenarios, the X07/authored-error/stuck-recovery
 contribution, accepted-job survival and first-S recovery, remembered

@@ -247,6 +247,17 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
                     <span className="hint"> · 갱신 {document.updated_at}</span>
                   </div>
                   <div className="form-row">
+                    {document.latest_version_id ? (
+                      <a className="action-link" data-testid="library-read" href={`/documents/${document.document_id}/versions/${document.latest_version_id}`}
+                         onClick={(event) => { if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigate(`/documents/${document.document_id}/versions/${document.latest_version_id}`); }}>
+                        결과 읽기
+                      </a>
+                    ) : (
+                      <>
+                        <button type="button" disabled aria-describedby={`read-hint-${document.document_id}`}>결과 읽기</button>
+                        <span className="hint" id={`read-hint-${document.document_id}`}>현재 읽을 최신 버전이 없습니다.</span>
+                      </>
+                    )}
                     <button type="button" onClick={() => navigate(`/documents/${document.document_id}/versions`)}>
                       버전 보기
                     </button>

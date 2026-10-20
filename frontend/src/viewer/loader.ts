@@ -78,7 +78,22 @@ function reply(data: unknown): void {
   const payload = data.payload;
   if (data.type === "region.focus" && typeof payload.region_id === "string") {
     hostSequence = data.sequence as number;
-    document.getElementById(payload.region_id)?.scrollIntoView(); return;
+    // A host outline selection must give the region itself real document
+    // focus (visible focus ring, screen-reader position), not only a scroll.
+    // tabindex="-1" is added only when the author did not declare one, and
+    // the honest result (found/focused) is reported back — a modal overlay
+    // or a logical region without a matching element never fakes success.
+    const region = document.getElementById(payload.region_id);
+    let found = false, focused = false;
+    if (region) {
+      found = true;
+      if (!region.hasAttribute("tabindex")) region.setAttribute("tabindex", "-1");
+      region.focus({ preventScroll: true });
+      focused = document.activeElement === region;
+      if (focused) region.scrollIntoView();
+    }
+    send("region.focused", { region_id: payload.region_id, found, focused });
+    return;
   }
   if (data.type === "reader.logical_route" && typeof payload.template === "string") {
     hostSequence = data.sequence as number;

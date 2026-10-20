@@ -7,6 +7,7 @@
 // the copied block (which retains it), and the local ownership is released
 // after scheduling — the queued block never touches a freed C string.
 #import <Cocoa/Cocoa.h>
+#import <WebKit/WebKit.h>
 #include <stdlib.h>
 #include <string.h>
 #import "_cgo_export.h"
@@ -255,4 +256,132 @@ void hyAutomationTryCancelPanel(void) {
         }
         hyAutomationEvent(4, 0);
     });
+}
+
+
+// TASK-003-06: public own-window test input and observations only. These
+// functions compile only with both existing test tags, just like this file.
+static NSWindow *hyAutomationOwnWindow(NSString *title) {
+    for (NSWindow *window in [NSApp windows]) {
+        if ([[window title] isEqualToString:title]) return window;
+    }
+    return nil;
+}
+
+void hyAutomationInstallChildProbe(const char *title, const char *source) {
+    NSString *wanted = [[NSString alloc] initWithUTF8String:title];
+    NSString *code = [[NSString alloc] initWithUTF8String:source];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSWindow *window = hyAutomationOwnWindow(wanted);
+        WKWebView *view = (WKWebView *)hyAutomationFindWebView([window contentView]);
+        if (!view || !code) { hyAutomationEvent(7, 0); return; }
+        @try {
+            WKContentWorld *world = [WKContentWorld worldWithName:@"haeryong.task006.observer"];
+            WKUserScript *probe = [[WKUserScript alloc]
+                initWithSource:code injectionTime:WKUserScriptInjectionTimeAtDocumentStart
+                forMainFrameOnly:NO inContentWorld:world];
+            [view.configuration.userContentController addUserScript:probe];
+            [probe release];
+            // This acknowledges installation, not child execution or behavior.
+            hyAutomationEvent(7, 1);
+        } @catch (NSException *exception) {
+            hyAutomationEvent(7, -1);
+        }
+    });
+    [wanted release];
+    [code release];
+}
+
+void hyAutomationResizeWindow(const char *title, double width, double height) {
+    NSString *wanted = [[NSString alloc] initWithUTF8String:title];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSWindow *window = hyAutomationOwnWindow(wanted);
+        if (!window) { hyAutomationEvent(8, 0); return; }
+        @try {
+            [window setContentSize:NSMakeSize(width, height)];
+            // The driver separately measures actual CSS viewport/geometry.
+            hyAutomationEvent(8, 1);
+        } @catch (NSException *exception) {
+            hyAutomationEvent(8, 0);
+        }
+    });
+    [wanted release];
+}
+
+void hyAutomationSnapshot(const char *title, const char *path) {
+    NSString *wanted = [[NSString alloc] initWithUTF8String:title];
+    NSString *output = [[NSString alloc] initWithUTF8String:path];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSWindow *window = hyAutomationOwnWindow(wanted);
+        WKWebView *view = (WKWebView *)hyAutomationFindWebView([window contentView]);
+        if (!view) { hyAutomationEvent(9, 0); return; }
+        @try {
+            WKSnapshotConfiguration *configuration = [[WKSnapshotConfiguration alloc] init];
+            configuration.afterScreenUpdates = YES;
+            [view takeSnapshotWithConfiguration:configuration
+                completionHandler:^(NSImage *image, NSError *error) {
+                if (error || !image) { hyAutomationEvent(9, 0); return; }
+                NSData *tiff = [image TIFFRepresentation];
+                NSBitmapImageRep *bitmap = tiff ? [[NSBitmapImageRep alloc] initWithData:tiff] : nil;
+                NSData *png = bitmap ? [bitmap representationUsingType:NSBitmapImageFileTypePNG
+                    properties:@{}] : nil;
+                BOOL written = png && [png length] > 0 && [png writeToFile:output atomically:YES];
+                hyAutomationEvent(9, written ? (long)[png length] : 0);
+                [bitmap release];
+            }];
+            [configuration release];
+        } @catch (NSException *exception) {
+            hyAutomationEvent(9, 0);
+        }
+    });
+    [wanted release];
+    [output release];
+}
+
+void hyAutomationKeyPress(const char *title, const char *key, int shift, const char *text) {
+    NSString *wanted = [[NSString alloc] initWithUTF8String:title];
+    NSString *name = [[NSString alloc] initWithUTF8String:key];
+    NSString *typed = [[NSString alloc] initWithUTF8String:text];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSWindow *window = hyAutomationOwnWindow(wanted);
+        if (!window || ![window isKeyWindow]) { hyAutomationEvent(10, 0); return; }
+        unsigned short code = 0;
+        NSString *characters = nil;
+        if ([name isEqualToString:@"tab"]) { code = 48; characters = @"\t"; }
+        else if ([name isEqualToString:@"return"]) { code = 36; characters = @"\r"; }
+        else if ([name isEqualToString:@"space"]) { code = 49; characters = @" "; }
+        else if ([name isEqualToString:@"escape"]) { code = 53; characters = @"\x1b"; }
+        else if ([name isEqualToString:@"left"]) { code = 123; characters = [NSString stringWithFormat:@"%C", (unichar)NSLeftArrowFunctionKey]; }
+        else if ([name isEqualToString:@"right"]) { code = 124; characters = [NSString stringWithFormat:@"%C", (unichar)NSRightArrowFunctionKey]; }
+        else if ([name isEqualToString:@"down"]) { code = 125; characters = [NSString stringWithFormat:@"%C", (unichar)NSDownArrowFunctionKey]; }
+        else if ([name isEqualToString:@"up"]) { code = 126; characters = [NSString stringWithFormat:@"%C", (unichar)NSUpArrowFunctionKey]; }
+        else if ([name isEqualToString:@"text"] && [typed length] > 0) { characters = typed; }
+        if (!characters) { hyAutomationEvent(10, 0); return; }
+        @try {
+            // Send only to this application's already-key window. No global
+            // event posting, privacy access or host keyboard setting change.
+            NSEventModifierFlags modifiers = shift ? NSEventModifierFlagShift : 0;
+            NSTimeInterval now = [[NSProcessInfo processInfo] systemUptime];
+            NSEvent *down = [NSEvent keyEventWithType:NSEventTypeKeyDown
+                location:NSZeroPoint modifierFlags:modifiers timestamp:now
+                windowNumber:[window windowNumber] context:nil
+                characters:characters charactersIgnoringModifiers:characters
+                isARepeat:NO keyCode:code];
+            NSEvent *up = [NSEvent keyEventWithType:NSEventTypeKeyUp
+                location:NSZeroPoint modifierFlags:modifiers timestamp:now + .001
+                windowNumber:[window windowNumber] context:nil
+                characters:characters charactersIgnoringModifiers:characters
+                isARepeat:NO keyCode:code];
+            if (!down || !up) { hyAutomationEvent(10, 0); return; }
+            [window sendEvent:down];
+            [window sendEvent:up];
+            // Dispatch alone is not evidence of WebKit focus/activation.
+            hyAutomationEvent(10, 1);
+        } @catch (NSException *exception) {
+            hyAutomationEvent(10, 0);
+        }
+    });
+    [wanted release];
+    [name release];
+    [typed release];
 }

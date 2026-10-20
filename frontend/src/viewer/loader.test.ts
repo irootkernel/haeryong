@@ -8,15 +8,25 @@ type Message = Record<string, unknown> & { payload: Record<string, unknown> };
 const pause = () => new Promise((resolve) => setTimeout(resolve, 5));
 async function until(check: () => boolean) { for (let i = 0; i < 1000; i++) { if (check()) return; await pause(); } assert.fail("loader protocol did not settle"); }
 
+// Region-focus seam: fake in-page elements so the loader's honest
+// found/focused result is observable without a real DOM.
+const fakeRegions = new Map<string, { hasAttribute(): boolean; setAttribute(): void; focus(): void; scrollIntoView(): void }>();
+
 async function page() {
   const handlers = new Map<string, ((event: unknown) => void)[]>();
   const announcements: Record<string, unknown>[] = [];
   const parent = { postMessage(message: Record<string, unknown>) { announcements.push(message); } };
+  const document = {
+    currentScript: { dataset: { haeryongDocument: "document", haeryongVersion: "version", haeryongPage: encodeURI("한글.html") } },
+    readyState: "complete" as const,
+    activeElement: null as unknown,
+    getElementById(id: string) { return fakeRegions.get(id) ?? null; },
+  };
   const replacements: Record<string, unknown> = {
     window: globalThis, parent, scrollX: 0, scrollY: 0,
     location: { search: "?scenario=%23", hash: "#한글", pathname: "/" + encodeURIComponent("한글.html"), origin: "http://renderer.invalid", replace() {} },
     history: { pushState() {}, replaceState() {} },
-    document: { currentScript: { dataset: { haeryongDocument: "document", haeryongVersion: "version", haeryongPage: encodeURI("한글.html") } }, readyState: "complete", getElementById() { return null; } },
+    document,
     addEventListener(name: string, handler: (event: unknown) => void) { const list = handlers.get(name) ?? []; list.push(handler); handlers.set(name, list); },
   };
   const originals = new Map<string, PropertyDescriptor | undefined>();
@@ -128,3 +138,29 @@ test("malformed v2 page metadata fails the integration bootstrap without guessin
   for (const [name, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); }
 });
 
+
+test("region.focus answers with the observed result: missing element, focused element and modal-blocked element", async () => {
+  const p = await page();
+  try {
+    p.connect(); await until(() => p.messages.some((m) => m.type === "viewer.ready"));
+    const acks = () => p.messages.filter((m) => m.type === "region.focused");
+    p.send("region.focus", { region_id: "missing" });
+    await until(() => acks().length === 1);
+    assert.deepEqual({ ...acks()[0]!.payload }, { region_id: "missing", found: false, focused: false });
+    const doc = (globalThis as { document: { activeElement: unknown } }).document;
+    const region: { hasAttribute(): boolean; setAttribute(): void; focus(): void; scrollIntoView(): void } = {
+      hasAttribute: () => false, setAttribute() {}, scrollIntoView() {}, focus() { doc.activeElement = region; },
+    };
+    fakeRegions.set("overview", region);
+    p.send("region.focus", { region_id: "overview" });
+    await until(() => acks().length === 2);
+    assert.equal(acks()[1]!.payload.found, true);
+    assert.equal(acks()[1]!.payload.focused, true);
+    const blocked: typeof region = { hasAttribute: () => false, setAttribute() {}, scrollIntoView() {}, focus() {} };
+    fakeRegions.set("blocked", blocked);
+    p.send("region.focus", { region_id: "blocked" });
+    await until(() => acks().length === 3);
+    assert.equal(acks()[2]!.payload.found, true);
+    assert.equal(acks()[2]!.payload.focused, false);
+  } finally { fakeRegions.clear(); p.close(); }
+});

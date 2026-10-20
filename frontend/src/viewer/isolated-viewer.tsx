@@ -19,11 +19,26 @@ export interface ViewerProps {
   onLocation(location: ReaderLocation): void;
   onNotice(message: string): void;
   /**
+   * Host region-outline handle: set while a live page channel exists and
+   * cleared with it. Sends one guarded region.focus for real in-frame focus;
+   * returns false when the channel/authority is not currently usable.
+   */
+  focusHandle?: { current: ((regionId: string) => boolean) | null };
+  /**
    * Typed page-local region selection carrying the channel's CAPTURED
    * version/page/host-context identity beside the region id; the host binds
    * the stored selection to that exact identity and never retags it.
    */
   onRegion?(selection: { versionId: string; pagePath: string; context: string | null; regionId: string }): void;
+  /**
+   * Honest result of a host-initiated region.focus attempt, observed inside
+   * the page, carrying the CAPTURED channel identity beside the values:
+   * found reports a matching document element, focused reports it actually
+   * receiving focus (a modal overlay or missing element reports false —
+   * never a fake success from message delivery alone). The host rejects a
+   * late ack whose captured tuple no longer matches the current selection.
+   */
+  onRegionFocus?(result: { versionId: string; pagePath: string; context: string | null; regionId: string; found: boolean; focused: boolean }): void;
 }
 const uuid = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
 const message = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
@@ -116,7 +131,7 @@ export function IsolatedViewer(props: ViewerProps) {
             pageGuard(); setLoaded(true); observe({ ...payload, page_path: page });
             if (Number.isFinite(payload.scroll_x) && Number.isFinite(payload.scroll_y)) lastPosition = JSON.stringify([payload.scroll_x, payload.scroll_y, current.query, current.fragment]);
             const region = new URLSearchParams(location.hash.slice(1)).get("region");
-            if (region) next.focus(region);
+            if (region) focusRegion(region);
             const publicOrigin = client.publicOrigin;
             if (publicOrigin) next.route(new URL(`/documents/${props.documentId}/versions/${props.versionId}`, publicOrigin).href);
             const beginSnapshots = () => {
@@ -163,14 +178,37 @@ export function IsolatedViewer(props: ViewerProps) {
             if (type === "region.selected") {
               callbacks.current.onRegion?.({ versionId: props.versionId, pagePath: page, context: props.context, regionId: String(payload.region_id) });
               callbacks.current.onNotice(`선택한 영역: ${String(payload.region_id)}`);
+            } else if (type === "region.focused") {
+              // The ack travels with its OWN captured channel identity (the
+              // effect closure's version/page/context), never the latest
+              // parent props, so a late A-page ack cannot retag page B.
+              callbacks.current.onRegionFocus?.({ versionId: props.versionId, pagePath: page, context: props.context, regionId: String(payload.region_id), found: payload.found === true, focused: payload.focused === true });
             } else {
               callbacks.current.onNotice("페이지 context를 확인했습니다.");
             }
           },
           error: (code, detail) => callbacks.current.onNotice(`페이지 오류(${code}): ${detail}`),
         });
+        // T06 focus-C2 (r4): both region entrypoints — the #region hash on
+        // ready and the host outline handle — share ONE channel-creation-time
+        // captured iframe element. The captured pageGuard runs BEFORE any DOM
+        // focus, so a stale handle can never focus a newer frame; the real
+        // host frame focus precedes the existing guarded dispatch, and the
+        // child's honest region.focused acknowledgment stays the only
+        // success authority (WebKit does not elevate frame focus itself).
+        const capturedFrame = frame.current;
+        const focusRegion = (regionId: string): void => {
+          pageGuard();
+          capturedFrame?.focus({ preventScroll: true });
+          next.focus(regionId);
+        };
         channel = next;
         next.accept(event);
+        // Host outline → guarded in-frame region focus, alive exactly as long
+        // as this channel generation; cleared with the same effect.
+        if (props.focusHandle) props.focusHandle.current = (regionId: string) => {
+          try { focusRegion(regionId); return true; } catch { return false; }
+        };
       }).catch(notify);
     };
     window.addEventListener("message", onMessage);
@@ -191,6 +229,7 @@ export function IsolatedViewer(props: ViewerProps) {
       window.removeEventListener("message", onMessage);
       if (poll) clearInterval(poll);
       channel?.dispose();
+      if (props.focusHandle) props.focusHandle.current = null;
       void lease.stop().catch(() => { /* Expiring delivery remains owned by its captured session. */ });
     };
   }, [props.controller, props.owner, props.context, props.documentId, props.versionId, props.personal, initial, retry, lease]);

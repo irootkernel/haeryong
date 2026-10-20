@@ -7,9 +7,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { ApplicableFreshness, CoverageUnit } from "../../client/types.ts";
 import {
-  acceptRegionSelection, compareWithOverlay, coverageUnitsParams, deriveCoverageSummary, deriveStatus,
+  acceptRegionFocusResult, acceptRegionSelection, compareWithOverlay, coverageUnitsParams, deriveCoverageSummary, deriveStatus,
   enumerationComplete, initialEnumeration, mergeEnumerationPage, parseSuppliedMetadata,
-  regionSelectionMatches, SelectionQueryGuard, toggledOpen, verifyMetadataBytes,
+  regionRequestStale, regionSelectionMatches, SelectionQueryGuard, toggledOpen, verifyMetadataBytes,
 } from "./evidence-view.ts";
 
 const unit = (over: Partial<CoverageUnit>): CoverageUnit => ({
@@ -310,6 +310,34 @@ test("region selection events match the captured version/page tuple only", () =>
   assert.equal(acceptRegionSelection({ versionId: "v2", pagePath: "a.html", regionId: "overview" }, { versionId: "v1", pagePath: "a.html" }), false);
   assert.equal(acceptRegionSelection({ versionId: "v1", pagePath: "a.html", regionId: "" }, { versionId: "v1", pagePath: "a.html" }), false);
   assert.equal(acceptRegionSelection({ versionId: "v1", pagePath: "a.html", regionId: "overview" }, { versionId: "v1", pagePath: null }), false);
+});
+
+test("region focus acks reject a late A-page ack under the B selection and empty identities", () => {
+  assert.equal(acceptRegionFocusResult({ versionId: "v1", pagePath: "a.html", regionId: "overview" }, { versionId: "v1", pagePath: "a.html" }), true);
+  // In-flight A ack arrives after the host mirrored/routed to page B.
+  assert.equal(acceptRegionFocusResult({ versionId: "v1", pagePath: "a.html", regionId: "overview" }, { versionId: "v1", pagePath: "b.html" }), false);
+  assert.equal(acceptRegionFocusResult({ versionId: "v2", pagePath: "a.html", regionId: "overview" }, { versionId: "v1", pagePath: "a.html" }), false);
+  assert.equal(acceptRegionFocusResult({ versionId: "v1", pagePath: "a.html", regionId: "overview" }, { versionId: "v1", pagePath: null }), false);
+  assert.equal(acceptRegionFocusResult({ versionId: "v1", pagePath: "a.html", regionId: "" }, { versionId: "v1", pagePath: "a.html" }), false);
+});
+
+test("pending region-focus requests cancel on unmount, route/context/page change, reload bump or replaced channel", () => {
+  const handleA = { channel: "a" }, handleB = { channel: "b" };
+  const captured = { versionId: "v1", context: "ctx-1", page: "a.html", reload: 3, handle: handleA };
+  const now = (overrides: Partial<{ live: boolean; versionId: string; context: string | null; page: string | null; reload: number; handle: unknown }>) =>
+    ({ live: true, versionId: "v1", context: "ctx-1", page: "a.html", reload: 3, handle: handleA, ...overrides });
+  assert.equal(regionRequestStale(captured, now({})), false);
+  // Unmounted Reader: the delayed attempt must never fire.
+  assert.equal(regionRequestStale(captured, now({ live: false })), true);
+  // Route/version/context moved on while the modal sheet was closing.
+  assert.equal(regionRequestStale(captured, now({ versionId: "v2" })), true);
+  assert.equal(regionRequestStale(captured, now({ context: "ctx-2" })), true);
+  assert.equal(regionRequestStale(captured, now({ page: "b.html" })), true);
+  assert.equal(regionRequestStale(captured, now({ page: null })), true);
+  // Explicit same-context reload bumped the viewer generation.
+  assert.equal(regionRequestStale(captured, now({ reload: 4 })), true);
+  // The live channel handle was replaced (remounted viewer, same context).
+  assert.equal(regionRequestStale(captured, now({ handle: handleB })), true);
 });
 
 test("stored region ownership renders unselected on version/page/context/reload mismatch", () => {

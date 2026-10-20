@@ -42,7 +42,7 @@ base = volume / 'tmp' if os.path.ismount(volume) and os.access(volume, os.W_OK) 
 RUNTIME = Path(tempfile.mkdtemp(prefix='htr-', dir=base))
 PROFILE = RUNTIME / 'browser-profile'
 SESSION = 'h32m' + uuid.uuid4().hex[:8]
-ENV = os.environ | {'TMPDIR': str(RUNTIME)}
+ENV = os.environ | {'TMPDIR': str(RUNTIME), 'PLAYWRIGHT_DAEMON_SESSION_DIR': str(RUNTIME / 'cli-sessions')}
 BROWSER = [str(PLAYWRIGHT), '--session=' + SESSION]
 
 FAULT = {'mode': None, 'package_delay': 0, 'upload_delay': 0}
@@ -386,7 +386,15 @@ def download_to(destination, pin=None, expect='done', pre_existing=None, cancel=
 
 def begin_cancelled_input(path):
     return script(('''async (page) => {
-      await page.goto(new URL(page.url()).origin+'/library');
+      let release,started,puts=0,cancelled=false;
+      const gate=new Promise(resolve=>release=resolve);let gateReached=false;started=()=>{gateReached=true;};
+      const pattern='**/api/v1/uploads/**';
+      const handler=async route=>{
+        if(route.request().method()==='PUT'&&++puts===2){started();await gate;if(cancelled){await route.abort().catch(()=>{});return;}}
+        await route.continue();
+      };
+      await page.route(pattern,handler);
+      await page.goto((await page.evaluate(()=>location.origin))+'/library');
       await page.waitForSelector('[data-testid="library-document"]');
       await page.getByRole('button',{name:'가져오기',exact:true}).click();
       const reset=page.getByRole('button',{name:'새 가져오기 시작',exact:true});
@@ -396,7 +404,9 @@ def begin_cancelled_input(path):
       await page.getByRole('button',{name:'가져오기 시작',exact:true}).click();
       const response=await (await created).json();
       await page.waitForFunction(()=>{const e=document.querySelector('[data-testid="import-stage"]');const m=e?.textContent.match(/확인된 바이트 ([0-9.]+)/);return m&&Number(m[1])>0;});
+      const deadline=Date.now()+60000;while(!gateReached){if(Date.now()>deadline)throw Error('second PUT not observed before staging cancellation');await page.waitForTimeout(100);}
       await page.getByRole('button',{name:'전송 취소 (스테이징 유지)',exact:true}).click();
+      cancelled=true;release();await page.unroute(pattern,handler);
       await page.waitForFunction(()=>document.querySelector('[data-testid="import-stage"]')?.textContent.includes('전송 취소됨'));
       return response.data.upload_id;
     }''').replace('INPUT',json.dumps(str(path))))
@@ -413,14 +423,14 @@ def recover_staging(upload, path, second=False):
         const r=await fetch('/api/v1/documents?lifecycle=active',{headers:{Authorization:'Bearer '+localStorage.getItem('haeryong.owner-session.v1')}});
         const result=await r.json();return result.data.items.length;
       });
-      await p.goto(new URL(page.url()).origin+'/settings/storage');
+      await p.goto((await page.evaluate(()=>location.origin))+'/settings/storage');
       await p.waitForSelector('[data-state="verified"]');
       const row=p.locator('[data-upload="UPLOAD"]');
       await row.waitFor();
       const before=await count();
       await row.getByRole('button',{name:'입력 재선택해 스테이징 이어가기 (봉인에서 중단)',exact:true}).click();
       const blocked=[],writes=[];
-      const writeListener=r=>{const path=new URL(r.url()).pathname;if(['POST','PUT'].includes(r.method())&&(path.startsWith('/api/v1/uploads')||path==='/api/v1/imports'))writes.push(true);};
+      const writeListener=r=>{const path='/'+r.url().split('/').slice(3).join('/').split('?')[0];if(['POST','PUT'].includes(r.method())&&(path.startsWith('/api/v1/uploads')||path==='/api/v1/imports'))writes.push(true);};
       p.on('request',writeListener);
       for(const [label,input,empty] of [['폴더 재선택',INPUT,EMPTY_DIR],['ZIP 재선택',CHOSEN_ZIP,[]],['단일 파일 재선택',CHOSEN_HTML,[]]]){
         const field=p.getByLabel(label,{exact:true});await field.setInputFiles(input);
@@ -496,7 +506,7 @@ def main():
           await page.getByRole('button',{name:'가져오기',exact:true}).click();
           await page.locator('[data-testid="import-control"]').getByRole('combobox',{name:/^프로젝트/}).selectOption({label:'Unfiled'});
           const writes=[];
-          const listener=r=>{const path=new URL(r.url()).pathname;if(['POST','PUT'].includes(r.method())&&(path.startsWith('/api/v1/uploads')||path==='/api/v1/imports'))writes.push(true);};
+          const listener=r=>{const path='/'+r.url().split('/').slice(3).join('/').split('?')[0];if(['POST','PUT'].includes(r.method())&&(path.startsWith('/api/v1/uploads')||path==='/api/v1/imports'))writes.push(true);};
           page.on('request',listener);
           const start=page.getByRole('button',{name:'가져오기 시작',exact:true});
           const results={};
@@ -510,7 +520,7 @@ def main():
         for kind in ('folder','zip','html'):
             require('s2_cleared_'+kind+'_cannot_import_previous_plan',cleared[kind],cleared)
         require('s2_cleared_selection_no_protected_write',cleared['noWrites'],cleared)
-        script("async(page)=>{await page.goto(new URL(page.url()).origin+'/library');await page.waitForSelector('[data-state=\"verified\"]');return true;}")
+        script("async(page)=>{await page.goto((await page.evaluate(()=>location.origin))+'/library');await page.waitForSelector('[data-state=\"verified\"]');return true;}")
 
         # S2 real folder import with FileList-limit disclosure.
         import_input('폴더 선택', source)
@@ -604,8 +614,17 @@ def main():
         require('s6d_cancel_incomplete', cancelled['outcome'] == 'incomplete', cancelled)
 
         # S5 cancel mid-transfer then journal-owned storage resume with range
-        # verification, on the former-limit workload.
+        # verification, on the former-limit workload. Hold the second real
+        # PUT at the browser boundary so cancellation cannot race completion.
         script('''async (page) => {
+          let release,started,puts=0,cancelled=false;
+          const gate=new Promise(resolve=>release=resolve);let gateReached=false;started=()=>{gateReached=true;};
+          const pattern='**/api/v1/uploads/**';
+          const handler=async route=>{
+            if(route.request().method()==='PUT'&&++puts===2){started();await gate;if(cancelled){await route.abort().catch(()=>{});return;}}
+            await route.continue();
+          };
+          await page.route(pattern,handler);
           await page.getByRole('link',{name:'서재',exact:true}).click();
           await page.getByRole('button',{name:'가져오기',exact:true}).click();
           const reset=page.getByRole('button',{name:'새 가져오기 시작',exact:true});
@@ -614,13 +633,15 @@ def main():
           await page.getByRole('button',{name:'가져오기 시작',exact:true}).click();
           await page.waitForSelector('[data-testid="import-stage"]');
           await page.waitForFunction(()=>{const e=document.querySelector('[data-testid="import-stage"]');const m=e?.textContent.match(/확인된 바이트 ([0-9.]+)/);return m&&Number(m[1])>0;});
+          const deadline=Date.now()+60000;while(!gateReached){if(Date.now()>deadline)throw Error('second PUT not observed before cancellation');await page.waitForTimeout(100);}
           await page.getByRole('button',{name:'전송 취소 (스테이징 유지)',exact:true}).click();
+          cancelled=true;release();await page.unroute(pattern,handler);
           await page.waitForFunction(()=>document.querySelector('[data-testid="import-stage"]')&&document.querySelector('[data-testid="import-stage"]').textContent.includes('전송 취소됨'),null,{timeout:180000});
           return true;
         }'''.replace('BIG', json.dumps(str(big))))
         cli(['screenshot', '--filename', str(RUNTIME / 's03-transfer-cancelled.png')])
         s5 = script('''async (page) => {
-          await page.goto(new URL(page.url()).origin+'/settings/storage');
+          await page.goto((await page.evaluate(()=>location.origin))+'/settings/storage');
           await page.waitForSelector('[data-testid="storage-upload"]');
           const resume=await page.getByRole('button',{name:'이어서 전송 (재선택 후 범위 재검증)',exact:true}).count();
           if(resume===0)return {resumeAvailable:false};
@@ -636,7 +657,7 @@ def main():
         # S5b the former-limit version round-trips through its own archive.
         former_dest = RUNTIME / 'download-former'
         former_dest.mkdir()
-        script("async(page)=>{await page.goto(new URL(page.url()).origin+'/library');await page.waitForSelector('[data-testid=\"library-document\"]');return true;}")
+        script("async(page)=>{await page.goto((await page.evaluate(()=>location.origin))+'/library');await page.waitForSelector('[data-testid=\"library-document\"]');return true;}")
         former = download_to(former_dest, pin='input-former-limit')
         former_zips = list(former_dest.glob('*.zip'))
         former_ok = former['outcome'] == 'done' and len(former_zips) == 1
@@ -659,7 +680,7 @@ def main():
             script(('''async(page)=>{
               page.lossCalls=[];
               page.lossListener=request=>{
-                const path=new URL(request.url()).pathname;
+                const path='/'+request.url().split('/').slice(3).join('/').split('?')[0];
                 if(request.method()==='POST'&&((MODE==='create'&&path==='/api/v1/uploads')||(MODE==='complete'&&path.endsWith('/complete'))||(MODE==='import'&&path==='/api/v1/imports')))
                   page.lossCalls.push(request.headerValue('idempotency-key'));
               };
@@ -689,7 +710,7 @@ def main():
             }''').replace('ORIGINAL',json.dumps(original_intent)))
             require('s8_'+mode+'_same_native_key_and_target',identity['sameHeaders'] and identity['sameJournal'],identity)
         uploads_after = script('''async (page) => {
-          await page.goto(new URL(page.url()).origin+'/settings/storage');
+          await page.goto((await page.evaluate(()=>location.origin))+'/settings/storage');
           await page.waitForSelector('[data-testid="storage-upload"], [data-testid="storage-empty"]');
           return await page.evaluate(()=>Array.from(document.querySelectorAll('[data-testid="storage-upload"]')).map(node=>node.getAttribute('data-upload')));
         }''')
@@ -713,7 +734,7 @@ def main():
         control({'action':'advance','seconds':61})
         s4value=script('''async(page)=>{
           const context=await page.context().browser().newContext();
-          const p=await context.newPage();await p.goto(new URL(page.url()).origin);
+          const p=await context.newPage();await p.goto((await page.evaluate(()=>location.origin)));
           await p.getByLabel('장치 이름',{exact:true}).fill('task02 second');
           const created=p.waitForResponse(r=>r.url().endsWith('/api/v1/auth/pairings')&&r.request().method()==='POST');
           await p.getByRole('button',{name:'연결 코드 요청',exact:true}).click();
@@ -727,7 +748,7 @@ def main():
 
         # S7 labelled preselection harness through the same control.
         s7 = script('''async (page) => {
-          await page.goto(new URL(page.url()).origin+'/harness/harness.html');
+          await page.goto((await page.evaluate(()=>location.origin))+'/harness/harness.html');
           await page.waitForFunction(()=>document.querySelector('[data-state]')&&document.querySelector('[data-state]').getAttribute('data-state')==='verified',null,{timeout:30000});
           await page.waitForSelector('[data-testid="preselection-harness"]');
           const labelled=await page.evaluate(()=>document.querySelector('[data-testid="preselection-harness"]').textContent.includes('검증 전용'));
@@ -743,7 +764,7 @@ def main():
         # S10 keyboard walkthrough of the changed import entry, and an
         # emulated-touch consent tap on the download control.
         keyboard = script('''async (page) => {
-          await page.goto(new URL(page.url()).origin+'/library');
+          await page.goto((await page.evaluate(()=>location.origin))+'/library');
           await page.waitForSelector('[data-testid="library-document"]');
           for(let i=0;i<40;i+=1){
             if(await page.evaluate(()=>document.activeElement&&document.activeElement.textContent==='가져오기'))break;
@@ -759,14 +780,16 @@ def main():
           const context=await page.context().browser().newContext({hasTouch:true,viewport:{width:820,height:1180}});
           await context.addInitScript(t=>localStorage.setItem('haeryong.owner-session.v1',t),TOKEN);
           const t=await context.newPage();
-          await t.goto(new URL(page.url()).origin+'/library');
+          await t.goto((await page.evaluate(()=>location.origin))+'/library');
           await t.waitForSelector('[data-testid="library-document"]');
           await t.getByRole('button',{name:'원본 디렉터리 내려받기',exact:true}).first().tap();
           await t.getByRole('button',{name:'내려받기 시작',exact:true}).tap();
           await t.getByLabel('위 교체 규칙을 이해하고 동의합니다.').tap();
           await t.getByRole('button',{name:'동의하고 계속',exact:true}).tap();
           const reached=await t.getByRole('button',{name:'저장 위치 선택 (시스템 저장 대화상자)',exact:true}).count();
-          await t.close();
+          // Close the actual touch CONTEXT, not only its page: an open context
+          // would keep a browser (and its daemon attachment) alive after S10.
+          await context.close();
           return {touchConsentReached:reached>=1};
         }''').replace('TOKEN', json.dumps(token)))
         require('s10_touch_consent', touch.get('touchConsentReached'), touch)
@@ -775,7 +798,7 @@ def main():
         # publication changes the base during the original large transfer.
         FAULT['upload_delay'] = 0.04
         s11=script(('''async(page)=>{
-          const origin=new URL(page.url()).origin;
+          const origin=(await page.evaluate(()=>location.origin));
           await page.goto(origin+'/harness/harness.html');
           await page.waitForSelector('[data-state="verified"]');
           const choice=page.locator('[data-testid="preselection-harness"] select');
@@ -839,7 +862,7 @@ def main():
         # S12 real inventory reads with controlled response ordering and
         # explicitly labelled transport/error faults for component recovery.
         s12=script('''async(page)=>{
-          await page.goto(new URL(page.url()).origin+'/library');
+          await page.goto((await page.evaluate(()=>location.origin))+'/library');
           await page.waitForSelector('[data-testid="library-document"]');
           const rowA=page.locator('[data-testid="library-document"]').filter({hasText:'input-former-limit'});
           const rowB=page.locator('[data-testid="library-document"]').filter({hasText:'whole-tree'});
@@ -888,19 +911,25 @@ def main():
         # S9 uses labelled synthetic metadata rows only; all reads and cursor
         # semantics are the actual production auth/query routes.
         script(('''async(page)=>{
-          const handler=async route=>{await new Promise(r=>setTimeout(r,1200));await route.continue();};
-          await page.route('**/api/v1/documents?**',handler);
-          await page.goto(new URL(page.url()).origin+'/library');
+          const pattern='**/api/v1/documents?**';
+          const handler=async route=>{await page.waitForTimeout(1200);await route.continue();};
+          // Independent robust cleanup pieces: wait for the actual held GET
+          // response to finish, then unroute ONLY this pattern/handler pair
+          // (a broad unrouteAll can wait on unrelated routes).
+          const settled=page.waitForResponse(r=>r.url().includes('/api/v1/documents?'));
+          await page.route(pattern,handler);
+          await page.goto((await page.evaluate(()=>location.origin))+'/library');
           await page.waitForFunction(()=>document.querySelector('[data-testid="library-count"]')?.textContent.includes('불러오는 중'));
           await page.screenshot({path:CAPTURE});
-          await page.unrouteAll({behavior:'wait'});
+          await (await settled).finished().catch(()=>null);
+          await page.unroute(pattern,handler);
           await page.waitForSelector('[data-testid="library-document"]');
           return true;
         }''').replace('CAPTURE',json.dumps(str(RUNTIME/'s02-library-loading.png'))))
         require('s02_real_list_loading_capture',True)
         control({'action':'seed_lists'})
         s9=script('''async(page)=>{
-          await page.goto(new URL(page.url()).origin+'/library');
+          await page.goto((await page.evaluate(()=>location.origin))+'/library');
           await page.waitForFunction(()=>document.querySelector('[data-testid="library-count"]')?.textContent.includes('불러온 문서 50개'));
           const partial=await page.locator('[data-testid="library-count"]').innerText();
           await page.getByRole('button',{name:'더 불러오기',exact:true}).click();
@@ -921,7 +950,7 @@ def main():
           await page.goBack();
           await page.waitForFunction(()=>document.querySelector('[data-testid="library-count"]')?.textContent.includes('총 문서 1개'));
           const restored=page.url()===filter&&(await page.locator('[data-testid="library-document"]').getAttribute('data-document'))===selected&&(await page.getByRole('combobox',{name:/^수명 주기/}).inputValue())==='archived';
-          await page.goto(new URL(page.url()).origin+'/library?project_id='+crypto.randomUUID());
+          await page.goto((await page.evaluate(()=>location.origin))+'/library?project_id='+(await page.evaluate(()=>crypto.randomUUID())));
           await page.getByRole('alert').waitFor();
           const denied=await page.getByRole('alert').innerText();
           const deniedEmpty=(await page.locator('[data-testid="library-document"]').count())===0;
@@ -954,7 +983,7 @@ def main():
           await page.waitForFunction(()=>document.querySelector('[data-testid="library-count"]')?.textContent.includes('총 문서 68개'));
           const current=await page.evaluate(id=>Object.keys(localStorage).filter(k=>k.startsWith('haeryong.import-journal')).flatMap(k=>Object.values(JSON.parse(localStorage.getItem(k)).records)).find(r=>r.importKey===id),original.i);
           const rows=await page.locator('[data-testid="library-document"] strong').allTextContents();
-          return {newDefault,currentFilter:new URL(page.url()).searchParams.get('project_id')===selected&&selected!==original.target.projectId,rows:rows.length===68&&rows.every(t=>t.startsWith('Fixture active A')),receipt:current.phase==='published',sameIntent:current.importKey===original.i&&current.createKey===original.u&&current.completeKey===original.s&&JSON.stringify(current.target)===JSON.stringify(original.target)};
+          return {newDefault,currentFilter:(await page.evaluate(()=>new URL(location.href).searchParams.get('project_id')))===selected&&selected!==original.target.projectId,rows:rows.length===68&&rows.every(t=>t.startsWith('Fixture active A')),receipt:current.phase==='published',sameIntent:current.importKey===original.i&&current.createKey===original.u&&current.completeKey===original.s&&JSON.stringify(current.target)===JSON.stringify(original.target)};
         }''').replace('INPUT',json.dumps(str(single))))
         FAULT['upload_delay']=0
         require('s13_publication_preserves_current_filter_and_original_intent',all(s13.values()),s13)
@@ -967,7 +996,7 @@ def main():
               await page.getByRole('button',{name:'서재 열기',exact:true}).click();
               await page.waitForSelector('[data-testid="library-document"]');
               const writes=[];
-              const listener=r=>{const path=new URL(r.url()).pathname;if(['POST','PUT'].includes(r.method())&&(path.startsWith('/api/v1/uploads')||path==='/api/v1/imports'))writes.push(true);};
+              const listener=r=>{const path='/'+r.url().split('/').slice(3).join('/').split('?')[0];if(['POST','PUT'].includes(r.method())&&(path.startsWith('/api/v1/uploads')||path==='/api/v1/imports'))writes.push(true);};
               page.on('request',listener);
               await page.evaluate(mode=>{
                 const descriptor=Object.getOwnPropertyDescriptor(window,'localStorage');
@@ -1038,12 +1067,31 @@ def main():
         (RUNTIME / 'proof.json').write_text(json.dumps(proof, indent=2, ensure_ascii=False) + '\n')
         write_receipt()
         print(json.dumps({k: v for k, v in proof.items() if k != 'runtime_dir'}, ensure_ascii=False, indent=2))
-    except Exception:
-        try:
-            cli(['screenshot','--filename',str(RUNTIME/'failure.png')])
-            diagnostic=script('async(page)=>await page.evaluate(()=>({url:location.pathname,labels:Array.from(document.querySelectorAll("label")).map(e=>e.textContent),states:Array.from(document.querySelectorAll("[data-state]")).map(e=>e.getAttribute("data-state"))}))')
-            (RUNTIME/'failure-dom.json').write_text(json.dumps(diagnostic,ensure_ascii=False,indent=2))
-        except Exception:pass
+    except Exception as error:
+        # A dead CLI persistent session must be preserved BEFORE any failure
+        # diagnostic: screenshot/DOM calls auto-recreate a blank session whose
+        # daemon startup rewrites the session stderr log. Preserve this run's
+        # OWNED matching <session>.err first, label the loss, and skip the
+        # auto-recreating diagnostics entirely for this class of failure.
+        session_lost = 'Session closed' in str(error)
+        if session_lost:
+            proof['cli_session_lost'] = True
+            proof['complete'] = False
+            try:
+                sessions_root = Path(ENV['PLAYWRIGHT_DAEMON_SESSION_DIR'])
+                if sessions_root.is_dir():
+                    for candidate in sorted(sessions_root.rglob(SESSION + '.err')):
+                        (RUNTIME / 'cli-session-lost.err').write_text(candidate.read_text(errors='replace'))
+                        proof['cli_session_lost_preserved'] = candidate.name
+                        break
+            except Exception as preserve_error:
+                proof['cli_session_lost_preserve_error'] = str(preserve_error)[:200]
+        if not session_lost:
+            try:
+                cli(['screenshot','--filename',str(RUNTIME/'failure.png')])
+                diagnostic=script('async(page)=>await page.evaluate(()=>({url:location.pathname,labels:Array.from(document.querySelectorAll("label")).map(e=>e.textContent),states:Array.from(document.querySelectorAll("[data-state]")).map(e=>e.getAttribute("data-state"))}))')
+                (RUNTIME/'failure-dom.json').write_text(json.dumps(diagnostic,ensure_ascii=False,indent=2))
+            except Exception:pass
         raise
     finally:
         (RUNTIME / 'proof.json').write_text(json.dumps(proof, indent=2, ensure_ascii=False) + '\n')

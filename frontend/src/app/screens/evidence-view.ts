@@ -470,6 +470,41 @@ export function regionSelectionMatches(
   return selection.reload === current.reload;
 }
 
+/**
+ * Region-focus ack identity: a late ack from page A (or an ack racing a
+ * disposed channel) can never be retagged onto the current B selection.
+ * Identity is the CAPTURED [version,page] tuple from the acking channel;
+ * found/focused are reported values, never identity. A disposed channel
+ * cannot ack at all — its port is closed by disposal — and this guard covers
+ * the in-flight ack that arrives after the host selection moved on.
+ */
+export function acceptRegionFocusResult(
+  ack: { versionId: string; pagePath: string; regionId: string },
+  current: { versionId: string; pagePath: string | null },
+): boolean {
+  if (ack.versionId !== current.versionId) return false;
+  if (current.pagePath === null || ack.pagePath !== current.pagePath) return false;
+  return ack.regionId !== "";
+}
+
+/**
+ * Pending region-focus request cancellation: a delayed attempt (issued after
+ * a modal Context sheet actually closes) is cancelled when the Reader
+ * unmounted, the route/version/context/page moved on, an explicit
+ * same-context reload bumped, or the live channel handle was replaced. The
+ * original channel/frame/delivery is never retried or retagged.
+ */
+export function regionRequestStale(
+  captured: { versionId: string; context: string | null; page: string; reload: number; handle: unknown },
+  now: { live: boolean; versionId: string; context: string | null; page: string | null; reload: number; handle: unknown },
+): boolean {
+  if (!now.live) return true;
+  if (captured.versionId !== now.versionId || captured.context !== now.context) return true;
+  if (now.page === null || captured.page !== now.page) return true;
+  if (captured.reload !== now.reload) return true;
+  return captured.handle !== now.handle;
+}
+
 export function sameSelection(a: SelectionKey, b: SelectionKey): boolean {
   return a.versionId === b.versionId && a.pagePath === b.pagePath && a.regionId === b.regionId && a.generation === b.generation;
 }
