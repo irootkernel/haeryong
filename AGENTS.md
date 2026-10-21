@@ -14,6 +14,7 @@ Haeryong's repository-local agent guidance is defined in this file.
 - Inspect the requested code and its authorities before changing anything. Resolve discoverable facts before asking Master.
 - Reuse verified facts; recheck affected information when state changes, evidence conflicts, or context is unreliable.
 - State material assumptions and trade-offs. Ask when ambiguity materially changes the result; surface conflicts with repository authority or Master's goal.
+- Before changing a feature, read applicable directory AGENTS.md files and the canonical documents relevant to the change. Respect the selected harness's native instruction scope and precedence.
 
 ### 3. Act on Sufficient Evidence
 
@@ -21,6 +22,7 @@ Haeryong's repository-local agent guidance is defined in this file.
 - Weigh correctness, performance, maintainability, and structural fit. Reuse established patterns and avoid speculative features, abstractions, compatibility layers, and impossible-state handling.
 - Touch only what the outcome and verification require. Preserve unrelated work, follow local style, and remove only artifacts made obsolete by the change.
 - Record only independent remaining work in the canonical deferred-feedback owner. If none exists, propose an entry and obtain approval before creating an owner. Promote epic-sized work to a TODO candidate or roadmap unit; never defer current correctness or acceptance work.
+- Read directory-guide adoption coverage in the root documentation index. Maintain affected canonical documents and existing applicable guides, including guides outside that coverage. Within adopted coverage, add guides for new feature boundaries as part of the authorized work. Report uncovered areas without unrelated backfill; guide absence alone adds no workflow blocker. Finish affected documentation before candidate review.
 
 ### 4. Carry Authorization Forward
 
@@ -56,7 +58,7 @@ Haeryong's repository-local agent guidance is defined in this file.
 - Use $aquarium:dev-setup-global for supported user-global tools, paired skills, services, and global MCP configuration. Route Aquarium plugin installation or updates through the host's plugin-management flow.
 - Use $aquarium:docs-setup for documentation structure and roadmap identity.
 - Use $aquarium:test-setup for the common testing entrypoints and evidence-backed exceptions.
-- Use $use-mulgae for authorized reviews and native review lifecycle operations. Enable artist on Codex and logic, security, maintainability, product, documentation, and testing on Grok; select no other provider.
+- Use `$use-mulgae` for authorized reviews and native review lifecycle operations. Route all seven enabled roles, including `artist`, to ZCode through `.mulgae/config.yaml`. Substitute a provider only with Master's explicit approval.
 - Use $use-gaori for authorized check execution and evidence handling. Use $use-gaori-status for explicitly requested history or timing analysis.
 - Use Podway by default for Git-backed Aquarium workflows unless Master opts out of the current workflow before its session starts. Use $use-podway for explicit Procedure v2 lifecycle operations; setup installs configuration without starting a session.
 - Sorage Project setup belongs to $aquarium:dev-setup. Project registration does not authorize inbox, outbox, Handoff, or Memo operations.

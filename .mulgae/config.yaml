@@ -1,4 +1,4 @@
-version: 4
+version: 5
 project:
   name: "haeryong"
   kind: "ui"
@@ -7,8 +7,6 @@ providers:
     model: "grok-4.7"
     reasoning_effort: "high"
   codex: {}
-execution:
-  workspace_access: "none"
 roles:
   logic: {enabled: true, primary_provider: "grok"}
   security: {enabled: true, primary_provider: "grok"}
