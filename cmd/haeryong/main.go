@@ -21,8 +21,10 @@ import (
 	"haeryong.local/haeryong/internal/adapters/configpath"
 	"haeryong.local/haeryong/internal/adapters/content/staging"
 	"haeryong.local/haeryong/internal/adapters/foundation"
+	"haeryong.local/haeryong/internal/adapters/gitreader"
 	httpconfig "haeryong.local/haeryong/internal/adapters/http/configuration"
 	httpimports "haeryong.local/haeryong/internal/adapters/http/imports"
+	httpsource "haeryong.local/haeryong/internal/adapters/http/source"
 	httpv1 "haeryong.local/haeryong/internal/adapters/http/v1"
 	"haeryong.local/haeryong/internal/adapters/localcontrol"
 	appauth "haeryong.local/haeryong/internal/application/auth"
@@ -30,6 +32,7 @@ import (
 	importer "haeryong.local/haeryong/internal/application/import"
 	"haeryong.local/haeryong/internal/application/query"
 	"haeryong.local/haeryong/internal/application/service"
+	appsource "haeryong.local/haeryong/internal/application/source"
 )
 
 type options struct {
@@ -84,7 +87,7 @@ func parse(args []string) (options, error) {
 			continue
 		}
 		switch key {
-		case "--profile", "--data-dir", "--volume-root", "--port", "--endpoint", "--credential", "--client-dir", "--operation-id", "--project", "--document", "--base-version", "--metadata", "--version", "--path", "--output", "--input", "--state", "--cursor", "--limit", "--directory", "--kind", "--file", "--format", "--expected-config-revision", "--scope":
+		case "--profile", "--data-dir", "--volume-root", "--port", "--endpoint", "--credential", "--client-dir", "--operation-id", "--project", "--document", "--base-version", "--metadata", "--version", "--path", "--output", "--input", "--state", "--cursor", "--limit", "--directory", "--kind", "--file", "--format", "--expected-config-revision", "--scope", "--name", "--evidence", "--expected-sha256", "--expected-excerpt-file", "--source-id", "--root-path", "--repo-id", "--retention-mode", "--provider-ids", "--plan-id", "--page", "--region", "--coverage-set":
 		default:
 			return opt, invalid("unsupported flag: " + key)
 		}
@@ -168,6 +171,7 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 			imports := importer.New(store, core, store, staging.New())
 			configurationCore := appconfig.New(store, core, configpath.Resolver{})
 			queries := query.New(store, core, store)
+			sourceCore := appsource.New(store, core, store, gitreader.New())
 			var managementOrigin string
 			var externalOrigin string
 			renderFacade := newRenderFacade(store, core, store, func() string { return managementOrigin })
@@ -175,6 +179,10 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 			var restart atomic.Bool
 			configurationCore.Restart = func() { restart.Store(true); cancelRun() }
 			endpoint := &localcontrol.HTTP{Auth: core, Product: func(origin string) (http.Handler, error) {
+				// Resolve open staged checks left by a crash before serving.
+				if err := sourceCore.Recover(runCtx); err != nil {
+					return nil, err
+				}
 				managementOrigin = origin
 				configurationCore.RuntimeEndpoint = origin
 				configurationCore.ListenerOverride = opt.portSelected
@@ -183,7 +191,7 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 					return nil, err
 				}
 				externalOrigin = configuredExternalOrigin(configuration.Value)
-				return productHandler(core, origin, configuration.Value, productRoutes{httpimports.New(imports), httpv1.New(queries, renderFacade, func() (string, string) { return managementOrigin, externalOrigin }), httpconfig.New(configurationCore)})
+				return productHandler(core, origin, configuration.Value, productRoutes{httpsource.New(sourceCore), httpimports.New(imports), httpv1.New(queries, renderFacade, func() (string, string) { return managementOrigin, externalOrigin }), httpconfig.New(configurationCore)})
 			}}
 			runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: store, Endpoint: endpoint, Work: imports.Run, CloseDependents: renderFacade.Shutdown, ListenerPort: func(ctx context.Context) (int, error) {
 				configuration, e := store.Configuration(ctx)

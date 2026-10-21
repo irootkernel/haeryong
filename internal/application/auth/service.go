@@ -801,6 +801,25 @@ func (s *Service) FilterEvent(ctx context.Context, token string, event domain.Ev
 		if event.ResourceKind == "version" {
 			target = "/api/v1/versions/" + event.ResourceID
 		}
+		if event.ResourceKind == "source" && event.Kind == "source.scope_changed" {
+			// Scope changes name their project and have no version body.
+			target = "/api/v1/projects/" + event.ResourceID
+		} else if event.ResourceKind == "source" {
+			// A source event names the observed version: it stays visible only
+			// while that version does (lifecycle masking, W3d).
+			var body struct {
+				VersionID string `json:"version_id"`
+			}
+			if json.Unmarshal(event.Body, &body) != nil || body.VersionID == "" {
+				event.ResourceKind = "library"
+				event.ResourceID = ""
+				event.Kind = "library.invalidated"
+				event.Body = nil
+				event.Revision = 0
+				return nil
+			}
+			target = "/api/v1/versions/" + body.VersionID
+		}
 		if target != "" {
 			e = visibleTarget(tx, target)
 			if errors.Is(e, domain.ErrNotFound) {

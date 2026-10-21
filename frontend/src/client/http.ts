@@ -1,4 +1,6 @@
 import type {
+  ConfigurationView, ConfigurationPlanRequest, ConfigurationPlanView, ConfigurationCommitRequest, ConfigurationCommitView,
+  ProjectSourceView, EvidenceVerificationRequest, EvidenceVerificationResult, SourceObservationRequest, SourceObservationResult,
   AssessmentFilter,
   AssessmentsView,
   Capabilities,
@@ -42,6 +44,7 @@ import type {
   PersonalView,
 } from "./types.ts";
 import { ApiError, NetworkError, StaleResponseError, UncertainResponseError } from "./types.ts";
+import { sourceWrite } from "./source-operations.ts";
 import { eraGuardedStream } from "./stream.ts";
 import type { ContextBinding } from "./context-types.ts";
 
@@ -168,6 +171,33 @@ export class HttpHaeryongClient implements HaeryongClient {
     return query ? path + "?" + query : path;
   }
 
+  configurationView(): Promise<ConfigurationView> { return this.#request("GET", "/api/v1/configuration"); }
+
+  #sourceWrite<T>(path: string, body: unknown, operationId: string): Promise<T> {
+    const era = this.#era;
+    return sourceWrite<T>(operationId, async () => {
+      const outcome = await this.#exchange("POST", path, body, { "Idempotency-Key": operationId });
+      return { kind: outcome.status === 202 ? "accepted" : "committed", body: outcome.data };
+    }, (id) => { if (era !== this.#era) throw new StaleResponseError(); return this.operation(id); });
+  }
+
+  configurationPlan(request: ConfigurationPlanRequest, operationId: string): Promise<ConfigurationPlanView> {
+    return this.#sourceWrite("/api/v1/configuration/plans", request, operationId);
+  }
+  configurationPlanCommit(planId: string, request: ConfigurationCommitRequest, operationId: string): Promise<ConfigurationCommitView> {
+    return this.#sourceWrite(`/api/v1/configuration/plans/${encodeURIComponent(planId)}/commit`, request, operationId);
+  }
+  projectRegister(name: string, operationId: string): Promise<ProjectView> { return this.#sourceWrite("/api/v1/projects", { name }, operationId); }
+  projectSources(projectId: string, cursor?: string): Promise<ListPage<ProjectSourceView>> {
+    return this.#request("GET", this.#collection(`/api/v1/projects/${encodeURIComponent(projectId)}/sources`, { cursor }));
+  }
+  verifySourceEvidence(versionId: string, evidenceId: string, request: EvidenceVerificationRequest, operationId: string): Promise<EvidenceVerificationResult> {
+    return this.#sourceWrite(this.#collection(`/api/v1/versions/${encodeURIComponent(versionId)}/source-evidence-verifications`, { evidence_id: evidenceId }), request, operationId);
+  }
+  runSourceObservation(versionId: string, request: SourceObservationRequest, operationId: string): Promise<SourceObservationResult> {
+    return this.#sourceWrite(`/api/v1/versions/${encodeURIComponent(versionId)}/source-observations`, request, operationId);
+  }
+
   listProjects(cursor?: string): Promise<ListPage<ProjectView>> {
     return this.#request("GET", this.#collection("/api/v1/projects", { cursor }));
   }
@@ -235,8 +265,8 @@ export class HttpHaeryongClient implements HaeryongClient {
     return this.#request("GET", this.#collection(`/api/v1/versions/${encodeURIComponent(versionId)}/assessments`, params));
   }
 
-  assessmentCoverage(versionId: string, coverageSetId: string, cursor?: string): Promise<ListPage<CoverageUnit>> {
-    return this.#request("GET", this.#collection(`/api/v1/versions/${encodeURIComponent(versionId)}/assessments/coverage`, { coverage_set_id: coverageSetId, cursor }));
+  assessmentCoverage(versionId: string, coverageSetId: string, cursor?: string, attemptRunId?: string): Promise<ListPage<CoverageUnit>> {
+    return this.#request("GET", this.#collection(`/api/v1/versions/${encodeURIComponent(versionId)}/assessments/coverage`, { coverage_set_id: coverageSetId, ...(attemptRunId === undefined ? {} : { attempt_run_id: attemptRunId }), cursor }));
   }
 
   renderBootstrap(versionId: string, pagePath?: string): Promise<RenderBootstrapView> {

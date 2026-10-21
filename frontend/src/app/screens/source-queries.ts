@@ -4,10 +4,15 @@
 // cursor under the SAME captured target/scope/query identity (order-reversed
 // replies never merge), coverage/verifications retries stay reachable, and a
 // changed version/page/region or same-page history/render/reload context
-// clears and rebinds everything. No derived denominator exists while an
+// clears and rebinds display state. Unconfirmed write identities survive
+// selection changes. No derived denominator exists while an
 // enumeration is incomplete.
-import type { HaeryongClient, ApplicableFreshness, AssessmentRecord, CoverageUnit, EvidenceItemView, ListPage, VerificationRecord } from "../../client/types.ts";
-import { ApiError } from "../../client/types.ts";
+import type { HaeryongClient, ApplicableFreshness, AssessmentRecord, CoverageUnit, EvidenceItemView, ListPage, VerificationRecord, EvidenceVerificationRequest, EvidenceVerificationResult } from "../../client/types.ts";
+import { resolveWriteIntent } from "../../client/source-write-intents.ts";
+import type { VerificationIntent, SourceWriteIntents } from "../../client/source-write-intents.ts";
+import type { ShellController } from "../../client/controller.ts";
+import { PendingSourceWriteError, reconcileSourceWrite } from "../../client/source-operations.ts";
+import { ApiError, DispatchBlockedError, StaleResponseError } from "../../client/types.ts";
 import { SelectionQueryGuard, coverageUnitsParams, enumerationComplete, initialEnumeration, mergeEnumerationPage, scopeMatchesSelection, type EnumerationState, type CoverageScopeFilter, type SelectionKey } from "./evidence-view.ts";
 
 const errorText = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
@@ -54,7 +59,15 @@ export interface CoverageView {
   units: EnumView<CoverageUnit>;
 }
 
+export interface VerificationAction {
+  phase: "loading" | "ready" | "error" | "pending";
+  operationId: string;
+  request: EvidenceVerificationRequest;
+  result: EvidenceVerificationResult | null;
+  reason: string | null;
+}
 export interface SourceQuerySnapshot {
+  checks: Record<string, VerificationAction>;
   assessments: AssessmentsView;
   coverage: CoverageView;
   items: Record<string, EvidenceItemView0>;
@@ -86,9 +99,16 @@ export class SourceQueries {
   #coverageReason: string | null = null;
   #items = new Map<string, { phase: Phase; reason: string | null; view: EvidenceItemView | null }>();
   #verifications = new Map<string, { phase: Phase; reason: string | null; state: EnumerationState<VerificationRecord> }>();
+  #checks = new Map<string, VerificationAction>();
+  // Write identity survives selection invalidation; only display state is cleared.
+  readonly #unconfirmed: SourceWriteIntents["verifications"];
   #disposed = false;
 
-  constructor(client: HaeryongClient, versionId: string, pagePath: string | null, regionId: string | null, contextKey: string) {
+  constructor(client: HaeryongClient, versionId: string, pagePath: string | null, regionId: string | null, contextKey: string, intents: SourceWriteIntents) {
+    this.#unconfirmed = intents.verifications;
+    for (const [key, intent] of this.#unconfirmed) {
+      if (JSON.parse(key)[0] === versionId) this.#checks.set(JSON.parse(key)[1], { ...intent, phase: "pending", result: null, reason: null });
+    }
     this.#client = client;
     this.#guard = new SelectionQueryGuard(versionId, pagePath, regionId);
     this.#contextKey = contextKey;
@@ -130,6 +150,7 @@ export class SourceQueries {
     this.#coverageState = initialEnumeration();
     this.#coveragePhase = "idle";
     this.#coverageReason = null;
+    this.#checks.clear();
     this.#items.clear();
     this.#verifications.clear();
     this.#emit();
@@ -145,7 +166,10 @@ export class SourceQueries {
     for (const [id, value] of this.#items) items[id] = { phase: value.phase, reason: value.reason, view: value.view };
     const verifications: Record<string, VerificationsView> = Object.create(null);
     for (const [id, value] of this.#verifications) verifications[id] = { phase: value.phase, reason: value.reason, records: fromState(value.phase, value.state, value.reason) };
+    const checks: Record<string, VerificationAction> = Object.create(null);
+    for (const [id, value] of this.#checks) checks[id] = value;
     return {
+      checks,
       assessments: { phase: this.#assessmentsPhase, reason: this.#assessmentsReason, applicable: this.#applicable, incompatibleApplicable: this.#foreignApplicable !== null, history: fromState(this.#assessmentsPhase, this.#assessmentsState, this.#assessmentsReason) },
       coverage: { phase: this.#coveragePhase, reason: this.#coverageReason, units: fromState(this.#coveragePhase, this.#coverageState, this.#coverageReason) },
       items,
@@ -253,7 +277,7 @@ export class SourceQueries {
       const token = this.#guard.begin("coverage");
       let page: ListPage<CoverageUnit>;
       try {
-        page = await this.#client.assessmentCoverage(this.#guard.key.versionId, params.coverageSetId, cursor);
+        page = await this.#client.assessmentCoverage(this.#guard.key.versionId, params.coverageSetId, cursor, params.attemptRunId);
       } catch (error) {
         if (!this.#guard.accept("coverage", token)) return;
         if (isFeatureNotReady(error)) {
@@ -284,7 +308,7 @@ export class SourceQueries {
     }
   }
 
-  #coverageParams(applicable: ApplicableFreshness): { coverageSetId: string } | null {
+  #coverageParams(applicable: ApplicableFreshness): { coverageSetId: string; attemptRunId?: string } | null {
     const origin = this.#client.publicOrigin ?? (typeof location !== "undefined" ? location.origin : null);
     const unitsUrl = applicable.coverage.units_url;
     const versionId = this.#guard.key.versionId;
@@ -293,10 +317,10 @@ export class SourceQueries {
     return coverageUnitsParams(typeof unitsUrl === "string" ? unitsUrl : null, versionId, applicable.coverage.coverage_set_id, origin);
   }
 
-  async loadEvidence(evidenceId: string): Promise<void> {
+  async loadEvidence(evidenceId: string, force = false): Promise<void> {
     if (this.#disposed) return;
     const existing = this.#items.get(evidenceId);
-    if (existing && (existing.phase === "loading" || existing.phase === "ready")) return;
+    if (!force && existing && (existing.phase === "loading" || existing.phase === "ready")) return;
     this.#items.set(evidenceId, { phase: "loading", reason: null, view: null });
     this.#emit();
     const token = this.#guard.begin(`evidence:${evidenceId}`);
@@ -311,14 +335,51 @@ export class SourceQueries {
     this.#emit();
   }
 
+  refreshEvidence(evidenceId: string): Promise<void> { return this.loadEvidence(evidenceId, true); }
+  refreshVerifications(evidenceId: string): Promise<void> { return this.loadVerifications(evidenceId, true); }
+
+  async runVerification(evidenceId: string, request: EvidenceVerificationRequest, controller: Pick<ShellController, "captureDispatchAuthority" | "requireVerifiedDispatch" | "state">): Promise<void> {
+    if (this.#disposed || this.#checks.get(evidenceId)?.phase === "loading") return;
+    const authority = controller.captureDispatchAuthority();
+    controller.requireVerifiedDispatch(authority);
+    if (controller.state.capabilities?.features.source_verification !== true) throw new DispatchBlockedError();
+    const versionId = this.#guard.key.versionId;
+    const intentKey = JSON.stringify([versionId, evidenceId]);
+    const pending = this.#unconfirmed.get(intentKey);
+    const intent: VerificationIntent = pending ?? { operationId: crypto.randomUUID(), request: structuredClone(request), outcome: { state: "pending" } };
+    const { operationId, request: original } = intent;
+    this.#unconfirmed.set(intentKey, intent);
+    const token = this.#guard.begin(`check:${evidenceId}`);
+    this.#checks.set(evidenceId, { phase: "loading", operationId, request: original, result: null, reason: null });
+    this.#emit();
+    try {
+      controller.requireVerifiedDispatch(authority);
+      const result = await resolveWriteIntent(intent, () => pending
+        ? reconcileSourceWrite<EvidenceVerificationResult>(operationId, (id) => this.#client.operation(id))
+        : this.#client.verifySourceEvidence(versionId, evidenceId, original, operationId));
+      if (!this.#guard.accept(`check:${evidenceId}`, token)) return;
+      this.#checks.set(evidenceId, { phase: "ready", operationId, request: original, result, reason: null });
+      this.#emit();
+      if (!this.#guard.accept(`check:${evidenceId}`, token)) return;
+      if (this.#unconfirmed.get(intentKey) === intent) this.#unconfirmed.delete(intentKey);
+      await Promise.all([this.refreshEvidence(evidenceId), this.refreshVerifications(evidenceId)]);
+    } catch (error) {
+      if (!pending && intent.outcome.state === "pending" && !intent.inFlight && !(error instanceof PendingSourceWriteError || error instanceof StaleResponseError)) intent.outcome = { state: "failed", error };
+      if (!this.#guard.accept(`check:${evidenceId}`, token)) return;
+      this.#checks.set(evidenceId, { phase: (error instanceof PendingSourceWriteError || error instanceof StaleResponseError) ? "pending" : "error", operationId, request: original, result: null, reason: errorText(error) });
+      this.#emit();
+      if (intent.outcome.state === "failed" && intent.outcome.error === error && this.#guard.accept(`check:${evidenceId}`, token) && this.#unconfirmed.get(intentKey) === intent) this.#unconfirmed.delete(intentKey);
+    }
+  }
+
   retryEvidence(evidenceId: string): void {
     const existing = this.#items.get(evidenceId);
     if (existing && (existing.phase === "error" || existing.phase === "unavailable")) void this.loadEvidence(evidenceId);
   }
 
-  async loadVerifications(evidenceId: string): Promise<void> {
+  async loadVerifications(evidenceId: string, force = false): Promise<void> {
     if (this.#disposed) return;
-    const existing = this.#verifications.get(evidenceId);
+    const existing = force ? undefined : this.#verifications.get(evidenceId);
     if (existing && (existing.phase === "loading" || existing.phase === "ready")) return;
     this.#verifications.set(evidenceId, { phase: "loading", reason: null, state: existing?.state ?? initialEnumeration<VerificationRecord>() });
     this.#emit();

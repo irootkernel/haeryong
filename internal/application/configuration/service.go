@@ -15,6 +15,7 @@ import (
 	sec "haeryong.local/haeryong/internal/security/session"
 	"net/url"
 	"reflect"
+	"sort"
 	"time"
 )
 
@@ -123,6 +124,94 @@ func (s *Service) Read(ctx context.Context, token string) (View, error) {
 		return nil
 	})
 	return out, e
+}
+
+// SourceSummary composes the /status source section from configuration plus
+// recorded observations only (plan §3, M3 binding note 2): per configured
+// (project_id, source_id) the latest per-source observation row of
+// observation runs decides — no filesystem probe, no branch resolution; a
+// configured source never observed (or none configured) is honest
+// unavailability, not a healthy claim.
+func (s *Service) SourceSummary(ctx context.Context) (map[string]any, error) {
+	configuration, err := s.Store.Configuration(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var value struct {
+		Projects map[string]struct {
+			Sources []json.RawMessage `json:"sources"`
+		} `json:"projects"`
+	}
+	if err := json.Unmarshal(configuration.Value, &value); err != nil {
+		return nil, err
+	}
+	type configuredKey struct{ project, source string }
+	keys := []configuredKey{}
+	for project, entry := range value.Projects {
+		for _, raw := range entry.Sources {
+			var source struct {
+				SourceID string `json:"source_id"`
+			}
+			if json.Unmarshal(raw, &source) != nil || source.SourceID == "" {
+				continue
+			}
+			keys = append(keys, configuredKey{project: project, source: source.SourceID})
+		}
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].project != keys[j].project {
+			return keys[i].project < keys[j].project
+		}
+		return keys[i].source < keys[j].source
+	})
+	latest := map[configuredKey]domain.SourceStatus{}
+	if reader, ok := s.Store.(app.SourceReadStore); ok {
+		statuses, err := reader.SourceObservationSummaries(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, status := range statuses {
+			latest[configuredKey{project: status.ProjectID, source: status.SourceID}] = status
+		}
+	}
+	// Reason precedence, strongest first (M3 binding note 2); not_observed
+	// is the floor: a configured source never observed, or none configured.
+	rank := map[string]int{"source_not_registered": 6, "missing_source": 5, "missing_retained_bytes": 4, "retained_bytes_corrupt": 3, "source_denied": 2, "not_observed": 1}
+	reason := "not_observed"
+	strongest := func(next string) {
+		if reason == "" || rank[next] > rank[reason] {
+			reason = next
+		}
+	}
+	lastObserved := ""
+	available := len(keys) > 0
+	for _, key := range keys {
+		status, ok := latest[key]
+		if !ok {
+			available = false
+			strongest("not_observed")
+			continue
+		}
+		if status.LastObservedAt > lastObserved {
+			lastObserved = status.LastObservedAt
+		}
+		if status.LastAvailability != "available" {
+			available = false
+			next := status.LastReason
+			if next == "" {
+				next = "not_observed"
+			}
+			strongest(next)
+		}
+	}
+	summary := map[string]any{"available": available, "reason": nil, "configured_source_count": len(keys), "last_observed_at": nil}
+	if !available {
+		summary["reason"] = reason
+	}
+	if lastObserved != "" {
+		summary["last_observed_at"] = lastObserved
+	}
+	return summary, nil
 }
 
 func (s *Service) Staging(ctx context.Context, token string) (domain.StagingSummary, error) {

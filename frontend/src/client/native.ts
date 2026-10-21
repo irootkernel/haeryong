@@ -2,6 +2,8 @@
 // these named operations to a typed Go proxy. The port accepts no arbitrary
 // URLs, filesystem paths or generic method names from imported content.
 import type {
+  ConfigurationView, ConfigurationPlanRequest, ConfigurationPlanView, ConfigurationCommitRequest, ConfigurationCommitView,
+  ProjectSourceView, EvidenceVerificationRequest, EvidenceVerificationResult, SourceObservationRequest, SourceObservationResult,
   AssessmentFilter,
   AssessmentsView,
   Capabilities,
@@ -56,11 +58,19 @@ import type {
   PersonalKind,
   PersonalView,
 } from "./types.ts";
+import { sourceWrite } from "./source-operations.ts";
 import { StaleResponseError } from "./types.ts";
 import { encodeBytes } from "./native-wire.ts";
 import { eraGuardedStream } from "./stream.ts";
 import type { ContextBinding } from "./context-types.ts";
 
+export type ConfigurationViewCall = {};
+export type ConfigurationPlanCall = { request: ConfigurationPlanRequest; operation_id: string };
+export type ConfigurationPlanCommitCall = { plan_id: string; request: ConfigurationCommitRequest; operation_id: string };
+export type ProjectRegisterCall = { name: string; operation_id: string };
+export type ProjectSourcesCall = { project_id: string; cursor?: string };
+export type VerifySourceEvidenceCall = { version_id: string; evidence_id: string; request: EvidenceVerificationRequest; operation_id: string };
+export type RunSourceObservationCall = { version_id: string; request: SourceObservationRequest; operation_id: string };
 export type PairRequest = { device_label: string };
 export type PollPairingRequest = { pairing_id: string };
 export type ChooseImportSourceRequest = { mode: "directory" | "archive" | "file" };
@@ -103,7 +113,7 @@ export type PackageStreamRequest = { version_id: string };
 export type VersionEvidenceRequest = { version_id: string; evidence_id: string };
 export type EvidenceVerificationsRequest = { version_id: string; evidence_id: string; cursor?: string };
 export type VersionAssessmentsRequest = { version_id: string; target_set_id?: string; scope_kind?: "version" | "page" | "region"; page_path?: string; region_id?: string; cursor?: string };
-export type AssessmentCoverageRequest = { version_id: string; coverage_set_id: string; cursor?: string };
+export type AssessmentCoverageRequest = { version_id: string; coverage_set_id: string; attempt_run_id?: string; cursor?: string };
 export type SuppliedMetadataProof = { etag: string | null };
 export type CreateContextUploadCall = { binding: ContextBinding; operation_id: string };
 export type ConsumeContextCall = { binding: ContextBinding; upload_id: string; operation_id: string };
@@ -117,6 +127,13 @@ export type PersonalPutCall = { kind: PersonalKind; version_id: string; page: st
 
 /** Named operations only; each overload pins an exact payload/result pair. */
 export interface NativePort {
+  call(operation: "configurationView", payload: ConfigurationViewCall): Promise<ConfigurationView>;
+  call(operation: "configurationPlan", payload: ConfigurationPlanCall): Promise<DecisionResult>;
+  call(operation: "configurationPlanCommit", payload: ConfigurationPlanCommitCall): Promise<DecisionResult>;
+  call(operation: "projectRegister", payload: ProjectRegisterCall): Promise<DecisionResult>;
+  call(operation: "projectSources", payload: ProjectSourcesCall): Promise<ListPage<ProjectSourceView>>;
+  call(operation: "verifySourceEvidence", payload: VerifySourceEvidenceCall): Promise<DecisionResult>;
+  call(operation: "runSourceObservation", payload: RunSourceObservationCall): Promise<DecisionResult>;
   call(operation: "attachSession", payload: {}): Promise<NativeAttachment>;
   call(operation: "disposeSession", payload: { attachment_id: string }): Promise<void>;
   call(operation: "fileStream", payload: { version_id: string; path: string }): Promise<PackageStream>;
@@ -182,6 +199,14 @@ export interface NativePort {
 }
 
 export const NATIVE_OPERATIONS = [
+  "configurationView",
+  "configurationPlan",
+  "configurationPlanCommit",
+  "projectRegister",
+  "projectSources",
+  "verifySourceEvidence",
+  "runSourceObservation",
+
   "attachSession", "disposeSession", "fileStream",
   "createContextUpload",
   "consumeContext",
@@ -452,6 +477,31 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
     return this.#fresh(this.#port.call("personalPut", { kind, version_id: versionId, page, body, precondition: wire, operation_id: operationId }), this.#era);
   }
 
+  configurationView(): Promise<ConfigurationView> { return this.#fresh(this.#port.call("configurationView", {}), this.#era); }
+  projectSources(projectId: string, cursor?: string): Promise<ListPage<ProjectSourceView>> {
+    return this.#fresh(this.#port.call("projectSources", { project_id: projectId, cursor }), this.#era);
+  }
+  configurationPlan(request: ConfigurationPlanRequest, operationId: string): Promise<ConfigurationPlanView> {
+    const era = this.#era;
+    return sourceWrite<ConfigurationPlanView>(operationId, () => this.#fresh(this.#port.call("configurationPlan", { request, operation_id: operationId }), era), (id) => { if (era !== this.#era) throw new StaleResponseError(); return this.operation(id); });
+  }
+  configurationPlanCommit(planId: string, request: ConfigurationCommitRequest, operationId: string): Promise<ConfigurationCommitView> {
+    const era = this.#era;
+    return sourceWrite<ConfigurationCommitView>(operationId, () => this.#fresh(this.#port.call("configurationPlanCommit", { plan_id: planId, request, operation_id: operationId }), era), (id) => { if (era !== this.#era) throw new StaleResponseError(); return this.operation(id); });
+  }
+  projectRegister(name: string, operationId: string): Promise<ProjectView> {
+    const era = this.#era;
+    return sourceWrite<ProjectView>(operationId, () => this.#fresh(this.#port.call("projectRegister", { name, operation_id: operationId }), era), (id) => { if (era !== this.#era) throw new StaleResponseError(); return this.operation(id); });
+  }
+  verifySourceEvidence(versionId: string, evidenceId: string, request: EvidenceVerificationRequest, operationId: string): Promise<EvidenceVerificationResult> {
+    const era = this.#era;
+    return sourceWrite<EvidenceVerificationResult>(operationId, () => this.#fresh(this.#port.call("verifySourceEvidence", { version_id: versionId, evidence_id: evidenceId, request, operation_id: operationId }), era), (id) => { if (era !== this.#era) throw new StaleResponseError(); return this.operation(id); });
+  }
+  runSourceObservation(versionId: string, request: SourceObservationRequest, operationId: string): Promise<SourceObservationResult> {
+    const era = this.#era;
+    return sourceWrite<SourceObservationResult>(operationId, () => this.#fresh(this.#port.call("runSourceObservation", { version_id: versionId, request, operation_id: operationId }), era), (id) => { if (era !== this.#era) throw new StaleResponseError(); return this.operation(id); });
+  }
+
   listProjects(cursor?: string): Promise<ListPage<ProjectView>> {
     return this.#fresh(this.#port.call("listProjects", { cursor }), this.#era);
   }
@@ -502,8 +552,8 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
     }), this.#era);
   }
 
-  assessmentCoverage(versionId: string, coverageSetId: string, cursor?: string): Promise<ListPage<CoverageUnit>> {
-    return this.#fresh(this.#port.call("assessmentCoverage", { version_id: versionId, coverage_set_id: coverageSetId, cursor }), this.#era);
+  assessmentCoverage(versionId: string, coverageSetId: string, cursor?: string, attemptRunId?: string): Promise<ListPage<CoverageUnit>> {
+    return this.#fresh(this.#port.call("assessmentCoverage", { version_id: versionId, coverage_set_id: coverageSetId, ...(attemptRunId === undefined ? {} : { attempt_run_id: attemptRunId }), cursor }), this.#era);
   }
 
   listUploads(filter: { state?: UploadStateFilter; unadopted?: boolean; cursor?: string }): Promise<ListPage<UploadSummary>> {

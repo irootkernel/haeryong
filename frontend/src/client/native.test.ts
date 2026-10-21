@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { NATIVE_OPERATIONS, NativeHaeryongClient, type NativePort } from "./native.ts";
-import { ApiError, StaleResponseError, type EventSubscription } from "./types.ts";
+import { ApiError, StaleResponseError, UncertainResponseError, type EventSubscription } from "./types.ts";
 
 class RecordingPort {
   calls: Array<[string, Record<string, unknown>]> = [];
@@ -314,7 +314,7 @@ test("a missing ETag travels as null while the stream stays guarded", async () =
 
 test("evidence, verification history, assessments and coverage forward exact typed payloads", async () => {
   const fake = port();
-  fake.handlers.set("versionEvidence", () => ({ version_id: "v1", evidence_id: "e1", authored: {}, source: {}, availability: "unavailable", bytes_origin: null, reason: "source_read_not_implemented", service_verification: null, verifications_url: "/x" }));
+  fake.handlers.set("versionEvidence", () => ({ version_id: "v1", evidence_id: "e1", authored: {}, source: {}, availability: "unavailable", bytes_origin: null, reason: "not_read_by_view", service_verification: null, verifications_url: "/x" }));
   fake.handlers.set("evidenceVerifications", () => ({ items: [], next_cursor: null }));
   fake.handlers.set("versionAssessments", () => ({ items: [], next_cursor: null, applicable: null }));
   fake.handlers.set("assessmentCoverage", () => ({ items: [], next_cursor: null }));
@@ -414,4 +414,49 @@ test("the ten M3 filesystem operations are declared and a delivered file validat
   const written = await client.destWrite("dest-1", new Uint8Array([1, 2, 3]));
   assert.equal(written.written, 3);
   assert.deepEqual(fake.calls[fake.calls.length - 1], ["destWrite", { handle: "dest-1", bytes_b64: "AQID" }]);
+});
+
+test("all seven source/configuration operations forward typed payloads and reject stale replies", async () => {
+  const fake = port();
+  const client = new NativeHaeryongClient(fake as unknown as NativePort);
+  const plan = { scope: { kind: "project" as const, project_id: "p" }, expected_config_revision: 2, changes: { sources: [] } };
+  const commit = { expected_config_revision: 2, confirmed: true };
+  const excerpt: import("./types.ts").EvidenceVerificationRequest = { expected_excerpt_ref: { upload_id: "11111111-2222-4333-8444-555555555555" } };
+  const cases: Array<[string, unknown, () => Promise<unknown>]> = [
+    ["configurationView", {}, () => client.configurationView()],
+    ["configurationPlan", { request: plan, operation_id: "k" }, () => client.configurationPlan(plan, "k")],
+    ["configurationPlanCommit", { plan_id: "plan", request: commit, operation_id: "k" }, () => client.configurationPlanCommit("plan", commit, "k")],
+    ["projectRegister", { name: "name", operation_id: "k" }, () => client.projectRegister("name", "k")],
+    ["projectSources", { project_id: "p", cursor: "c" }, () => client.projectSources("p", "c")],
+    ["verifySourceEvidence", { version_id: "v", evidence_id: "../상세", request: excerpt, operation_id: "k" }, () => client.verifySourceEvidence("v", "../상세", excerpt, "k")],
+    ["runSourceObservation", { version_id: "v", request: { scope: { kind: "page", page_path: "a.html" } }, operation_id: "k" }, () => client.runSourceObservation("v", { scope: { kind: "page", page_path: "a.html" } }, "k")],
+  ];
+  for (const [operation, payload, invoke] of cases) {
+    const write = operation !== "configurationView" && operation !== "projectSources";
+    fake.handlers.set(operation, () => write ? { kind: "committed", body: { marker: operation } } : { marker: operation });
+    assert.deepEqual(await invoke(), { marker: operation });
+    assert.deepEqual(fake.calls.at(-1), [operation, payload]);
+    let release!: (value: unknown) => void;
+    fake.handlers.set(operation, () => new Promise((resolve) => { release = resolve; }));
+    const pending = invoke();
+    client.invalidate();
+    release(write ? { kind: "committed", body: {} } : {});
+    await assert.rejects(pending, StaleResponseError);
+  }
+  fake.handlers.set("assessmentCoverage", () => ({ items: [], next_cursor: null }));
+  await client.assessmentCoverage("v", "c", "next", "11111111-2222-4333-8444-555555555555");
+  assert.deepEqual(fake.calls.at(-1), ["assessmentCoverage", { version_id: "v", coverage_set_id: "c", cursor: "next", attempt_run_id: "11111111-2222-4333-8444-555555555555" }]);
+});
+
+test("native verification and observation reconcile accepted and uncertain writes by their original operation", async () => {
+  for (const op of ["verifySourceEvidence", "runSourceObservation"]) for (const uncertain of [false, true]) {
+    const fake = port();
+    fake.handlers.set(op, () => { if (uncertain) throw new UncertainResponseError(); return { kind: "accepted", body: { operation_id: "key" } }; });
+    fake.handlers.set("operation", () => ({ operation_id: "key", state: "completed", original_status: 201, result_metadata: { operation_id: "key", outcome: "captured" } }));
+    const client = new NativeHaeryongClient(fake as unknown as NativePort);
+    const result = op === "verifySourceEvidence" ? await client.verifySourceEvidence("v", "e", {}, "key") : await client.runSourceObservation("v", {}, "key");
+    assert.deepEqual(result, { operation_id: "key", outcome: "captured" });
+    assert.equal(fake.calls.filter(([name]) => name === op).length, 1);
+    assert.deepEqual(fake.calls.at(-1), ["operation", { operation_id: "key" }]);
+  }
 });

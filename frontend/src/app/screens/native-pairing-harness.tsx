@@ -255,6 +255,14 @@ class SyntheticNativePort {
         return [];
       case "serviceStatus":
         return { ok: true };
+      case "configurationView":
+      case "configurationPlan":
+      case "configurationPlanCommit":
+      case "projectRegister":
+      case "projectSources":
+      case "verifySourceEvidence":
+      case "runSourceObservation":
+        throw new Error("unavailable in pairing fixture");
       case "listProjects":
         return { items: [{ project_id: "proj-1", name: "네이티브 결과", lifecycle: "active", revision: 1, permissions_revision: 1, updated_at: "2026-10-19T00:00:00Z", etag: '"p1"' }], next_cursor: null };
       case "listDocuments":

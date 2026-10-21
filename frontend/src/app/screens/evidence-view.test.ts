@@ -390,3 +390,10 @@ test("panel toggles treat inherited-key IDs as absent on first click", () => {
     assert.equal(toggledOpen(twice, id), true, id + " must reopen after collapse");
   }
 });
+
+test("latest unavailable attempt supplies status while the captured target's reassessment trigger remains visible", () => {
+  const summary = deriveCoverageSummary([unit({ outcome: "not_checked", assessment_id: null, reason: "missing_source" })]);
+  const applicable = fresh({ status: "unable_to_verify", reassessment_required: true });
+  assert.equal(deriveStatus(summary, { overlay: applicable, targetSetId: "t1" }), "unable_to_verify");
+  assert.equal(applicable.reassessment_required, true);
+});

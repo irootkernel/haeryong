@@ -100,20 +100,29 @@ func (h *Handler) Handles(r *http.Request) bool {
 	if r.Method != "GET" && r.Method != "HEAD" {
 		return false
 	}
+	if r.Method == "HEAD" && p[0] == "versions" && (len(p) == 3 && p[2] == "source-evidence-verifications" || len(p) == 5 && p[2] == "source-evidence" && p[4] == "verifications") {
+		return false
+	}
 	if len(p) == 1 {
 		return p[0] == "capabilities" || p[0] == "projects" || p[0] == "documents"
 	}
 	if p[0] == "documents" {
 		return len(p) == 2 || len(p) == 3 && p[2] == "versions"
 	}
+	if p[0] == "projects" {
+		return len(p) == 3 && p[2] == "sources"
+	}
 	if p[0] == "versions" {
 		if len(p) == 2 {
 			return true
 		}
 		if len(p) == 3 {
-			return p[2] == "files" || p[2] == "file" || p[2] == "metadata" || p[2] == "render-bootstrap" || p[2] == "package" || p[2] == "source-evidence"
+			return p[2] == "files" || p[2] == "file" || p[2] == "metadata" || p[2] == "render-bootstrap" || p[2] == "package" || p[2] == "source-evidence" || p[2] == "source-evidence-verifications" || p[2] == "assessments"
 		}
-		return len(p) == 4 && p[2] == "source-evidence"
+		if len(p) == 4 {
+			return p[2] == "source-evidence" || p[2] == "assessments" && p[3] == "coverage"
+		}
+		return len(p) == 5 && p[2] == "source-evidence" && p[4] == "verifications"
 	}
 	return false
 }
@@ -148,8 +157,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if p[0] == "documents" && len(p) == 1 {
 		allowed = append(allowed, "project_id", "lifecycle")
 	}
+	if p[0] == "projects" && len(p) == 3 && p[2] == "sources" {
+		allowed = []string{"cursor", "limit"}
+	}
 	if p[0] == "versions" && len(p) > 2 {
 		switch p[2] {
+		case "source-evidence-verifications":
+			allowed = []string{"evidence_id", "cursor", "limit"}
 		case "files":
 			allowed = append(allowed, "directory", "kind")
 		case "file":
@@ -161,8 +175,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if len(p) == 3 {
 				allowed = []string{"evidence_id"}
 			}
+			if len(p) == 5 && p[4] == "verifications" {
+				// G12: the catalogued path form accepts the same paging keys
+				// as the canonical query alias.
+				allowed = []string{"cursor", "limit"}
+			}
 		case "render-bootstrap":
 			allowed = []string{"page_path"}
+		case "assessments":
+			allowed = []string{"target_set_id", "scope_kind", "page_path", "region_id", "cursor", "limit"}
+			if len(p) == 4 && p[3] == "coverage" {
+				allowed = []string{"coverage_set_id", "attempt_run_id", "cursor", "limit"}
+			}
 		case "reading-position", "reader-preference":
 			allowed = []string{}
 		case "page-position":
@@ -221,6 +245,37 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		item, err = h.Core.Version(r.Context(), token, p[1])
 		data = item
 		etag = item.ETag
+		version = p[1]
+	case p[0] == "projects" && len(p) == 3 && p[2] == "sources":
+		data, err = h.Core.ProjectSources(r.Context(), token, p[1], o)
+	case p[0] == "versions" && len(p) == 3 && p[2] == "source-evidence-verifications":
+		evidence := ""
+		if raw := values["evidence_id"]; len(raw) == 1 {
+			evidence = raw[0]
+		}
+		if evidence == "" {
+			failure(w, r, &query.Error{Reason: "evidence_id_required"})
+			return
+		}
+		data, err = h.Core.Verifications(r.Context(), token, p[1], evidence, o)
+		version = p[1]
+	case p[0] == "versions" && len(p) == 3 && p[2] == "assessments":
+		assessmentQuery := query.AssessmentQuery{Options: o, TargetSetID: values.Get("target_set_id"), ScopeKind: values.Get("scope_kind"), PagePath: values.Get("page_path"), RegionID: values.Get("region_id")}
+		data, err = h.Core.Assessments(r.Context(), token, p[1], assessmentQuery)
+		version = p[1]
+	case p[0] == "versions" && len(p) == 4 && p[2] == "assessments" && p[3] == "coverage":
+		coverageSet := values.Get("coverage_set_id")
+		if coverageSet == "" {
+			failure(w, r, &query.Error{Reason: "coverage_set_id_required"})
+			return
+		}
+		data, err = h.Core.AssessmentCoverage(r.Context(), token, p[1], coverageSet, values.Get("attempt_run_id"), o)
+		version = p[1]
+	case p[0] == "versions" && len(p) == 5 && p[2] == "source-evidence" && p[4] == "verifications":
+		// S27/G12: the catalogued path form serves the same history read
+		// for simple ids and accepts the same cursor/limit query keys as
+		// the canonical query alias.
+		data, err = h.Core.Verifications(r.Context(), token, p[1], p[3], o)
 		version = p[1]
 	case p[0] == "versions" && len(p) == 3 && p[2] == "files":
 		data, err = h.Core.Files(r.Context(), token, p[1], o)
@@ -729,6 +784,9 @@ func failure(w http.ResponseWriter, r *http.Request, err error) {
 		status, code = 404, "NOT_FOUND"
 		if errors.As(err, &missing) {
 			details["reason"] = missing.Reason
+			for key, value := range missing.Details {
+				details[key] = value
+			}
 		}
 	case errors.Is(err, domain.ErrPrecondition):
 		status, code = 412, "PRECONDITION_FAILED"

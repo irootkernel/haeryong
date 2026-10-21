@@ -336,8 +336,8 @@ export function deriveStatus(summary: CoverageSummary, target: StatusTarget): De
   if (summary.eligible === 0) return "not_assessed";
   if (summary.discrepancyUnits > 0) return "outdated_against_target";
   const overlayCompatible = target.overlay !== null && scopeMatchesSelection(target.overlay.scope, target.scope);
-  if (overlayCompatible && target.overlay !== null && target.overlay.reassessment_required) return "reassessment_needed";
   if (overlayCompatible && target.overlay !== null && target.overlay.status === "unable_to_verify") return "unable_to_verify";
+  if (overlayCompatible && target.overlay !== null && target.overlay.reassessment_required) return "reassessment_needed";
   if (summary.blocked > 0) return "unable_to_verify";
   const targetAvailable = overlayCompatible && target.overlay !== null && target.overlay.target_set_id !== null && target.overlay.captured_at !== null && (target.targetSetId === null || target.overlay.target_set_id === target.targetSetId);
   // An explicitly positive applicable assessment is required: an
@@ -388,7 +388,7 @@ export function compareWithOverlay(summary: CoverageSummary, overlay: Applicable
  * protocol-relative references) are rejected; an absolute URL is accepted
  * only when its origin equals the current service origin.
  */
-export function coverageUnitsParams(unitsUrl: string | null, versionId: string, coverageSetId: string | null, origin: string | null): { coverageSetId: string } | null {
+export function coverageUnitsParams(unitsUrl: string | null, versionId: string, coverageSetId: string | null, origin: string | null): { coverageSetId: string; attemptRunId?: string } | null {
   if (typeof unitsUrl !== "string" || unitsUrl === "") return null;
   let path: string, search: string;
   if (unitsUrl.startsWith("/")) {
@@ -407,10 +407,12 @@ export function coverageUnitsParams(unitsUrl: string | null, versionId: string, 
   if (path !== `/api/v1/versions/${versionId}/assessments/coverage`) return null;
   const params = new URLSearchParams(search);
   const ids = params.getAll("coverage_set_id");
-  const extraKeys = [...params.keys()].filter((key) => key !== "coverage_set_id");
+  const extraKeys = [...params.keys()].filter((key) => key !== "coverage_set_id" && key !== "attempt_run_id");
   if (ids.length !== 1 || ids[0] === "" || extraKeys.length > 0) return null;
   if (coverageSetId !== null && ids[0] !== coverageSetId) return null;
-  return { coverageSetId: ids[0] };
+  const attempts = params.getAll("attempt_run_id");
+  if (attempts.length > 1 || (attempts.length === 1 && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(attempts[0]!))) return null;
+  return { coverageSetId: ids[0], ...(attempts.length === 1 ? { attemptRunId: attempts[0] } : {}) };
 }
 
 export interface SelectionKey {

@@ -11,6 +11,7 @@
 // proves React commit-time identity behavior only and is NEVER a real
 // source observation or verification claim.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { SourceWriteIntents } from "../../client/source-write-intents.ts";
 import type { ShellController } from "../../client/controller.ts";
 import { ShellController as RealShellController } from "../../client/controller.ts";
 import { HttpHaeryongClient } from "../../client/http.ts";
@@ -125,13 +126,22 @@ const scriptedClient = {
     const marker = queryMarker(versionId, pagePath);
     return { items: [{ assessment_id: `${marker.history}`, version_id: versionId, scope: { kind: "page", page_path: pagePath, region_id: null }, target_set_id: marker.target, state: "published" }], next_cursor: null, applicable: applicableFor(marker.target, { kind: "page", page_path: pagePath, region_id: null }) };
   },
+  async configurationView(): Promise<never> { throw new Error("unavailable in fixture"); },
+  async configurationPlan(): Promise<never> { throw new Error("unavailable in fixture"); },
+  async configurationPlanCommit(): Promise<never> { throw new Error("unavailable in fixture"); },
+  async projectRegister(): Promise<never> { throw new Error("unavailable in fixture"); },
+  async projectSources(): Promise<never> { throw new Error("unavailable in fixture"); },
+  async verifySourceEvidence(): Promise<never> { throw new Error("unavailable in fixture"); },
+  async runSourceObservation(): Promise<never> { throw new Error("unavailable in fixture"); },
   async evidenceVerifications(): Promise<never> { throw new Error("unavailable in fixture"); },
   async assessmentCoverage(): Promise<never> { throw new Error("unavailable in fixture"); },
   async personalGet(): Promise<PersonalView> { return notExists; },
   async personalPut(_kind: unknown, _versionId: unknown, _page: unknown, body: unknown): Promise<PersonalView> { return { exists: true, value: body, revision: 1, etag: '"e1"', page_position_url: null }; },
 } as unknown as HaeryongClient;
 
+const fixtureIntents = new SourceWriteIntents();
 const fixtureController = {
+  sourceWriteIntents: () => fixtureIntents,
   client: scriptedClient,
   state: { phase: "verified", capabilities, session },
   captureDispatchAuthority: () => ({ nonce: 1 }),
@@ -207,7 +217,7 @@ export function RealCallerHarness(props: { documentId: string; versionId: string
     (window as unknown as { __realCommitLog: RealCommitSnapshot[] }).__realCommitLog.push({
       tag,
       dom: document.getElementById("real-app-mount")?.textContent ?? "",
-      panelH2: document.querySelector('section[aria-label="근거 패널"] h2')?.textContent ?? "",
+      panelH2: document.querySelector('section[aria-label="근거 및 출처 패널"] h2')?.textContent ?? "",
     });
   });
   useEffect(() => {

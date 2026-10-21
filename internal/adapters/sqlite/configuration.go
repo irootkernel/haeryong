@@ -66,5 +66,12 @@ func (t *writeTx) ApplyProjectConfiguration(id, name, lifecycle string, permissi
 	if e = t.exec("UPDATE projects SET name=?,lifecycle=?,revision=revision+1,permissions_revision=permissions_revision+? WHERE project_id=?", name, lifecycle, advance, id); e != nil {
 		return e
 	}
+	if advance > 0 {
+		// An access-affecting project change (roots, disclosure, retention)
+		// also notifies the source-scope family (jobs-events registry).
+		if e = t.appendEvent("source", id, "source.scope_changed", p.Project.PermissionsRevision+1, nil); e != nil {
+			return e
+		}
+	}
 	return t.appendEvent("project", id, "project.updated", p.Project.Revision+1, nil)
 }

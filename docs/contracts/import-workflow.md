@@ -23,7 +23,7 @@ All keys shown in the following target shapes are required. Nullable document_id
 | body / annotation_create | {operation_id, action:"annotation_create", version_id, page_path} | POST /versions/{version_id}/annotations; owner |
 | body / annotation_edit | {operation_id, action:"annotation_edit", annotation_id} | PATCH /annotations/{annotation_id}; owner, with the note's current version/page and edit precondition |
 | body / generation | {operation_id, action:"generation", project_id, document_id} | POST /generations; owner or generation.request for that exact requested scope |
-| body / evidence_verification | {operation_id, action:"evidence_verification", version_id, evidence_id} | POST /versions/{version_id}/source-evidence/{evidence_id}/verifications; current version/source-read authority |
+| body / evidence_verification | {operation_id, action:"evidence_verification", version_id, evidence_id} | POST /versions/{version_id}/source-evidence-verifications?evidence_id={evidence_id}; current version/source-read authority |
 | metadata / import | {operation_id, action:"import", project_id, document_id} | POST /imports; owner or import.publish |
 | metadata / draft_replace | {operation_id, action:"draft_replace", draft_id} | PATCH /drafts/{draft_id} action replace; owner or draft.write |
 
@@ -128,3 +128,17 @@ A chunk Final declares that entry's end, not directory end-of-input. To complete
 Upload summary/detail responses carry independent durable revision and a strong public-representation etag. selection_name is null when omitted; an explicitly supplied name is nonempty. Opaque archive/file/object transfers expose their generated transport entry label in detail for resume; it is not an authored filename or packaging obligation. Discovery derives actual pin/reference counts, retained bytes and reusable state instead of inferring availability from sealed alone.
 
 The current POST /packages/validate surface accepts a sealed result upload and optional inline metadata or metadata_ref. A preview key does not replace a metadata reference's future consuming operation ID. Direct raw-input validation transport is still provisional: clients prepare raw inputs through the existing streamed upload/seal path, and final CLI orchestration belongs to TASK-002-05. Projects/client remembered association and actual draft/context/body consumers retain their owners. Current typed draft/annotation bindings fail closed on missing/hidden/wrong targets; disposable seeded scope tests do not implement their future CRUD or consumer workflows.
+
+## Verification expectation consumer (TASK-004-01)
+
+Additive clarification: the canonical lossless consumer for a body upload with
+action evidence_verification is POST
+`/versions/{version_id}/source-evidence-verifications?evidence_id=...`.
+Its `expected_excerpt_ref` is `{upload_id}` referencing the sealed immutable
+UTF-8 body, bound to the same consuming operation/version/evidence; it is not a
+bare ID string. The legacy path route remains available. Inline expectation
+bytes are bounded to 64 KiB; the upload path handles larger expectations without
+an authored-content quota. The original consumer key survives upload preparation,
+202 and uncertain response recovery. Owner recovery may use another principal's
+upload only under current authority and the identical stored action/target;
+scoped principals cannot adopt another principal's hidden upload.

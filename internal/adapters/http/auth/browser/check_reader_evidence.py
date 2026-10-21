@@ -1,4 +1,4 @@
-"""TASK-003-04 actual Reader evidence panel in Chrome: absent and supplied metadata, authored/service separation, honest 503 future capabilities, same-name page-local regions, disabled source-check, keyboard and emulated touch."""
+"""TASK-003-04 actual Reader evidence panel in Chrome: absent and supplied metadata, authored/service separation, real verification/history and assessment states, same-name page-local regions, protected source-check, keyboard and emulated touch."""
 import importlib.util,json,os,pathlib,re,subprocess,tempfile,urllib.parse,urllib.error,urllib.request,hashlib,time
 import argparse,shutil
 parser=argparse.ArgumentParser(description=__doc__)
@@ -11,8 +11,9 @@ RECEIPT=args.receipt.resolve()
 assert RECEIPT.parent.is_dir(),'receipt parent must exist'
 volume=pathlib.Path('/Volumes/RootKernel')
 base=volume/'tmp' if os.path.ismount(volume) and os.access(volume,os.W_OK) else pathlib.Path(tempfile.gettempdir())
-os.umask(0o077);work=pathlib.Path(tempfile.mkdtemp(prefix='h4e-',dir=base))
-env=os.environ|{'TMPDIR':str(work),'HAERYONG_TEST_STATE_DIR':str(work/'app-state'),'PYTHONDONTWRITEBYTECODE':'1'}
+os.umask(0o077);work=pathlib.Path(tempfile.mkdtemp(prefix='h4e-',dir=RECEIPT.parent))
+socket_dir=pathlib.Path(tempfile.mkdtemp(prefix='hes-',dir=base))
+env=os.environ|{'TMPDIR':str(work),'HAERYONG_TEST_STATE_DIR':str(work/'app-state'),'PYTHONDONTWRITEBYTECODE':'1','PLAYWRIGHT_DAEMON_SOCKETS_DIR':str(socket_dir),'PLAYWRIGHT_DAEMON_SESSION_DIR':str(work/'registry')}
 os.environ['HAERYONG_TEST_STATE_DIR']=env['HAERYONG_TEST_STATE_DIR']
 spec=importlib.util.spec_from_file_location('h',REPO/'tests/e2e/harness.py');h=importlib.util.module_from_spec(spec);spec.loader.exec_module(h)
 cli=str(args.browser_cli.resolve(strict=True))
@@ -69,6 +70,19 @@ try:
    {'id':'overview','page_path':'nested/second.html','label':'둘째 개요','evidence_ids':['evidence-둘째']}]}
  metadata['evidence'].extend({'id':key,'source_id':'repo-main','capture_status':'reference_only','path':path} for key,path in opaque_ids)
  metadata['regions'][0]['evidence_ids'].extend(key for key,_ in opaque_ids)
+ git_root=work/'approved-source';git_root.mkdir()
+ def git(*args,input=None):
+  return subprocess.check_output(['git','-C',str(git_root),*args],input=input,env=env|{'GIT_AUTHOR_NAME':'Fixture','GIT_AUTHOR_EMAIL':'fixture@invalid','GIT_COMMITTER_NAME':'Fixture','GIT_COMMITTER_EMAIL':'fixture@invalid'}).decode().strip()
+ git('init','--quiet')
+ blob=git('hash-object','-w','--stdin',input=b'first\nsecond\nthird\nfourth\n')
+ notes_tree=git('mktree',input=('100644 blob '+blob+'\tfirst.txt\n').encode())
+ tree=git('mktree',input=('040000 tree '+notes_tree+'\tnotes\n').encode())
+ revision=git('commit-tree',tree,input=b'Synthetic source fixture\n')
+ git('update-ref','HEAD',revision)
+ metadata['sources'][0]['exact_revision']=revision
+ metadata['evidence'][0]['bytes_sha256']=hashlib.sha256(b'first\nsecond\nthird\nfourth\n').hexdigest()
+ capabilities=product.data('GET','/api/v1/capabilities',client=owner)
+ product.cli(['sources','approve','--project',capabilities['unfiled_project_id'],'--source-id','22222222-2222-4333-8444-555555555555','--kind','git','--root-path',str(git_root),'--repo-id',metadata['sources'][0]['repo_id'],'--retention-mode','reference_only','--confirmed'],client=owner)
  metadata_path=work/'metadata.json';metadata_path.write_text(json.dumps(metadata,ensure_ascii=False))
  _,_,published=product.import_tree(owner,source,extra=['--metadata',str(metadata_path)])
  version=published['version_id'];document=published['document_id']
@@ -98,22 +112,22 @@ try:
   // Keyboard activation of the evidence panel toggle.
   const toggle=page.getByRole('button',{name:'근거 패널',exact:true});
   await toggle.focus();await page.keyboard.press('Enter');
-  const panel=page.locator('section[aria-label="근거 패널"]');
+  const panel=page.locator('section[aria-label="근거 및 출처 패널"]');
   await panel.waitFor({timeout:10000});
   facts.keyboardOpenedPanel=true;
-  await page.getByText('첫 페이지 개요',{exact:true}).waitFor({timeout:10000});
+  await page.locator('section[aria-label="근거 및 출처 패널"]').getByText('첫 페이지 개요' ,{exact:true}).waitFor({timeout:10000});
   facts.pageLocalRegions=true;
   // Inherited-key evidence id expands on the FIRST keyboard activation.
   const row=panel.locator('.evidence-region').getByRole('button',{name:/constructor · reference_only/}).first();
   await row.focus();await page.keyboard.press('Enter');
   await page.getByText('작성자 선언(불변): reference_only(작성자 선언)',{exact:false}).first().waitFor({timeout:10000});
   facts.inheritedKeyFirstClickExpanded=await row.getAttribute('aria-expanded');
-  facts.serviceSeparation=await panel.getByText('사유 source_read_not_implemented',{exact:false}).first().isVisible();
-  // Verification history stays an honest future-capability state, awaited
+  facts.serviceSeparation=await panel.getByText('확인 전 — 이 화면은 새 소스 읽기를 시작하지 않습니다',{exact:false}).first().isVisible();
+  // Verification history initially has no durable checks, awaited
   // INSIDE its own evidence-detail block.
   await panel.locator('.evidence-region .evidence-detail').getByRole('button',{name:'검증 이력 보기/숨기기',exact:true}).click();
-  await page.waitForFunction(()=>[...document.querySelectorAll('section[aria-label="근거 패널"] .evidence-region .evidence-detail p')].some(p=>p.textContent==='서비스가 아직 이 기능을 제공하지 않습니다(503 FEATURE_NOT_READY).'),{timeout:10000});
-  facts.verificationsHonest503=true;
+  await page.waitForFunction(()=>[...document.querySelectorAll('section[aria-label="근거 및 출처 패널"] .evidence-region .evidence-detail p')].some(p=>p.textContent==='기록 없음.'),{timeout:10000});
+  facts.verificationsEmpty=true;
   // These records come from the actual daemon, not the later seeded proxy.
   // Observe both the real HTTP response identity and its rendered authored path.
   const opaque=[];
@@ -127,37 +141,111 @@ try:
    if(response.status()!==200||view.evidence_id!==id||view.authored.id!==id||view.authored.path!==path)throw Error('opaque evidence identity changed: '+id);
    await item.getByText('작성자 선언(불변): reference_only(작성자 선언) · '+path,{exact:true}).waitFor({timeout:10000});
    await item.getByRole('button',{name:'검증 이력 보기/숨기기',exact:true}).click();
-   await item.getByText('서비스가 아직 이 기능을 제공하지 않습니다(503 FEATURE_NOT_READY).',{exact:true}).waitFor({timeout:10000});
+   await item.getByText('기록 없음.',{exact:true}).waitFor({timeout:10000});
    opaque.push(id);
   }
   facts.opaqueIds=opaque;
   // Assessment summary for the exact scope: the assessment block's OWN
-  // eventual unavailable state, awaited independently of the order above.
-  facts.assessmentsHonest503=await panel.getByText('신선도 요약(선택된 대상)',{exact:true}).isVisible();
-  await page.waitForFunction(()=>[...document.querySelectorAll('section[aria-label="근거 패널"] .assessment-block > p')].some(p=>p.textContent==='서비스가 아직 이 기능을 제공하지 않습니다(503 FEATURE_NOT_READY).'),{timeout:10000});
-  facts.future503Count=await page.getByText('서비스가 아직 이 기능을 제공하지 않습니다(503 FEATURE_NOT_READY).',{exact:true}).count();
-  // The source-check action is explicitly disabled with its reason.
-  const check=panel.getByRole('button',{name:'출처 근거 확인(제공되지 않음)',exact:true});
-  facts.sourceCheckDisabled=await check.isDisabled();
+  // implemented summary state, awaited independently of the order above.
+  facts.assessmentsReal=await panel.getByText('신선도 요약(선택된 대상)',{exact:true}).isVisible();
+  await panel.getByText('기록된 배지:',{exact:false}).waitFor({timeout:10000});
+  facts.future503Count=await panel.getByText('서비스가 아직 이 기능을 제공하지 않습니다(503 FEATURE_NOT_READY).',{exact:true}).count();
+  // An actual authorized source read, then the forced evidence/history refresh.
+  const selected=panel.locator('.evidence-region .evidence-detail').first();
+  const check=selected.getByRole('button',{name:'출처 근거 확인',exact:true});
+  facts.sourceCheckEnabled=await check.isEnabled();
+  await check.focus();await page.keyboard.press('Enter');
+  await selected.getByText('확인 결과: 캡처됨',{exact:false}).waitFor({timeout:10000});
+  await selected.locator('li').filter({hasText:'캡처됨'}).first().waitFor({timeout:10000});
+  facts.realCapturedAndHistory=true;
+  await selected.getByLabel('작성자 선언 다이제스트와 비교',{exact:true}).check();
+  await check.click();
+  await selected.getByText('확인 결과: 일치(기대 비교',{exact:false}).waitFor({timeout:10000});
+  facts.authorDigestOptionMatched=true;
+  // D1: the real SourcePanelSelection unmounts on a region change. The
+  // daemon applies the POST, but both its ack and the first receipt read are
+  // lost. Recovery in the newly keyed child must query the original receipt.
+  let lostKey='', checkPosts=0, recovering=false;
+  const receiptReads=[];
+  const postPattern='**/api/v1/versions/'+VERSION+'/source-evidence-verifications?*';
+  const receiptPattern='**/api/v1/operations/*';
+  await page.route(postPattern,async route=>{
+   if(route.request().method()!=='POST'){await route.continue();return;}
+   checkPosts++;lostKey=route.request().headers()['idempotency-key'];
+   await route.fetch();await route.abort('failed');
+  });
+  await page.route(receiptPattern,async route=>{
+   receiptReads.push(route.request().url().split('/').pop());
+   if(!recovering)await route.abort('failed');else await route.continue();
+  });
+  await check.click();
+  await selected.getByRole('button',{name:'원래 작업 결과 다시 확인',exact:true}).waitFor();
+  const oldPanel=await panel.elementHandle();
+  await page.frames().find(f=>f!==page.mainFrame()).evaluate(()=>window.__haeryong.select('overview'));
+  await page.waitForFunction(el=>!el.isConnected,oldPanel);
+  await panel.locator('.evidence-region').getByRole('button',{name:/constructor · reference_only/}).first().click();
+  const remountedDetail=panel.locator('.evidence-region .evidence-detail').first();
+  await remountedDetail.getByRole('button',{name:'원래 작업 결과 다시 확인',exact:true}).waitFor();
+  if(!await remountedDetail.getByLabel('작성자 선언 다이제스트와 비교',{exact:true}).isChecked())throw Error('remount lost the pending expectation display');
+  recovering=true;
+  await remountedDetail.getByRole('button',{name:'원래 작업 결과 다시 확인',exact:true}).click();
+  await remountedDetail.getByText('확인 결과: 일치(기대 비교',{exact:false}).waitFor();
+  if(checkPosts!==1||receiptReads.length<2||receiptReads.some(key=>key!==lostKey))throw Error('remounted verification identity '+JSON.stringify({posts:checkPosts,receipts:receiptReads,key:lostKey}));
+  facts.remountedSourceCheckOriginalReceipt=true;
+  await page.unroute(postPattern);await page.unroute(receiptPattern);
+
+  // E3(a): normal success arrives AFTER the real keyed panel has remounted.
+  // The new consumer must show the recorded result without another POST.
+  let normalApplied,normalRelease,normalDelivered,normalKey='',normalPosts=0;
+  const normalAppliedPromise=new Promise(resolve=>normalApplied=resolve);
+  const normalHeld=new Promise(resolve=>normalRelease=resolve);
+  const normalDeliveredPromise=new Promise(resolve=>normalDelivered=resolve);
+  const normalReceipts=[];
+  const normalRequest=request=>{if(request.url().includes('/operations/'))normalReceipts.push(request.url().split('/').pop());};
+  page.on('request',normalRequest);
+  await page.route(postPattern,async route=>{
+   if(route.request().method()!=='POST'){await route.continue();return;}
+   normalPosts++;normalKey=route.request().headers()['idempotency-key'];
+   const response=await route.fetch();if(!response.ok())throw Error('normal verification was not applied');
+   normalApplied();await normalHeld;await route.fulfill({response});normalDelivered();
+  });
+  await remountedDetail.getByRole('button',{name:'출처 근거 확인',exact:true}).click();
+  await normalAppliedPromise;
+  const previousPanel=await panel.elementHandle();
+  await page.frames().find(f=>f!==page.mainFrame()).evaluate(()=>window.__haeryong.select('r2'));
+  await page.waitForFunction(el=>!el.isConnected,previousPanel);
+  await panel.locator('.evidence-region').getByRole('button',{name:/constructor · reference_only/}).first().click();
+  const normalDetail=panel.locator('.evidence-region .evidence-detail').first();
+  const normalRetry=normalDetail.getByRole('button',{name:'원래 작업 결과 다시 확인',exact:true});
+  await normalRetry.waitFor();
+  const normalResponse=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().includes('/source-evidence-verifications'));
+  normalRelease();const deliveredNormalResponse=await normalResponse;await deliveredNormalResponse.finished();await normalDeliveredPromise;
+  await page.evaluate(()=>new Promise(resolve=>setTimeout(resolve,0)));
+  await normalRetry.click();
+  await normalDetail.getByText('확인 결과: 일치(기대 비교',{exact:false}).waitFor();
+  if(normalPosts!==1||normalReceipts.some(key=>key!==normalKey))throw Error('normal completion lost the original verification intent');
+  facts.normalCompletionRetainedAcrossPanelRemount=true;
+  await page.unroute(postPattern);page.off('request',normalRequest);
+
   facts.disclaimer=await page.getByText('서비스 확인은 작성자 선언을 승격하지 않으며',{exact:false}).first().isVisible();
   // A page-local region selection binds the exact page's region.
   const child=page.frames().find(f=>f!==page.mainFrame());
   await child.evaluate(()=>window.__haeryong.select('overview'));
-  await page.waitForFunction(()=>document.querySelector('section[aria-label="근거 패널"] h2')?.textContent.includes('영역 overview'));
+  await page.waitForFunction(()=>document.querySelector('section[aria-label="근거 및 출처 패널"] h2')?.textContent.includes('영역 overview'));
   facts.regionSelectedHeader=true;
   facts.regionBlockSelected=await page.locator('.evidence-region[data-selected="true"]').first().getAttribute('data-selected');
   // Navigating to the second page clears the selection and shows ONLY that
   // page's own same-named region, never the first page's binding.
   await page.locator('dialog[aria-label="페이지 및 파일 목록"]').getByRole('link',{name:'nested/second.html',exact:true}).click();
   await page.frameLocator('iframe[title="결과 뷰어"]').getByRole('heading',{name:'둘째 페이지',exact:true}).waitFor({timeout:20000});
-  await page.getByText('둘째 개요',{exact:true}).waitFor({timeout:10000});
+  await page.locator('section[aria-label="근거 및 출처 패널"]').getByText('둘째 개요' ,{exact:true}).waitFor({timeout:10000});
   facts.secondPageOwnRegion=true;
-  facts.firstPageRegionGone=(await page.getByText('첫 페이지 개요',{exact:true}).count())===0;
-  await page.waitForFunction(()=>{const h=document.querySelector('section[aria-label="근거 패널"] h2');return h&&!h.textContent.includes('영역 overview');});
+  facts.firstPageRegionGone=(await page.locator('section[aria-label="근거 및 출처 패널"]').getByText('첫 페이지 개요' ,{exact:true}).count())===0;
+  await page.waitForFunction(()=>{const h=document.querySelector('section[aria-label="근거 및 출처 패널"] h2');return h&&!h.textContent.includes('영역 overview');});
   facts.selectionClearedOnNavigation=true;
   const second=page.frames().find(f=>f!==page.mainFrame());
   await second.evaluate(()=>window.__haeryong.select('overview'));
-  await page.waitForFunction(()=>document.querySelector('section[aria-label="근거 패널"] h2')?.textContent.includes('영역 overview'));
+  await page.waitForFunction(()=>document.querySelector('section[aria-label="근거 및 출처 패널"] h2')?.textContent.includes('영역 overview'));
   facts.sameNameRegionRebound=true;
   facts.secondPageEvidence=await page.getByRole('button',{name:/evidence-둘째 · verified\\(작성자 선언\\)/}).first().isVisible();
   // Reading and ordinary interaction stay usable with the panel open.
@@ -175,28 +263,29 @@ try:
   await page.getByRole('button',{name:'근거 패널',exact:true}).click();
   await page.getByText('공급된 소스/근거 메타데이터 없음',{exact:false}).first().waitFor({timeout:10000});
   facts.absentMetadataHonest=true;
-  // The absent-metadata document's assessment block reaches its OWN honest
-  // unavailable state independently of the metadata-absent paragraph.
-  await page.waitForFunction(()=>[...document.querySelectorAll('section[aria-label="근거 패널"] .assessment-block > p')].some(p=>p.textContent==='서비스가 아직 이 기능을 제공하지 않습니다(503 FEATURE_NOT_READY).'),{timeout:10000});
-  facts.absentAssessments503=(await page.getByText('서비스가 아직 이 기능을 제공하지 않습니다(503 FEATURE_NOT_READY).',{exact:true}).count())>=1;
+  // The absent-metadata document reaches its own honest no-capture summary.
+  await page.waitForFunction(()=>{const text=document.querySelector('.assessment-block')?.textContent||'';return text.includes('기록된 배지:')||text.includes('선택된 실제 캡처 대상이 없습니다');},{timeout:10000});
+  facts.absentAssessmentsReal=true;
   await page.frameLocator('iframe[title="결과 뷰어"]').locator('#plain-button').click();
   facts.absentReadingInteractive=await page.frameLocator('iframe[title="결과 뷰어"]').locator('#plain-button').textContent()==='1';
   return facts;
  }""".replace('ROUTE',json.dumps(route)).replace('PLAIN',json.dumps(plain_route)).replace('VERSION',json.dumps(version)).replace('SEQUENCE',json.dumps(str(detail.get('sequence')))).replace('OPAQUE_IDS',json.dumps(opaque_ids,ensure_ascii=False)).replace('SCREENSHOT',json.dumps(str(args.screenshot.resolve()) if args.screenshot else None)))
+ require('normal_verification_completion_survives_panel_remount',smoke.get('normalCompletionRetainedAcrossPanelRemount'))
+ require('remounted_source_check_uses_original_receipt',smoke.get('remountedSourceCheckOriginalReceipt'))
  proof['smoke']=smoke
  require('version_header_exact_identity',smoke.get('versionIdPreserved') and smoke.get('versionHeader'),smoke)
  require('keyboard_opens_panel',smoke.get('keyboardOpenedPanel'))
  require('inherited_key_first_click',smoke.get('inheritedKeyFirstClickExpanded')=='true')
  require('authored_service_separation',smoke.get('serviceSeparation'))
- require('verifications_honest_503',smoke.get('verificationsHonest503'))
- require('opaque_ids_exact_real_daemon_and_history_unavailable',smoke.get('opaqueIds')==[key for key,_ in opaque_ids])
- require('assessments_honest_503',smoke.get('assessmentsHonest503') and smoke.get('future503Count',0)>=2)
- require('source_check_disabled',smoke.get('sourceCheckDisabled'))
+ require('real_empty_verifications',smoke.get('verificationsEmpty'))
+ require('opaque_ids_exact_real_daemon_and_empty_history',smoke.get('opaqueIds')==[key for key,_ in opaque_ids])
+ require('real_assessments',smoke.get('assessmentsReal') and smoke.get('future503Count')==0)
+ require('source_check_captured_history_and_digest',smoke.get('sourceCheckEnabled') and smoke.get('realCapturedAndHistory') and smoke.get('authorDigestOptionMatched'))
  require('no_verification_claim_copy',smoke.get('disclaimer'))
  require('page_local_region_binding',smoke.get('regionSelectedHeader') and smoke.get('regionBlockSelected')=='true')
  require('same_name_region_distinct',smoke.get('secondPageOwnRegion') and smoke.get('firstPageRegionGone') and smoke.get('selectionClearedOnNavigation') and smoke.get('sameNameRegionRebound') and smoke.get('secondPageEvidence'))
  require('reading_and_import_intact',smoke.get('readingInteractive') and smoke.get('importMountIntact'))
- require('absent_metadata_still_readable',smoke.get('absentMetadataHonest') and smoke.get('absentAssessments503') and smoke.get('absentReadingInteractive'))
+ require('absent_metadata_still_readable',smoke.get('absentMetadataHonest') and smoke.get('absentAssessmentsReal') and smoke.get('absentReadingInteractive'))
  token=js("async page=>await page.evaluate(()=>localStorage.getItem('haeryong.owner-session.v1'))")
  touch=js(('''async (page) => {
   const context=await page.context().browser().newContext({hasTouch:true,viewport:{width:820,height:1180}});
@@ -208,9 +297,9 @@ try:
   await t.goto(ROUTE);
   await t.frameLocator('iframe[title="결과 뷰어"]').getByRole('heading',{name:'근거 첫 페이지',exact:true}).waitFor({timeout:20000});
   await t.getByRole('button',{name:'근거 패널',exact:true}).tap();
-  await t.locator('section[aria-label="근거 패널"]').waitFor({timeout:10000});
+  await t.locator('section[aria-label="근거 및 출처 패널"]').waitFor({timeout:10000});
   const openedByTap=true;
-  await t.getByText('첫 페이지 개요',{exact:true}).waitFor({timeout:10000});
+  await t.locator('section[aria-label="근거 및 출처 패널"]').getByText('첫 페이지 개요' ,{exact:true}).waitFor({timeout:10000});
   await t.locator('.evidence-region').getByRole('button',{name:/constructor · reference_only/}).first().tap();
   const expanded=await t.locator('.evidence-region').getByRole('button',{name:/constructor · reference_only/}).first().getAttribute('aria-expanded');
   const dot=t.locator('.version-evidence .evidence-row').filter({has:t.getByRole('button',{name:'.. · reference_only(작성자 선언) · notes/dot-dot.txt',exact:true})});
@@ -446,7 +535,7 @@ try:
    // Keyboard activation of the panel toggle in the seeded context.
    const toggle=t.getByRole('button',{name:'근거 패널',exact:true});
    await toggle.focus();await t.keyboard.press('Enter');
-   const panel=t.locator('section[aria-label="근거 패널"]');
+   const panel=t.locator('section[aria-label="근거 및 출처 패널"]');
    await panel.waitFor({timeout:10000});
    facts.keyboardOpenedPanel=true;
    // Later-cursor failure: page 1 served, page 2 fails once with the partial
@@ -504,6 +593,17 @@ try:
    await freeRow.focus();await t.keyboard.press('Enter');
    await t.locator('.version-evidence').getByText('작성자 선언(불변): reference_only(작성자 선언)',{exact:false}).first().waitFor({timeout:10000});
    facts.f2UnboundEvidenceVersionContext=(await freeRow.getAttribute('aria-expanded'))==='true';
+   // Close/reopen the actual narrow-screen modal to reach the header.
+   const closeEvidence=async()=>{
+    const close=t.getByRole('button',{name:'문맥 닫기',exact:true});
+    if(await close.isVisible())await close.tap();
+   };
+   const openEvidence=async()=>{
+    const toggle=t.getByRole('button',{name:'근거 패널',exact:true});
+    if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.tap();
+    await panel.waitFor({timeout:10000});
+   };
+   await closeEvidence();
    // F3: the snapshot source's full 64-hex identity is disclosable (touch).
    const identityToggle=t.locator('.version-sources').getByRole('button',{name:'전체 소스 신원 보기/숨기기',exact:true}).nth(1);
    await identityToggle.tap();
@@ -514,13 +614,16 @@ try:
    await t.locator('.version-sources').getByText('snapshot_sha256 fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210',{exact:false}).waitFor({timeout:10000});
    await t.keyboard.press('Enter');
    facts.f3SnapshotKeyboard=(await identityToggle.getAttribute('aria-expanded'))==='false';
+   await openEvidence();
    if(SCREENSHOT)await t.screenshot({path:SCREENSHOT,fullPage:true});
+   await closeEvidence();
    // Delayed second-page response: navigate away before it arrives and prove
    // the late reply never relabels the newly selected first page.
    await t.locator('dialog[aria-label="페이지 및 파일 목록"]').getByRole('link',{name:'nested/second.html',exact:true}).tap();
    await t.frameLocator('iframe[title="결과 뷰어"]').getByRole('heading',{name:'둘째 페이지',exact:true}).waitFor({timeout:20000});
    await t.locator('dialog[aria-label="페이지 및 파일 목록"]').getByRole('link',{name:'first.html',exact:true}).tap();
    await t.frameLocator('iframe[title="결과 뷰어"]').getByRole('heading',{name:'근거 첫 페이지',exact:true}).waitFor({timeout:20000});
+   await openEvidence();
    await t.getByText('기록된 배지',{exact:false}).first().waitFor({timeout:10000});
    await t.waitForTimeout(4000);
    const finalText=await panel.textContent();
@@ -533,6 +636,7 @@ try:
    // document-detail lookup fails: B's exact sequence appears (or an honest
    // unknown), never A's; B's valid metadata bytes parse with no false
    // integrity error; page JS and the already captured import form survive.
+   await closeEvidence();
    const versionHeader=t.locator('.version-header');
    await versionHeader.getByText('버전 #'+ASEQUENCE,{exact:false}).first().waitFor({timeout:10000});
    await t.getByRole('button',{name:'새 버전 가져오기',exact:true}).click();
@@ -558,9 +662,10 @@ try:
    facts.f1ImportPreservedDuringFailure=await importPreserved();
    const evidenceToggle=t.getByRole('button',{name:'근거 패널',exact:true});
    if(await evidenceToggle.getAttribute('aria-expanded')!=='true')await evidenceToggle.tap();
-   await t.locator('section[aria-label="근거 패널"]').waitFor({timeout:10000});
-   await t.getByText('첫 페이지 개요',{exact:true}).waitFor({timeout:10000});
+   await t.locator('section[aria-label="근거 및 출처 패널"]').waitFor({timeout:10000});
+   await t.locator('section[aria-label="근거 및 출처 패널"]').getByText('첫 페이지 개요' ,{exact:true}).waitFor({timeout:10000});
    facts.f1MetadataStillValidUnderB=true;
+   await closeEvidence();
    await t.frameLocator('iframe[title="결과 뷰어"]').locator('#increment').click();
    facts.f1PageJSWorks=(await t.frameLocator('iframe[title="결과 뷰어"]').locator('#increment').textContent())==='1';
    await control(PROXY+'/__t04/doc-detail-heal');
@@ -577,10 +682,12 @@ try:
    await t.evaluate(url=>{history.pushState({haeryongReaderContext:crypto.randomUUID()},'',url);window.dispatchEvent(new PopStateEvent('popstate'));},BURL.split('?')[0]);
    await versionHeader.getByText('페이지 없음',{exact:false}).first().waitFor({timeout:10000});
    await t.locator('iframe[title="결과 뷰어"]').waitFor({state:'hidden',timeout:10000});
+   await openEvidence();
    const noPage=t.locator('.version-evidence .evidence-row').filter({has:t.getByRole('button',{name:'evidence-free · reference_only(작성자 선언) · notes/free.txt',exact:true})});
    await noPage.getByRole('button',{name:'evidence-free · reference_only(작성자 선언) · notes/free.txt',exact:true}).click();
    await noPage.getByText('작성자 선언(불변): reference_only(작성자 선언) · notes/free.txt',{exact:true}).waitFor({timeout:10000});
    facts.f2PageLessVersionEvidence=true;
+   await closeEvidence();
    // C1: within the SAME live Reader/client era, open A's metadata body
    // and leave its next read parked. Switching to B must abort A before
    // any further body byte/EOF, while B's own metadata and JS still work.
@@ -602,6 +709,7 @@ try:
    await versionHeader.getByText('v4 예시 B',{exact:false}).first().waitFor({timeout:10000});
    await t.frameLocator('iframe[title="결과 뷰어"]').getByRole('heading',{name:'근거 첫 페이지',exact:true}).waitFor({timeout:20000});
    await t.frameLocator('iframe[title="결과 뷰어"]').locator('#increment').click();
+   facts.touchViewportPreserved=t.viewportSize().width===820&&t.viewportSize().height===1180;
    facts.replacementMetadataAndJSWork=(await t.frameLocator('iframe[title="결과 뷰어"]').locator('#increment').textContent())==='1'
     &&!(await t.evaluate(()=>document.body.textContent)).includes('공급 메타데이터를 확인하지 못했습니다');
    facts.pageErrorsAfterAll=[...pageErrors];
@@ -631,6 +739,7 @@ try:
   require('seeded_history_keyboard_close_reopen',seeded.get('historyKeyboardClosedHidden') and seeded.get('historyKeyboardReopened'))
   require('seeded_units_keyboard_close_reopen',seeded.get('unitsKeyboardClosedHidden') and seeded.get('unitsKeyboardReopened'))
   require('f2_unbound_evidence_version_context',seeded.get('f2UnboundEvidenceVersionContext'))
+  require('seeded_narrow_touch_viewport_preserved',seeded.get('touchViewportPreserved'))
   require('f3_snapshot_full_identity',seeded.get('f3SnapshotFullIdentity'))
   require('f3_snapshot_keyboard_disclosure',seeded.get('f3SnapshotKeyboard'))
   require('f1_inapp_version_switch_no_stale_detail',seeded.get('f1BSequenceNotStaleA') and seeded.get('f1NoFalseIntegrityError') and seeded.get('f1MetadataStillValidUnderB') and seeded.get('f1PageJSWorks'))
@@ -734,12 +843,12 @@ try:
    await t.goto(HARNESS_REAL);
    await t.frameLocator('iframe[title="결과 뷰어"]').getByRole('heading',{name:'근거 첫 페이지',exact:true}).waitFor({timeout:30000});
    await t.getByRole('button',{name:'근거 패널',exact:true}).click();
-   await t.locator('section[aria-label="근거 패널"]').waitFor({timeout:10000});
+   await t.locator('section[aria-label="근거 및 출처 패널"]').waitFor({timeout:10000});
    // Select the SAME-NAMED region 'overview' on the first page through the
    // actual authored-page channel API.
    const frame=()=>t.frames().find(f=>f!==t.mainFrame()&&f.url().includes('first.html'));
    await frame().evaluate(()=>window.__haeryong.select('overview'));
-   await t.waitForFunction(()=>(document.querySelector('section[aria-label="근거 패널"] h2')||{textContent:''}).textContent.includes('영역 overview'),{timeout:15000});
+   await t.waitForFunction(()=>(document.querySelector('section[aria-label="근거 및 출처 패널"] h2')||{textContent:''}).textContent.includes('영역 overview'),{timeout:15000});
    facts.realRegionSelectedFirstPage=true;
    // Arm the parent CommitProbe, then use the REAL sidebar link: the actual
    // navigate() path that bypasses mirror() — the exact defect route.
@@ -809,6 +918,7 @@ finally:
  if product is not None:
   if product.process is not None:product.stop()
   proof['daemon_closed']=product.process is None
+ shutil.rmtree(socket_dir)
  RECEIPT.write_text(json.dumps(proof,ensure_ascii=False,indent=2)+'\n')
 assert proof['complete'] and proof['browser_closed'] and proof['daemon_closed']
 shutil.rmtree(work)

@@ -104,6 +104,104 @@ class TestContracts:
         assert c.ERROR_HTTP['SESSION_REVOKED'] == 401
         assert c.ERROR_HTTP['SERVICE_RECOVERING'] == 503
 
+    def test_Task00401_project_registration_and_recorded_sources(self):
+        c.validate('project_register_request', {'name': '기억된 프로젝트'})
+        self.error('INVALID_REQUEST', c.validate, 'project_register_request', {'name': 'x', 'root_path': '/private'})
+        project = {'project_id': P, 'name': 'Source', 'lifecycle': 'active', 'revision': 1, 'permissions_revision': 1, 'updated_at': '2026-10-21T00:00:00Z', 'etag': '"project"'}
+        c.validate('project_register_response', project)
+        source = {'source_id': 'logical-source', 'kind': 'git', 'repo_id': P, 'retention_mode': 'reference_only', 'provider_ids': [], 'last_observed_revision': None, 'last_observed_at': None, 'last_availability': None, 'last_observation_reason': None}
+        c.validate('project_sources_view', {'items': [source], 'next_cursor': None})
+        observed = {**source, 'last_observed_revision': 'a' * 40, 'last_observed_at': project['updated_at'], 'last_availability': 'unavailable', 'last_observation_reason': 'missing_source'}
+        c.validate('project_sources_view', {'items': [observed], 'next_cursor': 'opaque'})
+        self.error('INVALID_REQUEST', c.validate, 'project_source_row', {**source, 'root_path': '/private'})
+        for field in source:
+            bad = dict(source)
+            del bad[field]
+            self.error('INVALID_REQUEST', c.validate, 'project_source_row', bad)
+
+    def test_Task00401_verification_requests_results_and_pending(self):
+        for body in ({}, {'expected_bytes_sha256': 'a' * 64}, {'expected_excerpt': '정확한 bytes\r\n'}, {'expected_bytes_sha256': 'a' * 64, 'expected_excerpt_ref': {'upload_id': R}}):
+            c.validate('evidence_verification_request', body)
+        for body in (None, {'expected_excerpt': None}, {'expected_excerpt_ref': R}, {'expected_excerpt_ref': {'upload_id': 'bad'}}, {'expected_excerpt': 'x', 'expected_excerpt_ref': {'upload_id': R}}, {'unknown': True}):
+            self.error('INVALID_REQUEST', c.validate, 'evidence_verification_request', body)
+        stamp = '2026-10-21T00:00:00Z'
+        result = {'operation_id': R, 'verification_id': D, 'version_id': V, 'evidence_id': '../한글/%2e', 'outcome': 'matched', 'target_set_id': B, 'source': {'id': 'authored', 'kind': 'git', 'retention_mode': 'reference_only', 'repo_id': P, 'object_format': 'sha1', 'exact_revision': 'a' * 40}, 'location': {'path': 'retry.go', 'line_start': 1, 'line_end': 2}, 'bytes_sha256': 'b' * 64, 'bytes_origin': 'approved_source', 'checked_at': stamp, 'verified_at': stamp, 'reason': None}
+        c.validate('evidence_verification_response', result)
+        c.validate('evidence_verification_response', {**result, 'outcome': 'unavailable', 'target_set_id': None, 'bytes_sha256': None, 'bytes_origin': None, 'verified_at': None, 'reason': 'revision_unavailable'})
+        self.error('INVALID_ENUM', c.validate, 'evidence_verification_response', {**result, 'bytes_origin': 'working_copy'})
+        for reason in (None, 'missing_source'):
+            row = {'verification_id': D, 'outcome': 'unavailable', 'checked_at': stamp, 'verified_at': None}
+            if reason:
+                row['reason'] = reason
+            c.validate('verification_history_page', {'items': [row], 'next_cursor': None})
+        pending = {'operation_id': R, 'state': 'accepted', 'operation_url': '/api/v1/operations/' + R}
+        c.validate('source_check_pending', pending)
+        self.error('INVALID_REQUEST', c.validate, 'source_check_pending', {**pending, 'operation_id': 'replacement'})
+
+    def test_Task00401_observation_request_and_five_field_scope(self):
+        for body in ({}, {'source_ids': []}, {'source_ids': ['logical-source'], 'scope': {'kind': 'version'}}, {'scope': {'kind': 'page', 'page_path': '한글.html'}}, {'scope': {'kind': 'region', 'page_path': '한글.html', 'region_id': 'same'}}):
+            c.validate('source_observation_request', body)
+        for body in (None, [], {'scope': None}, {'scope': {'kind': 'page'}}, {'scope': {'kind': 'version', 'page_path': None}}, {'scope': {'kind': 'region', 'page_path': 'a.html'}}, {'scope': {'kind': 'version', 'declared': True}}, {'source_ids': [None]}, {'extra': True}):
+            with pytest.raises(c.ContractError):
+                c.validate('source_observation_request', body)
+        scope = {'kind': 'region', 'page_path': 'a.html', 'region_id': 'undeclared', 'declared': False, 'reason': 'region_not_declared'}
+        c.validate('source_observation_scope', scope)
+        self.error('INVALID_REQUEST', c.validate, 'scope', scope)
+        frozen = {key: scope[key] for key in ('kind', 'page_path', 'region_id')}
+        c.validate('scope', frozen)
+        self.error('INVALID_REQUEST', c.validate, 'source_observation_scope', frozen)
+        row = {'source_id': 'logical-source', 'observation_id': D, 'availability': 'unavailable', 'classification': 'unavailable', 'reason': 'missing_source', 'changed_paths': [], 'dependency_scope': [], 'reassessment_required': False}
+        result = {'operation_id': R, 'run_id': B, 'target_set_id': None, 'captured_at': None, 'observed_at': '2026-10-21T00:00:00Z', 'scope': scope, 'coverage_set_id': P, 'sources': [row]}
+        c.validate('source_observation_response', result)
+        for field in ('reason', 'changed_paths', 'dependency_scope'):
+            bad = dict(row)
+            del bad[field]
+            self.error('INVALID_REQUEST', c.validate, 'source_observation_row', bad)
+
+    def test_Task00401_attempt_attributed_coverage_and_assessments_page(self):
+        query = {'coverage_set_id': P, 'attempt_run_id': R, 'cursor': 'opaque', 'limit': 200}
+        c.validate('observation_coverage_query', query)
+        c.validate('observation_coverage_query', {'coverage_set_id': P})
+        for bad in ({'attempt_run_id': R}, {**query, 'attempt_run_id': 'not-uuid'}, {**query, 'limit': 201}, {**query, 'extra': True}):
+            self.error('INVALID_REQUEST', c.validate, 'observation_coverage_query', bad)
+        unit = {'kind': 'page', 'page_path': 'a.html', 'region_id': None, 'outcome': 'not_checked', 'reason': 'missing_source', 'discrepancy': None, 'assessment_id': None, 'target_set_id': B}
+        c.validate('observation_coverage_page', {'items': [unit], 'next_cursor': 'next'})
+        c.validate('observation_coverage_unit_row', {**unit, 'target_set_id': None})
+        self.error('INVALID_ENUM', c.validate, 'observation_coverage_unit_row', {**unit, 'outcome': 'assessed'})
+        coverage = {'coverage_set_id': P, 'unit_kind': 'page', 'eligible': 1, 'assessed': 0, 'complete': False, 'units_url': '/api/v1/versions/' + V + '/assessments/coverage?coverage_set_id=' + P + '&attempt_run_id=' + R}
+        applicable = {'source_intent': 'moving_target', 'target_set_id': B, 'captured_at': '2026-10-21T00:00:00Z', 'scope': {'kind': 'version', 'page_path': None, 'region_id': None}, 'status': 'unable_to_verify', 'coverage': coverage, 'assessed_at': None, 'reassessment_required': True}
+        page = {'items': [], 'next_cursor': None, 'applicable': applicable}
+        c.validate('observation_assessments_page', page)
+        c.validate('observation_assessments_page', {**page, 'applicable': None})
+        self.error('INVALID_REQUEST', c.validate, 'observation_assessments_page', {'items': [], 'applicable': applicable})
+        self.error('INVALID_REQUEST', c.validate, 'observation_applicable', {**applicable, 'scope': {**applicable['scope'], 'declared': True}})
+
+    def test_Task00401_evidence_item_excerpt_presence_and_omission(self):
+        view = {'version_id': V, 'evidence_id': 'local', 'authored': {'id': 'local', 'source_id': 'source', 'capture_status': 'verified', 'path': 'page.html'}, 'source': {'id': 'source', 'kind': 'snapshot', 'retention_mode': 'selected_snapshot', 'snapshot_sha256': 'a' * 64, 'asset_path': 'page.html'}, 'availability': 'available', 'bytes_origin': 'retained_snapshot', 'reason': None, 'service_verification': None, 'verifications_url': '/api/v1/versions/' + V + '/source-evidence-verifications?evidence_id=local'}
+        c.validate('evidence_item_view', view)
+        c.validate('evidence_item_view', {**view, 'excerpt': {'bytes_sha256': c.digest(b'retained'), 'data_base64': 'cmV0YWluZWQ='}})
+        c.validate('evidence_item_view', {**view, 'excerpt': {'bytes_sha256': c.digest(b'')}})
+        c.validate('evidence_item_view', {**view, 'excerpt': {'bytes_sha256': c.digest(b'x' * 65537)}})
+        c.validate('evidence_item_view', {**view, 'availability': 'unavailable', 'bytes_origin': None, 'reason': 'not_read_by_view'})
+        for excerpt in (None, {}, {'data_base64': 'cmV0YWluZWQ='}, {'bytes_sha256': 'bad'}, {'bytes_sha256': 'a' * 64, 'data_base64': None}, {'bytes_sha256': 'a' * 64, 'data_base64': 'not base64'}, {'bytes_sha256': 'a' * 64, 'private_path': '/private'}):
+            self.error('INVALID_REQUEST', c.validate, 'evidence_item_view', {**view, 'excerpt': excerpt})
+
+    def test_Task00401_status_events_and_missing_detail_extensions(self):
+        summary = {'available': False, 'reason': 'not_observed', 'configured_source_count': 0, 'last_observed_at': None}
+        c.validate('source_status_summary', summary)
+        for reason in ('source_not_registered', 'missing_source', 'missing_retained_bytes', 'retained_bytes_corrupt', 'source_denied'):
+            c.validate('source_status_summary', {**summary, 'reason': reason})
+        self.error('INVALID_ENUM', c.validate, 'source_status_summary', {**summary, 'reason': 'healthy'})
+        c.validate('source_changed_event_body', {'version_id': V, 'run_id': R, 'classification': 'direct'})
+        c.validate('source_availability_changed_event_body', {'version_id': V, 'run_id': R, 'availability': 'unavailable'})
+        for field in ('target_set_id', 'coverage_set_id', 'attempt_run_id'):
+            details = {'reason': field, field: R}
+            c.validate('source_read_missing_details', details)
+            c.validate('error', {'code': 'NOT_FOUND', 'message': 'not found', 'retryable': False, 'details': details})
+        for status, code, details in ((409, 'SOURCE_UNAVAILABLE', {'reason': 'mapping_ambiguous'}), (400, 'INVALID_REQUEST', {'page_path': 'gone.html'}), (503, 'SERVICE_RECOVERING', {'reason': 'interrupted_before_commit'}), (503, 'FILE_ACCESS_ERROR', {'reason': 'source_read_failed'})):
+            assert c.ERROR_HTTP[code] == status
+            c.validate('error', {'code': code, 'message': 'source check failed', 'retryable': False, 'details': details})
+
     @pytest.fixture(autouse=True)
     def _model(self):
         self.model = c.Model()

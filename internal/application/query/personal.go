@@ -313,18 +313,18 @@ func (s *Service) resolvePageTx(ctx context.Context, tx app.WriteTx, version, co
 	seen := map[string]bool{}
 	for entry.Kind == "symlink" {
 		if seen[entry.Path] || strings.HasPrefix(entry.LinkText, "/") || !utf8.ValidString(entry.LinkText) || strings.ContainsRune(entry.LinkText, 0) {
-			return "", &Missing{"unresolved_link"}
+			return "", &Missing{Reason: "unresolved_link"}
 		}
 		seen[entry.Path] = true
 		target := path.Clean(path.Join(path.Dir(entry.Path), entry.LinkText))
 		if target == ".." || strings.HasPrefix(target, "../") {
-			return "", &Missing{"unresolved_link"}
+			return "", &Missing{Reason: "unresolved_link"}
 		}
 		entry, err = s.lookupTx(ctx, tx, version, contentSet, target)
 		if err != nil {
 			var invalid *Error
 			if errors.Is(err, domain.ErrNotFound) || errors.As(err, &invalid) && invalid.Reason == "invalid_path" {
-				return "", &Missing{"unresolved_link"}
+				return "", &Missing{Reason: "unresolved_link"}
 			}
 			return "", err
 		}

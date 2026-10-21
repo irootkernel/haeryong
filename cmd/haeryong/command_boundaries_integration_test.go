@@ -202,7 +202,7 @@ var _ = It("TestActualCLIQueuedSealCancelRetainsInputUntilExplicitAbandon", Labe
 		}
 		{
 			e := json.Unmarshal(out, &view)
-			Expect(e != nil || view.Data.Storage.Bytes != wantBytes || view.Data.Storage.PendingUploads != wantCount || view.Data.Storage.PendingUploadsURL != "/api/v1/uploads" || view.Data.Source.Available || view.Data.Source.Reason != "source_read_not_implemented").To(BeFalse(), func() string { return fmt.Sprint("status disagrees with retained staging", view, e) })
+			Expect(e != nil || view.Data.Storage.Bytes != wantBytes || view.Data.Storage.PendingUploads != wantCount || view.Data.Storage.PendingUploadsURL != "/api/v1/uploads" || view.Data.Source.Available || view.Data.Source.Reason != "not_observed").To(BeFalse(), func() string { return fmt.Sprint("status disagrees with retained staging", view, e) })
 		}
 
 	}

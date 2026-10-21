@@ -94,8 +94,17 @@ func AuthorizeUploadScope(scope domain.CredentialScope, purpose string, raw []by
 	case "context":
 		action = "context.write"
 	case "body":
-		if target.Action == "generation" {
+		switch target.Action {
+		case "generation":
 			action = "generation.request"
+		case "evidence_verification":
+			// The sealed expectation transfer for the exact verification
+			// operation requires both byte-affecting actions; the shared
+			// anchor checks below still apply (TASK-004-01).
+			if !contains(scope.Actions, "version.read") || !contains(scope.Actions, "source.read") {
+				return domain.ErrDenied
+			}
+			action = "version.read"
 		}
 	}
 	if action == "" || !contains(scope.Actions, action) {
@@ -182,7 +191,19 @@ func authorizeScope(tx app.WriteTx, record domain.Session, r domain.Request) err
 		if r.Method == "GET" && len(parts) == 4 {
 			return nil
 		}
-	case "projects", "documents", "versions":
+	case "projects":
+		if r.Method == "POST" && len(parts) == 3 {
+			// Project registration is owner-only (plan §3).
+			return domain.ErrDenied
+		}
+		if r.Method == "GET" && len(parts) == 5 && parts[4] == "sources" {
+			if contains(record.Scope.Actions, "project.read") && contains(record.Scope.ProjectIDs, parts[3]) {
+				return nil
+			}
+			return domain.ErrNotFound
+		}
+		fallthrough
+	case "documents", "versions":
 		// Render-session opens follow the render-bootstrap authority family:
 		// the scoped version.read action with the exact version/project
 		// anchors. Renewal and close of a known session are controlled by the
@@ -203,6 +224,32 @@ func authorizeScope(tx app.WriteTx, record domain.Session, r domain.Request) err
 				return nil
 			}
 			return domain.ErrNotFound
+		}
+		// Imported-evidence verification follows the byte-affecting action
+		// layer: version.read plus source.read with the exact version and
+		// project anchors (TASK-004-01 plan §4). The canonical query form
+		// and the catalog path form share this rule; slash-containing
+		// evidence IDs only route through the query form.
+		if parts[2] == "versions" && r.Method == "POST" && ((len(parts) == 5 && parts[4] == "source-evidence-verifications") || (len(parts) == 7 && parts[4] == "source-evidence" && parts[6] == "verifications")) {
+			if !contains(record.Scope.Actions, "version.read") || !contains(record.Scope.Actions, "source.read") {
+				return domain.ErrDenied
+			}
+			v, e := tx.PublishedVersion(parts[3])
+			if e != nil {
+				return e
+			}
+			d, e := tx.Document(v.DocumentID)
+			if e != nil {
+				return e
+			}
+			if contains(record.Scope.VersionIDs, v.ID) && contains(record.Scope.ProjectIDs, d.ProjectID) {
+				return nil
+			}
+			return domain.ErrNotFound
+		}
+		// Source observations are owner-only in TASK-004-01 (plan §3/O1).
+		if parts[2] == "versions" && r.Method == "POST" && len(parts) == 5 && parts[4] == "source-observations" {
+			return domain.ErrDenied
 		}
 		// The package archive is an export action with its own scope: the
 		// exact project/version anchors plus package.export authorize it,

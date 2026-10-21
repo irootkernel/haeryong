@@ -121,3 +121,41 @@ Schema5 appends observed updated_at ordering keys to projects/documents, stable 
 Scoped credentials capture only actions/anchors within their active stable binding, current auth epoch and every selected project's permissions generation. A rotation does not invent a new principal. Current restriction intersects that captured scope; an expansion does not enlarge old tokens or accepted jobs. Credential lifetime is distinct from already accepted durable work, whose attempt/target/lifecycle/current binding/project generations remain fenced. No issuer or future consumer table/CRUD is introduced by this bounded enforcement.
 
 Before schema4-to5 DDL, the existing coherent prior-migration recovery set includes the verified SQLite snapshot plus retained/copied referenced immutable objects. Labelled prior-schema fixtures remove only schema5 additions, preserve prior rows/checksums and test normal owner session/object/library/config/stream/auth identity preservation, failures and retry. They are reverse-constructed fixtures, not execution of an old binary or a full future backup/restore engine. [Task05 evidence](testing/query-cli-configuration.md) records the executed scope and remaining gates.
+
+## Source observation persistence (TASK-004-01, migration 7)
+
+These are additive storage implementations within the logical model above;
+the new observation relations support the provisional additive HTTP route.
+The normative logical-model rows above remain unchanged for later implementing
+owners. This section records only the exact implemented migration-7 subset and
+its differences; it does not remove future columns, assessment reuse or provider
+input linkage from the logical model.
+
+| Table | Exact migration-7 columns | Constraints and meaning |
+| --- | --- | --- |
+| assessments | assessment_id, version_id, page_path, region_id, target_set_id, coverage_set_id, state, scope_json, evidence_json nullable, config_revision, permissions_revision, origin, created_at | Migration 7 storage only; no assessment producer in TASK-004-01. Empty-string anchor sentinels map to wire null. |
+| coverage_sets / required_units | coverage_set_id, version_id, target_set_id nullable, run_id nullable, scope_json, unit_kind, captured_at, origin; coverage_set_id, kind, page_path, region_id, reason, target_set_id nullable | Migration 7: source_observation origin requires run_id; only this origin permits null target. Required-unit PK is (coverage_set_id,kind,page_path,region_id); anchor sentinels are empty strings. Membership is immutable and exclusions retain the denominator. |
+| assessment_units | coverage_set_id, assessment_id, target_set_id, kind, page_path, region_id, outcome, discrepancy nullable, reason nullable | Migration 7 PK (coverage_set_id,assessment_id,kind,page_path,region_id). No producer yet. Anchors use empty-string sentinels; outcomes are assessed/partial/blocked/not_checked. |
+| captured_target_sets / captured_reads | target_set_id, project_id, requested_selection, targets_json, captured_at; read_id, target_set_id, basis, source_json, location_json, bytes_sha256 nullable, config_revision, permissions_revision, created_at | Migration 7 creates captured_target_sets and captured_reads only. captured_reads.target_set_id references the capture and basis is project_source. job_inputs is future work, not a created table or provider-input observation. A capture alone never proves provider delivery. |
+| citation_verifications | verification_id, principal_id, version_id, evidence_id, read_id nullable, target_set_id nullable, source_json, location_json, bytes_sha256 nullable, bytes_origin nullable, outcome, expected_bytes_sha256 nullable, expected_excerpt nullable, expected_excerpt_ref nullable, config_revision, permissions_revision, checked_at, verified_at nullable, reason, operation_id | Migration 7 exact columns: read_id and target_set_id are FKs; unique (principal_id,operation_id). verified_at only for captured/matched; reason uses empty string for no limitation. expected_excerpt is exact BLOB bytes; expected_excerpt_ref stores the staged expectation content hash (the wire request instead names upload_id). Logical attempt_id remains null in EPIC-004 and is not a migration-7 column; no content_hash/pin_id columns are invented here. |
+| observation_runs | run_id, version_id, principal_id, operation_id, requested_selection, scope_json, target_set_id nullable, created_at | Unique (principal_id,operation_id), nullable capture FK. Durable exact selection and five-field scope even for all-unavailable runs. Created before dependent relations. |
+| source_observations | observation_id, run_id, version_id, target_set_id nullable, source_id, repo_id, base_revision, observed_revision nullable, availability, classification, changed_paths_json nullable, dependency_scope_json nullable, reason, config_revision, permissions_revision, observed_at, operation_id | Non-null run FK; repo_id/base_revision/reason default to empty strings. Availability available/unavailable/denied; classification direct/indirect/unchanged/unavailable/denied. No synthetic revision for a failed source in a partially captured run. |
+| reassessment_triggers | trigger_id, run_id, version_id, target_set_id, source_id, anchor_kind, page_path, region_id, reason, changed_paths_json nullable, observation_id, observed_at, created_at | Non-null run/capture FKs. Version anchor uses both empty strings, page uses only page_path, region uses both; wire absence is null. Bound to exact capture and page-local anchor, never unioned by selection alone. |
+| check_intents | intent_id, operation_id, principal_id, kind, canonical_target, validated_body nullable, expectation_upload nullable, config_revision, permissions_revision, state, failure_reason, created_at, resolved_at nullable | Unique (principal_id,operation_id); kind verification/observation; state open/completed/failed. Durable reservation and pins precede detached checks; restart settles only from consistent receipt/result history. |
+
+The migration-7 table above includes its coverage/assessment relations.
+Compared with the logical model, coverage_sets adds origin/run_id and permits
+null target_set_id only for source_observation; captured_target_sets has project_id;
+citation_verifications has read_id and operation_id; reassessment_triggers has
+target_set_id. Logical nullable page/region anchors use empty-string storage
+sentinels. EPIC-004 produces no assessment contributions and leaves logical
+attempt_id null. Future job_inputs/package-evidence/provider input records and
+assessment reuse retain their later owners.
+It does not add job_inputs or a job kind. Existing evidence_observations remain
+separate imported-metadata state. Only committed observation runs and committed
+verification captures are eligible for reads. The registry's conditional A/C
+selection overrides the general capture-only summary rule for observation-backed
+current selection: A supplies availability; C supplies the target, denominator
+and exact-target triggers. Old rows remain immutable. All-unavailable attempts
+retain coverage while target/captured_at stay null. No observation writes a
+semantic assessment, observed_input citation or personal Review.

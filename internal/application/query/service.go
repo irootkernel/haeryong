@@ -68,8 +68,10 @@ func nullable(v string) *string {
 	return &v
 }
 func project(p domain.QueryProject) Project {
+	// S25: the shared projection's validator keeps registration and query
+	// reads identical for the same state.
 	out := Project{ID: p.ID, Name: p.Name, Lifecycle: p.Lifecycle, Revision: p.Revision, PermissionsRevision: p.PermissionsRevision, UpdatedAt: p.UpdatedAt}
-	out.ETag = validator(out)
+	out.ETag = domain.ProjectETag(p)
 	return out
 }
 func document(d domain.QueryDocument) Document {
@@ -93,7 +95,12 @@ type cursor struct {
 	Sequence            int64
 }
 
-func (s *Service) cursorStart(ctx context.Context, token string, tx app.WriteTx, resource string, o Options) (cursor, int, domain.CredentialScope, error) {
+// cursorStart binds a list cursor to the runtime generation, resource,
+// filters, principal and scope, the principal revision and the permission
+// generation of every scoped project. bound names further projects whose
+// permission generation the cursor binds for every principal, the owner
+// included (S26).
+func (s *Service) cursorStart(ctx context.Context, token string, tx app.WriteTx, resource string, o Options, bound ...string) (cursor, int, domain.CredentialScope, error) {
 	limit := o.Limit
 	if limit == 0 {
 		limit = 50
@@ -124,6 +131,13 @@ func (s *Service) cursorStart(ctx context.Context, token string, tx app.WriteTx,
 			}
 			permissions[id] = state.Project.PermissionsRevision
 		}
+	}
+	for _, id := range bound {
+		state, err := tx.Scope(id)
+		if err != nil {
+			return cursor{}, 0, domain.CredentialScope{}, err
+		}
+		permissions[id] = state.Project.PermissionsRevision
 	}
 	b := validator([]any{l.RuntimeGeneration, resource, o.Project, o.Lifecycle, o.Directory, o.Kind, record.PrincipalID, record.Scope, principalRevision, permissions})
 	c := cursor{Binding: b}
@@ -251,7 +265,7 @@ func (s *Service) Capabilities(ctx context.Context, token string) (map[string]an
 		if err != nil {
 			return err
 		}
-		out = map[string]any{"library_id": l.ID, "api_version": "1.0", "runtime_generation": l.RuntimeGeneration, "stream_epoch": l.StreamEpoch, "unfiled_project_id": l.UnfiledProjectID, "features": map[string]bool{"resumable_uploads": true, "atomic_import": true, "cursor_files": true, "streamed_files": true, "byte_ranges": true, "html_js_v1": false, "multi_page_loader": false, "renderer": false, "preview": false, "provider": false, "scheduler": false}}
+		out = map[string]any{"library_id": l.ID, "api_version": "1.0", "runtime_generation": l.RuntimeGeneration, "stream_epoch": l.StreamEpoch, "unfiled_project_id": l.UnfiledProjectID, "features": map[string]bool{"resumable_uploads": true, "atomic_import": true, "cursor_files": true, "streamed_files": true, "byte_ranges": true, "source_verification": true, "html_js_v1": false, "multi_page_loader": false, "renderer": false, "preview": false, "provider": false, "scheduler": false}}
 		return nil
 	})
 	return out, err
@@ -323,24 +337,10 @@ func (s *Service) Files(ctx context.Context, token, id string, o Options) (List[
 	return out, err
 }
 
-// Unavailable evidence remains a typed view; this read starts no source capture
-// or verification and never upgrades authored capture_status into a service check.
+// Evidence composes the immutable authored record with the separate service
+// truth (plan §3.1 state table): this read starts no new source capture or
+// verification and never upgrades authored capture_status into a service
+// check; retained snapshot bytes are the only excerpt source.
 func (s *Service) Evidence(ctx context.Context, token, id, evidenceID string) (map[string]any, error) {
-	var out map[string]any
-	err := s.read(ctx, token, "/api/v1/versions/"+id+"/source-evidence/"+evidenceID, func(tx app.WriteTx) error {
-		if _, err := visibleVersion(tx, id); err != nil {
-			return err
-		}
-		e, err := tx.QueryEvidence(id, evidenceID)
-		if err != nil {
-			return err
-		}
-		source, err := tx.QuerySource(id, e.SourceID)
-		if err != nil {
-			return err
-		}
-		out = map[string]any{"version_id": id, "evidence_id": evidenceID, "authored": json.RawMessage(e.Metadata), "source": json.RawMessage(source.Metadata), "availability": "unavailable", "bytes_origin": nil, "reason": "source_read_not_implemented", "service_verification": nil, "verifications_url": "/api/v1/versions/" + id + "/source-evidence-verifications?evidence_id=" + url.QueryEscape(evidenceID)}
-		return nil
-	})
-	return out, err
+	return s.composeEvidence(ctx, token, id, evidenceID)
 }

@@ -337,7 +337,7 @@ test("versionEvidence preserves opaque IDs through actual URL parsing", async ()
     assert.equal(url.pathname, "/api/v1/versions/v1/source-evidence");
     const id = url.searchParams.get("evidence_id");
     observed.push(id!);
-    const view = { version_id: "v1", evidence_id: id, authored: { id, capture_status: "reference_only" }, source: {}, availability: "unavailable", bytes_origin: null, reason: "source_read_not_implemented", service_verification: null, verifications_url: "/api/v1/versions/v1/source-evidence-verifications?" + url.searchParams };
+    const view = { version_id: "v1", evidence_id: id, authored: { id, capture_status: "reference_only" }, source: {}, availability: "unavailable", bytes_origin: null, reason: "not_read_by_view", service_verification: null, verifications_url: "/api/v1/versions/v1/source-evidence-verifications?" + url.searchParams };
     return new Response(JSON.stringify({ data: view }), { status: 200 });
   });
   try {
@@ -347,7 +347,7 @@ test("versionEvidence preserves opaque IDs through actual URL parsing", async ()
       const result = await client.versionEvidence("v1", id);
       assert.equal(result.evidence_id, id);
       assert.equal(result.authored.id, id);
-      assert.equal(result.reason, "source_read_not_implemented");
+      assert.equal(result.reason, "not_read_by_view");
       assert.equal(result.service_verification, null);
     }
     assert.deepEqual(observed, ids);
@@ -405,4 +405,85 @@ test("FEATURE_NOT_READY from the future catalog surfaces as a typed 503, not a t
   } finally {
     restore();
   }
+});
+
+test("source writes reconcile 201, 202 and unreadable success with the original key and no second POST", async () => {
+  for (const observation of [false, true]) for (const mode of ["created", "accepted", "uncertain"]) {
+    const calls: Array<{ path: string; method: string; key: string | null; body: unknown }> = [];
+    let polls = 0;
+    const result = { operation_id: "original-key", outcome: "captured", run_id: "r1" };
+    const restore = stubFetch(async (input, init) => {
+      const path = String(input), method = init?.method ?? "GET";
+      calls.push({ path, method, key: new Headers(init?.headers).get("Idempotency-Key"), body: init?.body ? JSON.parse(String(init.body)) : null });
+      if (method === "POST") {
+        assert.equal(calls.length, 1);
+        if (mode === "uncertain") return new Response("{", { status: 201 });
+        return new Response(JSON.stringify({ data: mode === "accepted" ? { operation_id: "original-key", state: "accepted" } : result }), { status: mode === "accepted" ? 202 : 201 });
+      }
+      polls++;
+      assert.equal(path, "/api/v1/operations/original-key");
+      return new Response(JSON.stringify({ data: { operation_id: "original-key", state: polls === 1 ? "accepted" : "completed", original_status: polls === 1 ? null : 201, result_metadata: polls === 1 ? null : result } }));
+    });
+    try {
+      const client = new HttpHaeryongClient();
+      const received = observation ? await client.runSourceObservation("v1", { scope: { kind: "version" } }, "original-key") : await client.verifySourceEvidence("v1", "../evidence/상세", { expected_bytes_sha256: "a".repeat(64) }, "original-key");
+      assert.deepEqual(received, result);
+      assert.equal(calls.filter((c) => c.method === "POST").length, 1);
+      assert.equal(calls[0]!.key, "original-key");
+      const url = new URL(calls[0]!.path, "http://127.0.0.1");
+      assert.equal(url.pathname, `/api/v1/versions/v1/${observation ? "source-observations" : "source-evidence-verifications"}`);
+      if (!observation) assert.equal(url.searchParams.get("evidence_id"), "../evidence/상세");
+      assert.equal(polls, mode === "created" ? 0 : 2);
+    } finally { restore(); }
+  }
+});
+
+test("configuration, registration, sources and attempt-attributed coverage use fixed HTTP routes", async () => {
+  const calls: Array<[string, string, unknown, string | null]> = [];
+  const restore = stubFetch(async (input, init) => {
+    calls.push([String(input), init?.method ?? "GET", init?.body ? JSON.parse(String(init.body)) : null, new Headers(init?.headers).get("Idempotency-Key")]);
+    return new Response(JSON.stringify({ data: { items: [], next_cursor: null } }), { status: 200 });
+  });
+  try {
+    const client = new HttpHaeryongClient();
+    await client.configurationView();
+    await client.configurationPlan({ scope: { kind: "project", project_id: "p" }, expected_config_revision: 3, changes: { sources: [] } }, "plan-key");
+    await client.configurationPlanCommit("plan/1", { expected_config_revision: 3, confirmed: true }, "commit-key");
+    await client.projectRegister("Project", "project-key");
+    await client.projectSources("p", "page2");
+    await client.assessmentCoverage("v", "set", "page2", "11111111-2222-4333-8444-555555555555");
+    assert.deepEqual(calls.map((c) => c[0]), ["/api/v1/configuration", "/api/v1/configuration/plans", "/api/v1/configuration/plans/plan%2F1/commit", "/api/v1/projects", "/api/v1/projects/p/sources?cursor=page2", "/api/v1/versions/v/assessments/coverage?coverage_set_id=set&attempt_run_id=11111111-2222-4333-8444-555555555555&cursor=page2"]);
+    assert.deepEqual(calls.slice(1,4).map((c) => c[3]), ["plan-key", "commit-key", "project-key"]);
+    assert.deepEqual(calls[3]![2], { name: "Project" });
+  } finally { restore(); }
+});
+
+test("source receipt failure is definitive while a missing/reconciling receipt retains the original key", async () => {
+  const { PendingSourceWriteError } = await import("./source-operations.ts");
+  for (const state of ["failed", "missing", "reconciling"]) {
+    let writes = 0;
+    const restore = stubFetch(async (_input, init) => {
+      if (init?.method === "POST") { writes++; return new Response("{", { status: 201 }); }
+      if (state === "missing") return new Response(JSON.stringify({ error: { code: "NOT_FOUND", retryable: false } }), { status: 404 });
+      return new Response(JSON.stringify({ data: { operation_id: "original", state, original_status: state === "failed" ? 503 : null, result_metadata: { error: { code: "FILE_ACCESS_ERROR", retryable: true, details: { reason: "source_read_failed" } } } } }));
+    });
+    try {
+      const client = new HttpHaeryongClient();
+      await assert.rejects(client.verifySourceEvidence("v", "e", {}, "original"), (error: unknown) => state === "failed" ? error instanceof ApiError && error.code === "FILE_ACCESS_ERROR" && error.details.reason === "source_read_failed" : error instanceof PendingSourceWriteError && error.operationId === "original");
+      assert.equal(writes, 1);
+    } finally { restore(); }
+  }
+});
+
+test("HTTP verification forwards a typed excerpt upload reference object", async () => {
+  const request: import("./types.ts").EvidenceVerificationRequest = { expected_excerpt_ref: { upload_id: "11111111-2222-4333-8444-555555555555" } };
+  let received: unknown;
+  const restore = stubFetch(async (_input, init) => {
+    received = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ data: { outcome: "matched" } }), { status: 201 });
+  });
+  try {
+    await new HttpHaeryongClient().verifySourceEvidence("v", "e", request, "k");
+    assert.deepEqual(received, request);
+  } finally { restore(); }
 });

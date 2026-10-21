@@ -91,7 +91,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		e = h.Core.Auth.Guard(r.Context(), token, func() error {
-			return json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"library_id": health.Library.ID, "schema_revision": health.Library.SchemaRevision, "runtime_generation": health.Library.RuntimeGeneration, "storage": map[string]any{"state": "ready", "journal": health.Journal, "foreign_keys": health.ForeignKeys, "staging_bytes": staging.Bytes, "pending_upload_count": staging.PendingUploads, "pending_uploads_url": staging.PendingUploadsURL}, "source": map[string]any{"available": false, "reason": "source_read_not_implemented"}, "config_revision": view.ConfigRevision, "listener": map[string]any{"endpoint": h.Core.RuntimeEndpoint, "ephemeral_override": h.Core.ListenerOverride, "configured": configured.Network.Listener}, "provider": map[string]any{"available": false, "reason": "feature_not_ready"}, "scheduler": map[string]any{"available": false, "reason": "feature_not_ready"}, "backup": map[string]any{"mode": "manual", "last_complete": nil, "available": false, "reason": "full_backup_engine_not_implemented"}}, "request_id": requestID})
+			// W3b L8: a storage error deriving the source section fails the
+			// request instead of reading as never observed.
+			source, err := h.Core.SourceSummary(r.Context())
+			if err != nil {
+				return err
+			}
+			return json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"library_id": health.Library.ID, "schema_revision": health.Library.SchemaRevision, "runtime_generation": health.Library.RuntimeGeneration, "storage": map[string]any{"state": "ready", "journal": health.Journal, "foreign_keys": health.ForeignKeys, "staging_bytes": staging.Bytes, "pending_upload_count": staging.PendingUploads, "pending_uploads_url": staging.PendingUploadsURL}, "source": source, "config_revision": view.ConfigRevision, "listener": map[string]any{"endpoint": h.Core.RuntimeEndpoint, "ephemeral_override": h.Core.ListenerOverride, "configured": configured.Network.Listener}, "provider": map[string]any{"available": false, "reason": "feature_not_ready"}, "scheduler": map[string]any{"available": false, "reason": "feature_not_ready"}, "backup": map[string]any{"mode": "manual", "last_complete": nil, "available": false, "reason": "full_backup_engine_not_implemented"}}, "request_id": requestID})
 		})
 		if e != nil {
 			fail(e)

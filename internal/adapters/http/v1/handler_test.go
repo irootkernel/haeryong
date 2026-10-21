@@ -479,3 +479,97 @@ var _ = It("TestPersonalAbsentHTTPWireDefaultsAndPointerLink", Label("persistenc
 	want(t, status, 200, data)
 	Expect(string(data)).To(ContainSubstring(`"page_position_url":null`), func() string { return string(data) })
 })
+
+var _ = It("TestSourceEvidenceVerificationHistoryServesPathFormAlias", Label("persistence"), func() {
+	t := GinkgoT()
+	f := newFixture(t)
+	u := f.create()
+	f.put(u, "page.html", "file", []byte("<html>history alias</html>"))
+	version := f.publish(u, nil)
+	handler := New(f.query, nil, nil)
+	request := func(path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", path, nil)
+		r.Header.Set("Authorization", "Bearer "+f.token)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w
+	}
+	// The catalogued path form serves the same history read for simple ids
+	// (S27): the unknown version is a nondisclosing 404, never 503.
+	recorder := request("/api/v1/versions/00000000-0000-4000-8000-000000000001/source-evidence/simple/verifications")
+	Expect(recorder.Code).To(Equal(404))
+	Expect(recorder.Body.String()).NotTo(ContainSubstring("FEATURE_NOT_READY"))
+	// A visible version answers the same alias for an unknown evidence id
+	// with the item view's nondisclosing 404 (S29), never 503.
+	recorder = request("/api/v1/versions/" + version.ID + "/source-evidence/simple/verifications")
+	Expect(recorder.Code).To(Equal(404))
+	Expect(recorder.Body.String()).NotTo(ContainSubstring("FEATURE_NOT_READY"))
+})
+
+var _ = It("TestAssessmentsRoutesServeCompositionAndCoverageValidation", Label("persistence"), func() {
+	t := GinkgoT()
+	f := newFixture(t)
+	u := f.create()
+	f.put(u, "page.html", "file", []byte("<html>assessments</html>"))
+	version := f.publish(u, nil)
+	handler := New(f.query, nil, nil)
+	request := func(path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", path, nil)
+		r.Header.Set("Authorization", "Bearer "+f.token)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w
+	}
+	// A version without source-evidence rows and without observations or
+	// captures yields the definite null applicable (§7.1 step 6c), never a
+	// 503 feature gate.
+	recorder := request("/api/v1/versions/" + version.ID + "/assessments")
+	Expect(recorder.Code).To(Equal(200), recorder.Body.String())
+	Expect(recorder.Body.String()).NotTo(ContainSubstring("FEATURE_NOT_READY"))
+	Expect(recorder.Body.String()).To(ContainSubstring(`"applicable":null`), recorder.Body.String())
+	Expect(recorder.Body.String()).To(ContainSubstring(`"items":[]`))
+	Expect(recorder.Body.String()).To(ContainSubstring(`"next_cursor":null`), "the page always carries next_cursor (W3b L11)")
+	// Scope and query validation stay typed.
+	recorder = request("/api/v1/versions/" + version.ID + "/assessments?unexpected=1")
+	Expect(recorder.Code).To(Equal(400))
+	recorder = request("/api/v1/versions/" + version.ID + "/assessments?scope_kind=page")
+	Expect(recorder.Code).To(Equal(400), "a page scope requires page_path")
+	// The coverage endpoint requires and validates its set id.
+	recorder = request("/api/v1/versions/" + version.ID + "/assessments/coverage")
+	Expect(recorder.Code).To(Equal(400))
+	recorder = request("/api/v1/versions/" + version.ID + "/assessments/coverage?coverage_set_id=00000000-0000-4000-8000-0000000000ff")
+	Expect(recorder.Code).To(Equal(404))
+	Expect(recorder.Body.String()).NotTo(ContainSubstring("FEATURE_NOT_READY"))
+	details := func(recorder *httptest.ResponseRecorder) map[string]any {
+		var body struct {
+			Error struct {
+				Details map[string]any `json:"details"`
+			} `json:"error"`
+		}
+		Expect(json.Unmarshal(recorder.Body.Bytes(), &body)).To(Succeed(), recorder.Body.String())
+		return body.Error.Details
+	}
+	// W3b L21: the 404 merges the named detail beside its reason.
+	Expect(details(recorder)).To(Equal(map[string]any{"reason": "coverage_set_id", "coverage_set_id": "00000000-0000-4000-8000-0000000000ff"}))
+	// W3b L19: attempt_run_id passes through the route to the attempt check.
+	run, set := "00000000-0000-4000-8000-0000000000a1", "00000000-0000-4000-8000-0000000000a2"
+	Expect(f.store.Write(context.Background(), func(tx app.WriteTx) error {
+		if e := tx.PutObservationRun(domain.ObservationRun{ID: run, VersionID: version.ID, PrincipalID: "owner", OperationID: "00000000-0000-4000-8000-0000000000a3", RequestedSelection: []byte(`{"project_id":"p","mode":"current","source_ids":["git-1"]}`), ScopeJSON: []byte(`{"kind":"version","declared":true}`), CreatedAt: "2026-10-01T09:00:00.000Z"}); e != nil {
+			return e
+		}
+		if e := tx.PutSourceObservation(domain.SourceObservation{ID: "00000000-0000-4000-8000-0000000000a4", RunID: run, VersionID: version.ID, SourceID: "git-1", Availability: "unavailable", Classification: "unavailable", Reason: "missing_source", ConfigRevision: 1, PermissionsRevision: 1, ObservedAt: "2026-10-01T09:00:00.000Z", OperationID: "00000000-0000-4000-8000-0000000000a3"}); e != nil {
+			return e
+		}
+		return tx.PutCoverageSet(domain.CoverageSet{ID: set, VersionID: version.ID, RunID: run, ScopeJSON: []byte(`{"kind":"version","declared":true}`), UnitKind: "page", CapturedAt: "2026-10-01T09:00:00.000Z", Origin: "source_observation"})
+	})).To(Succeed())
+	recorder = request("/api/v1/versions/" + version.ID + "/assessments/coverage?coverage_set_id=" + set)
+	Expect(recorder.Code).To(Equal(200), recorder.Body.String())
+	recorder = request("/api/v1/versions/" + version.ID + "/assessments/coverage?coverage_set_id=" + set + "&attempt_run_id=00000000-0000-4000-8000-0000000000ff")
+	Expect(recorder.Code).To(Equal(404), recorder.Body.String())
+	Expect(details(recorder)).To(Equal(map[string]any{"reason": "attempt_run_id", "attempt_run_id": "00000000-0000-4000-8000-0000000000ff"}))
+	// An unknown version is a nondisclosing 404 on both reads.
+	recorder = request("/api/v1/versions/00000000-0000-4000-8000-000000000002/assessments")
+	Expect(recorder.Code).To(Equal(404))
+	recorder = request("/api/v1/versions/00000000-0000-4000-8000-000000000002/assessments/coverage?coverage_set_id=00000000-0000-4000-8000-0000000000ff")
+	Expect(recorder.Code).To(Equal(404))
+})

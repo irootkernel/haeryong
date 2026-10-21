@@ -10,15 +10,21 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"haeryong.local/haeryong/internal/adapters/configpath"
 	"haeryong.local/haeryong/internal/adapters/content/staging"
 	"haeryong.local/haeryong/internal/adapters/foundation"
+	"haeryong.local/haeryong/internal/adapters/gitreader"
 	httpauth "haeryong.local/haeryong/internal/adapters/http/auth"
+	httpconfig "haeryong.local/haeryong/internal/adapters/http/configuration"
 	httpimports "haeryong.local/haeryong/internal/adapters/http/imports"
+	httpsource "haeryong.local/haeryong/internal/adapters/http/source"
 	httpv1 "haeryong.local/haeryong/internal/adapters/http/v1"
 	appauth "haeryong.local/haeryong/internal/application/auth"
+	appconfig "haeryong.local/haeryong/internal/application/configuration"
 	importer "haeryong.local/haeryong/internal/application/import"
 	"haeryong.local/haeryong/internal/application/query"
 	"haeryong.local/haeryong/internal/application/service"
+	appsource "haeryong.local/haeryong/internal/application/source"
 	storage "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
 	sec "haeryong.local/haeryong/internal/security/session"
@@ -42,15 +48,25 @@ type policyWriter struct {
 // apiRoutes dispatches between the query and import adapters exactly like
 // the production router composition.
 type apiRoutes struct {
-	queries *httpv1.Handler
-	imports http.Handler
+	queries       *httpv1.Handler
+	imports       http.Handler
+	configuration *httpconfig.Handler
+	source        http.Handler
 }
 
 func (m *apiRoutes) Handles(r *http.Request) bool {
-	return m.queries.Handles(r) || m.imports.(interface{ Handles(*http.Request) bool }).Handles(r)
+	return m.configuration.Handles(r) || m.source.(interface{ Handles(*http.Request) bool }).Handles(r) || m.queries.Handles(r) || m.imports.(interface{ Handles(*http.Request) bool }).Handles(r)
 }
 
 func (m *apiRoutes) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if m.configuration.Handles(r) {
+		m.configuration.ServeHTTP(w, r)
+		return
+	}
+	if m.source.(interface{ Handles(*http.Request) bool }).Handles(r) {
+		m.source.ServeHTTP(w, r)
+		return
+	}
 	if m.queries.Handles(r) {
 		m.queries.ServeHTTP(w, r)
 		return
@@ -78,7 +94,17 @@ func redactedControlError(err error) string {
 func (w *policyWriter) prepare() {
 	if !w.done {
 		w.done = true
-		w.Header().Set("Content-Security-Policy", w.Header().Get("Content-Security-Policy")+"; frame-src 'self'")
+		// The synthetic child probe needs self framing. Replace the product
+		// directive rather than emitting duplicate CSP directives (Chrome
+		// reports duplicates as errors and keeps the first one).
+		directives := []string{}
+		for _, directive := range strings.Split(w.Header().Get("Content-Security-Policy"), ";") {
+			if !strings.HasPrefix(strings.TrimSpace(directive), "frame-src ") {
+				directives = append(directives, directive)
+			}
+		}
+		directives = append(directives, "frame-src 'self'")
+		w.Header().Set("Content-Security-Policy", strings.Join(directives, ";"))
 	}
 }
 func (w *policyWriter) WriteHeader(status int) { w.prepare(); w.ResponseWriter.WriteHeader(status) }
@@ -145,7 +171,9 @@ func run() error {
 	// proofs exercise the real streamed import/publication surface.
 	queries := query.New(store, core, store)
 	imports := importer.New(store, core, store, staging.New())
-	api := &apiRoutes{queries: httpv1.New(queries, nil, nil), imports: httpimports.New(imports)}
+	configurationCore := appconfig.New(store, core, configpath.Resolver{})
+	sourceCore := appsource.New(store, core, store, gitreader.New())
+	api := &apiRoutes{queries: httpv1.New(queries, nil, nil), imports: httpimports.New(imports), configuration: httpconfig.New(configurationCore), source: httpsource.New(sourceCore)}
 	handler, err := httpauth.New(core, httpauth.Policy{Hosts: hosts, Origins: origins}, api)
 	if err != nil {
 		listener.Close()

@@ -16,7 +16,7 @@ assert RECEIPT.parent.is_dir(),'receipt parent must exist'
 volume=pathlib.Path('/Volumes/RootKernel')
 scratch=volume/'tmp' if os.path.ismount(volume) and os.access(volume,os.W_OK) else pathlib.Path(tempfile.gettempdir())
 os.umask(0o077)
-work=pathlib.Path(tempfile.mkdtemp(prefix='h3n-',dir=scratch))
+work=pathlib.Path(tempfile.mkdtemp(prefix='h3n-',dir=RECEIPT.parent))
 print(json.dumps({'runtime':str(work)}),flush=True)
 env=os.environ|{'TMPDIR':str(work),'HAERYONG_TEST_STATE_DIR':str(work/'app-state'),'PYTHONDONTWRITEBYTECODE':'1'}
 os.environ['HAERYONG_TEST_STATE_DIR']=env['HAERYONG_TEST_STATE_DIR']
@@ -307,7 +307,7 @@ for(let i=0;i<6;i++){try{await fetch('wails://denied/'+i);}catch(e){}}
 
     # 3b) TASK-003-04 evidence presentation through the ACTUAL compiled App:
     # supplied metadata and authored/service separation against the real
-    # daemon, the honest 503 future capabilities through the closed facade,
+    # daemon, the implemented evidence/history reads through the closed facade,
     # then a second run of the same real App+facade against an explicitly
     # labelled local seeded fixture backend for verification-history and
     # assessment/coverage presentation only (no real source-read claim).
@@ -357,16 +357,20 @@ for(let i=0;i<6;i++){try{await fetch('wails://denied/'+i);}catch(e){}}
           const expanded=await wait(()=>{const v=expandOnce();return v==='true'?v:null;},15000);
           log("evidence.inherited-key-expands",expanded==='true',{});
           const detailText=()=>[...document.querySelectorAll('.evidence-detail')].map(e=>e.textContent).join('|');
-          const separated=await wait(()=>{const d=detailText();return d.includes('작성자 선언(불변): reference_only(작성자 선언)')&&d.includes('사유 source_read_not_implemented')?true:null;},15000);
+          const separated=await wait(()=>{const d=detailText();return d.includes('작성자 선언(불변): reference_only(작성자 선언)')&&d.includes('사유 source_not_registered')?true:null;},15000);
           log("evidence.authored-service-separation",!!separated,{detail:detailText().slice(0,400),pageError:window.__pageError});
           const vhist=()=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent==='검증 이력 보기/숨기기');if(!b)return null;b.click();return true;};
           await wait(vhist,15000);
-          const v503=await wait(()=>[...document.querySelectorAll('.evidence-detail p')].some(p=>p.textContent==='서비스가 아직 이 기능을 제공하지 않습니다(503 FEATURE_NOT_READY).'),15000);
-          log("verifications.honest-503",!!v503,{});
-          const a503=await wait(()=>[...document.querySelectorAll('.assessment-block > p')].some(p=>p.textContent==='서비스가 아직 이 기능을 제공하지 않습니다(503 FEATURE_NOT_READY).'),15000);
-          log("assessments.honest-503",!!a503,{});
-          const check=[...document.querySelectorAll('button')].find(b=>b.textContent==='출처 근거 확인(제공되지 않음)');
-          log("source-check.disabled",!!check&&check.disabled,{});
+          const empty=await wait(()=>[...document.querySelectorAll('.evidence-detail p')].some(p=>p.textContent==='기록 없음.'),15000);
+          log("verifications.real-empty",!!empty,{});
+          const real=await wait(()=>document.querySelector('.assessment-block')?.textContent.includes('기록된 배지:'),15000);
+          log("assessments.real",!!real,{});
+          const check=[...document.querySelectorAll('.evidence-region .evidence-detail button')].find(b=>b.textContent==='출처 근거 확인');
+          log("source-check.enabled",!!check&&!check.disabled,{});
+          if(check)check.click();
+          const outcome=await wait(()=>detailText().includes('확인 결과: 사용 불가')&&detailText().includes('source_not_registered'),15000);
+          const history=await wait(()=>document.querySelector('.evidence-region .evidence-detail li'),15000);
+          log("source-check.real-outcome-and-history",!!outcome&&!!history,{});
           log("no-claim.disclaimer",text().includes('서비스 확인은 작성자 선언을 승격하지 않으며'),{});
         }catch(error){log("probe.exception",false,String(error));}
         window.__done=true;
@@ -381,7 +385,7 @@ for(let i=0;i<6;i++){try{await fetch('wails://denied/'+i);}catch(e){}}
             failed=[r for r in rows if r['status']!='pass' and r['name'] not in ('page.done',)]
             assert not failed,json.dumps(failed,ensure_ascii=False)[:1500]
             assert real_app.wait(timeout=180)==0
-            proof['cases'].append({'kind':'TASK-003-04 real-daemon native App: supplied regions/evidence through the closed facade, authored/service separation, honest 503 verifications+assessments, disabled source-check','probe_rows':[r['name'] for r in rows]})
+            proof['cases'].append({'kind':'TASK-003-04 real-daemon native App: supplied regions/evidence through the closed facade, authored/service separation, real verification+assessment reads, enabled source-check with durable unavailable outcome/history','probe_rows':[r['name'] for r in rows]})
 
             # Labelled local seeded fixture backend: forwards every request to
             # the real daemon; ONLY the three future-capability routes serve

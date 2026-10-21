@@ -760,6 +760,70 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 		query := url.Values{}
 		query.Set("kind", "supplied")
 		return s.openMetadataStream(in.VersionID, query, auth)
+	case "configurationView":
+		var in struct{}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		return plain(s.request("GET", "/api/v1/configuration", nil, nil, nil, auth))
+	case "configurationPlan":
+		var in struct {
+			Request     json.RawMessage `json:"request"`
+			OperationID string          `json:"operation_id"`
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		return decision(s.request("POST", "/api/v1/configuration/plans", nil, map[string]string{"Idempotency-Key": in.OperationID}, in.Request, auth))
+	case "configurationPlanCommit":
+		var in struct {
+			PlanID      string          `json:"plan_id"`
+			Request     json.RawMessage `json:"request"`
+			OperationID string          `json:"operation_id"`
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		return decision(s.request("POST", "/api/v1/configuration/plans/"+url.PathEscape(in.PlanID)+"/commit", nil, map[string]string{"Idempotency-Key": in.OperationID}, in.Request, auth))
+	case "projectRegister":
+		var in struct {
+			Name        string `json:"name"`
+			OperationID string `json:"operation_id"`
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		return decision(s.request("POST", "/api/v1/projects", nil, map[string]string{"Idempotency-Key": in.OperationID}, jsonBody(map[string]string{"name": in.Name}), auth))
+	case "projectSources":
+		var in struct {
+			ProjectID string `json:"project_id"`
+			Cursor    string `json:"cursor"`
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		return plain(s.request("GET", "/api/v1/projects/"+url.PathEscape(in.ProjectID)+"/sources", collection(map[string]string{"cursor": in.Cursor}), nil, nil, auth))
+	case "verifySourceEvidence":
+		var in struct {
+			VersionID   string          `json:"version_id"`
+			EvidenceID  string          `json:"evidence_id"`
+			Request     json.RawMessage `json:"request"`
+			OperationID string          `json:"operation_id"`
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		return decision(s.request("POST", "/api/v1/versions/"+url.PathEscape(in.VersionID)+"/source-evidence-verifications", collection(map[string]string{"evidence_id": in.EvidenceID}), map[string]string{"Idempotency-Key": in.OperationID}, in.Request, auth))
+	case "runSourceObservation":
+		var in struct {
+			VersionID   string          `json:"version_id"`
+			Request     json.RawMessage `json:"request"`
+			OperationID string          `json:"operation_id"`
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		return decision(s.request("POST", "/api/v1/versions/"+url.PathEscape(in.VersionID)+"/source-observations", nil, map[string]string{"Idempotency-Key": in.OperationID}, in.Request, auth))
 	case "versionEvidence":
 		var in struct {
 			VersionID  string `json:"version_id"`
@@ -801,6 +865,7 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 		var in struct {
 			VersionID     string `json:"version_id"`
 			CoverageSetID string `json:"coverage_set_id"`
+			AttemptRunID  string `json:"attempt_run_id"`
 			Cursor        string `json:"cursor"`
 		}
 		if werr := decodePayload(payload, &in); werr != nil {
@@ -809,7 +874,7 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 		if in.CoverageSetID == "" {
 			return nil, &wireError{Status: 400, Code: "NATIVE_PAYLOAD_INVALID", Retryable: false}
 		}
-		return plain(s.request("GET", "/api/v1/versions/"+url.PathEscape(in.VersionID)+"/assessments/coverage", collection(map[string]string{"coverage_set_id": in.CoverageSetID, "cursor": in.Cursor}), nil, nil, auth))
+		return plain(s.request("GET", "/api/v1/versions/"+url.PathEscape(in.VersionID)+"/assessments/coverage", collection(map[string]string{"coverage_set_id": in.CoverageSetID, "attempt_run_id": in.AttemptRunID, "cursor": in.Cursor}), nil, nil, auth))
 	case "renderBootstrap":
 		var in struct {
 			VersionID string  `json:"version_id"`

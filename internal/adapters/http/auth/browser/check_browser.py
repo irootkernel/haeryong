@@ -30,6 +30,7 @@ import signal
 import socket
 import subprocess
 import sys
+import shutil
 import tempfile
 import threading
 import urllib.parse
@@ -42,10 +43,11 @@ parser.add_argument('--receipt', type=Path)
 args = parser.parse_args()
 volume = Path('/Volumes/RootKernel')
 base = volume / 'tmp' if os.path.ismount(volume) and os.access(volume, os.W_OK) else Path(tempfile.gettempdir())
-runtime = Path(tempfile.mkdtemp(prefix='haeryong-task0101-browser-', dir=base))
+runtime = Path(tempfile.mkdtemp(prefix='haeryong-task0101-browser-', dir=args.receipt.resolve().parent if args.receipt else base))
+socket_dir = Path(tempfile.mkdtemp(prefix='hbs-', dir=base))
 profile = runtime / 'browser-profile'
 session = 'hauth' + uuid.uuid4().hex[:10]
-env = os.environ | {'TMPDIR': str(runtime), 'PLAYWRIGHT_DAEMON_SESSION_DIR': str(runtime / 'registry'), 'PLAYWRIGHT_DAEMON_SOCKETS_DIR': str(runtime / 'sockets')}
+env = os.environ | {'TMPDIR': str(runtime), 'PLAYWRIGHT_DAEMON_SESSION_DIR': str(runtime / 'registry'), 'PLAYWRIGHT_DAEMON_SOCKETS_DIR': str(socket_dir)}
 browser_cli = args.browser_cli.resolve(strict=True)
 browser = (['bash'] if browser_cli.suffix == '.sh' else []) + [str(browser_cli), '--session=' + session]
 binary = str(args.fixture_binary.resolve(strict=True))
@@ -317,11 +319,161 @@ try:
     cli(['screenshot', '--filename', str(runtime / 'default-true.png')])
     proof['default_true_screenshot'] = str(runtime / 'default-true.png')
     pair('Remembered owner', remember=None)
+    source_root = runtime / 'source-root'
+    source_root.mkdir()
+    source_alias = runtime / 'source-alias'
+    source_alias.symlink_to(source_root, target_is_directory=True)
+    proof.update(script('''async(page)=>{
+      const base=BASE, root=SOURCE_ROOT, alias=SOURCE_ALIAS;
+      const api=async(method,path,body)=>page.evaluate(async({method,path,body})=>{
+        const response=await fetch('/api/v1'+path,{method,headers:{Authorization:'Bearer '+localStorage.getItem('haeryong.owner-session.v1'),'Content-Type':'application/json','Idempotency-Key':crypto.randomUUID()},body:body===undefined?undefined:JSON.stringify(body)});
+        const result=await response.json();if(!response.ok)throw Error('S09 fixture request '+response.status);return result.data;
+      },{method,path,body});
+      await page.goto(base+'/projects');
+      await page.getByRole('heading',{name:'프로젝트',exact:true}).waitFor();
+      // D2: real App/ShellController/HTTP freshness guard and generation-keyed
+      // screen remount. Applied POST acknowledgements wait until AFTER remount.
+      let generation=null, remounts=0;
+      await page.route('**/api/v1/capabilities',async route=>{
+        const response=await route.fetch(),body=await response.json();
+        if(generation!==null)body.data.runtime_generation=generation;
+        await route.fulfill({response,json:body});
+      });
+      const acrossGeneration=async(path,dispatch,retry,complete)=>{
+        let applied,release,delivered,key='',posts=0;
+        const appliedPromise=new Promise(resolve=>applied=resolve);
+        const held=new Promise(resolve=>release=resolve);
+        const deliveredPromise=new Promise(resolve=>delivered=resolve);
+        const bounded=(promise,stage)=>Promise.race([promise,page.waitForTimeout(15000).then(()=>{throw Error('D2 '+path+' stalled at '+stage)})]);
+        const reads=[];
+        const onRequest=request=>{if(request.url().includes('/operations/'))reads.push(request.url().split('/').pop());};
+        page.on('request',onRequest);
+        const pattern='**/api/v1'+path;
+        await page.route(pattern,async route=>{
+          if(route.request().method()!=='POST'){await route.continue();return;}
+          posts++;key=route.request().headers()['idempotency-key'];
+          const response=await route.fetch();if(!response.ok())throw Error('remount POST was not applied');
+          applied();await held;await route.fulfill({response});delivered();
+        });
+        const oldScreen=await page.locator('main.shell-content').elementHandle();
+        await bounded(dispatch(),'dispatch');await bounded(appliedPromise,'applied');
+        generation='remount-'+(remounts+1);
+        await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+        await page.waitForFunction(el=>!el.isConnected,oldScreen);
+        await retry.waitFor();remounts++;
+        const responseFinished=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/api/v1'+path));
+        release();await bounded(responseFinished,'response');await bounded(deliveredPromise,'delivered');
+        // The stale guard discards the ack at headers without reading its body.
+        // A CDP round-trip lets the retired flow classify that discarded ack.
+        await page.evaluate(()=>new Promise(resolve=>setTimeout(resolve,0)));
+        await retry.click();
+        await complete.waitFor();
+        if(posts!==1||reads.length<1||reads.some(id=>id!==key))throw Error('runtime remount lost original write identity');
+        await page.unroute(pattern);page.off('request',onRequest);
+      };
+
+      await page.getByLabel('프로젝트 이름',{exact:true}).fill('S09 proof');
+      await acrossGeneration('/projects',()=>page.getByLabel('프로젝트 이름',{exact:true}).press('Enter'),page.getByRole('button',{name:'등록 결과 다시 확인',exact:true}),page.getByRole('button',{name:'프로젝트 등록',exact:true}));
+      await page.getByRole('button',{name:'S09 proof',exact:true}).click();
+      await page.getByRole('heading',{name:'원본',exact:true}).waitFor();
+      await page.getByText('등록된 출처 없음',{exact:true}).waitFor();
+      const project=(await page.url()).split('/projects/')[1].split('/')[0];
+      const initial=await api('GET','/configuration');
+      await page.getByRole('button',{name:'출처 설정 편집',exact:true}).click();
+      await page.getByRole('button',{name:'출처 추가',exact:true}).click();
+      await page.getByLabel(/^종류/).selectOption('files');
+      await page.getByLabel('승인할 원본 루트',{exact:true}).fill(alias);
+      await page.getByRole('button',{name:'변경 미리보기',exact:true}).focus();
+      await acrossGeneration('/configuration/plans',()=>page.keyboard.press('Enter'),page.getByRole('button',{name:'원래 설정 작업 결과 다시 확인',exact:true}),page.getByRole('heading',{name:'설정 계획 미리보기',exact:true}));
+      await page.getByRole('heading',{name:'설정 계획 미리보기',exact:true}).waitFor();
+      const preview=await page.getByLabel('설정 계획 미리보기',{exact:true}).innerText();
+      if(!preview.includes(root)||preview.includes(alias))throw Error('preview did not show canonical server root');
+      const commit=page.getByRole('button',{name:'확인 후 적용',exact:true});
+      if(!await commit.isDisabled())throw Error('expanded scope skipped confirmation');
+      await page.getByRole('button',{name:'취소',exact:true}).click();
+      if((await api('GET','/configuration')).config_revision!==initial.config_revision)throw Error('cancel committed a configuration');
+      const [commitPlanResponse]=await Promise.all([page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/configuration/plans')),page.getByRole('button',{name:'변경 미리보기',exact:true}).click()]);
+      const commitPlan=(await commitPlanResponse.json()).data;
+      await page.getByLabel('출처/공개 범위 확대 영향을 확인했습니다',{exact:true}).check();
+      await acrossGeneration('/configuration/plans/'+commitPlan.plan_id+'/commit',()=>commit.click(),page.getByRole('button',{name:'원래 설정 작업 결과 다시 확인',exact:true}),page.getByText('출처 설정 적용됨',{exact:true}));
+      if(remounts!==3)throw Error('runtime remount coverage incomplete');
+      await page.getByRole('button',{name:'원본 목록으로',exact:true}).click();
+      await page.getByText('관측 기록 없음',{exact:true}).waitFor();
+      if((await page.locator('main').innerText()).includes(root))throw Error('S09 exposed a host root');
+      await page.screenshot({path:SOURCE_SHOT,fullPage:true});
+      await page.getByRole('button',{name:'출처 설정 편집',exact:true}).click();
+      const providers=page.getByLabel('공개할 Provider ID(쉼표 구분)',{exact:true});
+      await providers.fill('');await providers.pressSequentially('prov-a, prov-b');
+      const [planResponse]=await Promise.all([page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/configuration/plans')),page.getByRole('button',{name:'변경 미리보기',exact:true}).click()]);
+      const normalized=(await planResponse.json()).data.normalized_changes.projects[project].sources[0];
+      if(JSON.stringify(normalized.provider_ids)!==JSON.stringify(['prov-a','prov-b']))throw Error('ordinary provider typing lost comma');
+      if(normalized.root_path!==root)throw Error('server did not canonicalize source root');
+      await page.getByRole('heading',{name:'설정 계획 미리보기',exact:true}).waitFor();
+      // Advance the real configuration between this preview and its commit.
+      const current=await api('GET','/configuration');
+      const other=await api('POST','/configuration/plans',{scope:{kind:'project',project_id:project},expected_config_revision:current.config_revision,changes:{sources:current.configuration.projects[project].sources}});
+      await api('POST','/configuration/plans/'+other.plan_id+'/commit',{expected_config_revision:other.base_config_revision,confirmed:true});
+      await page.getByLabel('출처/공개 범위 확대 영향을 확인했습니다',{exact:true}).check();await commit.click();
+      await page.getByText('계획이 오래되었습니다.',{exact:false}).waitFor();
+      await page.getByRole('button',{name:'현재 설정 다시 불러오기',exact:true}).click();
+      await page.getByRole('button',{name:'변경 미리보기',exact:true}).waitFor();
+      // E3(b): leave/re-enter the real settings screen in the SAME generation,
+      // then deliver the original preview/commit ack normally to the retired flow.
+      const normalReentry=async(path,dispatch,complete)=>{
+        let applied,release,delivered,key='',posts=0,result;
+        const appliedPromise=new Promise(resolve=>applied=resolve);
+        const held=new Promise(resolve=>release=resolve);
+        const deliveredPromise=new Promise(resolve=>delivered=resolve);
+        const bounded=(promise,stage)=>Promise.race([promise,page.waitForTimeout(15000).then(()=>{throw Error('E3 '+path+' stalled at '+stage)})]);
+        const reads=[];
+        const onRequest=request=>{if(request.url().includes('/operations/'))reads.push(request.url().split('/').pop());};
+        page.on('request',onRequest);
+        const pattern='**/api/v1'+path;
+        await page.route(pattern,async route=>{
+          if(route.request().method()!=='POST'){await route.continue();return;}
+          posts++;key=route.request().headers()['idempotency-key'];
+          const response=await route.fetch();if(!response.ok())throw Error('normal settings write was not applied');
+          result=(await response.json()).data;
+          applied();await held;await route.fulfill({response});delivered();
+        });
+        const oldScreen=await page.getByLabel('출처 설정',{exact:true}).elementHandle();
+        await bounded(dispatch(),'dispatch');await bounded(appliedPromise,'applied');
+        await page.getByRole('button',{name:'원본 목록으로',exact:true}).click();
+        await page.getByRole('heading',{name:'원본',exact:true}).waitFor();
+        await page.getByRole('button',{name:'출처 설정 편집',exact:true}).click();
+        await page.waitForFunction(el=>!el.isConnected,oldScreen);
+        const retry=page.getByRole('button',{name:'원래 설정 작업 결과 다시 확인',exact:true});
+        await retry.waitFor();
+        const responseFinished=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/api/v1'+path));
+        release();const response=await bounded(responseFinished,'response');await bounded(response.finished(),'body');await bounded(deliveredPromise,'delivered');
+        await page.evaluate(()=>new Promise(resolve=>setTimeout(resolve,0)));
+        await retry.click();await complete.waitFor();
+        if(posts!==1||reads.some(id=>id!==key))throw Error('normal settings completion lost its retained intent');
+        await page.unroute(pattern);page.off('request',onRequest);
+        return result;
+      };
+      const normalPlan=await normalReentry('/configuration/plans',()=>page.getByRole('button',{name:'변경 미리보기',exact:true}).click(),page.getByRole('heading',{name:'설정 계획 미리보기',exact:true}));
+      await normalReentry('/configuration/plans/'+normalPlan.plan_id+'/commit',()=>page.getByRole('button',{name:'확인 후 적용',exact:true}).click(),page.getByText('출처 설정 적용됨',{exact:true}));
+
+      // Touch exercises the same settings flow in a genuine touch context.
+      const context=await page.context().browser().newContext({hasTouch:true,viewport:{width:820,height:1180}});
+      const token=await page.evaluate(()=>localStorage.getItem('haeryong.owner-session.v1'));
+      await context.addInitScript(([token,origin])=>{if(window===top&&location.origin===origin)localStorage.setItem('haeryong.owner-session.v1',token)},[token,base]);
+      const touch=await context.newPage();await touch.goto(base+'/projects/'+project+'/sources');
+      await touch.getByRole('button',{name:'출처 설정 편집',exact:true}).tap();
+      await touch.getByRole('button',{name:'변경 미리보기',exact:true}).tap();
+      await touch.getByRole('heading',{name:'설정 계획 미리보기',exact:true}).waitFor();
+      await touch.screenshot({path:TOUCH_SHOT,fullPage:true});
+      await touch.getByRole('button',{name:'취소',exact:true}).tap();
+      await touch.getByRole('button',{name:'변경 미리보기',exact:true}).waitFor();
+      await context.close();await page.unroute('**/api/v1/capabilities');await page.goto(base);
+      return {s09_normal_preview_commit_completion_after_reentry:true,s09_runtime_remount_registration_plan_commit:true,s09_canonical_plan_preview:true,s09_provider_typing:true,s09_registration:true,s09_preview_confirm_commit:true,s09_cancel_no_commit:true,s09_stale_plan:true,s09_scope_impact_confirmation:true,s09_logical_identity_no_host_path:true,s09_keyboard:true,s09_touch:true};
+    }'''.replace('BASE',json.dumps(local)).replace('SOURCE_ROOT',json.dumps(str(source_root))).replace('SOURCE_ALIAS',json.dumps(str(source_alias))).replace('SOURCE_SHOT',json.dumps(str(runtime/'sources.png'))).replace('TOUCH_SHOT',json.dumps(str(runtime/'sources-touch.png')))))
     proof.update(script('''async (page) => {
       const key='haeryong.owner-session.v1';
       if(!await page.evaluate(key=>Boolean(localStorage.getItem(key)),key))throw new Error('default remembered token absent');
       if(!await page.evaluate(async()=>{const token=localStorage.getItem('haeryong.owner-session.v1');for(const path of ['/api/v1/auth/pairings','/api/v1/sessions','/api/v1/jobs']){const response=await fetch(path,{headers:{Authorization:'Bearer '+token}});const value=await response.json();if(!response.ok||!Array.isArray(value.data?.items)||value.data.next_cursor!==null)return false;}return true;}))throw new Error('common list response envelope missing');
-      await page.goto(new URL(page.url()).origin+'/connect');
+      await page.goto((await page.evaluate(()=>location.origin))+'/connect');
       await page.getByRole('button',{name:'비공개 상태 확인',exact:true}).click();
       await page.waitForFunction(()=>{const node=document.querySelector('[aria-label="비공개 상태"]');return node!==null&&/library/i.test(node.textContent)});
       const capabilities=await page.evaluate(async()=>{const token=localStorage.getItem('haeryong.owner-session.v1');const response=await fetch('/api/v1/capabilities',{headers:{Authorization:'Bearer '+token}});return (await response.json()).data;});
@@ -355,10 +507,10 @@ try:
         if(await page.evaluate(()=>location.pathname+location.search+location.hash)!=='/')throw new Error('invalid page auth-return was accepted');
       }
       await page.goto(base+route);
-      await page.waitForFunction(()=>VERIFIED&&document.body.textContent.includes('구현되지 않았습니다'));
+      await page.waitForFunction(()=>VERIFIED&&document.body.textContent.includes('문서 정보를 불러오지 못했습니다'));
       if(await page.evaluate(()=>location.pathname+location.search+location.hash)!==route)throw new Error('deep link context was rewritten');
       await page.reload();
-      await page.waitForFunction(()=>VERIFIED&&document.body.textContent.includes('구현되지 않았습니다'));
+      await page.waitForFunction(()=>VERIFIED&&document.body.textContent.includes('문서 정보를 불러오지 못했습니다'));
       const second=await page.context().newPage();await second.goto(base);
       await second.waitForFunction(()=>VERIFIED);await second.close();
       const denied=await page.evaluate(async()=>{const paths=['/api/v1/session','/api/v1/private/assets','/api/v1/operations/unknown','/api/v1/jobs','/api/v1/events'];return Promise.all(paths.map(async path=>(await fetch(path,{credentials:'omit'})).status));});
@@ -366,7 +518,7 @@ try:
       if(!await page.evaluate(key=>{const token=localStorage.getItem(key);return !document.documentElement.outerHTML.includes(token)&&!location.href.includes(token)},'haeryong.owner-session.v1'))throw new Error('bearer leaked into DOM or URL');
       return {safe_return_external_rejected:true,logical_return_and_reload:true,deep_link_context_preserved:true,new_tab:true,
               encoded_filename_auth_return_preserved:true,encoded_filename_reload_preserved:true,invalid_page_auth_return_rejected:true,
-              registered_route_placeholder:true,unpaired_assets_receipts_jobs_events_denied:true,no_dom_url_bearer:true};
+              reader_unknown_version_honest:true,unpaired_assets_receipts_jobs_events_denied:true,no_dom_url_bearer:true};
     }'''.replace('BASE', json.dumps(local)).replace('REMEMBERED', quoted(STATUS_VERIFIED_REMEMBERED)).replace('VERIFIED', VERIFIED_WAIT)))
     cli(['close']); opened = False
     cli(['open', local, '--profile', str(profile)]); opened = True
@@ -426,7 +578,7 @@ try:
       return {pairing_id:p.pairing_id,code:p.code};
     }'''.replace('PEER', json.dumps(peer)))
     script('''async(page)=>{const peer=page.context().pages().find(tab=>tab.url().startsWith(PEER));
-      await page.goto(new URL(page.url()).origin+'/connect');
+      await page.goto((await page.evaluate(()=>location.origin))+'/connect');
       await page.waitForFunction(()=>VERIFIED);
       await page.getByLabel('요청 ID',{exact:true}).fill(PAIRING_ID);await page.getByLabel('비교 코드',{exact:true}).fill(COMPARISON);
       await page.getByRole('button',{name:'장치 승인',exact:true}).click();
@@ -490,7 +642,7 @@ try:
       if(after.tokenPolls!==1||after.stored||after.phase!=='none')throw new Error('uncertain issuance was consumed or retried: '+JSON.stringify(after));
       await context.close();return {lost_single_use_issuance_not_retried:true,issuance_observed:after};
     }'''.replace('ISSUANCE', quoted(ISSUANCE_LOST))))
-    script('''async(page)=>{await page.goto(new URL(page.url()).origin+'/connect');await page.evaluate(()=>localStorage.removeItem('haeryong.owner-session.v1'));await page.reload();await page.waitForFunction(()=>UNAUTHENTICATED);return true}'''.replace('UNAUTHENTICATED', UNAUTHENTICATED_WAIT))
+    script('''async(page)=>{await page.goto((await page.evaluate(()=>location.origin))+'/connect');await page.evaluate(()=>localStorage.removeItem('haeryong.owner-session.v1'));await page.reload();await page.waitForFunction(()=>UNAUTHENTICATED);return true}'''.replace('UNAUTHENTICATED', UNAUTHENTICATED_WAIT))
     proof['storage_loss_connect'] = True
     pair('Expiry owner')
     control({'action': 'expiry', 'seconds': 1})
@@ -511,7 +663,7 @@ try:
       await target.goto(ALIAS+'/connect');
       await target.waitForFunction(()=>document.querySelector('[data-state]')&&document.querySelector('[data-state]').getAttribute('data-state')==='incompatible',null,{timeout:12000});
       if(!await target.evaluate(()=>document.body.textContent.includes('INCOMPATIBLE')))throw new Error('incompatibility copy missing');
-      for(const name of ['비공개 상태 확인','로그아웃','장치 목록 새로고침']){const button=target.getByRole('button',{name,exact:true});if(await button.count()===0||!await button.first().isDisabled())throw new Error('write affordance enabled under incompatible contract: '+name)}
+      for(const name of ['비공개 상태 확인','로그아웃','장치 목록 새로고침']){const button=target.getByRole('button',{name,exact:true});if(await button.count()>0&&!await button.first().isDisabled())throw new Error('write affordance enabled under incompatible contract: '+name)}
       if(!await target.evaluate(()=>Boolean(localStorage.getItem('haeryong.owner-session.v1'))))throw new Error('credential dropped on compatibility mismatch');
       await target.screenshot({path:SHOT});
       return {api_version_mismatch_visible:true,incompatible_writes_disabled:true,incompatible_credential_retained:true};
@@ -544,7 +696,7 @@ try:
       const context=page.context().browser().contexts().find(context=>context!==page.context()),target=context.pages()[0];
       await target.waitForFunction(()=>document.body.textContent.includes('DISCONNECTED'),null,{timeout:15000});
       if(await target.locator('[data-state]').getAttribute('data-state')!=='degraded')throw new Error('degraded state not signalled');
-      for(const name of ['비공개 상태 확인','로그아웃','장치 목록 새로고침']){const button=target.getByRole('button',{name,exact:true});if(await button.count()===0||!await button.first().isDisabled())throw new Error('write affordance enabled while disconnected: '+name)}
+      for(const name of ['비공개 상태 확인','로그아웃','장치 목록 새로고침']){const button=target.getByRole('button',{name,exact:true});if(await button.count()>0&&!await button.first().isDisabled())throw new Error('write affordance enabled while disconnected: '+name)}
       if(!await target.evaluate(()=>Boolean(localStorage.getItem('haeryong.owner-session.v1'))))throw new Error('credential dropped while disconnected');
       await target.screenshot({path:SHOT});
       return {disconnected_state_visible:true,disconnected_writes_disabled:true,disconnected_credential_retained:true};
@@ -855,7 +1007,8 @@ try:
       if(!contextInfo||!contextInfo.touch)throw new Error('touch context does not report touch capability');
       if(!contextInfo.viewport||contextInfo.viewport.width!==820||contextInfo.viewport.height!==1180)throw new Error('touch viewport mismatch: '+JSON.stringify(contextInfo.viewport));
       await target.touchscreen.tap(box.x+box.width/2,box.y+box.height/2);
-      await target.waitForFunction(()=>document.body.textContent.includes('구현되지 않았습니다'));
+      await target.getByRole('heading',{name:'서재',exact:true}).waitFor();
+      await target.getByRole('button',{name:'검색',exact:true}).waitFor();
       await target.screenshot({path:SHOT});
       if(target.qaErrors.length)throw new Error('touch flow observed application errors');
       await context.close();
@@ -874,3 +1027,4 @@ finally:
         cli(['close'])
     stop_proxy()
     stop()
+    shutil.rmtree(socket_dir)

@@ -253,6 +253,18 @@ func TestReaderNativeOperationsParity(t *testing.T) {
 	if len(extra) > 0 {
 		t.Fatalf("Go operation cases missing from the TypeScript declarations: %s", strings.Join(extra, ", "))
 	}
+	// The source/configuration family must stay exposed in all transports.
+	for _, required := range []string{"configurationView", "configurationPlan", "configurationPlanCommit", "projectRegister", "projectSources", "verifySourceEvidence", "runSourceObservation"} {
+		found := false
+		for _, name := range public {
+			if name == required {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("source operation missing: %s", required)
+		}
+	}
 	// Descriptive only: the current sizes are facts, never asserted invariants.
 	t.Logf("operation parity: go=%d public=%d wire=%d", len(goNames), len(public), len(wire))
 }

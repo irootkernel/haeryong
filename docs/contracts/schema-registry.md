@@ -136,7 +136,7 @@ Ordinary links remain payload bytes. Optional authored library references retain
 
 Runtime evidence responses add `availability`, `bytes_origin`, nullable reason code and the actual revision/digest served. Permission-denied details are returned only where existence is already authorized; otherwise use nondisclosing 404. A hash, release label or historical verified capture does not imply bytes are currently available. Runtime availability changes never rewrite published provenance.
 
-Explicit imported-evidence checking uses POST /versions/{id}/source-evidence/{evidence_id}/verifications under current version/source authority. The optional expected_bytes_sha256 and expected_excerpt (or mutually exclusive immutable expected_excerpt_ref) are expectations about the exact bounded target bytes: compare SHA-256 and exact UTF-8 excerpt bytes without whitespace/Unicode normalization, with all supplied expectations required to match. No expected digest/excerpt is mandatory. With no expectation, outcome captured records exact target resolution/capture only; matched means supplied expectations matched; mismatch retains the failed comparison; unavailable retains its actual reason. Persist checked_at for every check and verified_at only for captured/matched. The immutable author's capture_status is never upgraded or overwritten. GET source-evidence composes a separate latest service_verification and its history link; history exposes check results without starting another read or AI request. Invalid request fields fail normally, and the recorded outcome never proves source truth or what the producing agent read. The HTTP contract owns the exact operation/response shape. Verification acquires existing/temporary object pins before reading, verifies the same pinned bytes, rechecks current authority through completion and preserves permitted record references under the source-retention rules.
+Explicit imported-evidence checking uses POST /versions/{id}/source-evidence-verifications?evidence_id={evidence_id} under current version/source authority. The optional expected_bytes_sha256 and expected_excerpt (or mutually exclusive immutable expected_excerpt_ref) are expectations about the exact bounded target bytes: compare SHA-256 and exact UTF-8 excerpt bytes without whitespace/Unicode normalization, with all supplied expectations required to match. No expected digest/excerpt is mandatory. With no expectation, outcome captured records exact target resolution/capture only; matched means supplied expectations matched; mismatch retains the failed comparison; unavailable retains its actual reason. Persist checked_at for every check and verified_at only for captured/matched. The immutable author's capture_status is never upgraded or overwritten. GET source-evidence composes a separate latest service_verification and its history link; history exposes check results without starting another read or AI request. Invalid request fields fail normally, and the recorded outcome never proves source truth or what the producing agent read. The HTTP contract owns the exact operation/response shape. Verification acquires existing/temporary object pins before reading, verifies the same pinned bytes, rechecks current authority through completion and preserves permitted record references under the source-retention rules.
 
 Every project-source citation in a completed AI answer/assessment has {basis, read_id, verification_id, input_origin, target_set_id, exact source identity/location, bytes_sha256} and optional package_evidence_ref {version_id, evidence_id}. For basis observed_input, read_id is required, verification_id is null, and input_origin is daemon_supplied or native_observed with a matching actual observation in the producing attempt. For basis posthoc_verified, verification_id is required and read_id/input_origin are null; the daemon checked the cited target bytes later under current authority using a captured or matched verification outcome. It never implies that the provider received those bytes, backdates a capture or changes the original generation provenance. The verification record contains verified_at. A native read that was not observed cannot be converted into an observed_input citation by re-reading its path afterward. Source-only capture without a producing-attempt input observation also cannot establish observed_input.
 
@@ -150,11 +150,37 @@ freshness has {source_intent, target_set_id, captured_at, scope, status, coverag
 
 An explicit target_set_id selects that exact captured target. Otherwise choose the latest captured_at (then target_set_id for a stable tie break) among applicable service-captured sets for the same exact requested_selection: project/source IDs, source mode and requested revision/branch/snapshot selection. An explicit source_mode wins. Without it, historical source_intent uses pinned; otherwise use the remembered project source_mode_default, defaulting to pinned. moving_target describes intended use and never by itself forces current mode, performs a read or overrides explicit pinned selection. Do not select an unrelated latest assessment. A status/list read never resolves a branch, reads source or starts AI. With no actual capture for that selection, return target_set_id/captured_at/coverage_set_id null, status not_assessed and complete false. Import-only source declarations do not create captured target sets. A later explicit source check can create the first captured set without retroactively claiming import-time verification.
 
+For observation-backed current selection, conditionally retain the latest matching
+committed attempt A (created_at, then run_id) and latest matching committed valid
+capture C separately (newest capture run by created_at, then run_id). Match exact
+project, effective source IDs and selection family; A supplies status and
+availability-level unit reasons
+(missing_source, source_not_registered, source_denied), while C supplies target,
+captured_at, coverage set and trigger visibility. If no C exists, preserve the
+no-capture target/time nulls above, but the attempted denominator and reasons may
+come from A's persisted coverage set. All-unavailable attempts still persist their
+requested_selection/scope and reasons. Explicit targets bypass this search and
+select exactly their committed capture and owning run scope; a scope mismatch
+returns applicable null. Pinned/historical selections choose only exact pinned
+verification captures (latest captured_at, then target_set_id), without HEAD
+triggers or observation coverage; the two capture families never substitute for
+each other. Dangling/uncommitted captures and attempts are ineligible.
+
 Capture one immutable coverage set for the exact version, target and requested scope before assessment. It records coverage_set_id, version_id, target_set_id, scope, unit_kind, captured_at and the complete non-overlapping required tuple set {kind,page_path,region_id}. A version scope deterministically requires every discovered HTML page as a page unit; a version without HTML has one whole-version unit. A page scope defaults to its single page unit, or uses an explicitly selected fixed set of that page's region units. A region scope uses that one exact region. Missing/duplicate/runtime anchors never fabricate regions or impose a region requirement. Supporting files and unread content stay in the unit's stated limitations. Changing required membership/kind produces a new set; outcomes/exclusions never shrink the captured denominator.
 
 Persist each assessment contribution as {assessment_id,target_set_id,kind,page_path,region_id,outcome,discrepancy,reason}, linked to its coverage_set_id. reason is nullable only when no limitation applies. outcome is assessed, partial, blocked or not_checked; a required exclusion is not_checked with its actual reason. discrepancy records an evidenced discrepancy even in a partial unit. The required-unit view includes every tuple and its latest applicable published assessment linkage, or assessment_id null/outcome not_checked when none exists. Store or stream these records; counts alone cannot support aggregation. Broader assessments contribute only where their recorded required tuples and full coverage explicitly match, never by summing overlapping page/region counts.
 
 For each tuple in the selected coverage set, choose the newest applicable published contribution by assessment time then ID. Contributions may originate in another coverage set only when version_id, target_set_id, unit kind, exact page/region identity and the unit's defined full scope match. A later page-only assessment can therefore update that page in a whole-version page-unit summary without double-counting; a region-only check cannot claim the entire page was assessed. Keep the source assessment/coverage-set linkage visible. A changed target_set_id requires a new assessment or an explicit evidence-backed revalidation, not automatic reuse. Unapproved candidates remain findings. assessed counts only fully assessed required units. complete requires eligible > 0, an available exact target, every required unit assessed and no unrecorded exclusion. An evidenced discrepancy yields outdated_against_target; otherwise an outstanding relevant change trigger yields reassessment_needed; otherwise a blocked required unit yields unable_to_verify; complete coverage without discrepancy yields aligned_within_scope; remaining partial/no coverage yields not_assessed. An explicitly attempted unavailable source check records its reason/unable_to_verify, never a successful empty check.
+
+When the latest matching observation run is availability-blocked, the status is
+unable_to_verify even though an earlier capture supplies the target and coverage;
+reassessment_required remains derived from the selected capture's uncleared
+triggers. Only C.target_set_id and its exact anchors determine trigger visibility;
+never union triggers from other same-selection captures. Version scope counts all
+triggers of C; page scope counts its region triggers; region scope counts only
+that page/region tuple. Thus an unavailable A
+can preserve C's trigger, while a later new capture without a direct change does
+not inherit an old target's trigger. The old explicit target still exposes it.
 
 reassessment_required records an outstanding relevant structural-change trigger for this target/scope. It is independent of the selected status: it can remain true while an evidenced discrepancy makes status outdated_against_target. A new applicable assessment clears only triggers that its target/scope and observation cover. Setting the flag authorizes neither an AI call nor a semantic verdict. Display historical intent/target explicitly and never infer outdatedness merely from a newer unrelated commit.
 
@@ -279,21 +305,16 @@ once-decoded ID and the same authority as the legacy path. Both SDKs' history
 operation and all returned `verifications_url` locators use
 `/versions/{id}/source-evidence-verifications?evidence_id=...` with optional
 `cursor`, preserving dot, literal-percent, slash and Unicode identities. This
-history alias is currently only an authenticated GET future-capability 503;
-it implements no history backend or verification action. Its POST and HEAD
-methods remain unknown (404).
-
-These additive selections fix the shared presentation adapter's current consumer
-contract for the typed evidence query operations and the supplied-metadata
-bridge. They select field names and envelope composition only; no enum,
-authority, error mapping or schema version changes, and no production
-assessment/verification backend is introduced — verification history,
-`assessments` and `assessments/coverage` remain future capabilities (503
-FEATURE_NOT_READY) until their ordered owners.
+history alias now implements GET and the canonical lossless POST verification
+operation under TASK-004-01. HEAD remains unknown (404); legacy path forms remain.
+These are additive implementations of the selected contract within schema 1.0.
+The observation route and project-source projection are additive provisional
+selections; assessment producers remain owned by later Tasks.
 
 The assessments consumer query uses exactly `target_set_id`, `scope_kind`
-(`version`|`page`|`region`), `page_path`, `region_id` and `cursor`; the coverage
-consumer query uses exactly `coverage_set_id` and `cursor`. Each assessments
+(`version`|`page`|`region`), `page_path`, `region_id`, `cursor` and `limit`; the coverage
+consumer query uses exactly `coverage_set_id`, optional `attempt_run_id`, `cursor`
+and `limit`. Each assessments
 response page is the ordinary list envelope plus one typed `applicable` member:
 the service-selected applicable freshness view, or explicit null when the
 response carries none. Consumers never infer the summary from history items; a
@@ -301,19 +322,50 @@ null member is an honest unknown, and the recorded coverage summary and status
 badge are displayed but re-derived from the enumerated fixed required-unit
 records that match the coverage set's selected `unit_kind` and scope structure.
 
+For source-observation coverage, conditionally permit a non-null coverage_set_id
+with null target_set_id when an actual attempt captured no source. Its persisted
+required units remain not_checked with actual availability reasons; this is not
+an empty successful target or a semantic assessment. If A differs from C's owning
+run, coverage.units_url additionally carries attempt_run_id=A.run_id. Without
+that parameter, coverage returns exactly the set's stored units. With it, retain
+C's denominator/membership/target and overlay only A's availability reasons on
+units citing its failed sources; other units retain their captured reasons.
+A must be a committed run of the same version/project/requested_selection as the
+coverage set's owning run; otherwise return 404 with details.attempt_run_id.
+Cursors bind both IDs and permission generations. This never rewrites stored
+units. Clients forward attempt_run_id on every first page, next page and retry.
+Default selection does not search older runs to obtain a matching scope: expose
+C's (or no-C A's) coverage only when its stored scope matches the requested scope
+exactly, otherwise use null coverage with zero counts. A requested page/region
+that cannot project onto the version, or a version without any evidence and
+without any captures/observations, returns applicable null. These differ from
+the honest no-capture composition for a valid selection.
+
 | View | Selected fields |
 | --- | --- |
 | Assessments page | `data.items` (history: `assessment_id`, `version_id`, `scope {kind,page_path,region_id}`, `target_set_id`, optional `state`), `data.next_cursor`, nullable `data.applicable` |
 | Applicable freshness | `source_intent`, `target_set_id`, `captured_at`, `scope {kind,page_path,region_id}`, `status`, `coverage {coverage_set_id,unit_kind,eligible,assessed,complete,units_url}`, `assessed_at`, `reassessment_required` |
 | Coverage unit row | `kind`, `page_path`, `region_id`, `outcome`, `reason`, `discrepancy`, `assessment_id`, `target_set_id` |
 | Verification history row | `verification_id`, `outcome`, `checked_at`, `verified_at`, `reason` when applicable |
-| Evidence item view | `version_id`, `evidence_id`, `authored`, `source`, `availability`, `bytes_origin`, `reason`, `service_verification`, `verifications_url` |
+| Evidence item view | `version_id`, `evidence_id`, `authored`, `source`, `availability`, `bytes_origin`, `reason`, `service_verification`, `verifications_url`, optional `excerpt {bytes_sha256,data_base64?}` |
 | Supplied metadata stream | exact bytes plus the immutable object's strong ETag (`"sha256-<64 hex>"`) |
 
-Current evidence-item service truth composes `availability` `unavailable` with
-reason `source_read_not_implemented`, `bytes_origin` null and
-`service_verification` null; it never upgrades authored `capture_status` or
-performs a fresh source read. `units_url` is consumed as data: the request is
+Evidence-item service truth is principal-specific: no source.read yields denied
+with null reason/origin and no excerpt; readable digest-checked retained bytes
+win over missing checkout observations. Absent retained bytes give
+missing_retained_bytes, corrupt bytes retained_bytes_corrupt, both unavailable
+without excerpts. Unmapped Git gives source_not_registered; recorded missing
+source gives missing_source. Otherwise mapped Git is unavailable with reason
+not_read_by_view, null origin and no excerpt: this view performs no new Git read,
+and the UI labels it "확인 전" rather than declaring source failure. Current
+service_verification is composed separately; authored capture_status never changes.
+A successful authorized retained-byte read adds optional excerpt with the SHA-256
+of the exact bounded bytes. data_base64 contains those bytes only when the bound
+is at most 64 KiB and its encoding is nonempty; a larger bound (or empty byte
+selection) has digest-only excerpt with data_base64 omitted, not truncated text.
+Denied/unavailable/not_read_by_view views have no excerpt. This inline-view bound
+is not a source/content size limit and never starts a new Git read.
+`units_url` is consumed as data: the request is
 rebuilt from typed fields only when it names the exact fixed local route for
 the same version and coverage set; foreign or protocol-relative references are
 rejected, and an absolute URL is accepted only on the current service origin.
@@ -415,3 +467,38 @@ JSON native wire reifies it beside the guarded stream; the shared
 never sets, and the download engine binds it to the writable attempt as the
 pre-publication `expected`. Archive package streams never claim a validator;
 their completion claim stays a clean end plus byte count.
+
+## Selected source observation shapes (TASK-004-01)
+
+The [HTTP delivery](http-api.md#source-observation-delivery-task-004-01) fixes
+request/result and error shapes, including the five-field observation scope
+versus frozen three-field applicable.scope. Machine fixture definitions live in
+`tests/contracts/schema.json`; these are additive selections, with the new
+observation route and project-source projection provisional. Metadata/config
+schema versions remain 1.0.
+
+Project-source items have source_id, kind (git/files), repo_id (nullable),
+retention_mode, provider_ids, last_observed_revision, last_observed_at,
+last_availability and last_observation_reason. All four last_* fields are null
+before an observation. Time/availability/reason come from the latest per-source
+observation-run row; revision comes from the latest row that actually captured
+that source, even when a later attempt fails. Verification checks never count.
+The array is sorted by source_id and cursor-bound to project permissions.
+
+Observation source rows carry nullable reason and arrays changed_paths and
+dependency_scope. Direct cited-path byte change records direct_source_change;
+advanced revision with unchanged cited paths discloses
+unexamined_dependency_scope, without a daemon-set semantic reassessment trigger.
+A mode-only Git change with identical blob bytes has no changed cited byte
+path. If its revision advances, classification is indirect with
+unexamined_dependency_scope and no direct-change trigger. Unit reasons use
+availability first (source_not_registered > missing_source >
+missing_retained_bytes > retained_bytes_corrupt > source_denied),
+then direct_source_change, then unexamined_dependency_scope, then
+no_cited_evidence for a unit with no cited evidence; otherwise null.
+Version scope enumerates every HTML page or one version unit with no HTML;
+page/region scope uses its exact anchor. Region IDs stay page-local.
+Every current unit is `{kind,page_path,region_id,outcome:"not_checked",reason,
+discrepancy:null,assessment_id:null,target_set_id}`. Assessments items stay empty,
+next_cursor null, assessed_at null, assessed 0 and complete false; observations
+alone never prove aligned_within_scope or outdated_against_target.

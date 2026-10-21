@@ -166,6 +166,90 @@ export interface ListPage<T> {
   next_cursor: string | null;
 }
 
+/** Owner configuration edits always preview a revision-bound project plan. */
+export interface SourceMapping {
+  source_id: string;
+  kind: "git" | "files";
+  root_path: string;
+  repo_id: string | null;
+  retention_mode: "reference_only" | "selected_snapshot";
+  provider_ids: string[];
+}
+export interface ProjectConfiguration {
+  sources: SourceMapping[];
+  [key: string]: unknown;
+}
+export interface ConfigurationView {
+  config_revision: number;
+  etag: string;
+  configuration: { projects: Record<string, ProjectConfiguration>; [key: string]: unknown };
+}
+export interface ConfigurationPlanRequest {
+  scope: { kind: "project"; project_id: string };
+  expected_config_revision: number;
+  changes: Record<string, unknown>;
+}
+export interface ConfigurationPlanView {
+  plan_id: string;
+  base_config_revision: number;
+  expires_at: string;
+  normalized_changes: Record<string, unknown>;
+  affected_permissions_revisions: Record<string, number>;
+  impact: Record<string, unknown>;
+  [key: string]: unknown;
+}
+export interface ConfigurationCommitRequest { expected_config_revision: number; confirmed: boolean }
+export interface ConfigurationCommitView { plan_id: string; config_revision: number; impact: Record<string, unknown> }
+export interface ProjectSourceView {
+  source_id: string;
+  kind: string;
+  repo_id: string | null;
+  retention_mode: string;
+  provider_ids: string[];
+  last_observed_revision: string | null;
+  last_observed_at: string | null;
+  last_availability: string | null;
+  last_observation_reason: string | null;
+}
+export interface EvidenceVerificationRequest {
+  expected_bytes_sha256?: string;
+  expected_excerpt?: string;
+  expected_excerpt_ref?: { upload_id: string };
+}
+export interface EvidenceVerificationResult extends VerificationRecord {
+  operation_id: string;
+  version_id: string;
+  evidence_id: string;
+  target_set_id: string | null;
+  source: Record<string, unknown>;
+  location: Record<string, unknown>;
+  bytes_sha256: string | null;
+  bytes_origin: "approved_source" | "retained_snapshot" | null;
+}
+export interface SourceObservationRequest {
+  source_ids?: string[];
+  scope?: { kind: "version" | "page" | "region"; page_path?: string; region_id?: string };
+}
+export interface SourceObservationResult {
+  operation_id: string;
+  run_id: string;
+  target_set_id: string | null;
+  captured_at: string | null;
+  observed_at: string;
+  coverage_set_id: string | null;
+  scope: { kind: "version" | "page" | "region"; page_path: string | null; region_id: string | null; declared: boolean; reason: string | null };
+  sources: Array<{
+    source_id: string;
+    observation_id: string;
+    availability: "available" | "unavailable" | "denied";
+    classification: "direct" | "indirect" | "unchanged" | "unavailable" | "denied";
+    reason: string | null;
+    changed_paths: string[];
+    dependency_scope: string[];
+    reassessment_required: boolean;
+  }>;
+}
+
 export interface ProjectView {
   project_id: string;
   name: string;
@@ -457,8 +541,8 @@ export interface SuppliedMetadataStream {
 /**
  * Immutable authored evidence item plus the separately composed service view.
  * `authored`/`source` are the exact stored metadata records; availability,
- * bytes_origin and reason describe the CURRENT service truth (before
- * TASK-004-01: unavailable with reason source_read_not_implemented), and
+ * bytes_origin and reason describe the authorized service view (including
+ * the neutral not_read_by_view state), and
  * service_verification/verifications_url expose the separate later checks
  * without ever upgrading the author's capture_status.
  */
@@ -466,6 +550,7 @@ export interface EvidenceItemView {
   version_id: string;
   evidence_id: string;
   authored: Record<string, unknown>;
+  excerpt?: { bytes_sha256: string; data_base64?: string };
   source: Record<string, unknown>;
   availability: string;
   bytes_origin: string | null;
@@ -643,6 +728,14 @@ export interface HaeryongClient {
   revokeOwnSession(): Promise<void>;
   serviceStatus(): Promise<unknown>;
   subscribeEvents(): EventSubscription;
+  // Revision-bound source/configuration operations
+  configurationView(): Promise<ConfigurationView>;
+  configurationPlan(request: ConfigurationPlanRequest, operationId: string): Promise<ConfigurationPlanView>;
+  configurationPlanCommit(planId: string, request: ConfigurationCommitRequest, operationId: string): Promise<ConfigurationCommitView>;
+  projectRegister(name: string, operationId: string): Promise<ProjectView>;
+  projectSources(projectId: string, cursor?: string): Promise<ListPage<ProjectSourceView>>;
+  verifySourceEvidence(versionId: string, evidenceId: string, request: EvidenceVerificationRequest, operationId: string): Promise<EvidenceVerificationResult>;
+  runSourceObservation(versionId: string, request: SourceObservationRequest, operationId: string): Promise<SourceObservationResult>;
   // Library reads
   listProjects(cursor?: string): Promise<ListPage<ProjectView>>;
   listDocuments(filter: { projectId?: string; lifecycle?: string; cursor?: string }): Promise<ListPage<DocumentView>>;
@@ -655,7 +748,7 @@ export interface HaeryongClient {
   versionEvidence(versionId: string, evidenceId: string): Promise<EvidenceItemView>;
   evidenceVerifications(versionId: string, evidenceId: string, cursor?: string): Promise<ListPage<VerificationRecord>>;
   versionAssessments(versionId: string, filter?: AssessmentFilter & { cursor?: string }): Promise<AssessmentsView>;
-  assessmentCoverage(versionId: string, coverageSetId: string, cursor?: string): Promise<ListPage<CoverageUnit>>;
+  assessmentCoverage(versionId: string, coverageSetId: string, cursor?: string, attemptRunId?: string): Promise<ListPage<CoverageUnit>>;
   renderBootstrap(versionId: string, pagePath?: string): Promise<RenderBootstrapView>;
   renderSessionOpen(versionId: string, operationId: string): Promise<RenderSessionView>;
   renderSessionRenew(versionId: string, sessionId: string): Promise<void>;

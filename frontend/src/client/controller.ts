@@ -8,6 +8,7 @@
 // credential/library/generation run are discarded, never applied.
 import type { Capabilities, CredentialAware, DaemonDiscovery, DaemonStartOffer, DeviceSession, HaeryongClient, NativePairingCreated, NativePairingPoll, OperationView, PairingAdoption, PairingCreated, PairingDecisionRequest, PairingPoll, PairingView, SessionInfo } from "./types.ts";
 import { ApiError, DispatchBlockedError, NetworkError, StaleResponseError, SUPPORTED_API_VERSION, UncertainResponseError } from "./types.ts";
+import { SourceWriteIntents } from "./source-write-intents.ts";
 import type { CredentialStore } from "./store.ts";
 
 export type ShellPhase = "checking" | "unauthenticated" | "verified" | "degraded" | "incompatible";
@@ -135,6 +136,7 @@ export interface ShellControllerOptions {
 }
 
 export class ShellController {
+  readonly #sourceWrites = new Map<string, SourceWriteIntents>();
   readonly #client: HaeryongClient & CredentialAware;
   readonly #store: CredentialStore;
   readonly #recheckIntervalMs: number;
@@ -238,6 +240,17 @@ export class ShellController {
   captureDispatchAuthority(): DispatchAuthority | null {
     if (this.#state.phase !== "verified") return null;
     return { nonce: this.#authority, libraryId: this.#libraryId, runtimeGeneration: this.#generation };
+  }
+
+  /** Same library/principal survives a runtime generation, never crosses owners. */
+  sourceWriteIntents(): SourceWriteIntents {
+    const libraryId = this.#state.capabilities?.library_id;
+    const principalId = this.#state.session?.principal_id;
+    if (!libraryId || !principalId || this.#state.session?.library_id !== libraryId) throw new DispatchBlockedError();
+    const key = JSON.stringify([libraryId, principalId]);
+    let intents = this.#sourceWrites.get(key);
+    if (!intents) { intents = new SourceWriteIntents(); this.#sourceWrites.set(key, intents); }
+    return intents;
   }
 
   hasCredential(): boolean {

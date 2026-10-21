@@ -7,6 +7,7 @@ import type { ShellState } from "../client/controller.ts";
 import { ConnectScreen } from "./connect.tsx";
 import { HomeScreen } from "./screens/home.tsx";
 import { LibraryScreen } from "./screens/library.tsx";
+import { ProjectsScreen, SourcesScreen, SourceSettings } from "./screens/sources.tsx";
 import { StorageScreen } from "./screens/storage.tsx";
 import { ReaderScreen } from "./screens/reader.tsx";
 import { navigate, safeReturn, useShellRoute } from "./router.tsx";
@@ -239,6 +240,12 @@ export function App({ controller }: { controller: ShellController }) {
             <LibraryScreen controller={controller} />
           ) : screen === "reader" && route.path ? (
             <ReaderRoute controller={controller} path={route.path} />
+          ) : screen === "projects" || screen === "project" || (screen === "settings" && route.section === "projects" && !new URLSearchParams(location.search).has("project")) ? (
+            <ProjectsScreen controller={controller} />
+          ) : screen === "sources" ? (
+            <SourcesScreen key={route.path.split("/")[2]} controller={controller} projectId={route.path.split("/")[2]!} />
+          ) : screen === "settings" && route.section === "projects" ? (
+            <SourceSettings key={new URLSearchParams(location.search).get("project")} controller={controller} projectId={new URLSearchParams(location.search).get("project")!} />
           ) : screen === "settings" && route.section === "storage" ? (
             <StorageScreen controller={controller} />
           ) : (

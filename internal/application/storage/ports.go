@@ -135,4 +135,63 @@ type WriteTx interface {
 	ResourceRow(kind, id string) (domain.Resource, error)
 	PutContext(domain.ContextRecord) error
 	Context(string) (domain.ContextRecord, error)
+
+	// Source-target capture, verification and staged-check records
+	// (TASK-004-01). Writes are append-only except check-intent state.
+	PutTargetSet(domain.TargetSet) error
+	PutCapturedRead(domain.CapturedRead) error
+	PutVerification(domain.CitationVerification) error
+	PutCheckIntent(domain.CheckIntent) error
+	CheckIntent(string) (domain.CheckIntent, error)
+	CheckIntentByOperation(principalID, operationID string) (domain.CheckIntent, error)
+	OpenCheckIntents() ([]domain.CheckIntent, error)
+	ResolveCheckIntent(id, state, reason, resolvedAt string) error
+	ReleaseCheckIntentPins(intentID string) error
+	CleanupCheckIntentPins() error
+	TestTrashDocument(id string) error
+	TestReplaceEvidence(version, evidence string, metadata []byte) error
+	TestReopenIntent(operationID, principalID string) error
+	TestReopenResolveFail(operationID string) error
+	VerificationByOperation(principalID, operationID string) (domain.CitationVerification, bool, error)
+	Verifications(versionID, evidenceID, afterCheckedAt, afterID string, limit int) ([]domain.CitationVerification, error)
+	LatestVerification(versionID, evidenceID string) (domain.CitationVerification, error)
+	LatestEvidenceObservation(versionID, sourceID string) (domain.SourceObservation, error)
+	SourceCaptures(projectID string) ([]domain.TargetSet, error)
+	RegisterProject(domain.Project) error
+
+	// Observation runs, per-source rows, coverage sets, units and triggers
+	// (TASK-004-01 M3). Observation/trigger/coverage writes are append-only.
+	PutObservationRun(domain.ObservationRun) error
+	PutSourceObservation(domain.SourceObservation) error
+	PutReassessmentTrigger(domain.ReassessmentTrigger) error
+	PutCoverageSet(domain.CoverageSet) error
+	PutRequiredUnit(domain.RequiredUnit) error
+	ObservationRunsByVersion(versionID string) ([]domain.ObservationRun, error)
+	ObservationRunByID(runID string) (domain.ObservationRun, error)
+	ObservationRunByTargetSet(targetSetID string) (domain.ObservationRun, bool, error)
+	ObservationsByRun(runID string) ([]domain.SourceObservation, error)
+	ObservationsByOperation(principalID, operationID string) ([]domain.SourceObservation, error)
+	ObservationRunForOperation(principalID, operationID string) (domain.ObservationRun, bool, error)
+	TriggersByTargetSet(versionID, targetSetID string) ([]domain.ReassessmentTrigger, error)
+	CoverageSetByRun(runID string) (domain.CoverageSet, error)
+	CoverageSetByID(id string) (domain.CoverageSet, error)
+	RequiredUnits(coverageSetID, afterKind, afterPage, afterRegion string, limit int) ([]domain.RequiredUnit, error)
+	TargetSetByID(id string) (domain.TargetSet, error)
+	VersionCapture(versionID, targetSetID string) (domain.TargetSet, error)
+	VerificationCaptures(versionID, projectID string) ([]domain.TargetSet, error)
+	VersionSources(versionID string) ([]domain.Source, error)
+	VersionEvidence(versionID string) ([]domain.Evidence, error)
+	VersionPages(versionID string) ([]domain.Page, error)
+	VersionRegion(versionID, pagePath, regionID string) (domain.Region, error)
+	VersionRegionEvidence(versionID string) ([]domain.RegionEvidence, error)
+	LatestObservationBySource(projectID string) ([]domain.SourceStatus, error)
+	// AppendEvent appends one transactional-outbox event inside the caller's
+	// transaction (the sqlite adapter's appendEvent).
+	AppendEvent(resourceKind, id, kind string, revision int64, body []byte) error
+}
+
+// SourceReadStore exposes recorded source facts to read-only composers.
+type SourceReadStore interface {
+	Store
+	SourceObservationSummaries(ctx context.Context) ([]domain.SourceStatus, error)
 }

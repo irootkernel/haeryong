@@ -58,9 +58,10 @@ In the last column, `K` means a required Idempotency-Key; `N` means a named natu
 | GET /versions/{id}/package | owner or current package.export scope | Stream an exact version's directory archive as an attachment, preserving payload paths/bytes; optional service metadata is separate | - |
 | GET /versions/{id}/source-evidence/{evidence_id} | owner or version.read; exact source bytes require current source authority | Immutable authored capture_status plus separate service_verification/history and currently authorized excerpt or typed unavailable state | - |
 | GET /versions/{id}/source-evidence?evidence_id={evidence_id} | same evidence-view authority | Lossless single-item alias for arbitrary nonempty Unicode local IDs; HEAD has the same authority and an empty body | - |
-| POST /versions/{id}/source-evidence/{evidence_id}/verifications | owner with source authority, or current version.read + source.read scopes | Explicit bounded exact-target check; optional expected digest/excerpt, separate durable result, no AI dispatch or provenance rewrite | K |
+| POST /versions/{id}/source-evidence-verifications?evidence_id={evidence_id} | owner with source authority, or current version.read + source.read scopes | Explicit bounded exact-target check; optional expected digest/excerpt, separate durable result, no AI dispatch or provenance rewrite | K |
 | GET /versions/{id}/source-evidence/{evidence_id}/verifications | same evidence-view authority | Cursor verification history, no new source check | - |
-| GET /versions/{id}/source-evidence-verifications?evidence_id={evidence_id} | same evidence-view authority | Canonical lossless history locator with optional cursor; currently an authenticated non-retryable 503 FEATURE_NOT_READY capability | - |
+| GET /versions/{id}/source-evidence-verifications?evidence_id={evidence_id} | same evidence-view authority | Canonical lossless history locator with optional cursor/limit; implemented without a new source read | - |
+| POST /versions/{id}/source-observations | owner only | Explicit current Git observation; durable run, fixed coverage and target-bound structural triggers; additive provisional route | K |
 | GET /versions/{id}/assessments | authorized version/target scope | Published history, target_set_id and version/page/region scope filters, typed coverage and selected applicable summary; no unknown or zero-unit scope is silently aligned | - |
 | GET /versions/{id}/assessments/coverage?coverage_set_id={id} | authorized version/target scope | Cursor fixed required-unit tuples, outcome/reason/discrepancy and contributing assessment_id/target_set_id; counts derive from these records | - |
 | GET /search | scoped authenticated | Title/text/region/topic/source results with eligibility filtering before counts/snippets | - |
@@ -179,7 +180,7 @@ POST /jobs/{id}/resume carries {decision:reconcile_only|continue|retry,expected_
 
 ## Imported evidence verification
 
-POST /versions/{id}/source-evidence/{evidence_id}/verifications accepts JSON {} or optional {expected_bytes_sha256,expected_excerpt,expected_excerpt_ref}, plus the required operation key. It checks the immutable authored evidence's exact source identity and bounded location under current version/source authority. It never resolves that evidence to a newer branch revision, dispatches AI or changes capture_status. Expectations are optional: the digest covers the exact bounded captured bytes, and an expected_excerpt must equal those entire bytes encoded as UTF-8, without trimming or Unicode/line-ending normalization. All supplied expectations must match. Binary expectations can use a digest without text. expected_excerpt and expected_excerpt_ref are mutually exclusive; expected_excerpt_ref uses the existing purpose=body immutable body_ref transfer bound to this exact evidence/check operation. Both forms compare the same exact UTF-8 bytes and normalize identically for retry identity.
+POST /versions/{id}/source-evidence-verifications?evidence_id={evidence_id} accepts JSON {} or optional {expected_bytes_sha256,expected_excerpt,expected_excerpt_ref}, plus the required operation key. It checks the immutable authored evidence's exact source identity and bounded location under current version/source authority. It never resolves that evidence to a newer branch revision, dispatches AI or changes capture_status. Expectations are optional: the digest covers the exact bounded captured bytes, and an expected_excerpt must equal those entire bytes encoded as UTF-8, without trimming or Unicode/line-ending normalization. All supplied expectations must match. Binary expectations can use a digest without text. expected_excerpt and expected_excerpt_ref are mutually exclusive; expected_excerpt_ref uses the existing purpose=body immutable body_ref transfer bound to this exact evidence/check operation. Both forms compare the same exact UTF-8 bytes and normalize identically for retry identity.
 
 The synchronous operation creates a durable check record and returns 201 with data {operation_id,verification_id,version_id,evidence_id,outcome,target_set_id,source,location,bytes_sha256,checked_at,verified_at,reason}. outcome is captured when exact target bytes were obtained without an expectation, matched when every supplied expectation matched, mismatch when any comparison failed, or unavailable when the exact target could not be obtained. target_set_id/bytes_sha256 may be null when unavailable; verified_at is populated only for captured/matched, while checked_at records every actual check. A 201 means the check record was saved, not that source verification succeeded; clients display its outcome. Invalid input or unauthorized identity fails with ordinary registry errors before disclosure. The record retains supplied expectations or their immutable referenced bytes, permissions/config revisions and any retained-object linkage, without placing a required quote in author metadata.
 
@@ -236,7 +237,7 @@ Current implemented read routes include capabilities, projects/documents/version
 
 Project/document cursor order is observed `updated_at, id`, ascending, with exact lifecycle/current scope predicates applied before pagination. Migration backfill is observed migration time. Semantic changes update ordering; no-op/replayed operations do not. Cursors bind library runtime identity, route/filters, principal/effective scope and current project permissions; normal restart preserves runtime identity, while mismatch requires fresh reads. Version lists order immutable sequence; file inventories order exact UTF-8 path. File `directory` filters include all descendants after exact-first/unique canonical lookup. Page size1..200 is a transport selection, not a total count limit.
 
-The selected concrete read DTO fields are in the [registry](schema-registry.md#selected-current-query-and-configuration-shapes-task-002-05) and machine definitions. Normalized metadata streams the verified full generated manifest; `kind=supplied` streams exact supplied metadata or404 with reason metadata_not_supplied. Source evidence returns authored identity plus separate nullable service verification and explicit unavailable/source_read_not_implemented state; it performs no fresh source read.
+The selected concrete read DTO fields are in the [registry](schema-registry.md#selected-current-query-and-configuration-shapes-task-002-05) and machine definitions. Normalized metadata streams the verified full generated manifest; `kind=supplied` streams exact supplied metadata or404 with reason metadata_not_supplied. Source evidence returns authored identity plus separate nullable service verification and the principal-specific retained/recorded/not_read_by_view states delivered by TASK-004-01; it performs no fresh Git read.
 
 Regular-file delivery uses one verified pinned handle for full/Range/HEAD/conditional reads. Strong ETag and Repr-Digest identify the full immutable representation. Content-Digest is present for the complete200 response body, and omitted for206/HEAD; Content-Range describes206. Empty/unsatisfiable ranges return416. Requested/resolved-path headers use URL-query escaping and preserve literal names. Current authority/visibility is rechecked during delivery; bytes are withheld on stored integrity failure and read-owned pins are released. Attachment, nosniff and sandbox policy prevent imported HTML from executing in the trusted host origin.
 
@@ -288,13 +289,11 @@ without an author naming restriction or double decoding.
 The browser uses this item alias; the native Go item read retains the exact
 escaped legacy path. Both clients use the fixed history query alias, and every
 service-composed `verifications_url` names it. This changes a derived locator,
-not stored authored metadata. History remains a GET-only authenticated future
-capability: 503 FEATURE_NOT_READY, retryable false and no Retry-After. HEAD and
-POST on that alias remain unknown (404); the existing verification POST is
-unchanged. The legacy future-history matcher splits an already decoded path,
-so IDs containing `/` do not match its single-ID segment. Current clients and
-returned locators use the query alias to avoid that limitation; no general
-future-route dispatch or source backend is added here.
+not stored authored metadata. TASK-004-01 now implements GET history and the
+canonical query-form POST on that alias. The legacy path-form check/history
+also remain available; clients use the query alias for lossless local IDs.
+Both history forms remain GET-only: HEAD is unknown (404) with no response body.
+The POST on the query alias is the separate explicit verification action.
 
 The implemented `GET /versions/{id}/metadata?kind=supplied` and
 `GET /versions/{id}/source-evidence/{evidence_id}` now also serve the shared
@@ -304,17 +303,114 @@ validator over the complete bytes before parsing is the documented client
 obligation in the
 [registry selection](schema-registry.md#selected-current-evidence-presentation-shapes-task-003-04).
 Evidence item views keep the authored records separate from the current service
-truth — `availability` `unavailable` with reason `source_read_not_implemented`,
-`bytes_origin` null, separate nullable `service_verification` — and never
-perform a fresh source read or upgrade `capture_status`.
+truth, including retained-byte availability and the explicit `not_read_by_view`
+state described below. They never start a new Git read or upgrade `capture_status`.
+A successful authorized retained-byte view optionally includes
+`excerpt:{bytes_sha256,data_base64?}`. The digest covers the exact bounded bytes;
+data_base64 carries their complete encoding only for a nonempty selection of at
+most 64 KiB. Larger or empty selections keep the digest and omit data_base64.
+No excerpt is emitted for denied/unavailable/not_read_by_view states, and no
+truncated payload or source/content quota follows from this inline display bound.
 
-The remaining evidence-family reads — verification history, `assessments` and
-`assessments/coverage` — stay in the future-capability catalog and return 503
-`FEATURE_NOT_READY`; the shared browser/native clients render explicit
-unavailable states for them rather than deriving summaries. The fixed consumer
-query names (`target_set_id`, `scope_kind`, `page_path`, `region_id`, `cursor`,
-`coverage_set_id`) and the assessments page's typed `applicable` member are
-selected in the
-[registry](schema-registry.md#selected-current-evidence-presentation-shapes-task-003-04);
-the Check source evidence action stays capability-disabled until TASK-004-01
-supplies the authorized source reader and verification operation.
+TASK-004-01 implements verification history, assessments and coverage reads as
+specified below. Assessment producers and semantic verdicts remain future work.
+
+## Source observation delivery (TASK-004-01)
+
+Compatibility: implementing the catalogued check/history/assessment routes, the
+`bytes_origin` result field, recorded source status, error details and
+`features.source_verification` is **additive** within runtime schema 1.0.
+`POST /versions/{id}/source-observations` and the selected project-source view
+are **additive provisional** contracts. They introduce no config schema change,
+AI call, job kind, import gate or semantic assessment producer.
+
+| Route (under /api/v1) | Current authority and result |
+| --- | --- |
+| POST /projects | Owner; K; `{name}` (nonblank UTF-8, at most 128 characters), 201 shared project projection including ETag; generated identity is replay-stable |
+| GET /projects/{id}/sources | Owner or current project.read in this project; `{items,next_cursor}`, sorted by source_id; logical identities only |
+| POST /versions/{id}/source-evidence-verifications?evidence_id=... | Owner or current version.read + source.read for the target; K; 201 check result or stable 202 |
+| GET /versions/{id}/source-evidence-verifications?evidence_id=... | Same evidence-view authority; `{items,next_cursor}`; optional cursor/limit; legacy path history supports both too |
+| POST /versions/{id}/source-observations | Owner only; K; 201 run result or stable 202; scoped callers receive FORBIDDEN |
+| GET /versions/{id}/assessments | Current version/anchor authority; target_set_id, scope_kind, page_path, region_id, cursor, limit; `{items:[],next_cursor:null,applicable}` in this Task |
+| GET /versions/{id}/assessments/coverage | Current version/scope authority; required coverage_set_id, optional attempt_run_id, cursor, limit; `{items,next_cursor}` |
+
+The verification POST accepts `{}` or optional `expected_bytes_sha256`,
+`expected_excerpt`, `expected_excerpt_ref:{upload_id}`. Excerpt and reference
+are mutually exclusive; null expectations are invalid. Inline UTF-8 excerpt
+bytes are bounded to 64 KiB; larger text uses the immutable body upload bound
+to this exact operation, version and evidence. Inclusive 1-based line bounds
+retain line terminators, CR bytes and a missing final terminator. A digest
+covers exactly those selected bytes. No text normalization is performed.
+
+The 201 `data` is `{operation_id,verification_id,version_id,evidence_id,outcome,
+target_set_id,source,location,bytes_sha256,bytes_origin,checked_at,verified_at,reason}`.
+Target, hash, origin, verified_at and reason are nullable; verified_at is set
+only for captured/matched. Outcome is captured, matched, mismatch or unavailable.
+`source` preserves the exact recorded kind/retention/repository/revision or
+snapshot identity; `location` is path with optional line_start/line_end.
+History rows are `{verification_id,outcome,checked_at,verified_at}` with reason
+only when applicable. Stored errors replay their original request_id.
+
+The observation request is one closed JSON object: `{}` or optional
+`source_ids:[source_id,...]`, `scope:{kind,page_path?,region_id?}`. Scope is also
+closed and non-null. Unused anchors may be omitted or empty strings (never
+null); page requires page_path and region requires both. Unknown keys and null values fail 400 before reservation.
+Omitted scope means version. Selection is cited Git sources linked to approved
+mappings, optionally narrowed by source_ids, and must be nonempty.
+The 201 `data` is `{operation_id,run_id,target_set_id,captured_at,observed_at,
+scope,coverage_set_id,sources}`. Its **five-field** scope is
+`{kind,page_path:null|string,region_id:null|string,declared:boolean,reason:null|string}`,
+identical to the copy stored on the run and coverage set. An undeclared region
+records declared false/reason region_not_declared and fabricates no unit.
+The fixed three-field applicable.scope does not gain these two fields.
+`sources`, ordered by source_id (including recovery), contains
+`{source_id,observation_id,availability,classification,reason,changed_paths:[],
+dependency_scope:[],reassessment_required}`. Availability is available,
+unavailable or denied; classification is direct, indirect, unchanged,
+unavailable or denied. Nullable target/capture time denotes no valid capture;
+an attempted denominator may still have a non-null coverage_set_id.
+
+A missing checkout, current object **or declared base object** records
+missing_source. Ambiguous approved linkage fails pre-reservation with 409
+SOURCE_UNAVAILABLE, details.reason mapping_ambiguous. A nonexistent requested
+page fails pre-reservation with 400 INVALID_REQUEST, details.page_path. Neither
+creates a receipt/intent. Invalid or mismatched cursors and page sizes return
+400 (cursor_mismatch / invalid_page_size). Authorized missing target/set/attempt
+reads return 404 NOT_FOUND with respectively details.target_set_id,
+details.coverage_set_id or details.attempt_run_id (alongside the existing reason);
+otherwise retain nondisclosing 404 behavior.
+
+Stored post-reservation error envelopes have **retryable:false**, even 503:
+400 INVALID_REQUEST / expected_excerpt_ref_not_utf8; 412 PRECONDITION_FAILED
+for policy changes; 503 SERVICE_RECOVERING / stage_failure,
+check_bound_exceeded or interrupted_before_commit; 503 FILE_ACCESS_ERROR /
+git_unavailable, source_read_failed, expectation_read_failed or
+missing_retained_bytes. Authority invalidation settles its actual 401/403/404
+class. The pre-reservation 409/400 errors above also have retryable false.
+An adapter-level infrastructure error that could not be stored returns 503
+with retryable true and Retry-After: 2; do not reinterpret a stored 503 as
+permission to dispatch a new operation. Reconcile its receipt first.
+
+Identical in-flight K requests return stable 202
+`{operation_id,state:"accepted",operation_url}`. Browser/native/desktop and CLI
+keep the **original key** for 201/202 and uncertain responses, read the named
+operation until definitive, and never repeat the POST merely to recover a lost
+response. The shared controller-owned intent store binds library, principal,
+version and evidence; it survives panel/route/runtime remounts and retains
+pending/completed/failed outcomes until the active consumer consumes them.
+A replaced selection cannot receive the old result. Refresh uses the current
+selection guard. Registration/configuration flows retain the same intent
+ownership through remounts; cancelling a preview discards only that flow's
+preview, while an in-flight commit cannot be cancelled as an unsent preview.
+
+`GET /status` adds source
+`{available,reason:null|string,configured_source_count,last_observed_at:null|time}`.
+It uses configuration and the latest per-source **observation-run** rows, never
+Git/filesystem probes or verification checks. All configured sources must have
+an available observation for available true. No configured/observed source
+means available false/reason not_observed. Failure precedence, strongest first:
+source_not_registered, missing_source, missing_retained_bytes,
+retained_bytes_corrupt, source_denied, not_observed. A later weaker observation
+replaces that source's prior status; aggregate precedence applies after this
+replacement. Storage failure returns 503 SERVICE_RECOVERING, never fabricated
+not_observed health. See [selection and scope rules](schema-registry.md#source-and-assessment-views).

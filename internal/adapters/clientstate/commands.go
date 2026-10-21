@@ -23,6 +23,7 @@ type CommandIntent struct {
 	Target           string `json:"target"`
 	SourcePath       string `json:"source_path,omitempty"`
 	ProjectID        string `json:"explicit_project_id,omitempty"`
+	SourceID         string `json:"explicit_source_id,omitempty"`
 	ExpectedRevision string `json:"explicit_expected_revision,omitempty"`
 }
 

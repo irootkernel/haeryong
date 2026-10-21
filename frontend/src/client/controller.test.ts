@@ -57,6 +57,13 @@ function operationView(id: string, state = "completed"): OperationView {
 }
 
 class FakeClient implements HaeryongClient, CredentialAware {
+  async configurationView(): Promise<never> { throw new Error("not provided by fixture"); }
+  async configurationPlan(): Promise<never> { throw new Error("not provided by fixture"); }
+  async configurationPlanCommit(): Promise<never> { throw new Error("not provided by fixture"); }
+  async projectRegister(): Promise<never> { throw new Error("not provided by fixture"); }
+  async projectSources(): Promise<never> { throw new Error("not provided by fixture"); }
+  async verifySourceEvidence(): Promise<never> { throw new Error("not provided by fixture"); }
+  async runSourceObservation(): Promise<never> { throw new Error("not provided by fixture"); }
   calls: string[] = [];
   credential = "";
   sessionHandler: () => Promise<SessionInfo> = () => Promise.resolve(sessionInfo());

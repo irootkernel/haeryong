@@ -1289,7 +1289,7 @@ func TestReaderEvidenceQueriesBuildFixedRoutes(t *testing.T) {
 	service, daemon, _ := newReaderFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
 		switch {
 		case r.Method == "GET" && r.URL.Path == "/api/v1/versions/v1/source-evidence/e/1":
-			dataReply(w, 200, map[string]any{"version_id": "v1", "evidence_id": "e/1", "authored": map[string]any{"capture_status": "reference_only"}, "source": map[string]any{}, "availability": "unavailable", "bytes_origin": nil, "reason": "source_read_not_implemented", "service_verification": nil, "verifications_url": "/api/v1/versions/v1/source-evidence-verifications?evidence_id=e%2F1"})
+			dataReply(w, 200, map[string]any{"version_id": "v1", "evidence_id": "e/1", "authored": map[string]any{"capture_status": "reference_only"}, "source": map[string]any{}, "availability": "unavailable", "bytes_origin": nil, "reason": "not_read_by_view", "service_verification": nil, "verifications_url": "/api/v1/versions/v1/source-evidence-verifications?evidence_id=e%2F1"})
 			return true
 		case r.Method == "GET" && r.URL.Path == "/api/v1/versions/v1/source-evidence-verifications":
 			dataReply(w, 200, map[string]any{"items": []any{}, "next_cursor": nil})
@@ -1441,5 +1441,57 @@ func TestReaderSuppliedMetadataAbsentIsTypedNotFound(t *testing.T) {
 	}
 	if werr.Details["reason"] != "metadata_not_supplied" {
 		t.Fatalf("typed reason must be preserved: %+v", werr.Details)
+	}
+}
+
+func TestReaderSourceConfigurationOperationsAndCheckPostOutcomes(t *testing.T) {
+	for _, status := range []int{http.StatusCreated, http.StatusAccepted} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			var requests []*http.Request
+			var bodies []string
+			service, _, _ := newReaderFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+				if r.URL.Path == "/api/v1/configuration" || strings.HasPrefix(r.URL.Path, "/api/v1/configuration/plans") || r.URL.Path == "/api/v1/projects" || strings.HasSuffix(r.URL.Path, "/sources") || strings.HasSuffix(r.URL.Path, "/source-evidence-verifications") || strings.HasSuffix(r.URL.Path, "/source-observations") || strings.HasSuffix(r.URL.Path, "/assessments/coverage") {
+					requests = append(requests, r.Clone(r.Context()))
+					body, _ := io.ReadAll(r.Body)
+					bodies = append(bodies, string(body))
+					code := status
+					if r.Method == "GET" {
+						code = 200
+					}
+					dataReply(w, code, map[string]any{"operation_id": "original", "marker": r.URL.Path})
+					return true
+				}
+				return false
+			})
+			cases := []struct{ operation, payload, method, path, query, body string }{
+				{"configurationView", `{}`, "GET", "/api/v1/configuration", "", ""},
+				{"configurationPlan", `{"request":{"scope":{"kind":"project","project_id":"p"},"expected_config_revision":2,"changes":{"sources":[]}},"operation_id":"original"}`, "POST", "/api/v1/configuration/plans", "", `{"scope":{"kind":"project","project_id":"p"},"expected_config_revision":2,"changes":{"sources":[]}}`},
+				{"configurationPlanCommit", `{"plan_id":"plan","request":{"expected_config_revision":2,"confirmed":true},"operation_id":"original"}`, "POST", "/api/v1/configuration/plans/plan/commit", "", `{"expected_config_revision":2,"confirmed":true}`},
+				{"projectRegister", `{"name":"Project","operation_id":"original"}`, "POST", "/api/v1/projects", "", `{"name":"Project"}`},
+				{"projectSources", `{"project_id":"p","cursor":"next"}`, "GET", "/api/v1/projects/p/sources", "cursor=next", ""},
+				{"verifySourceEvidence", `{"version_id":"v","evidence_id":"../evidence/상세","request":{"expected_excerpt_ref":{"upload_id":"11111111-2222-4333-8444-555555555555"}},"operation_id":"original"}`, "POST", "/api/v1/versions/v/source-evidence-verifications", "evidence_id=" + url.QueryEscape("../evidence/상세"), `{"expected_excerpt_ref":{"upload_id":"11111111-2222-4333-8444-555555555555"}}`},
+				{"runSourceObservation", `{"version_id":"v","request":{"scope":{"kind":"page","page_path":"a.html"}},"operation_id":"original"}`, "POST", "/api/v1/versions/v/source-observations", "", `{"scope":{"kind":"page","page_path":"a.html"}}`},
+				{"assessmentCoverage", `{"version_id":"v","coverage_set_id":"c","attempt_run_id":"11111111-2222-4333-8444-555555555555","cursor":"next"}`, "GET", "/api/v1/versions/v/assessments/coverage", "attempt_run_id=11111111-2222-4333-8444-555555555555&coverage_set_id=c&cursor=next", ""},
+			}
+			for _, c := range cases {
+				value := invokeOK(t, service, c.operation, c.payload).(map[string]any)
+				request := requests[len(requests)-1]
+				if request.Method != c.method || request.URL.Path != c.path || request.URL.RawQuery != c.query || bodies[len(bodies)-1] != c.body {
+					t.Fatalf("%s forwarding: %s %s %s", c.operation, request.Method, request.URL, bodies[len(bodies)-1])
+				}
+				if c.method == "POST" {
+					if request.Header.Get("Idempotency-Key") != "original" {
+						t.Fatal("original operation key lost")
+					}
+					kind := "committed"
+					if status == 202 {
+						kind = "accepted"
+					}
+					if value["kind"] != kind || value["body"].(map[string]any)["operation_id"] != "original" {
+						t.Fatalf("lost 201/202 outcome: %#v", value)
+					}
+				}
+			}
+		})
 	}
 }

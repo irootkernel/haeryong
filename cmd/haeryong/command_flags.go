@@ -32,8 +32,11 @@ func validateCommandFlags(opt options) error {
 			add("version")
 		}
 	case "projects":
-		if verb == "list" {
+		switch verb {
+		case "list":
 			add("cursor limit")
+		case "register":
+			add("name operation-id")
 		}
 	case "jobs":
 		if verb == "cancel" {
@@ -65,6 +68,26 @@ func validateCommandFlags(opt options) error {
 			add("expected-config-revision confirmed operation-id")
 		case "export":
 			add("output")
+		}
+	case "sources":
+		switch verb {
+		case "status":
+			add("project")
+		case "approve":
+			add("project source-id kind root-path repo-id retention-mode provider-ids confirmed operation-id plan-id")
+		case "observe":
+			add("version page region operation-id")
+		}
+	case "evidence":
+		switch verb {
+		case "show":
+			add("version evidence")
+		case "verify":
+			add("version evidence expected-sha256 expected-excerpt-file operation-id")
+		}
+	case "assessments":
+		if verb == "list" {
+			add("version coverage-set")
 		}
 	case "events":
 		add("cursor")

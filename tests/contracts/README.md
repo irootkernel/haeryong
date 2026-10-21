@@ -161,3 +161,39 @@ remain historical evidence for their original snapshots; a fresh common gate
 must execute the migrated candidate. The root TESTING.md owns the current runner
 and dependency commands. No provider, browser, calibration or product acceptance
 is established by this framework migration.
+
+## TASK-004-01 additive source contract selection
+
+The source extension keeps contract/runtime schema 1.0 and the original C1–C5
+matrix intact. Catalogued verification/history/coverage/status delivery, result
+bytes_origin, missing-detail keys and event bodies are additive; the new
+source-observation route and selected project-source projection are additive
+provisional contracts. The exact migration-7 storage/selection semantics remain
+in the Markdown registry/data model and production Go persistence specs.
+
+Selected definitions add project registration/sources, verification request/result
+and history, stable pending result, observation request/five-field recorded scope,
+source rows/result, applicable/coverage pages and attempt query, source status,
+event bodies and 404 detail fields. The frozen applicable.scope stays three
+fields. Five fixture-client groups exercise positive and rejecting representations;
+they do not simulate Git, durable receipts, permission filtering or A/C selection.
+The schemas fix structural fields, not every cross-field/runtime constraint:
+UTF-8 byte bounds, nonblank names, unique/effective source selection, committed
+capture/attempt ownership, source ordering and cursor binding are also checked by
+the production source/query/HTTP specs. Typed query fixtures use integer limit;
+the actual HTTP query encodes it as decimal text. The generic assessment history
+row remains selected for future producers; this Task returns empty history.
+
+`manifest.json` records the changed schema/test byte counts and digests. Its
+existing domain/exclusions are unchanged. Run with the already prepared virtual
+environment (`.venv/bin/python -B tests/contracts/run.py --report ...`) when the
+system Python lacks pytest; this performs no dependency installation. The
+[source evidence record](../../docs/testing/source-observation.md) separates
+these synthetic contracts from browser/native and final Supervisor gates.
+
+TASK-004-01 Part B correction adds the omitted evidence_item_view and optional
+evidence_view_excerpt definitions, with a fixture group for inline data,
+digest-only excerpts and no excerpt. data_base64 is optional, never nullable;
+the bytes hash remains required. Runtime retained-byte authority and the 64 KiB
+inline decision stay covered by the production query specs. The manifest digest
+revision remains additive within runtime schema 1.0.

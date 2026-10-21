@@ -89,7 +89,7 @@ GET /api/v1/events emits bounded notifications containing library_id, stream_epo
 | job.updated, job.progress | Confirmed job state and compact progress: current stage, accepted bytes/files, known/unknown totals and resumable checkpoint identity |
 | document.published, document.lifecycle_changed | Publication, archive/trash/restore/purge |
 | review.changed, revisit.changed, reading_position.changed, page_position.changed, reader_preference.changed, annotation.changed | Owner records, last-opened pointers, independent page positions and anchors |
-| question.changed, upload.updated, project.changed | Saved question/answer or partial/error changes, resumable upload state/checkpoints, registered project/settings views |
+| question.changed, upload.updated, project.updated | Saved question/answer or partial/error changes, resumable upload state/checkpoints, registered project/settings views |
 | finding.created, finding.updated, overlay.changed, topic_assignment.changed | Proposals, decisions, apply/undo and pin/reject |
 | draft.changed, assessment.published | Draft creation/status and applied freshness history |
 | source.changed, source.availability_changed, source.scope_changed | Captured change observations or current source/read/disclosure eligibility |
@@ -124,3 +124,27 @@ Report captured document/version/page totals; structural checked/repaired/failed
 File/page listings and issue details can be cursor/stream resources instead of oversized event payloads. Their batch sizes do not limit total result inventory or saved output. Saved notes, questions and provider inputs/results adopt referenced large context objects with appropriate lifetime pins before the transient renderer/upload is released.
 
 Event-history retention may expire replay cursors. Completed job detail can be trimmed only while preserving published answers/assessment provenance, owner decisions, minimal operation receipts, unknown attempts and necessary recovery facts. Backup/export and source input pins have their own completion/release rules; a generic diagnostic timer cannot silently release them.
+
+## Source check events (TASK-004-01)
+
+Additive delivery uses the existing transactional outbox, not a new job kind.
+Project registration/configuration emits **project.updated**, the implemented
+project family; this replaces the earlier provisional spelling project.changed.
+Source event identities and stored outbox bodies are:
+
+| Event | Resource kind / ID | Stored body | FilterEvent visibility |
+| --- | --- | --- | --- |
+| source.scope_changed | source / project_id | nil (no version body) | Owner: project must remain visible; scoped principals retain source-event masking |
+| source.changed | source / source_id | {version_id,run_id,classification} for direct/indirect changes | Owner: body version must remain visible; scoped principals retain source-event masking |
+| source.availability_changed | source / source_id | {version_id,run_id,availability} on an availability flip | Same version-bound mask |
+
+The same committed source-changing project plan emits project.updated with
+resource project / project_id and nil body. The public SSE/poll projection
+contains the authorized type/resource/revision notification, not these stored
+bodies; clients refetch current state. A source.scope_changed project ID is not
+interpreted as a version ID. Missing project/version targets are masked as
+library.invalidated with no resource identity/body.
+Session/scope/lifecycle changes are applied before replay and live delivery;
+hidden version/source data is masked under the common invalidation rules.
+Events neither start AI nor publish semantic assessments. Operation receipt
+polling recovers a 202/uncertain check; no duplicate observation is dispatched.

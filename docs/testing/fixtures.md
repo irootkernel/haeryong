@@ -10,7 +10,7 @@
 | F02 | Project A v2 introduces selective retry; registration behavior unchanged | Outdated result scoped to changed region; reviewed v1 remains a historical record |
 | F03 | Project B, Integration Walkthrough referencing A/v1/`architecture.html`/`retry` | Canonical edge produces backlink; opening latest never changes original reference |
 | F04 | Unrelated UI-only commit on A | New hash does not itself mark the retry explanation outdated |
-| F05 | Indirect caller/configuration change without editing referenced retry function | Meaningful dependency change can trigger reassessment despite unchanged evidence file |
+| F05 | Indirect caller/configuration change without editing referenced retry function | Meaningful dependency change can trigger reassessment despite unchanged evidence file. Bounded EPIC-004 note: TASK-004-01 discloses unexamined_dependency_scope as candidate impact without a daemon-set reassessment trigger from indirect evidence; semantic triggering belongs to EPIC-008 |
 | F06 | Historical-release explanation and a separately moving-target explanation | Old release explanation remains valid for its explicit scope |
 | F07 | Authorized retained snapshot and a missing original laptop checkout | Saved explanation readable; pinned/current source modes report distinct availability |
 | F08 | Two documents share an immutable asset; one trashed, another retained | Purge cannot delete the retained asset; backup pins also protect objects |

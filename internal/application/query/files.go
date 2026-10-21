@@ -14,7 +14,13 @@ import (
 	"unicode/utf8"
 )
 
-type Missing struct{ Reason string }
+// Missing is a typed 404 whose Reason names the missing input; Details
+// carries extra error detail values for the registry envelope (additive,
+// TASK-004-01 M3).
+type Missing struct {
+	Reason  string
+	Details map[string]any
+}
 
 func (e *Missing) Error() string { return "not found: " + e.Reason }
 func (e *Missing) Unwrap() error { return domain.ErrNotFound }
@@ -150,18 +156,18 @@ func (s *Service) ResolveFile(ctx context.Context, token, id, name string, resol
 	seen := map[string]bool{}
 	for resolve && e.Kind == "symlink" {
 		if seen[e.Path] || strings.HasPrefix(e.LinkText, "/") || !utf8.ValidString(e.LinkText) || strings.ContainsRune(e.LinkText, 0) {
-			return ResolvedFile{}, &Missing{"unresolved_link"}
+			return ResolvedFile{}, &Missing{Reason: "unresolved_link"}
 		}
 		seen[e.Path] = true
 		target := path.Clean(path.Join(path.Dir(e.Path), e.LinkText))
 		if target == ".." || strings.HasPrefix(target, "../") {
-			return ResolvedFile{}, &Missing{"unresolved_link"}
+			return ResolvedFile{}, &Missing{Reason: "unresolved_link"}
 		}
 		e, err = s.lookup(ctx, token, id, v.ContentSetID, target)
 		if err != nil {
 			var invalid *Error
 			if errors.Is(err, domain.ErrNotFound) || errors.As(err, &invalid) && invalid.Reason == "invalid_path" {
-				return ResolvedFile{}, &Missing{"unresolved_link"}
+				return ResolvedFile{}, &Missing{Reason: "unresolved_link"}
 			}
 			return ResolvedFile{}, err
 		}
@@ -245,7 +251,7 @@ func (s *Service) ReadMetadata(ctx context.Context, token, id, kind string, cons
 			hash = v.MetadataHash
 		}
 		if hash == "" {
-			return &Missing{"metadata_not_supplied"}
+			return &Missing{Reason: "metadata_not_supplied"}
 		}
 		object, err = tx.Object(hash)
 		return err

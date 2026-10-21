@@ -5,11 +5,14 @@
 // enumerated fixed required-unit records plus the selected target's own
 // facts, the recorded overlay badge is shown but never trusted, unavailable
 // backend capabilities stay honest 503 states, and the source-check action
-// stays capability-disabled until TASK-004-01. No display upgrades the
+// is guarded by the verified authority and source_verification capability. No display upgrades the
 // author's capture_status or claims observed provider input, author-byte
 // agreement or correctness.
 import { useEffect, useRef, useState } from "react";
 import type { ShellController } from "../../client/controller.ts";
+import { featureEnabled } from "./library-data.ts";
+import { evidenceAvailability, evidenceExcerpt, coverageReason } from "./source-presentation.ts";
+import type { VerificationAction } from "./source-queries.ts";
 import type { VersionView } from "../../client/types.ts";
 import { bindRegionEvidence, compareWithOverlay, deriveCoverageSummary, regionsOfPage, toggledOpen, type MetadataState, type SuppliedEvidenceRecord, type SuppliedMetadata, type SuppliedSourceRecord } from "./evidence-view.ts";
 import { SourceQueries, type SourceQuerySnapshot } from "./source-queries.ts";
@@ -81,9 +84,10 @@ export function SourcePanel(props: SourcePanelProps) {
 function SourcePanelSelection(props: SourcePanelProps) {
   const { controller, versionId, pagePath, regionId, contextKey, metadata } = props;
   const queriesRef = useRef<SourceQueries | null>(null);
-  if (queriesRef.current === null) queriesRef.current = new SourceQueries(controller.client, versionId, pagePath, regionId, contextKey);
+  if (queriesRef.current === null) queriesRef.current = new SourceQueries(controller.client, versionId, pagePath, regionId, contextKey, controller.sourceWriteIntents());
   const queries = queriesRef.current;
   const [snap, setSnap] = useState<SourceQuerySnapshot>(() => queries.snapshot());
+  const [actionError, setActionError] = useState<string | null>(null);
   const [unitsOpen, setUnitsOpen] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [verificationsOpen, setVerificationsOpen] = useState<Record<string, boolean>>({});
@@ -101,6 +105,7 @@ function SourcePanelSelection(props: SourcePanelProps) {
   // history/render/reload context changes; then (re)start the enumeration.
   useEffect(() => {
     if (queries.rebind(versionId, pagePath, regionId, contextKey) || snap.assessments.phase === "idle") {
+      setActionError(null);
       setUnitsOpen(false);
       setExpanded({});
       setVerificationsOpen({});
@@ -117,6 +122,12 @@ function SourcePanelSelection(props: SourcePanelProps) {
     void queries.loadVerifications(evidenceId);
   };
 
+  const enabled = featureEnabled(controller.state.capabilities?.features, "source_verification");
+  const verify = (evidence: SuppliedEvidenceRecord, compareDigest: boolean) => {
+    setActionError(null);
+    const request = compareDigest && typeof evidence.bytes_sha256 === "string" ? { expected_bytes_sha256: evidence.bytes_sha256 } : {};
+    void queries.runVerification(evidence.id, request, controller).catch((error) => setActionError(error instanceof Error ? error.message : String(error)));
+  };
   const applicable = snap.assessments.applicable;
   const coverageSummary = snap.coverage.phase === "ready" && snap.coverage.units.complete
     ? deriveCoverageSummary(snap.coverage.units.items, { targetSetId: applicable?.target_set_id ?? null, scope: queries.scope(), unitKind: applicable?.coverage.unit_kind })
@@ -126,7 +137,9 @@ function SourcePanelSelection(props: SourcePanelProps) {
   return <section className="source-panel" aria-label="근거 및 출처 패널">
     <h2>근거 — {versionId.slice(0, 8)}…{pagePath !== null ? ` · ${pagePath}` : " · 페이지 없음"}{regionId !== null ? ` · 영역 ${regionId}` : ""}</h2>
     <p className="muted">서비스 확인은 작성자 선언을 승격하지 않으며, 원본 제공 입력 관측·작성자 바이트 일치·옳음을 주장하지 않습니다. 근거 포인터는 정확성의 증명이 아닙니다.</p>
-    <p><button type="button" disabled title="TASK-004-01이 실제 인가된 소스 리더·검증 행동을 공급하기 전까지 사용할 수 없습니다.">출처 근거 확인(제공되지 않음)</button></p>
+    {!enabled && <p><button type="button" disabled title="서비스가 출처 검증을 제공하지 않습니다.">출처 근거 확인(제공되지 않음)</button></p>}
+    {enabled && <p className="muted">증거를 펼쳐 출처 근거 확인을 실행할 수 있습니다. 기본 확인은 기대 비교 없이 바이트를 캡처합니다.</p>}
+    {actionError && <p role="alert">{actionError}</p>}
 
     {metadata.kind === "loading" && <p role="status">공급 메타데이터를 확인하는 중…(헤더 영역에서 상태/재시도)</p>}
     {metadata.kind === "absent" && <p>공급된 소스/근거 메타데이터 없음 — 출처 기준 알 수 없음/검증되지 않음. 페이지 읽기와 평범한 JavaScript는 그대로 사용할 수 있습니다.</p>}
@@ -139,7 +152,7 @@ function SourcePanelSelection(props: SourcePanelProps) {
         return <div key={region.id} className="evidence-region" data-selected={regionId === region.id}>
           <p><strong>{typeof region.label === "string" && region.label !== "" ? region.label : region.id}</strong> ({region.page_path} · 영역 ID {region.id})</p>
           {binding.resolved.length === 0 && binding.unresolved.length === 0 && <p className="muted">결속된 증거 없음 — 페이지/버전 문맥은 유지됩니다.</p>}
-          <ul>{binding.resolved.map((evidence) => <EvidenceRow key={evidence.id} evidence={evidence} source={findSource(metadata.metadata, evidence)} expanded={expanded[evidence.id] === true} onToggle={() => toggleItem(evidence.id)} item={snap.items[evidence.id]} verificationsOpen={verificationsOpen[evidence.id] === true} onToggleVerifications={() => toggleVerifications(evidence.id)} verifications={snap.verifications[evidence.id]} onRetryVerifications={() => queries.retryVerifications(evidence.id)} />)}
+          <ul>{binding.resolved.map((evidence) => <EvidenceRow key={evidence.id} evidence={evidence} source={findSource(metadata.metadata, evidence)} expanded={expanded[evidence.id] === true} onToggle={() => toggleItem(evidence.id)} item={snap.items[evidence.id]} verificationsOpen={verificationsOpen[evidence.id] === true} onToggleVerifications={() => toggleVerifications(evidence.id)} verifications={snap.verifications[evidence.id]} onRetryVerifications={() => queries.retryVerifications(evidence.id)} enabled={enabled && controller.state.phase === "verified"} check={snap.checks[evidence.id]} onVerify={(compare) => verify(evidence, compare)} />)}
             {binding.unresolved.map((id) => <li key={id} className="muted">미해결 증거 참조 {id}</li>)}</ul>
         </div>;
       })}
@@ -152,7 +165,7 @@ function SourcePanelSelection(props: SourcePanelProps) {
           the current region. */}
       {metadata.metadata.evidence.length > 0 && <div className="version-evidence">
         <h4>버전 전체 증거(현재 영역과 무관)</h4>
-        <ul>{metadata.metadata.evidence.map((evidence) => <EvidenceRow key={evidence.id} evidence={evidence} source={findSource(metadata.metadata, evidence)} expanded={expanded[evidence.id] === true} onToggle={() => toggleItem(evidence.id)} item={snap.items[evidence.id]} verificationsOpen={verificationsOpen[evidence.id] === true} onToggleVerifications={() => toggleVerifications(evidence.id)} verifications={snap.verifications[evidence.id]} onRetryVerifications={() => queries.retryVerifications(evidence.id)} />)}</ul>
+        <ul>{metadata.metadata.evidence.map((evidence) => <EvidenceRow key={evidence.id} evidence={evidence} source={findSource(metadata.metadata, evidence)} expanded={expanded[evidence.id] === true} onToggle={() => toggleItem(evidence.id)} item={snap.items[evidence.id]} verificationsOpen={verificationsOpen[evidence.id] === true} onToggleVerifications={() => toggleVerifications(evidence.id)} verifications={snap.verifications[evidence.id]} onRetryVerifications={() => queries.retryVerifications(evidence.id)} enabled={enabled && controller.state.phase === "verified"} check={snap.checks[evidence.id]} onVerify={(compare) => verify(evidence, compare)} />)}</ul>
       </div>}
     </div>}
 
@@ -180,7 +193,10 @@ function findSource(metadata: SuppliedMetadata, evidence: SuppliedEvidenceRecord
   return metadata.sources.find((source) => source.id === evidence.source_id) ?? null;
 }
 
-function EvidenceRow(props: {
+export function EvidenceRow(props: {
+  enabled: boolean;
+  check: VerificationAction | undefined;
+  onVerify(compareDigest: boolean): void;
   evidence: SuppliedEvidenceRecord;
   source: SuppliedSourceRecord | null;
   expanded: boolean;
@@ -191,21 +207,28 @@ function EvidenceRow(props: {
   verifications: { phase: string; reason: string | null; records: { phase: string; reason: string | null; items: Array<{ verification_id: string; outcome: string; checked_at: string | null; verified_at: string | null; reason?: string | null }>; complete: boolean } } | undefined;
   onRetryVerifications(): void;
 }) {
-  const { evidence, source, expanded, onToggle, item, verificationsOpen, onToggleVerifications, verifications, onRetryVerifications } = props;
+  const [compareDigest, setCompareDigest] = useState(() => props.check?.request.expected_bytes_sha256 !== undefined);
+  const { enabled, check, onVerify, evidence, source, expanded, onToggle, item, verificationsOpen, onToggleVerifications, verifications, onRetryVerifications } = props;
   return <li className="evidence-row">
     <button type="button" className="link" aria-expanded={expanded} onClick={onToggle}>
       {evidence.id} · {captureLabel(evidence.capture_status)}{typeof evidence.path === "string" ? ` · ${evidence.path}` : ""}{typeof evidence.line_start === "number" || typeof evidence.line_end === "number" ? `:${evidence.line_start ?? ""}-${evidence.line_end ?? ""}` : ""}
     </button>
     {source !== null && <p className="muted">소스 {source.id}({source.kind ?? "알 수 없음"}{typeof source.release_label === "string" && source.release_label !== "" ? `, ${source.release_label}` : ""}{typeof source.exact_revision === "string" ? `, ${source.exact_revision.slice(0, 12)}…` : ""})</p>}
     {expanded && <div className="evidence-detail">
+      {typeof evidence.bytes_sha256 === "string" && <label><input type="checkbox" checked={compareDigest} disabled={check?.phase === "loading" || check?.phase === "pending"} onChange={(event) => setCompareDigest(event.target.checked)} />작성자 선언 다이제스트와 비교</label>}
+      <p><button type="button" disabled={!enabled || check?.phase === "loading"} onClick={() => onVerify(compareDigest)}>{check?.phase === "pending" ? "원래 작업 결과 다시 확인" : check?.phase === "loading" ? "출처 근거 확인 중…" : "출처 근거 확인"}</button></p>
+      {check?.reason && <p role="alert">{check.reason}</p>}
+      {check?.result && <p role="status">확인 결과: {outcomeLabel(check.result.outcome)} · 확인 {check.result.checked_at ?? "시간 없음"} · 검증 {check.result.verified_at ?? "없음"}{check.result.reason ? ` · 사유 ${check.result.reason}` : ""}</p>}
       {item === undefined && <p role="status">서비스 뷰를 확인하는 중…</p>}
       {item?.phase === "loading" && <p role="status">서비스 뷰를 확인하는 중…</p>}
       {item?.phase === "unavailable" && <p>{item.reason}</p>}
       {item?.phase === "error" && <p role="alert">서비스 뷰 오류: {item.reason}</p>}
       {item?.phase === "ready" && item.view !== null && <div>
         <p>작성자 선언(불변): {captureLabel(item.view.authored.capture_status)}{typeof item.view.authored.path === "string" ? ` · ${item.view.authored.path}` : ""}</p>
-        <p>서비스 가용성(별도): {item.view.availability === "available" ? "사용 가능" : item.view.availability === "denied" ? "거부됨" : "사용 불가"}{item.view.reason !== null ? ` · 사유 ${item.view.reason}` : ""}{item.view.bytes_origin !== null ? ` · 바이트 ${item.view.bytes_origin}` : ""}</p>
+        <p>서비스 가용성(별도): {evidenceAvailability(item.view)}{item.view.reason !== null ? ` · 사유 ${item.view.reason}` : ""}{item.view.bytes_origin !== null ? ` · 바이트 ${item.view.bytes_origin}` : ""}</p>
         <p className="muted">서비스 확인({item.view.service_verification === null ? "기록 없음" : "최근 기록 있음"})은 작성자 선언을 승격하지 않습니다.</p>
+        {item.view.service_verification && <p>최근 서비스 확인: {String(item.view.service_verification.outcome ?? "미정")} · 확인 {String(item.view.service_verification.checked_at ?? "시간 없음")} · 검증 {String(item.view.service_verification.verified_at ?? "없음")}</p>}
+        {item.view.availability === "available" && item.view.excerpt && <div><p>보관된 근거 바이트 · SHA-256 <span className="muted-code">{item.view.excerpt.bytes_sha256}</span></p>{evidenceExcerpt(item.view.excerpt) !== null ? <pre className="evidence-excerpt">{evidenceExcerpt(item.view.excerpt)}</pre> : <p className="muted">이 서비스 뷰에는 인라인 발췌가 없습니다.</p>}</div>}
         <button type="button" className="link" aria-expanded={verificationsOpen} onClick={onToggleVerifications}>검증 이력 보기/숨기기</button>
         {verificationsOpen && verifications && <div>
           {verifications.phase === "loading" && <p role="status">검증 이력을 확인하는 중…</p>}
@@ -224,7 +247,7 @@ function EvidenceRow(props: {
   </li>;
 }
 
-function FreshnessSummary(props: {
+export function FreshnessSummary(props: {
   applicable: import("../../client/types.ts").ApplicableFreshness | null;
   sourceIntent: string | null;
   coverage: { phase: string; reason: string | null; units: { phase: string; reason: string | null; items: Array<{ kind: string; page_path: string | null; region_id: string | null; outcome: string; reason: string | null; discrepancy?: unknown; assessment_id: string | null; target_set_id: string | null }>; complete: boolean } };
@@ -250,7 +273,7 @@ function FreshnessSummary(props: {
     {coverage.phase === "loading" && <p role="status">커버리지 단위를 열거하는 중…</p>}
     {coverage.phase === "unavailable" && <p>{coverage.reason}</p>}
     {(coverage.phase === "loading" || coverage.phase === "unavailable" || coverage.phase === "error") && coverage.units.items.length > 0 && <ul>{coverage.units.items.map((unit, index) => <li key={`${unit.kind}:${unit.page_path ?? ""}:${unit.region_id ?? ""}:${index}`}>
-      {scopeText({ kind: unit.kind, page_path: unit.page_path, region_id: unit.region_id })} · {unitOutcomeLabel(unit.outcome)}{unit.reason !== null && unit.reason !== undefined ? ` · 사유 ${unit.reason}` : ""}{unit.discrepancy === true || (typeof unit.discrepancy === "string" && unit.discrepancy !== "") ? " · 불일치 있음" : ""}{unit.assessment_id !== null ? ` · 기여 ${unit.assessment_id.slice(0, 8)}…` : " · 기여 없음"}{unit.target_set_id !== null ? ` · 대상 ${unit.target_set_id.slice(0, 8)}…` : ""}
+      {scopeText({ kind: unit.kind, page_path: unit.page_path, region_id: unit.region_id })} · {unitOutcomeLabel(unit.outcome)}{unit.reason !== null && unit.reason !== undefined ? ` · 사유 ${coverageReason(unit.reason)}` : ""}{unit.discrepancy === true || (typeof unit.discrepancy === "string" && unit.discrepancy !== "") ? " · 불일치 있음" : ""}{unit.assessment_id !== null ? ` · 기여 ${unit.assessment_id.slice(0, 8)}…` : " · 기여 없음"}{unit.target_set_id !== null ? ` · 대상 ${unit.target_set_id.slice(0, 8)}…` : ""}
     </li>)}</ul>}
     {coverage.phase === "error" && <div className="banner" role="alert">
       <p>커버리지 단위 확인 실패: {coverage.reason} — 이미 열거된 {coverage.units.items.length}개 단위는 유지되며 완전해질 때까지 집계하지 않습니다.</p>
@@ -263,7 +286,7 @@ function FreshnessSummary(props: {
           <p role="alert">집계 오류({coverageSummary.aggregationProblem}) — 열거된 단위 집합이 고정 비중첩 필수 집합 형태와 일치하지 않습니다. 단위는 검사 가능하지만 파생 카운트/상태는 알 수 없음으로 유지합니다(묵시적 중복 제거 없음).</p>
           <button type="button" className="link" aria-expanded={unitsOpen} onClick={onUnitsOpen}>단위/사유 펼치기/접기</button>
           {unitsOpen && <ul>{coverage.units.items.map((unit, index) => <li key={`${unit.kind}:${unit.page_path ?? ""}:${unit.region_id ?? ""}:${index}`}>
-            {scopeText({ kind: unit.kind, page_path: unit.page_path, region_id: unit.region_id })} · {unitOutcomeLabel(unit.outcome)}{unit.reason !== null && unit.reason !== undefined ? ` · 사유 ${unit.reason}` : ""}{unit.discrepancy === true || (typeof unit.discrepancy === "string" && unit.discrepancy !== "") ? " · 불일치 있음" : ""}{unit.assessment_id !== null ? ` · 기여 ${unit.assessment_id.slice(0, 8)}…` : " · 기여 없음"}{unit.target_set_id !== null ? ` · 대상 ${unit.target_set_id.slice(0, 8)}…` : ""}
+            {scopeText({ kind: unit.kind, page_path: unit.page_path, region_id: unit.region_id })} · {unitOutcomeLabel(unit.outcome)}{unit.reason !== null && unit.reason !== undefined ? ` · 사유 ${coverageReason(unit.reason)}` : ""}{unit.discrepancy === true || (typeof unit.discrepancy === "string" && unit.discrepancy !== "") ? " · 불일치 있음" : ""}{unit.assessment_id !== null ? ` · 기여 ${unit.assessment_id.slice(0, 8)}…` : " · 기여 없음"}{unit.target_set_id !== null ? ` · 대상 ${unit.target_set_id.slice(0, 8)}…` : ""}
           </li>)}</ul>}
         </div>
         : <div>
@@ -271,9 +294,10 @@ function FreshnessSummary(props: {
         {overlay?.conflict === true && <p role="alert">기록된 배지가 단위 파생 결과와 충돌합니다 — 파생 결과를 표시하며 배지를 승격하지 않습니다.</p>}
         <button type="button" className="link" aria-expanded={unitsOpen} onClick={onUnitsOpen}>단위/사유 펼치기/접기</button>
         {unitsOpen && <ul>{coverage.units.items.map((unit, index) => <li key={`${unit.kind}:${unit.page_path ?? ""}:${unit.region_id ?? ""}:${index}`}>
-          {scopeText({ kind: unit.kind, page_path: unit.page_path, region_id: unit.region_id })} · {unitOutcomeLabel(unit.outcome)}{unit.reason !== null && unit.reason !== undefined ? ` · 사유 ${unit.reason}` : ""}{unit.discrepancy === true || (typeof unit.discrepancy === "string" && unit.discrepancy !== "") ? " · 불일치 있음" : ""}{unit.assessment_id !== null ? ` · 기여 ${unit.assessment_id.slice(0, 8)}…` : " · 기여 없음"}{unit.target_set_id !== null ? ` · 대상 ${unit.target_set_id.slice(0, 8)}…` : ""}
+          {scopeText({ kind: unit.kind, page_path: unit.page_path, region_id: unit.region_id })} · {unitOutcomeLabel(unit.outcome)}{unit.reason !== null && unit.reason !== undefined ? ` · 사유 ${coverageReason(unit.reason)}` : ""}{unit.discrepancy === true || (typeof unit.discrepancy === "string" && unit.discrepancy !== "") ? " · 불일치 있음" : ""}{unit.assessment_id !== null ? ` · 기여 ${unit.assessment_id.slice(0, 8)}…` : " · 기여 없음"}{unit.target_set_id !== null ? ` · 대상 ${unit.target_set_id.slice(0, 8)}…` : ""}
         </li>)}</ul>}
       </div>)}
+    {coverage.units.items.some((unit) => unit.reason === "unexamined_dependency_scope") && <p className="muted">의존 범위 미검사: 인용 바이트 밖의 영향은 확인하지 않았으며 의미적 최신성이나 재평가를 판정하지 않습니다.</p>}
     <p className="muted">선택 범위: {scopeTextValue}. 불완전·차단·미확인 단위는 분모에서 사라지지 않으며, 0/알 수 없음은 정렬로 표시되지 않습니다. 캡처 ID/시각은 기록된 사실이지 현재 소스 가용성이 아닙니다.</p>
   </div>;
 }

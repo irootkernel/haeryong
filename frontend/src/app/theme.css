@@ -218,3 +218,11 @@ label.choice input { width: 18px; height: 18px; }
   dialog.reader-context:modal::backdrop { background: rgb(0 0 0 / .3); }
   .reader-frame { height: max(10rem, calc(100dvh - 15rem)); }
 }
+
+/* Project source settings use the shared form controls and touch sizing. */
+.source-settings fieldset { min-width: 0; margin: 16px 0; padding: 16px; border: 1px solid var(--border); border-radius: 8px; }
+.source-settings label { display: flex; flex-direction: column; gap: 4px; margin: 12px 0; }
+.source-settings input, .source-settings select { width: 100%; min-width: 0; }
+
+.evidence-excerpt { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
+.source-settings-panel { overflow-wrap: anywhere; }

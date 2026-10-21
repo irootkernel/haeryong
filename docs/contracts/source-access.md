@@ -6,7 +6,7 @@
 
 A project registers logical repository/document identity independently from a host path. The owner selects canonical source roots, provider/disclosure use and an explanation-output destination. Record the selected actions so the daemon can recheck them automatically; a separate prompt or elevated grant for each read is not required. Changes that expand the selected source or provider disclosure show their impact for owner confirmation. A link, imported path or model-written citation does not expand the daemon's scope. The browser receives source identities and availability rather than an arbitrary filesystem interface.
 
-EPIC-004 owns the minimal approved reader, exact revision resolution, deterministic source-change observation and explicit checks of imported evidence before the full EPIC-006 Q&A/source integration. TASK-004-01 implements the check operation and history; TASK-004-05 enables its existing Evidence action in the shared UI. Before those capabilities ship, the action is unavailable without blocking ordinary reading. These operations use the same remembered source authority and exact-revision rules. Registering source identity alone does not prove that bytes are reachable or permit a provider submission. Configured mapping kinds git/files are distinct from captured source kinds git/snapshot; a files mapping produces a snapshot when selected bytes are actually captured.
+EPIC-004 owns the minimal approved reader, exact revision resolution, deterministic source-change observation and explicit checks of imported evidence before the full EPIC-006 Q&A/source integration. TASK-004-01 implements the check operation, history and feature-gated Evidence action in the shared UI. TASK-004-05 presents observation versus semantic assessment versus personal Review; it does not own this capability flip. An absent/false features.source_verification leaves the action unavailable without blocking ordinary reading. These operations use the same remembered source authority and exact-revision rules. Registering source identity alone does not prove that bytes are reachable or permit a provider submission. Configured mapping kinds git/files are distinct from captured source kinds git/snapshot; a files mapping produces a snapshot when selected bytes are actually captured.
 
 Haeryong may use source-reading functions such as `resolve_revision`, `list_paths_within_scope`, `read_file_at_revision`, `read_selected_snapshot`, `compare_revisions` and `locate_symbol`. These service functions check saved project/action scope and return typed evidence identities. A broker is an implementation option, not a mandatory replacement for normal provider tools. External agents use the owner's existing environment; managed adapters record their supported native permission mode and actual limits as described in [AI adapter](ai-adapter.md).
 
@@ -86,3 +86,30 @@ An application-managed restore reconciles source/disclosure selections once in i
 [The bounded provider/source experiment](../testing/provider-source-spike.md) records G-AI `pass` against the entire [TASK-001-05 checklist](../tasks/EPIC-001/TASK-001-05.md#observable-completion-and-tests). The following source-reader cases guide feature/regression evidence, not an additional early closing list. Check selected text and binary files, a large streamed capture, an out-of-scope service read, a moved branch, missing retained/reference-only bytes, an unavailable remote checkout and remembered source selection. Check a provider's actual unsupported format/context outcome without dropping the stored file or claiming complete evidence coverage. Demonstrate exact captured revisions, same-byte digest/citation handling, current-policy rechecks and no Haeryong-initiated source modifications. Include daemon-supplied inputs, a genuinely observed native read when supported, and an unobserved native read followed by post-hoc target verification; the last case must not acquire an observed_input citation or alter original provenance. Record the source backend and provider's actual native permission/configuration limits rather than claiming a universal worker sandbox.
 
 The minimal EPIC-004 reader also verifies imported evidence without an AI call: exercise captured without expectations, matched with exact expectations, mismatch, unavailable and a later policy restriction. Check immutable author declarations and persisted history separately. It cannot close the later real-provider integration condition by itself. Normal use must not interrupt the owner with a new approval for each unchanged source read.
+
+## Implemented bounded reader (TASK-004-01)
+
+This additive implementation uses the system Git object reader with argument
+arrays, no checkout/filter/textconv/hooks and no fetch/pull. It resolves the
+approved symlink-resolved root, accepts ordinary, bare, linked-worktree and
+submodule Git roots, isolates inherited GIT_* settings and prevents parent
+repository discovery. Verification reads the authored exact revision and
+inclusive line bounds (terminators preserved); observation resolves each mapped
+HEAD once, proves every declared base and compares raw NUL-delimited paths and
+blob identities. Missing checkout/current/base objects remain missing_source;
+actual Git/I/O failure settles its typed failure rather than an empty capture.
+
+Reservation pins expectation/retained objects; detached reads run outside the
+single writer, then current session/project/source/config authority is rechecked
+before atomic result/receipt/outbox commit. Policy change settles 412. Recovery
+reconstructs a committed result from its rows or fails an interrupted intent;
+contradictory receipt/history blocks recovery rather than guessing success.
+Current GET views perform no new Git read. Retained-byte readability is checked
+independently; not_read_by_view is an unperformed read, not proof of missing bytes.
+
+Direct changes produce target-bound structural reassessment triggers at exact
+page-local anchors. Indirect changes disclose unexamined_dependency_scope as
+candidate impact only. No dependency completeness, semantic verdict, provider
+input observation or personal Review follows from these post-hoc checks.
+See [source observation evidence](../testing/source-observation.md) for measured
+boundaries; the dated source-access decision remains historical evidence.

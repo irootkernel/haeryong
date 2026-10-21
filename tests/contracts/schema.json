@@ -3807,6 +3807,1114 @@
         "next_cursor"
       ],
       "additionalProperties": false
+    },
+    "project_register_request": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "project_register_response": {
+      "$ref": "#/$defs/query_project"
+    },
+    "project_source_row": {
+      "type": "object",
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "git",
+            "files"
+          ]
+        },
+        "repo_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retention_mode": {
+          "enum": [
+            "reference_only",
+            "selected_snapshot"
+          ]
+        },
+        "provider_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "last_observed_revision": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_observed_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_availability": {
+          "enum": [
+            null,
+            "available",
+            "unavailable",
+            "denied"
+          ]
+        },
+        "last_observation_reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "source_id",
+        "kind",
+        "repo_id",
+        "retention_mode",
+        "provider_ids",
+        "last_observed_revision",
+        "last_observed_at",
+        "last_availability",
+        "last_observation_reason"
+      ],
+      "additionalProperties": false
+    },
+    "project_sources_view": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/project_source_row"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "evidence_verification_request": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "expected_bytes_sha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "expected_bytes_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "expected_excerpt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "expected_excerpt"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "expected_bytes_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "expected_excerpt_ref": {
+              "type": "object",
+              "properties": {
+                "upload_id": {
+                  "$ref": "#/$defs/id"
+                }
+              },
+              "required": [
+                "upload_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "expected_excerpt_ref"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "evidence_verification_response": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "verification_id": {
+          "$ref": "#/$defs/id"
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "outcome": {
+          "enum": [
+            "captured",
+            "matched",
+            "mismatch",
+            "unavailable"
+          ]
+        },
+        "target_set_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "location": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "$ref": "#/$defs/path"
+            },
+            "line_start": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "line_end": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "bytes_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bytes_origin": {
+          "enum": [
+            null,
+            "approved_source",
+            "retained_snapshot"
+          ]
+        },
+        "checked_at": {
+          "$ref": "#/$defs/time"
+        },
+        "verified_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "operation_id",
+        "verification_id",
+        "version_id",
+        "evidence_id",
+        "outcome",
+        "target_set_id",
+        "source",
+        "location",
+        "bytes_sha256",
+        "bytes_origin",
+        "checked_at",
+        "verified_at",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "verification_history_row": {
+      "type": "object",
+      "properties": {
+        "verification_id": {
+          "$ref": "#/$defs/id"
+        },
+        "outcome": {
+          "enum": [
+            "captured",
+            "matched",
+            "mismatch",
+            "unavailable"
+          ]
+        },
+        "checked_at": {
+          "$ref": "#/$defs/time"
+        },
+        "verified_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "verification_id",
+        "outcome",
+        "checked_at",
+        "verified_at"
+      ],
+      "additionalProperties": false
+    },
+    "verification_history_page": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/verification_history_row"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "source_check_pending": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "state": {
+          "enum": [
+            "accepted"
+          ]
+        },
+        "operation_url": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "operation_id",
+        "state",
+        "operation_url"
+      ],
+      "additionalProperties": false
+    },
+    "source_observation_scope_request": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "version"
+              ]
+            },
+            "page_path": {
+              "enum": [
+                ""
+              ]
+            },
+            "region_id": {
+              "enum": [
+                ""
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "page"
+              ]
+            },
+            "page_path": {
+              "$ref": "#/$defs/path"
+            },
+            "region_id": {
+              "enum": [
+                ""
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "page_path"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "region"
+              ]
+            },
+            "page_path": {
+              "$ref": "#/$defs/path"
+            },
+            "region_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "page_path",
+            "region_id"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "source_observation_request": {
+      "type": "object",
+      "properties": {
+        "source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "scope": {
+          "$ref": "#/$defs/source_observation_scope_request"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "source_observation_scope": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "version",
+            "page",
+            "region"
+          ]
+        },
+        "page_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "region_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "declared": {
+          "type": "boolean"
+        },
+        "reason": {
+          "enum": [
+            null,
+            "region_not_declared"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "page_path",
+        "region_id",
+        "declared",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "source_observation_row": {
+      "type": "object",
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "availability": {
+          "enum": [
+            "available",
+            "unavailable",
+            "denied"
+          ]
+        },
+        "classification": {
+          "enum": [
+            "direct",
+            "indirect",
+            "unchanged",
+            "unavailable",
+            "denied"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "changed_paths": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/path"
+          }
+        },
+        "dependency_scope": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/path"
+          }
+        },
+        "reassessment_required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "source_id",
+        "observation_id",
+        "availability",
+        "classification",
+        "reason",
+        "changed_paths",
+        "dependency_scope",
+        "reassessment_required"
+      ],
+      "additionalProperties": false
+    },
+    "source_observation_response": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "run_id": {
+          "$ref": "#/$defs/id"
+        },
+        "target_set_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "captured_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observed_at": {
+          "$ref": "#/$defs/time"
+        },
+        "scope": {
+          "$ref": "#/$defs/source_observation_scope"
+        },
+        "coverage_set_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source_observation_row"
+          }
+        }
+      },
+      "required": [
+        "operation_id",
+        "run_id",
+        "target_set_id",
+        "captured_at",
+        "observed_at",
+        "scope",
+        "coverage_set_id",
+        "sources"
+      ],
+      "additionalProperties": false
+    },
+    "observation_coverage_unit_row": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "version",
+            "page",
+            "region"
+          ]
+        },
+        "page_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "region_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "not_checked"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "discrepancy": {
+          "type": "null"
+        },
+        "assessment_id": {
+          "type": "null"
+        },
+        "target_set_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "page_path",
+        "region_id",
+        "outcome",
+        "reason",
+        "discrepancy",
+        "assessment_id",
+        "target_set_id"
+      ],
+      "additionalProperties": false
+    },
+    "observation_coverage_page": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/observation_coverage_unit_row"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "observation_applicable": {
+      "type": "object",
+      "properties": {
+        "source_intent": {
+          "enum": [
+            null,
+            "historical",
+            "moving_target"
+          ]
+        },
+        "target_set_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "captured_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "status": {
+          "enum": [
+            "not_assessed",
+            "unable_to_verify",
+            "reassessment_needed"
+          ]
+        },
+        "coverage": {
+          "$ref": "#/$defs/coverage"
+        },
+        "assessed_at": {
+          "type": "null"
+        },
+        "reassessment_required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "source_intent",
+        "target_set_id",
+        "captured_at",
+        "scope",
+        "status",
+        "coverage",
+        "assessed_at",
+        "reassessment_required"
+      ],
+      "additionalProperties": false
+    },
+    "observation_assessments_page": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/assessment_history_row"
+          }
+        },
+        "next_cursor": {
+          "type": "null"
+        },
+        "applicable": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/observation_applicable"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor",
+        "applicable"
+      ],
+      "additionalProperties": false
+    },
+    "observation_coverage_query": {
+      "type": "object",
+      "properties": {
+        "coverage_set_id": {
+          "$ref": "#/$defs/id"
+        },
+        "attempt_run_id": {
+          "$ref": "#/$defs/id"
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        }
+      },
+      "required": [
+        "coverage_set_id"
+      ],
+      "additionalProperties": false
+    },
+    "source_status_summary": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "reason": {
+          "enum": [
+            null,
+            "source_not_registered",
+            "missing_source",
+            "missing_retained_bytes",
+            "retained_bytes_corrupt",
+            "source_denied",
+            "not_observed"
+          ]
+        },
+        "configured_source_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "last_observed_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "available",
+        "reason",
+        "configured_source_count",
+        "last_observed_at"
+      ],
+      "additionalProperties": false
+    },
+    "source_changed_event_body": {
+      "type": "object",
+      "properties": {
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "run_id": {
+          "$ref": "#/$defs/id"
+        },
+        "classification": {
+          "enum": [
+            "direct",
+            "indirect"
+          ]
+        }
+      },
+      "required": [
+        "version_id",
+        "run_id",
+        "classification"
+      ],
+      "additionalProperties": false
+    },
+    "source_availability_changed_event_body": {
+      "type": "object",
+      "properties": {
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "run_id": {
+          "$ref": "#/$defs/id"
+        },
+        "availability": {
+          "enum": [
+            "available",
+            "unavailable",
+            "denied"
+          ]
+        }
+      },
+      "required": [
+        "version_id",
+        "run_id",
+        "availability"
+      ],
+      "additionalProperties": false
+    },
+    "source_read_missing_details": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_set_id": {
+          "$ref": "#/$defs/id"
+        },
+        "coverage_set_id": {
+          "$ref": "#/$defs/id"
+        },
+        "attempt_run_id": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "assessment_history_row": {
+      "type": "object",
+      "properties": {
+        "assessment_id": {
+          "$ref": "#/$defs/id"
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "target_set_id": {
+          "$ref": "#/$defs/id"
+        },
+        "state": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "assessment_id",
+        "version_id",
+        "scope",
+        "target_set_id"
+      ],
+      "additionalProperties": false
+    },
+    "evidence_view_excerpt": {
+      "type": "object",
+      "properties": {
+        "bytes_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "data_base64": {
+          "type": "string",
+          "pattern": "(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?"
+        }
+      },
+      "required": [
+        "bytes_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "evidence_item_view": {
+      "type": "object",
+      "properties": {
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authored": {
+          "$ref": "#/$defs/evidence"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "availability": {
+          "enum": [
+            "available",
+            "unavailable",
+            "denied"
+          ]
+        },
+        "bytes_origin": {
+          "enum": [
+            null,
+            "retained_snapshot",
+            "approved_source"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "service_verification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/verification_history_row"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verifications_url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "excerpt": {
+          "$ref": "#/$defs/evidence_view_excerpt"
+        }
+      },
+      "required": [
+        "version_id",
+        "evidence_id",
+        "authored",
+        "source",
+        "availability",
+        "bytes_origin",
+        "reason",
+        "service_verification",
+        "verifications_url"
+      ],
+      "additionalProperties": false
     }
   },
   "error_http": {
@@ -3836,6 +4944,8 @@
     "ORIGIN_REJECTED": 403,
     "RATE_LIMITED": 429,
     "SERVICE_RECOVERING": 503,
-    "CONTENT_INTEGRITY_ERROR": 503
+    "CONTENT_INTEGRITY_ERROR": 503,
+    "SOURCE_UNAVAILABLE": 409,
+    "FILE_ACCESS_ERROR": 503
   }
 }

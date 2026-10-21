@@ -26,7 +26,7 @@ Exit classes are 0 success, 2 invalid input/package, 3 authentication/permission
 | haeryong auth sessions list/revoke | Owner-authorized device/session management |
 | haeryong auth grant create/revoke | Owner-authenticated local CLI/IPC issues/rotates/revokes scoped credentials. --workflow-binding ID reuses a server-allocated remembered binding/principal; a new workflow allocates one. Trusted launchers derive requested scope automatically from remembered choices, without handing the owner bearer to the agent |
 | haeryong projects list/register | Logical project registration with remembered source/provider choices configured explicitly |
-| haeryong sources approve/status | Owner configures roots/disclosure once; reuse for routine reads. Status shows logical identities, exact revisions, retention and availability |
+| haeryong sources approve/status/observe | Owner configures roots/disclosure once; reuse for routine reads. Status shows logical identities, exact revisions, retention and availability |
 | haeryong search --project ID --query TEXT | Eligible existing documents/regions and bounded match context |
 | haeryong package validate PATH | Stream a directory, ZIP or single file into validation; optional --metadata PATH, no required author manifest or size/count cap |
 | haeryong uploads list/show/resume/abandon | Discover owner-visible pending uploads even after a lost ID/originating credential; inspect bytes/activity/purpose/exact target/reusable/reasons/pins. resume ID --input PATH verifies the original binding/checkpoints and reconciles or completes that upload; abandon uses the existing K operation |
@@ -127,3 +127,47 @@ The current executable implements `auth connect [new]`, `auth sessions list/revo
 `config plan PATH` and `config import PATH` both validate and create an impact plan; neither silently commits it. `--format json|yaml`, `--project ID`/`--scope project`, `--expected-config-revision REV` and optional `--operation-id I` bind the selected request. Automatic plan identity is persisted before file/revision capture. A retry uses the journal before opening the current file or recapturing revision. `config apply PLAN --expected-config-revision REV --confirmed` uses the natural plan identity; an optional operation key aliases the same outcome. `config export [--output PATH]` exports the current validated YAML snapshot without overwriting an existing file. Recognized flags unsupported by a current command fail instead of being ignored.
 
 `events [--cursor EPOCH:SEQUENCE]` exposes an authenticated polling batch or explicit resync control. Resync does not save pending edits or mutate caller journals. Clients read current authorized state after resync, retain that head, then consume newer notifications. [Current execution evidence](../testing/query-cli-configuration.md) distinguishes actual checks from future native/private-device/provider gates.
+
+## Source checks and observation delivery (TASK-004-01)
+
+These are additive implemented commands; source observation's HTTP route and
+project-source projection are provisional additive selections. No AI is called.
+
+```sh
+haeryong projects register --name NAME [--operation-id ID]
+haeryong sources approve --project ID --source-id ID --kind git --root-path PATH --repo-id REPO --retention-mode reference_only [--provider-ids IDS] [--confirmed]
+haeryong sources status --project ID
+haeryong sources observe --version ID [--page PATH | --page PATH --region ID] [--operation-id ID]
+haeryong evidence show --version ID --evidence LOCAL_ID
+haeryong evidence verify --version ID --evidence LOCAL_ID [--expected-sha256 HEX | --expected-excerpt-file PATH] [--operation-id ID]
+haeryong assessments list --version ID [--coverage-set ID]
+```
+
+Projects register and sources approve/observe are owner actions. Approve prints
+a project-scoped configuration plan; --confirmed commits via existing plan
+routes, and --plan-id commits a recorded preview. Status lists logical identity,
+retention/disclosure and recorded last_observed_* without probing the host.
+Evidence show/verify uses the canonical query alias, preserving arbitrary local
+IDs. Excerpt files are staged through the operation-bound body transport as
+needed. The CLI accepts at most one expectation form: digest or excerpt file;
+supplying both is exit 2. The HTTP verification request separately permits a
+digest together with one inline or referenced excerpt expectation.
+
+Automatically generated keys are journaled before dispatch; interrupted reruns
+resume the original key. Explicit keys replay completed outcomes. Plan and commit
+have separate stable identities. 202 and uncertain transport responses poll the
+original operation, preserving the exact request/expectation fingerprint until
+the result or definitive failure has been emitted. A recorded terminal failure,
+including a stored 503 replay, is definitive and releases the automatic key only
+after that failure is emitted. An ordinary 4xx rejection also releases it after
+emission, except authority denials (401/403) and reconciliation/unknown-provider
+outcome demands. An unrecorded 5xx, such a denial or demand, transport loss or a
+local error keeps the pending key for recovery of the original outcome; none
+authorizes a second effect.
+
+`assessments list --coverage-set ID` follows every next_cursor and emits one
+combined `{items,next_cursor:null}` only after all pages succeed. A failed page
+fails the command without emitting a partial denominator. The default form
+returns the current history/applicable composition. Coverage HTTP clients may
+also use attempt_run_id from units_url as specified by the registry; this CLI
+flag selects the stored set and introduces no attempt-run flag.

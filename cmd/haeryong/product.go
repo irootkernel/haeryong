@@ -25,7 +25,7 @@ func isProductCommand(opt options) bool {
 		return true
 	}
 	switch opt.command[0] {
-	case "import", "package", "uploads", "documents", "files", "operations", "jobs", "config", "projects", "events":
+	case "import", "package", "uploads", "documents", "files", "operations", "jobs", "config", "projects", "events", "sources", "evidence", "assessments":
 		return true
 	case "doctor", "status":
 		if opt.flags["credential"] != "" || opt.flags["client-dir"] != "" {
@@ -251,6 +251,9 @@ func productCommand(ctx context.Context, opt options, emit func(any) error) erro
 		}
 		return call("GET", "/api/v1/documents/"+args[2], nil)
 	case "projects":
+		if len(args) == 2 && args[1] == "register" {
+			return sourceCommand(ctx, opt, api, state, emit)
+		}
 		if len(args) == 2 && args[1] == "list" {
 			values := url.Values{}
 			for _, name := range []string{"cursor", "limit"} {
@@ -260,6 +263,8 @@ func productCommand(ctx context.Context, opt options, emit func(any) error) erro
 			}
 			return call("GET", "/api/v1/projects?"+values.Encode(), nil)
 		}
+	case "sources", "evidence", "assessments":
+		return sourceCommand(ctx, opt, api, state, emit)
 	case "operations":
 		if len(args) == 3 && args[1] == "show" {
 			return call("GET", "/api/v1/operations/"+args[2], nil)

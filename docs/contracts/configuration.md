@@ -156,3 +156,26 @@ This is renderer address capacity, not a package/version admission limit;
 imports and ordinary authenticated queries remain usable when it is exhausted.
 
 Remember-device defaults and session/pairing expiry use DB-current policy. The trusted connect shell receives only the remember-default boolean; existing explicit storage choices remain unchanged. Listener/Host/Origin changes advertise controlled restart and use the same daemon/profile/library, with drained handlers/storage before lock release. Explicit local `--port` is shown as an ephemeral recovery override; no random port fallback or external ingress change is performed. Provider, scheduler, full backup/restore and future workflow-grant issuance remain explicitly unavailable. Source-path validation stores selected policy only; it does not read/disclose source bytes or invoke a provider. [Current evidence](../testing/query-cli-configuration.md) records the actual scope and limits.
+
+## Project registration and source observation (TASK-004-01)
+
+Additive delivery: owner POST /projects registers `{name}` with replay-stable
+identity and returns the shared project projection, including its ETag. It does
+not approve a host root or disclosure. Source editing uses the existing
+project-scoped configuration plan/commit, base revision, impact preview and
+confirmation rules. No configuration schema field/version changes are needed:
+project sources, retention_mode, provider_ids and source_mode_default already
+exist. `features.source_verification` is a capability response flag, not a new
+configuration option; absent/false disables the UI action.
+
+S09 displays logical source identities and recorded last_observed_* facts without
+host paths. Registration and configuration intents survive route/runtime remounts
+in the controller-owned store. Unknown outcomes reconcile their original receipt;
+a stale plan is shown for reconciliation rather than silently recommitted.
+Cancelling a preview discards only the originating flow's preview intent, and
+cannot cancel an in-flight commit. Source changes advance project permissions
+and emit source.scope_changed (resource source / project_id, nil body) together
+with project.updated (resource project / project_id, nil body) via the existing
+outbox. The owner receives the scope event while the project remains visible;
+scoped source-event masking is unchanged. Public notifications omit stored
+bodies and clients refetch the authorized project/source view.

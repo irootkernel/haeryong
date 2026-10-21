@@ -2,7 +2,7 @@
 id: "EPIC-004"
 type: "epic"
 title: "Connected wiki and search"
-status: "planned"
+status: "in_progress"
 depends_on: ["EPIC-003"]
 completion_requires: ["TASK-004-01","TASK-004-02","TASK-004-03","TASK-004-04","TASK-004-05","TASK-004-06"]
 ---
