@@ -3,20 +3,21 @@ project:
   name: "haeryong"
   kind: "ui"
 providers:
+  zcode: {}
   grok:
     model: "grok-4.7"
     reasoning_effort: "high"
   codex: {}
 roles:
-  logic: {enabled: true, primary_provider: "grok"}
-  security: {enabled: true, primary_provider: "grok"}
-  maintainability: {enabled: true, primary_provider: "grok"}
-  product: {enabled: true, primary_provider: "grok"}
-  documentation: {enabled: true, primary_provider: "grok"}
-  testing: {enabled: true, primary_provider: "grok"}
+  logic: {enabled: true, primary_provider: "zcode"}
+  security: {enabled: true, primary_provider: "zcode"}
+  maintainability: {enabled: true, primary_provider: "zcode"}
+  product: {enabled: true, primary_provider: "zcode"}
+  documentation: {enabled: true, primary_provider: "zcode"}
+  testing: {enabled: true, primary_provider: "zcode"}
   artist:
     enabled: true
-    primary_provider: "codex"
+    primary_provider: "zcode"
     inputs:
       task_path: "ux-ui-info.md"
       design_spec_globs: ["design-specs/**/*.png", "design-specs/**/*.jpg", "design-specs/**/*.jpeg", "design-specs/**/*.webp"]
