@@ -298,7 +298,7 @@ func (s *Service) parseMetadata(ctx context.Context, r *bufio.Reader, i domain.I
 		switch key {
 		case "schema_version":
 			raw, e := scalarJSON(r)
-			if e != nil || string(raw) != `"1.0"` {
+			if e != nil || string(bytes.Trim(raw, " \t\r\n")) != `"1.0"` {
 				return invalidMeta("/schema_version")
 			}
 		case "document", "version", "content":
