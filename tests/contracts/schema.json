@@ -104,7 +104,8 @@
       "scan",
       "lifecycle",
       "backup",
-      "export"
+      "export",
+      "derived_index"
     ],
     "job.resume.decision": [
       "reconcile_only",
@@ -297,6 +298,18 @@
       "disabled",
       "propose",
       "draft"
+    ],
+    "search.index_reason": [
+      "not_indexed",
+      "interrupted",
+      "cancelled",
+      "read_failed",
+      "decode_failed",
+      "integrity_failed",
+      "resource_exhausted",
+      "storage_failed",
+      "unsupported_body",
+      "failed_unknown"
     ]
   },
   "$defs": {
@@ -4913,6 +4926,528 @@
         "reason",
         "service_verification",
         "verifications_url"
+      ],
+      "additionalProperties": false
+    },
+    "search_index_reason": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "not_indexed",
+            "interrupted",
+            "cancelled",
+            "read_failed",
+            "decode_failed",
+            "integrity_failed",
+            "resource_exhausted",
+            "storage_failed",
+            "unsupported_body",
+            "failed_unknown"
+          ]
+        },
+        "version_count": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        }
+      },
+      "required": [
+        "code",
+        "version_count"
+      ],
+      "additionalProperties": false
+    },
+    "search_index": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "empty",
+            "pending",
+            "partial",
+            "complete",
+            "failed"
+          ]
+        },
+        "versions_total": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "versions_complete": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files_total": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files_discovered": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "html_total": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "html_complete": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "html_pending": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "html_failed": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unsupported_bodies": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "discovery_complete": {
+          "type": "boolean"
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "static_only"
+            ]
+          }
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/search_index_reason"
+          }
+        }
+      },
+      "required": [
+        "state",
+        "versions_total",
+        "versions_complete",
+        "files_total",
+        "files_discovered",
+        "html_total",
+        "html_complete",
+        "html_pending",
+        "html_failed",
+        "unsupported_bodies",
+        "discovery_complete",
+        "limitations",
+        "reasons"
+      ],
+      "additionalProperties": false
+    },
+    "search_hit": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "document",
+            "page",
+            "region",
+            "source",
+            "attachment"
+          ]
+        },
+        "project_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "document_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "version_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "lifecycle": {
+          "type": "string",
+          "enum": [
+            "active",
+            "archived"
+          ]
+        },
+        "page_path": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "relative-path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "region_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "anchor_state": {
+          "type": "string",
+          "enum": [
+            "not_applicable",
+            "pending",
+            "present",
+            "missing",
+            "ambiguous"
+          ]
+        },
+        "body_state": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "complete",
+            "unsupported",
+            "failed",
+            "not_applicable"
+          ]
+        },
+        "match_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "title",
+              "path",
+              "region",
+              "topic",
+              "source",
+              "body"
+            ]
+          }
+        },
+        "snippet": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "project_id",
+        "document_id",
+        "version_id",
+        "sequence",
+        "title",
+        "lifecycle",
+        "page_path",
+        "region_id",
+        "source_id",
+        "anchor_state",
+        "body_state",
+        "match_fields",
+        "snippet"
+      ],
+      "additionalProperties": false
+    },
+    "search_filters": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lifecycle": {
+          "type": "string",
+          "enum": [
+            "active",
+            "archived",
+            "all"
+          ]
+        },
+        "versions": {
+          "type": "string",
+          "enum": [
+            "latest",
+            "all"
+          ]
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "document",
+                "page",
+                "region",
+                "source",
+                "attachment"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "project_id",
+        "lifecycle",
+        "versions",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "search_page": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "normalized": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "empty",
+                "literal_and"
+              ]
+            }
+          },
+          "required": [
+            "text",
+            "normalized",
+            "mode"
+          ],
+          "additionalProperties": false
+        },
+        "filters": {
+          "$ref": "#/$defs/search_filters"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/search_hit"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "total_matches": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "index": {
+          "$ref": "#/$defs/search_index"
+        }
+      },
+      "required": [
+        "query",
+        "filters",
+        "items",
+        "next_cursor",
+        "total_matches",
+        "index"
+      ],
+      "additionalProperties": false
+    },
+    "search_response": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/search_page"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "data",
+        "request_id"
+      ],
+      "additionalProperties": false
+    },
+    "search_query": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "q": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "project_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "lifecycle": {
+          "type": "string",
+          "enum": [
+            "active",
+            "archived",
+            "all"
+          ]
+        },
+        "versions": {
+          "type": "string",
+          "enum": [
+            "latest",
+            "all"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "document",
+            "page",
+            "region",
+            "source",
+            "attachment"
+          ]
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        }
+      }
+    },
+    "search_error_details": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "enum": [
+            "invalid_query",
+            "query_too_long",
+            "malformed_phrase",
+            "invalid_lifecycle",
+            "invalid_versions",
+            "invalid_kind",
+            "invalid_page_size",
+            "cursor_mismatch",
+            "unknown_duplicate_or_empty_query"
+          ]
+        }
+      },
+      "required": [
+        "reason"
       ],
       "additionalProperties": false
     }

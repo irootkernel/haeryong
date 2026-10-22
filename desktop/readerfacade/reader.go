@@ -60,8 +60,9 @@ type readerStream struct {
 }
 
 type readerSubscription struct {
-	id  string
-	gen uint64
+	id     string
+	gen    uint64
+	cursor string
 }
 
 type renderRef struct {
@@ -706,6 +707,31 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 			return nil, werr
 		}
 		return plain(s.request("GET", "/api/v1/projects", collection(map[string]string{"cursor": in.Cursor}), nil, nil, auth))
+	case "search":
+		var in struct {
+			Q         string  `json:"q"`
+			ProjectID *string `json:"project_id"`
+			Lifecycle *string `json:"lifecycle"`
+			Versions  *string `json:"versions"`
+			Kind      *string `json:"kind"`
+			Cursor    *string `json:"cursor"`
+			Limit     *int    `json:"limit"`
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		// Preserve supplied empty filters and zero limit for the same server
+		// validation as HTTP. Omitting them would silently broaden a request.
+		params := url.Values{"q": {in.Q}}
+		for key, value := range map[string]*string{"project_id": in.ProjectID, "lifecycle": in.Lifecycle, "versions": in.Versions, "kind": in.Kind, "cursor": in.Cursor} {
+			if value != nil {
+				params.Set(key, *value)
+			}
+		}
+		if in.Limit != nil {
+			params.Set("limit", strconv.Itoa(*in.Limit))
+		}
+		return plain(s.request("GET", "/api/v1/search", params, nil, nil, auth))
 	case "listDocuments":
 		var in struct {
 			ProjectID string `json:"project_id"`
@@ -1944,7 +1970,11 @@ func (s *ReaderService) subscribeEvents(auth authority) (any, *wireError) {
 		return nil, networkError()
 	}
 	s.mu.Lock()
-	s.subs[id] = &readerSubscription{id: id, gen: auth.gen}
+	cursor := ""
+	if page, ok := result.value.(map[string]any); ok {
+		cursor, _ = page["next_cursor"].(string)
+	}
+	s.subs[id] = &readerSubscription{id: id, gen: auth.gen, cursor: cursor}
 	s.mu.Unlock()
 	return map[string]any{"subscription_id": id}, nil
 }
@@ -1957,7 +1987,11 @@ func (s *ReaderService) eventsPoll(payload json.RawMessage, auth authority) (any
 		return nil, werr
 	}
 	s.mu.Lock()
-	_, known := s.subs[in.SubscriptionID]
+	subscription, known := s.subs[in.SubscriptionID]
+	cursor := ""
+	if known {
+		cursor = subscription.cursor
+	}
 	current := s.generation
 	s.mu.Unlock()
 	if !known {
@@ -1968,6 +2002,10 @@ func (s *ReaderService) eventsPoll(payload json.RawMessage, auth authority) (any
 	}
 	query := url.Values{}
 	query.Set("transport", "poll")
+	if epoch, after, ok := strings.Cut(cursor, ":"); ok {
+		query.Set("stream_epoch", epoch)
+		query.Set("after", after)
+	}
 	result := s.request("GET", "/api/v1/events", query, nil, nil, auth)
 	if result.werr != nil {
 		if result.werr.Status == 401 {
@@ -1976,8 +2014,28 @@ func (s *ReaderService) eventsPoll(payload json.RawMessage, auth authority) (any
 		}
 		return nil, result.werr
 	}
-	// Liveness only: the poll body never becomes UI authority.
-	return map[string]any{"closed": false}, nil
+	// Only a boolean hint crosses the native wire; never event resources/body.
+	invalidated := false
+	if page, ok := result.value.(map[string]any); ok {
+		invalidated = page["resync"] != nil
+		if items, ok := page["items"].([]any); ok {
+			for _, item := range items {
+				if event, ok := item.(map[string]any); ok {
+					switch event["type"] {
+					case "search.index_updated", "version.published", "library.invalidated", "resource.invalidated", "resync.required", "policy.changed", "document.archived", "document.trashed", "document.restored", "document.purged":
+						invalidated = true
+					}
+				}
+			}
+		}
+		next, _ := page["next_cursor"].(string)
+		s.mu.Lock()
+		if s.subs[in.SubscriptionID] == subscription && s.generation == auth.gen {
+			subscription.cursor = next
+		}
+		s.mu.Unlock()
+	}
+	return map[string]any{"closed": false, "invalidated": invalidated}, nil
 }
 
 // CloseOwned is the normal window-close path: explicit typed closes for every

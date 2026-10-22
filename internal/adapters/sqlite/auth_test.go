@@ -599,7 +599,7 @@ func priorSchemaTwo(t GinkgoTInterface, s *Store) {
 	}
 
 	if version >= 7 {
-		_, err := s.db.Exec("DROP INDEX verifications_by_evidence;DROP INDEX observations_by_source;DROP INDEX observations_by_time;DROP INDEX observations_by_run;DROP INDEX triggers_by_target;DROP INDEX check_intents_state;DROP INDEX observation_runs_by_operation;DROP INDEX observation_runs_by_version;DROP INDEX coverage_sets_by_run;DROP INDEX coverage_sets_by_version;DROP TABLE assessment_units;DROP TABLE assessments;DROP TABLE required_units;DROP TABLE coverage_sets;DROP TABLE check_intents;DROP TABLE reassessment_triggers;DROP TABLE source_observations;DROP TABLE observation_runs;DROP TABLE citation_verifications;DROP TABLE captured_reads;DROP TABLE captured_target_sets")
+		_, err := s.db.Exec(dropSearchSchema + "DROP INDEX verifications_by_evidence;DROP INDEX observations_by_source;DROP INDEX observations_by_time;DROP INDEX observations_by_run;DROP INDEX triggers_by_target;DROP INDEX check_intents_state;DROP INDEX observation_runs_by_operation;DROP INDEX observation_runs_by_version;DROP INDEX coverage_sets_by_run;DROP INDEX coverage_sets_by_version;DROP TABLE assessment_units;DROP TABLE assessments;DROP TABLE required_units;DROP TABLE coverage_sets;DROP TABLE check_intents;DROP TABLE reassessment_triggers;DROP TABLE source_observations;DROP TABLE observation_runs;DROP TABLE citation_verifications;DROP TABLE captured_reads;DROP TABLE captured_target_sets")
 		Expect(err).NotTo(HaveOccurred())
 	}
 	if version >= 6 {

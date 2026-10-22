@@ -19,14 +19,20 @@ func contains(values []string, value string) bool {
 	return false
 }
 func intersect(a, b []string) []string {
+	allowed, seen := make(map[string]bool, len(b)), make(map[string]bool, len(a))
+	for _, v := range b {
+		allowed[v] = true
+	}
 	out := []string{}
 	for _, v := range a {
-		if contains(b, v) && !contains(out, v) {
+		if allowed[v] && !seen[v] {
 			out = append(out, v)
+			seen[v] = true
 		}
 	}
 	return out
 }
+
 func RestrictScope(captured, current domain.CredentialScope) domain.CredentialScope {
 	return domain.CredentialScope{Kind: "workflow", Actions: intersect(captured.Actions, current.Actions), ProjectIDs: intersect(captured.ProjectIDs, current.ProjectIDs), DraftIDs: intersect(captured.DraftIDs, current.DraftIDs), VersionIDs: intersect(captured.VersionIDs, current.VersionIDs)}
 }
@@ -133,6 +139,11 @@ func authorizeScope(tx app.WriteTx, record domain.Session, r domain.Request) err
 		return domain.ErrDenied
 	}
 	switch parts[2] {
+	case "search":
+		if (r.Method == "GET" || r.Method == "HEAD") && len(parts) == 3 && contains(record.Scope.Actions, "version.read") {
+			return nil
+		}
+		return domain.ErrDenied
 	case "capabilities":
 		if r.Method == "GET" {
 			return nil
@@ -341,6 +352,9 @@ func authorizeScope(tx app.WriteTx, record domain.Session, r domain.Request) err
 			j, e := tx.Job(parts[3])
 			if e != nil {
 				return e
+			}
+			if j.Kind == "derived_index" {
+				return domain.ErrNotFound
 			}
 			var owner struct {
 				Principal string          `json:"principal_id"`

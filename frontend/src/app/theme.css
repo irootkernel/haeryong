@@ -226,3 +226,12 @@ label.choice input { width: 18px; height: 18px; }
 
 .evidence-excerpt { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
 .source-settings-panel { overflow-wrap: anywhere; }
+
+.library-search-form { margin-block: 1rem; align-items: end; }
+.library-search-form input { min-width: 12rem; }
+.library-search-results li { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .library-search-form { flex-direction: column; align-items: stretch; }
+  .library-search-form label, .library-search-form input, .library-search-form select { width: 100%; min-width: 0; }
+  .library-search-form button, .library-search-results button, .library-search-results .action-link { min-height: 44px; }
+}

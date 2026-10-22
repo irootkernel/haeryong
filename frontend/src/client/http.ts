@@ -1,4 +1,5 @@
 import type {
+  SearchRequest, SearchPage,
   ConfigurationView, ConfigurationPlanRequest, ConfigurationPlanView, ConfigurationCommitRequest, ConfigurationCommitView,
   ProjectSourceView, EvidenceVerificationRequest, EvidenceVerificationResult, SourceObservationRequest, SourceObservationResult,
   AssessmentFilter,
@@ -44,6 +45,7 @@ import type {
   PersonalView,
 } from "./types.ts";
 import { ApiError, NetworkError, StaleResponseError, UncertainResponseError } from "./types.ts";
+import { searchEventLines } from "./search-events.ts";
 import { sourceWrite } from "./source-operations.ts";
 import { eraGuardedStream } from "./stream.ts";
 import type { ContextBinding } from "./context-types.ts";
@@ -196,6 +198,15 @@ export class HttpHaeryongClient implements HaeryongClient {
   }
   runSourceObservation(versionId: string, request: SourceObservationRequest, operationId: string): Promise<SourceObservationResult> {
     return this.#sourceWrite(`/api/v1/versions/${encodeURIComponent(versionId)}/source-observations`, request, operationId);
+  }
+
+  search(request: SearchRequest): Promise<SearchPage> {
+    // q= is meaningful here; the ordinary collection helper omits empty values.
+    const params = new URLSearchParams({ q: request.q });
+    for (const key of ["project_id", "lifecycle", "versions", "kind", "cursor", "limit"] as const) {
+      if (request[key] !== undefined) params.set(key, String(request[key]));
+    }
+    return this.#request("GET", "/api/v1/search?" + params.toString());
   }
 
   listProjects(cursor?: string): Promise<ListPage<ProjectView>> {
@@ -513,6 +524,9 @@ export class HttpHaeryongClient implements HaeryongClient {
   }
 
   subscribeEvents(): EventSubscription {
+    const listeners = new Set<() => void>();
+    const decode = new TextDecoder();
+    const lines = searchEventLines(() => { if (era === this.#era && !controller.signal.aborted) for (const listener of listeners) listener(); });
     const controller = new AbortController();
     const era = this.#era;
     const headers = new Headers();
@@ -525,13 +539,16 @@ export class HttpHaeryongClient implements HaeryongClient {
       .then(async (response) => {
         if (!response.body) return;
         const reader = response.body.getReader();
-        // Liveness only: the shell does not parse SSE frames or cursors.
-        while (!(await reader.read()).done) {
-          if (era !== this.#era) break;
+        for (;;) {
+          const part = await reader.read();
+          if (era !== this.#era || controller.signal.aborted) { await reader.cancel(); break; }
+          if (part.done) break;
+          // Only event names become hints, never resource IDs or event bodies.
+          lines(decode.decode(part.value, { stream: true }));
         }
       })
       .catch(() => undefined)
       .finally(() => ended());
-    return { closed, close: () => controller.abort() };
+    return { closed, onInvalidation: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }, close: () => { listeners.clear(); controller.abort(); } };
   }
 }

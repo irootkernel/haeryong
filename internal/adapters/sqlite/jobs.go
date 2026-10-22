@@ -33,7 +33,7 @@ func (s *Store) Job(ctx context.Context, id string) (domain.Job, error) {
 }
 func (t *writeTx) CreateJob(j domain.Job) error {
 	switch j.Kind {
-	case "upload_seal", "import", "lifecycle", "backup", "export":
+	case "upload_seal", "import", "lifecycle", "backup", "export", "derived_index":
 	default:
 		return errors.New("local job kind not implemented")
 	}
@@ -170,6 +170,7 @@ func (t *writeTx) FinishJob(id string, generation int64, failure string, apply f
 		return domain.ErrStaleWorker
 	}
 	if failure != "" {
+		j.Error = failure
 		if err := t.exec("UPDATE jobs SET state='failed',error=?,revision=revision+1 WHERE job_id=?", failure, id); err != nil {
 			return err
 		}
@@ -470,6 +471,15 @@ func (s *Store) recoverLocalJobs(ctx context.Context) error {
 
 func (t *writeTx) stoppedOwnership(j domain.Job) error {
 	switch j.Kind {
+	case "derived_index":
+		reason := j.Error
+		if j.CancelRequested {
+			reason = "cancelled"
+		}
+		if reason == "" {
+			reason = "interrupted"
+		}
+		return t.FailSearch(j.ID, reason)
 	case "import":
 		if err := t.exec("DELETE FROM metadata_indexes WHERE job_id=?", j.ID); err != nil {
 			return err

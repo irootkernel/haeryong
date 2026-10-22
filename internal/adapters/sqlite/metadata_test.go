@@ -157,7 +157,13 @@ var _ = It("TestCurrentMetadataExactAnchorsInventoryAndPublication", Label("pers
 
 	h, _ := s.Health(ctx)
 	events, _ := s.Events(ctx, h.Library.StreamEpoch, 0, 20)
-	Expect(len(events) != 1 || events[0].Revision != 2).To(BeFalse(), func() string { return fmt.Sprint("publication event/revision missing") })
+	publication := []domain.Event{}
+	for _, event := range events {
+		if event.Kind == "version.published" {
+			publication = append(publication, event)
+		}
+	}
+	Expect(len(publication) != 1 || publication[0].Revision != 2).To(BeFalse(), func() string { return fmt.Sprint("publication event/revision missing") })
 
 	config, err := s.Configuration(ctx)
 	Expect(err != nil || config.Revision != 1 || !json.Valid(config.Value) || !bytes.Equal(config.Value, app.DefaultConfiguration())).To(BeFalse(), func() string { return fmt.Sprint("bootstrap frozen defaults lost", err) })

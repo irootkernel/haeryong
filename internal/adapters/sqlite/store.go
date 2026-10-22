@@ -23,10 +23,10 @@ import (
 	"haeryong.local/haeryong/internal/application/service"
 	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
-	_ "modernc.org/sqlite"
+	driverSQLite "modernc.org/sqlite"
 )
 
-const SchemaRevision = 7
+const SchemaRevision = 8
 
 type Boundary string
 
@@ -43,11 +43,38 @@ const (
 type Fault func(Boundary) error
 
 type Store struct {
-	mu      sync.Mutex
-	db      *sql.DB
-	profile service.Profile
-	fault   Fault
+	mu               contextMutex
+	db               *sql.DB
+	profile          service.Profile
+	fault            Fault
+	searchGeneration searchGenerations
 }
+
+// The same single-connection gate serves legacy short reads and transactions.
+// Waiting for a transaction never outlives its request context.
+type contextMutex struct {
+	once sync.Once
+	gate chan struct{}
+}
+
+func (m *contextMutex) LockContext(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.once.Do(func() { m.gate = make(chan struct{}, 1) })
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case m.gate <- struct{}{}:
+		if err := ctx.Err(); err != nil {
+			m.Unlock()
+			return err
+		}
+		return nil
+	}
+}
+func (m *contextMutex) Lock()   { _ = m.LockContext(context.Background()) }
+func (m *contextMutex) Unlock() { <-m.gate }
 
 func New(fault Fault) *Store { return &Store{fault: fault} }
 func (s *Store) boundary(b Boundary) error {
@@ -132,7 +159,11 @@ func (s *Store) Prepare(ctx context.Context, p service.Profile) (state service.S
 		q.Add("_pragma", pragma)
 	}
 	uri.RawQuery = q.Encode()
-	db, err := sql.Open("sqlite", uri.String())
+	connector, err := driverSQLite.NewConnector(uri.String())
+	if err != nil {
+		return state, nil, err
+	}
+	db := sql.OpenDB(&searchConnector{Connector: connector, generations: &s.searchGeneration})
 	if err != nil {
 		return state, nil, err
 	}
@@ -168,10 +199,16 @@ func (s *Store) Prepare(ctx context.Context, p service.Profile) (state service.S
 		return state, nil, err
 	}
 	// Local work left running by a dead process is fenced before any new claim.
+	if err := s.configureSearchMerges(ctx); err != nil {
+		return state, nil, err
+	}
 	if err := s.recoverLocalJobs(ctx); err != nil {
 		return state, nil, err
 	}
 
+	if err := s.searchGeneration.load(ctx, db); err != nil {
+		return state, nil, err
+	}
 	return service.StorageState{Ready: true, State: "ready"}, s.Close, nil
 }
 
@@ -453,23 +490,27 @@ func (s *Store) health(ctx context.Context) (domain.Health, error) {
 }
 
 type writeTx struct {
-	tx          *sql.Tx
-	ctx         context.Context
-	publication bool
+	tx               *sql.Tx
+	ctx              context.Context
+	publication      bool
+	searchGeneration *searchGenerations
 }
 
 func (s *Store) Write(ctx context.Context, fn func(app.WriteTx) error) error {
-	s.mu.Lock()
+	if err := s.mu.LockContext(ctx); err != nil {
+		return err
+	}
 	defer s.mu.Unlock()
 	if s.db == nil {
 		return errors.New("store closed")
 	}
+	s.searchGeneration.flush()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	writer := &writeTx{tx: tx, ctx: ctx}
+	writer := &writeTx{tx: tx, ctx: ctx, searchGeneration: &s.searchGeneration}
 	if err := fn(writer); err != nil {
 		return err
 	}
@@ -481,7 +522,9 @@ func (s *Store) Write(ctx context.Context, fn func(app.WriteTx) error) error {
 	if err := s.boundary(BeforeCommit); err != nil {
 		return err
 	}
-	return tx.Commit()
+	err = tx.Commit()
+	s.searchGeneration.flush()
+	return err
 }
 func (t *writeTx) exec(query string, args ...any) error {
 	_, err := t.tx.ExecContext(t.ctx, query, args...)
@@ -502,34 +545,52 @@ func nullable(s string) any {
 }
 
 func (s *Store) validateTables(ctx context.Context, revision int) error {
-	expected := map[string]bool{}
+	expected := map[string]string{}
 	pattern := regexp.MustCompile(`CREATE TABLE ([a-z_]+)`)
 	for _, migration := range migrations[:revision] {
 		for _, match := range pattern.FindAllStringSubmatch(migration, -1) {
-			expected[match[1]] = true
+			expected[match[1]] = "table"
 		}
 	}
-	rows, err := s.db.QueryContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+	if revision >= 8 {
+		for _, name := range []string{"search_words", "search_grams"} {
+			expected[name] = "virtual"
+			for _, suffix := range []string{"_data", "_idx", "_docsize", "_config"} {
+				expected[name+suffix] = "shadow"
+			}
+		}
+	}
+	rows, err := s.db.QueryContext(ctx, "PRAGMA table_list")
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
 	count := 0
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var schema, name, kind string
+		var columns, withoutRowid, strict int
+		if err := rows.Scan(&schema, &name, &kind, &columns, &withoutRowid, &strict); err != nil {
+			rows.Close()
 			return err
 		}
-		if !expected[name] {
-			return errors.New("unknown database schema table")
+		if schema != "main" || strings.HasPrefix(name, "sqlite_") {
+			continue
+		}
+		if expected[name] != kind {
+			rows.Close()
+			return errors.New("unknown database schema table or type")
 		}
 		count++
 	}
-	if err := rows.Err(); err != nil {
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
 		return err
 	}
 	if count != len(expected) {
 		return errors.New("partial database schema")
+	}
+	if revision >= 8 {
+		return s.validateSearchDeclarations(ctx)
 	}
 	return nil
 }

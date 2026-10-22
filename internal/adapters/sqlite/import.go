@@ -391,7 +391,7 @@ func (t *writeTx) FinalizeImport(i domain.ImportIntent, v domain.Version) error 
 	return nil
 }
 func (t *writeTx) WorkJobs(limit int) ([]domain.Job, error) {
-	rows, err := t.tx.QueryContext(t.ctx, "SELECT job_id FROM jobs WHERE kind IN ('upload_seal','import') AND state IN ('queued','interrupted','cancelling') ORDER BY job_id LIMIT ?", batch(limit))
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT job_id FROM (SELECT job_id,kind,row_number() OVER (PARTITION BY kind ORDER BY (state='paused'),job_id) AS turn FROM jobs WHERE (kind IN ('upload_seal','import') AND state IN ('queued','interrupted','cancelling')) OR (kind='derived_index' AND state IN ('queued','interrupted','cancelling','running','paused'))) ORDER BY turn,kind,job_id LIMIT ?`, batch(limit))
 	if err != nil {
 		return nil, err
 	}

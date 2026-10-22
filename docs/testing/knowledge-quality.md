@@ -165,3 +165,12 @@ A passing small corpus is permission to proceed with that baseline, not proof of
 Reuse and extend the same corpus through EPIC-006 generation/Q&A, EPIC-007's connected-reader gate, EPIC-008 semantic maintenance and EPIC-010 release regression. Later gates use the implemented workflows, including saved answer citations, source-mode selection, cross-device reopen, rejected/pinned decisions and partial scan reporting. A fake provider or a documentation-only walkthrough cannot replace the required real integration.
 
 See [contract cases](contract-cases.md), [traceability](traceability.md), [test strategy](test-strategy.md) and [decision register](../decisions.md).
+
+
+### Static search predeclared expectations
+
+The [TASK-004-02 worksheet](search-relevance-worksheet.md) preserves the fixed
+40-query denominator and >=36/40 top-five target, explicit repair/limitation
+rules, alias rank control and approved sample exact identities. M1/M2 do not
+execute retrieval or claim usefulness. Owner-authored queries are separate;
+absence remains owner use unmeasured. Partial extraction is never complete no-match.

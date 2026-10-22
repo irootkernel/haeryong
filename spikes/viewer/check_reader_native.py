@@ -2,14 +2,14 @@
 import argparse,importlib.util,json,os,pathlib,shutil,subprocess,tempfile,time,urllib.parse,urllib.error,urllib.request,hashlib,signal,sys
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--receipt',type=pathlib.Path,required=True)
-parser.add_argument('--stages',default='selfcheck,app,seed,restart,crash,evidence')
+parser.add_argument('--stages',default='selfcheck,app,seed,restart,crash,evidence,search')
 args=parser.parse_args()
 STAGES=set(args.stages.split(','))
-ALL_STAGES={'selfcheck','app','seed','restart','crash','evidence'}
+ALL_STAGES={'selfcheck','app','seed','restart','crash','evidence','search'}
 assert sys.platform=='darwin','this check requires the existing native macOS Wails harness'
-assert STAGES and STAGES<=ALL_STAGES,STAGES
+assert STAGES and STAGES<=ALL_STAGES|{'corpus'},STAGES
 assert not ('restart' in STAGES and 'seed' not in STAGES),'restart requires the seed stage'
-assert not (STAGES&{'seed','restart','crash','evidence'} and 'app' not in STAGES),'these stages require app setup'
+assert not (STAGES&{'seed','restart','crash','evidence','search','corpus'} and 'app' not in STAGES),'these stages require app setup'
 REPO=pathlib.Path(__file__).resolve().parents[2]
 RECEIPT=args.receipt.resolve()
 assert RECEIPT.parent.is_dir(),'receipt parent must exist'
@@ -207,6 +207,209 @@ for(let i=0;i<6;i++){try{await fetch('wails://denied/'+i);}catch(e){}}
             proof['native_context']={'expected_bytes':len(expected_bytes),'expected_digest':expected_digest,'actual_digest':consume['bytes_sha256'],'external_framework':'Preact@10.27.2','wasm_answer':42,'programmatic_author_click':1}
             proof['cases'].append({'kind':'actual compiled native Reader: verified shell, mounted viewer, large digest-bound context (known embedded bytes) through the typed JSON/Go path, exact popup target, >=12 denials, 204 closes','probe_rows':[r['name'] for r in rows],'events':events,'guard':{k:guard.get(k) for k in ('denied_messages','scheme_denied','plain_popups','popup_urls')},'context_digest':consume.get('bytes_sha256'),'known_embedded':{'module':'module-running','worker':'worker-running','payload_repeat':32000}})
 
+
+    # SC18: actual compiled native Library, real daemon and closed search facade.
+    if 'search' in STAGES:
+        search_source=work/'search-source'; (search_source/'nested').mkdir(parents=True)
+        search_path='nested/검토 %2F #?.html'
+        # Only the selected OLD page executes this authored capture. Its real
+        # heading/text flow through the isolated loader and Go context receipt;
+        # a parent URL or a mounted iframe cannot satisfy the byte oracle.
+        search_capture = """<script>(async()=>{
+          const deadline=Date.now()+20000;
+          for(;;){try{await window.__haeryong.state({selection:'native search exact old page',text:document.querySelector('h1').textContent+'|'+document.querySelector('#retry').textContent});break;}
+          catch(e){if(String(e.message)!=='Page channel is not ready'||Date.now()>deadline)throw e;await new Promise(r=>setTimeout(r,100));}}
+        })();</script>"""
+        (search_source/search_path).write_text('<meta charset=utf-8><title>Native search</title><h1>검색원본</h1><p id="retry">readSource 검색표식</p>'+search_capture)
+        (search_source/'aaa-default.html').write_text('<meta charset=utf-8><h1>N3 distinct default page</h1>')
+        for n in range(54): (search_source/f'page{n:02}.html').write_text(f'<meta charset=utf-8><h1>검색표식 {n}</h1>')
+        _,_,search_published=product.import_tree(owner,search_source)
+        search_version=search_published['version_id'];search_document=search_published['document_id']
+        (search_source/search_path).write_text('<meta charset=utf-8><h1>새 버전</h1>')
+        product.import_tree(owner,search_source,extra=['--document',search_document])
+        deadline=time.monotonic()+120
+        while True:
+            status,reply,_=product.request('GET','/api/v1/search?q=&versions=all',client=owner)
+            assert status in {200,503},status
+            if status==200 and reply['data']['index']['state']=='complete':break
+            assert time.monotonic()<deadline,'native search fixture index did not complete'
+            time.sleep(.25)
+        default_bootstrap=product.data('GET',f'/api/v1/versions/{search_version}/render-bootstrap',client=owner)
+        assert default_bootstrap['selected_page']!=search_path,'N3 fixture must distinguish dropped page_path from the exact hit'
+        search_probe=work/'probe-search.js'
+        search_probe.write_text(r"""
+        window.__pageError=null;window.onerror=m=>{window.__pageError=String(m)};
+        const rows=[];const log=(name,ok,detail={})=>{rows.push({name,status:ok?'pass':'fail',detail});if(!ok)throw Error(name);};
+        let done=false;
+        const report=async()=>{try{return await window.haeryongNativeCall(701101,[{Rows:[...rows,{name:'page.error',status:window.__pageError?'fail':'pass',detail:{}},{name:'page.done',status:done?'pass':'pending',detail:{}}]}]);}catch(e){return null;}};
+        setInterval(()=>void report(),2000);
+        const wait=async fn=>{const end=Date.now()+30000;while(Date.now()<end){const v=fn();if(v)return v;await new Promise(r=>setTimeout(r,100));}throw Error('native search wait timed out');};
+        const input=(name,value)=>{const el=[...document.querySelectorAll('label')].find(l=>l.textContent.startsWith(name))?.querySelector('input,select');if(!el)throw Error('missing input '+name);const setter=Object.getOwnPropertyDescriptor(el.tagName==='INPUT'?HTMLInputElement.prototype:HTMLSelectElement.prototype,'value').set;setter.call(el,value);el.dispatchEvent(new Event(el.tagName==='INPUT'?'input':'change',{bubbles:true}));};
+        const button=name=>[...document.querySelectorAll('button')].find(b=>b.textContent===name);
+        (async()=>{try{
+          await wait(()=>document.querySelector('.service-state[data-state="verified"]'));
+          await wait(()=>document.querySelector('form[role="search"]'));
+          input('검색어','검색표식');input('검색 버전','all');
+          await new Promise(r=>setTimeout(r,50));button('검색').click();
+          await wait(()=>document.querySelectorAll('[data-testid="search-hit"]').length===50);
+          button('검색 결과 더 보기').click();await wait(()=>document.querySelectorAll('[data-testid="search-hit"]').length>50);log('search.more',true);
+          input('수명 주기','all');await wait(()=>new URL(location.href).searchParams.get('lifecycle')==='all');
+          input('검색어','readSource');await new Promise(r=>setTimeout(r,50));button('검색').click();
+          const hit=await wait(()=>[...document.querySelectorAll('[data-testid="search-hit"]')].find(n=>n.textContent.includes('readSource')));
+          const anchor=hit.querySelector('a');const url=new URL(anchor.href);
+          log('search.exact-old-Unicode-page',url.pathname===EXACT_ROUTE&&url.searchParams.get('page')===EXACT_PAGE&&!url.hash);
+          anchor.click();await wait(()=>location.pathname===EXACT_ROUTE&&document.querySelector('iframe[title="결과 뷰어"]'));
+          await wait(()=>[...document.querySelectorAll('[role="status"]')].some(n=>n.textContent.includes('페이지 context를 확인했습니다.')));
+          log('search.open-matching-page-content-captured',true);log('search.no-JS-credential',!Object.keys(localStorage).some(k=>k.includes('owner-session')));
+        }catch(e){rows.push({name:'probe.exception',status:'fail',detail:String(e)});}
+        done=true;await report();})();
+        """.replace('EXACT_ROUTE',json.dumps(f'/documents/{search_document}/versions/{search_version}')).replace('EXACT_PAGE',json.dumps(search_path,ensure_ascii=False)))
+        search_app=launch(['--reader','--reader-port','9271','--reader-path','/library','--reader-probe',str(search_probe)],'65s')
+        search_rows=final_report(search_app.pid,100)
+        assert search_rows is not None,'native search report never appeared'
+        assert not [r for r in search_rows if r['status']!='pass'],json.dumps(search_rows,ensure_ascii=False)[:1500]
+        assert search_app.wait(timeout=100)==0
+        search_consumed=next((r for r in (receipts(search_app.pid) or []) if r['event']=='consumeContext'),None)
+        expected_search_bytes=json.dumps({'selection':'native search exact old page','text':'검색원본|readSource 검색표식'},ensure_ascii=False,separators=(',',':')).encode()
+        expected_search_digest=hashlib.sha256(expected_search_bytes).hexdigest()
+        assert search_consumed and search_consumed.get('bytes_sha256')==expected_search_digest,('N3 selected old page content digest mismatch',search_consumed,expected_search_digest)
+        proof['cases'].append({'kind':'SC18 actual native Library search/more/filter and exact old Unicode page through real facade','probe_rows':[r['name'] for r in search_rows],'selected_page_digest':expected_search_digest,'actual_digest':search_consumed['bytes_sha256']})
+
+        # Labelled owner/scoped safe-reason presentation through the real native
+        # App/facade; proxy responses are seeds, not a new scoped credential flow.
+        import http.server,threading,urllib.request
+        sample=product.data('GET','/api/v1/search?q=readSource&versions=all',client=owner)
+        sample['index']=dict(sample['index'],state='partial',reasons=[{'code':'read_failed','version_count':'1'}])
+        upstream=product.endpoint
+        for scoped in (False,True):
+            fixture=json.loads(json.dumps(sample))
+            late_started=threading.Event();late_release=threading.Event();late_sent=threading.Event();status_checks=[]
+            if not scoped:fixture['index']['reasons'].append({'code':'storage_failed','version_count':'1'})
+            class SearchSeed(http.server.BaseHTTPRequestHandler):
+                def log_message(self,*args):pass
+                def forward(self):
+                    size=int(self.headers.get('Content-Length') or 0)
+                    body=self.rfile.read(size) if size else None
+                    request=urllib.request.Request(upstream+self.path,data=body,headers={k:v for k,v in self.headers.items() if k.lower() not in ('host','content-length')},method=self.command)
+                    try:
+                        with urllib.request.urlopen(request,timeout=60) as response:data=response.read();status=response.status;headers=response.getheaders()
+                    except urllib.error.HTTPError as error:data=error.read();status=error.code;headers=error.headers.items()
+                    self.send_response(status)
+                    for k,v in headers:
+                        if k.lower() not in ('transfer-encoding','content-length','connection'):self.send_header(k,v)
+                    self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
+                def do_GET(self):
+                    parsed=urllib.parse.urlsplit(self.path)
+                    if parsed.path=='/api/v1/status' and scoped and late_started.is_set():
+                        status_checks.append(True)
+                        if len(status_checks)>1:late_release.set()
+                        data=json.dumps({'data':{'late_started':True,'late_released':late_release.is_set()}}).encode();self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data);return
+                    if parsed.path!='/api/v1/search':return self.forward()
+                    delayed=scoped and urllib.parse.parse_qs(parsed.query).get('q')==['late-era']
+                    if delayed:late_started.set();assert late_release.wait(30),'late response was never released'
+                    payload=json.loads(json.dumps(fixture))
+                    if delayed:
+                        payload['items']=[dict(hit,title='N3 STALE PROTECTED') for hit in payload['items']]
+                    data=json.dumps({'data':payload}).encode();self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
+                    if delayed:late_sent.set()
+                def do_POST(self):self.forward()
+                def do_PUT(self):self.forward()
+                def do_DELETE(self):
+                    try:self.forward()
+                    finally:
+                        if urllib.parse.urlsplit(self.path).path=='/api/v1/session':late_release.set()
+            server=http.server.ThreadingHTTPServer(('127.0.0.1',0),SearchSeed)
+            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            try:
+                reason_probe=work/('probe-search-reasons-'+str(scoped)+'.js')
+                reason_probe.write_text(r"""
+                const rows=[];let done=false;
+                const report=()=>window.haeryongNativeCall(701101,[{Rows:[...rows,{name:'page.done',status:done?'pass':'pending',detail:{}}]}]).catch(()=>{});
+                setInterval(()=>void report(),2000);
+                (async()=>{try{
+                  const end=Date.now()+30000;
+                  while(!document.body.textContent.includes('콘텐츠 읽기 실패 · 1개 버전')){if(Date.now()>end)throw Error('safe reason missing');await new Promise(r=>setTimeout(r,100));}
+                  const hidden=document.body.textContent.includes('색인 저장 실패 · 1개 버전');
+                  rows.push({name:'search.seeded-reasons-localized',status:hidden===OWNER?'pass':'fail',detail:{scoped:!OWNER}});
+                  if(!OWNER){
+                    const call=(op,payload={})=>window.haeryongNativeCall(701100,[{Operation:op,Payload:payload}]);
+                    const wait=async fn=>{const end=Date.now()+20000;while(Date.now()<end){if(await fn())return;await new Promise(r=>setTimeout(r,100));}throw Error('late-era wait');};
+                    // Owned trusted-host probe only: obtain the actual mounted
+                    // component's client from React's host fiber. No product hook,
+                    // new bridge operation or replacement client is installed.
+                    let screen=document.querySelector('[aria-label="검색 결과"]');
+                    let fiber=screen[Object.keys(screen).find(k=>k.startsWith('__reactFiber$'))],client;
+                    for(;fiber;fiber=fiber.return){const candidate=fiber.memoizedProps?.client;if(candidate?.search&&candidate?.invalidate){client=candidate;break;}}
+                    if(!client)throw Error('actual live search client not found');
+                    const original=client.search.bind(client);let outcome=null;
+                    client.search=async request=>{try{const value=await original(request);if(request.q==='late-era')outcome='resolved';return value;}catch(error){if(request.q==='late-era')outcome=error.name;throw error;}};
+                    const input=document.querySelector('form[role="search"] input');
+                    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'late-era');input.dispatchEvent(new Event('input',{bubbles:true}));await new Promise(r=>setTimeout(r,50));
+                    document.querySelector('form[role="search"]').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+                    await wait(async()=>{const r=await call('serviceStatus');return r.ok&&r.value.late_started===true;});
+                    // Query submission remounts the result owner; capture the
+                    // actual pending screen after that normal route transition.
+                    screen=document.querySelector('[aria-label="검색 결과"]');
+                    if(!screen||screen.getAttribute('aria-busy')!=='true')throw Error('live pending screen missing');
+                    // Advance only the real JS client's authority era, leaving
+                    // the Go attachment, route, mounted screen and request intact.
+                    // The next closed status GET releases the seeded real HTTP200.
+                    client.invalidate();
+                    const released=await call('serviceStatus');
+                    if(!released.ok||!released.value.late_released)throw Error('late200 handshake missing');
+                    await wait(()=>outcome!==null);
+                    await wait(()=>screen.getAttribute('aria-busy')==='false');
+                    rows.push({name:'search.native-live-screen-rejects-late200-old-era',status:outcome==='StaleResponseError'&&screen===document.querySelector('[aria-label="검색 결과"]')&&location.pathname==='/library'&&new URL(location.href).searchParams.get('q')==='late-era'&&screen.querySelectorAll('[data-testid="search-hit"]').length===0&&!!screen.querySelector('[role="alert"]')?'pass':'fail',detail:{seeded_delayed_HTTP_status:200,outcome,same_live_screen:screen===document.querySelector('[aria-label="검색 결과"]')}});
+                    client.search=original;
+                  }
+                }catch(e){rows.push({name:'probe.exception',status:'fail',detail:String(e)});}done=true;await report();})();
+                """.replace('OWNER','false' if scoped else 'true'))
+                reason_app=launch(['--reader','--reader-port','9271','--reader-path','/library?q=readSource&versions=all','--reader-probe',str(reason_probe)],'40s',base=f'http://127.0.0.1:{server.server_port}')
+                reason_rows=final_report(reason_app.pid,65)
+                assert reason_rows is not None,'native reason report missing'
+                assert not [r for r in reason_rows if r['status']!='pass'],json.dumps(reason_rows,ensure_ascii=False)
+                assert reason_app.wait(timeout=65)==0
+                if scoped:
+                    assert late_started.is_set() and late_release.is_set() and late_sent.is_set(),'native in-flight real HTTP200 era fixture was not exercised'
+                    assert credential.exists(),'live-screen era probe unexpectedly logged out'
+                proof['cases'].append({'kind':'SC17/18 labelled seeded '+('scoped' if scoped else 'owner')+' safe reasons in actual native App through closed facade','probe_rows':[r['name'] for r in reason_rows]})
+            finally:server.shutdown();server.server_close()
+
+    if 'corpus' in STAGES:
+        support_spec=importlib.util.spec_from_file_location('sc19_support',REPO/'tests/manual/search_corpus_support.py')
+        support=importlib.util.module_from_spec(support_spec);support_spec.loader.exec_module(support)
+        examples=support.prepare(product,owner)
+        proof['corpus']=examples
+        proof['corpus_support_sha256']=hashlib.sha256((REPO/'tests/manual/search_corpus_support.py').read_bytes()).hexdigest()
+        for example in examples:
+            corpus_probe=work/('probe-corpus-'+example['name']+'.js')
+            corpus_probe.write_text(r"""
+            const expected=EXAMPLE,rows=[];let done=false;
+            const report=()=>window.haeryongNativeCall(701101,[{Rows:[...rows,{name:'page.done',status:done?'pass':'pending',detail:{}}]}]).catch(()=>{});
+            setInterval(()=>void report(),1000);
+            const wait=async fn=>{const deadline=Date.now()+25000;while(Date.now()<deadline){if(fn())return;await new Promise(r=>setTimeout(r,100));}throw Error('corpus native wait');};
+            const actual=[];
+            window.addEventListener('message',event=>{const frame=document.querySelector('iframe[title="결과 뷰어"]');if(event.source===frame?.contentWindow&&event.data?.type==='viewer.loaded')actual.push(event.data);});
+            (async()=>{try{
+              await wait(()=>document.querySelector('form[role="search"]'));
+              const input=(label,value)=>{const el=[...document.querySelectorAll('label')].find(n=>n.textContent.startsWith(label))?.querySelector('input,select');if(!el)throw Error('missing '+label);Object.getOwnPropertyDescriptor(el.tagName==='INPUT'?HTMLInputElement.prototype:HTMLSelectElement.prototype,'value').set.call(el,value);el.dispatchEvent(new Event(el.tagName==='INPUT'?'input':'change',{bubbles:true}));};
+              input('프로젝트',expected.project);input('검색 종류','region');input('검색어',expected.q);await new Promise(r=>setTimeout(r,100));
+              document.querySelector('form[role="search"]').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+              let hit;await wait(()=>hit=[...document.querySelectorAll('[data-testid="search-hit"]')].find(n=>n.textContent.includes('영역 '+expected.region+' ·')));
+              const anchor=hit.querySelector('a'),url=new URL(anchor.href);
+              if(url.pathname!==`/documents/${expected.document}/versions/${expected.version}`||url.searchParams.get('page')!==expected.page)throw Error('corpus search target mismatch');
+              rows.push({name:'corpus.'+expected.name+'.search-target',status:'pass',detail:{document:expected.document,version:expected.version,page:expected.page}});
+              anchor.click();
+              await wait(()=>actual.some(identity=>identity.document_id===expected.document&&identity.version_id===expected.version&&identity.page_path===expected.page));
+              const identity=actual.find(identity=>identity.document_id===expected.document&&identity.version_id===expected.version&&identity.page_path===expected.page);
+              rows.push({name:'corpus.'+expected.name+'.actual-frame-identity',status:'pass',detail:identity});
+            }catch(error){rows.push({name:'probe.exception',status:'fail',detail:String(error)});}done=true;await report();})();
+            """.replace('EXAMPLE',json.dumps(example,ensure_ascii=False)))
+            corpus_app=launch(['--reader','--reader-port','9271','--reader-path','/library','--reader-probe',str(corpus_probe)],'40s')
+            corpus_rows=final_report(corpus_app.pid,65)
+            assert corpus_rows and all(row['status']=='pass' for row in corpus_rows),corpus_rows
+            assert corpus_app.wait(timeout=65)==0
+            proof['cases'].append({'kind':'SC19 actual native '+example['name']+' checked-in corpus search/open','probe_rows':[r['name'] for r in corpus_rows],'expected':example})
 
     # 2b) same fixed-origin trusted-host WebLock + labelled SEED pending
     if 'seed' in STAGES:

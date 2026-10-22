@@ -588,3 +588,26 @@ func (r *pageSplice) Seek(offset int64, whence int) (int64, error) {
 	r.position = target
 	return target, nil
 }
+
+// HTMLReader uses the same encoding authority as LoaderPage, including its
+// deliberate UTF-8 default. The prescan window bounds detection, not input.
+func HTMLReader(input io.Reader) (io.Reader, error) {
+	r := bufio.NewReader(input)
+	head, err := r.Peek(1024)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	enc := detectEncoding(head)
+	bom := 0
+	if bytes.HasPrefix(head, []byte{0xef, 0xbb, 0xbf}) {
+		bom = 3
+	} else if bytes.HasPrefix(head, []byte{0xff, 0xfe}) || bytes.HasPrefix(head, []byte{0xfe, 0xff}) {
+		bom = 2
+	}
+	if bom > 0 {
+		if _, err = r.Discard(bom); err != nil {
+			return nil, err
+		}
+	}
+	return charset.NewReaderLabel(enc.label, r)
+}

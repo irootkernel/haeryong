@@ -208,6 +208,20 @@
       "required": "Runtime/API/doc versions are separate; required unknown state/authority/request fields fail safely, optional nonauthority response additions are directional, FEATURE_NOT_READY is honest.",
       "proof_limit": "No deployed compatibility or production capability is established.",
       "test_prefix": "test_SUP_COMPATIBILITY_"
+    },
+    {
+      "id": "SEARCH-SC08",
+      "test_prefix": "test_search_SC08_",
+      "setup_or_action": "Validate provisional closed search page and query fixtures, safe reasons and negatives.",
+      "expected_contract_result": "Required reasons, exact nullable fields, typed nonzero decimal reason counts; no extra/private fields.",
+      "later_owner": "TASK-004-02 query delivery"
+    },
+    {
+      "id": "SEARCH-SC11",
+      "test_prefix": "test_search_SC11_",
+      "setup_or_action": "Admit additive derived_index in selected job.kind.",
+      "expected_contract_result": "New kind accepted, unknown kind absent; workflow.scope unchanged.",
+      "later_owner": "TASK-004-02 worker delivery"
     }
   ],
   "source_owners": [

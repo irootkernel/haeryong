@@ -104,7 +104,7 @@ func (h *Handler) Handles(r *http.Request) bool {
 		return false
 	}
 	if len(p) == 1 {
-		return p[0] == "capabilities" || p[0] == "projects" || p[0] == "documents"
+		return p[0] == "search" || p[0] == "capabilities" || p[0] == "projects" || p[0] == "documents"
 	}
 	if p[0] == "documents" {
 		return len(p) == 2 || len(p) == 3 && p[2] == "versions"
@@ -137,6 +137,11 @@ func bearer(r *http.Request) (string, error) {
 	return strings.TrimPrefix(values[0], "Bearer "), nil
 }
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/api/v1/search" {
+		ctx, cancel := context.WithTimeout(r.Context(), query.SearchTimeout)
+		defer cancel()
+		r = r.WithContext(ctx)
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	token, err := bearer(r)
@@ -153,6 +158,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := route(r)
+	if len(p) == 1 && p[0] == "search" {
+		h.search(w, r, token)
+		return
+	}
 	allowed := []string{"cursor", "limit"}
 	if p[0] == "documents" && len(p) == 1 {
 		allowed = append(allowed, "project_id", "lifecycle")
@@ -836,6 +845,15 @@ func failure(w http.ResponseWriter, r *http.Request, err error) {
 		// Account/ledger repair requires an explicit supported remedy. A
 		// definite delivery denial must not trigger logout or endless retries.
 		retryable = false
+	}
+	if r.URL.Path == "/api/v1/search" && status == 503 {
+		code = "SERVICE_RECOVERING"
+		details = map[string]any{}
+		retryable = true
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			details["reason"] = "query_timeout"
+		}
+		w.Header().Set("Retry-After", "2")
 	}
 	failureCode(w, r, status, code, details, retryable)
 }

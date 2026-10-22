@@ -21,6 +21,8 @@ func validateCommandFlags(opt options) error {
 		verb = args[1]
 	}
 	switch args[0] {
+	case "search":
+		add("query project lifecycle versions kind cursor limit")
 	case "import":
 		add("operation-id project document new-document base-version version metadata")
 	case "package":

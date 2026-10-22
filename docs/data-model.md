@@ -159,3 +159,49 @@ current selection: A supplies availability; C supplies the target, denominator
 and exact-target triggers. Old rows remain immutable. All-unavailable attempts
 retain coverage while target/captured_at stay null. No observation writes a
 semantic assessment, observed_input citation or personal Review.
+
+
+## Migration 8: static search structural foundation
+
+TASK-004-02 M2 appends migration 8 without changing migrations 1–7 or the normative
+logical model above. `derived_work` binds jobs/exact versions/revision/checkpoints;
+`search_indexes` owns discovery/completion/reason state; `search_units` preserves
+exact document/page/region/source/attachment identity; `search_chunks` stores
+revisioned nomination postings separately from full normalized literals and
+authored display text. External-content unicode61
+`search_words` and trigram `search_grams` reference those chunks; insert/update/
+delete triggers maintain both indexes. `page_anchors` independently records exact
+page-local static IDs, locator kinds, occurrence counts, labels and descendant
+text digests, without overwriting supplied immutable regions.
+
+All new enum-like SQL columns enforce nonempty values, allowing future work kinds;
+current Go admission/readback rejects unknown values safely. Structural positivity,
+boolean, uniqueness, region-page and FK constraints remain enforced. The adapter
+admits exactly each FTS table's `_data`, `_idx`, `_docsize`, `_config` shadows with
+virtual/shadow types and exact declarations/triggers; arbitrary suffixes and
+`_content` are rejected. Migration creates structure only, with no backfill or
+worker startup. Existing verified pre-DDL DB/object recovery and transactional
+history/user_version/library revision remain authoritative. Search capability is
+false. Later milestones own fencing, indexing jobs, querying and presentation.
+
+M3 now uses these structures at runtime: publication atomically creates one
+version/work/revision job, the startup sweep covers prior publications, and a
+single serial dispatcher advances bounded inventory/page checkpoints. Pending
+revision replacements quarantine old rows before bounded clearing. Each write
+fences immutable version identity/hashes, captured system scope and current
+policy/permission generations, lifecycle, cancellation and worker generation.
+Only verified EOF activates body/anchor coverage; restart retains completed pages
+and reparses incomplete pages. Definitive failure/cancellation is terminal for
+that revision. Typed pre-deletion cleanup removes chunks/FTS, anchors, units and
+index/work references while retaining job history. Original files stay immutable;
+no new migration, query API or presentation is introduced by this runtime step.
+
+M4 correction uses extractor revision 2 for the changed derived payload format.
+FTS postings retain unique trigrams and short words rather than every repeated
+position; full literals remain authoritative for phrase checks and snippets.
+The normal revision sweep quarantines and rebuilds older derived rows. Metadata
+windows use normalized scalar offsets mapped back to authored bytes. One parent
+page row activates verified EOF; region read state derives from that page and
+its page-local anchors, without a bulk region update. Actual body-read failure
+sets the page's failed body state and safe reason under the current worker
+generation fence. No schema migration or original-content mutation is needed.

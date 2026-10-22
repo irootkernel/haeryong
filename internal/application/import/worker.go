@@ -7,45 +7,18 @@ import (
 	"encoding/json"
 	"errors"
 	"haeryong.local/haeryong/internal/application/auth"
+	"haeryong.local/haeryong/internal/application/search"
 	app "haeryong.local/haeryong/internal/application/storage"
+	"haeryong.local/haeryong/internal/application/work"
 	"haeryong.local/haeryong/internal/domain"
 	"io"
 	"sync"
 	"syscall"
-	"time"
 )
 
-// Run is one local serial executor over the existing durable jobs, not a second
-// queue. Its owner must cancel and await it before closing storage.
+// Run keeps existing callers on the same serial dispatcher as production.
 func (s *Service) Run(ctx context.Context) error {
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-		}
-		var jobs []domain.Job
-		e := s.Store.Write(ctx, func(tx app.WriteTx) error { var e error; jobs, e = tx.WorkJobs(64); return e })
-		if e != nil {
-			if ctx.Err() != nil {
-				return nil
-			}
-			return e
-		}
-		for _, j := range jobs {
-			if ctx.Err() != nil {
-				return nil
-			}
-			_ = s.Process(ctx, j.ID)
-		}
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
-		}
-	}
+	return (work.Dispatcher{Store: s.Store, Imports: s, Derived: search.NewWorker(s.Store, s.Bytes)}).Run(ctx)
 }
 func (s *Service) Process(ctx context.Context, id string) error {
 	var j domain.Job

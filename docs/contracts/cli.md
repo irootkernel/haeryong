@@ -171,3 +171,18 @@ fails the command without emitting a partial denominator. The default form
 returns the current history/applicable composition. Coverage HTTP clients may
 also use attempt_run_id from units_url as specified by the registry; this CLI
 flag selects the stored set and introduces no attempt-run flag.
+
+## Static search delivery (TASK-004-02 M4)
+
+`haeryong search [--query TEXT] [--project ID] [--lifecycle active|archived|all]
+[--versions latest|all] [--kind document|page|region|source|attachment]
+[--cursor TOKEN] [--limit N] --json` performs one authenticated GET page.
+An omitted or explicitly empty query returns safe coverage, no hits and exit 0.
+The JSON data is exactly SearchPage, including required `index.reasons`, decimal
+counts and `next_cursor`; pagination never silently accumulates or changes scope.
+Foreign flags, including `--version`, `--operation-id` and `--new-document`, fail
+with exit 2. Query/filter errors use exit 2, authorization exit 3, unavailable
+service exit 5; healthy zero-match, pending or partial coverage use exit 0.
+No receipt, implicit indexing, retry or rebuild action is selected. Recovery:
+TASK-004-04 rebuild. The public route/CLI work while `features.search` remains
+false pending M5's complete client/UI delivery.

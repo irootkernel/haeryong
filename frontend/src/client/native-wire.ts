@@ -78,11 +78,12 @@ export function createNativePort(wire: NativeWire): NativePort {
   const subscription = (value: unknown): EventSubscription => {
     if (!record(value) || typeof value.subscription_id !== "string" || !value.subscription_id) throw invalid();
     const id = value.subscription_id;
+    const listeners = new Set<() => void>();
     let active = true, finish!: () => void;
     const closed = new Promise<void>((resolve) => { finish = resolve; });
     const close = () => {
       if (!active) return;
-      active = false; finish();
+      active = false; listeners.clear(); finish();
       void invoke("eventsClose", { subscription_id: id }).catch(() => undefined);
     };
     void (async () => {
@@ -91,12 +92,13 @@ export function createNativePort(wire: NativeWire): NativePort {
           const next = await invoke("eventsPoll", { subscription_id: id });
           if (!record(next) || typeof next.closed !== "boolean") throw invalid();
           if (next.closed) break;
-          // Polls are liveness hints only. No event body becomes UI authority.
+          if (active && next.invalidated === true) for (const listener of listeners) listener();
+          // Content-free hints require authenticated re-read; no body is exposed.
           if (active) await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       } finally { close(); }
     })().catch(() => undefined);
-    return { closed, close };
+    return { closed, close, onInvalidation: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; } };
   };
   const call = async (operation: Operation, payload: Record<string, unknown>): Promise<unknown> => {
     if (!(NATIVE_OPERATIONS as readonly string[]).includes(operation)) throw new Error("Undeclared native operation");

@@ -1,0 +1,24 @@
+{
+  "declared_before_execution": true,
+  "bodies": ["검토 승인 재시도", "source_access", "readSource", "source/path.go", "재 시도", "검토 비공개", "검토 휴지통", "승인 검토"],
+  "rows": [
+    {"q":"검토","expected":[1,8],"disposition":"R"},
+    {"q":"검","expected":[1,8],"disposition":"R"},
+    {"q":"재시도","expected":[1],"disposition":"R"},
+    {"q":"\"검토 승인\"","expected":[1],"disposition":"R"},
+    {"q":"\"재 시도\"","only":1,"expected":[],"disposition":"L"},
+    {"q":"\"재 시도\"","only":5,"expected":[5],"disposition":"R"},
+    {"q":"source","expected":[2,3,4],"disposition":"R"},
+    {"q":"\"source_access\"","expected":[2],"disposition":"R"},
+    {"q":"Source","only":3,"expected":[3],"disposition":"R"},
+    {"q":"readSource","only":3,"expected":[3],"disposition":"R"},
+    {"q":"source","only":3,"expected":[3],"disposition":"R"},
+    {"q":"\"source/path.go\"","expected":[4],"disposition":"R"},
+    {"q":"go","expected":[4],"disposition":"R"},
+    {"q":"\"path.go\"","expected":[4],"disposition":"R"},
+    {"q":"검토 승인","expected":[1,8],"disposition":"R"},
+    {"q":"\"source-path.go\"","only":4,"expected":[],"disposition":"L"},
+    {"q":"비공개","expected":[],"disposition":"R"},
+    {"q":"휴지통","expected":[],"disposition":"R"}
+  ]
+}

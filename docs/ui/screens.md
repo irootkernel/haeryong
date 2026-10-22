@@ -22,6 +22,28 @@ Top search bar, project scope selector, personal review filter, lifecycle filter
 
 Each library row is one directory result, with a Files/Pages action and file count when enumeration is known. Search results identify the matching page path, optional region and match context without leaking trash or unauthorized excerpts. Filter state survives reader/back navigation. Sorting must remain deterministic under pagination. Empty results offer clearing filters; empty library offers import. Multi-select destructive actions are deferred initially to reduce accidental bulk deletion. Project source settings show approved identities, not a server file browser.
 
+TASK-004-02 M5 delivers the static-search portion of S03. A labelled query form
+supports Enter and Clear; project/lifecycle/version/kind filters survive URL,
+reload and Back, including explicit Search All (`lifecycle=all`). No submitted
+query retains the ordinary Library list; an empty submitted query asks for a term
+and shows safe coverage. Loading, empty eligible corpus, complete zero match,
+pending/partial/failed coverage, matched items, more-page reset, transient errors
+and access loss are distinct. Safe `index.reasons` labels include distinct-version
+counts for owner and scoped responses without job reads or diagnostics. Failed
+coverage offers no maintenance action; manual rebuild remains TASK-004-04.
+
+Search rows show exact project/lifecycle/version/path and optional region/source,
+plain-text snippets and static/unsupported limitations. Open matching page uses
+the returned document/version and exactly once-encoded page path; it never follows
+latest or focuses a region. Region and anchor state are data only. Attachment
+hits open their exact version for the existing file-list/download controls.
+First/more responses belong to a request and confirmed authority epoch; replaced
+filters, Back, remount and access loss cannot repopulate old rows. Double More is
+single flight. A genuine cursor binding change visibly reloads page one. Partial
+coverage uses bounded authenticated GET polling and focus/explicit refresh;
+coalesced content-free event hints refetch the first page under current authority;
+search never schedules index work. Phone controls stack with usable touch targets.
+
 ## S04 Reader
 
 Header: breadcrumb/project, document title, exact version selector, source release/short hash with expandable full identity, and Copy link. Offer Import new version using the shared import controls with this exact document preselected and its base captured before upload. Keep My review and freshness separate. Actions: Start review, Mark as reviewed, Reopen review or Clear review according to the exact state; document-level Revisit toggle; More menu for Archive/Trash. An explicit Mark as reviewed may go directly from Unreviewed to Reviewed. Reopen/Clear changes the current state while retaining the audited history. Merely opening never starts or completes review.

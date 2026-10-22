@@ -1,5 +1,2078 @@
 {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:haeryong:contract-fixtures:1.0",
+  "contract_fixture_version": "1.0",
+  "runtime_schema_version": "1.0",
+  "api_family": "/api/v1",
+  "documentation_baseline": "1.6.2",
+  "scope": "Selected executable contract shapes; no production capability or deployed compatibility claim",
+  "shared_enums": {
+    "personal_review.state": [
+      "unreviewed",
+      "reviewing",
+      "reviewed"
+    ],
+    "personal_review.action": [
+      "start",
+      "complete",
+      "reopen",
+      "clear"
+    ],
+    "document.lifecycle": [
+      "active",
+      "archived",
+      "trash",
+      "purged"
+    ],
+    "project.lifecycle": [
+      "active",
+      "archived"
+    ],
+    "assessment.state": [
+      "not_assessed",
+      "reassessment_needed",
+      "aligned_within_scope",
+      "outdated_against_target",
+      "unable_to_verify"
+    ],
+    "finding.status": [
+      "proposed",
+      "applied",
+      "rejected",
+      "stale",
+      "blocked",
+      "undone"
+    ],
+    "finding.kind": [
+      "backlink_index_repair",
+      "related_explanation",
+      "topic_assignment",
+      "freshness_assessment",
+      "new_version_proposal",
+      "new_document_proposal"
+    ],
+    "finding.origin": [
+      "deterministic",
+      "ai"
+    ],
+    "topic_assignment.decision": [
+      "accepted",
+      "rejected"
+    ],
+    "pairing.state": [
+      "pending",
+      "approved",
+      "rejected",
+      "expired"
+    ],
+    "session.state": [
+      "active",
+      "expired",
+      "revoked"
+    ],
+    "draft.status": [
+      "preparing",
+      "ready",
+      "published",
+      "rejected",
+      "failed"
+    ],
+    "draft.action": [
+      "reject",
+      "replace"
+    ],
+    "finding.decision": [
+      "approve",
+      "reject"
+    ],
+    "job.state": [
+      "queued",
+      "running",
+      "paused",
+      "interrupted",
+      "reconciling",
+      "cancelling",
+      "completed",
+      "failed",
+      "cancelled"
+    ],
+    "job.kind": [
+      "upload_seal",
+      "import",
+      "generation",
+      "question",
+      "scan",
+      "lifecycle",
+      "backup",
+      "export",
+      "derived_index"
+    ],
+    "job.resume.decision": [
+      "reconcile_only",
+      "continue",
+      "retry"
+    ],
+    "job_item.state": [
+      "pending",
+      "running",
+      "completed",
+      "skipped",
+      "blocked",
+      "failed",
+      "cancelled"
+    ],
+    "provider_attempt.dispatch_state": [
+      "prepared",
+      "dispatching",
+      "running",
+      "result_saved",
+      "failed",
+      "cancelled",
+      "outcome_unknown"
+    ],
+    "operation_receipt.state": [
+      "accepted",
+      "completed",
+      "failed",
+      "reconciling"
+    ],
+    "source_mode": [
+      "pinned",
+      "current"
+    ],
+    "citation.basis": [
+      "observed_input",
+      "posthoc_verified"
+    ],
+    "provider_input.input_origin": [
+      "daemon_supplied",
+      "native_observed"
+    ],
+    "scope.kind / coverage.unit_kind": [
+      "version",
+      "page",
+      "region"
+    ],
+    "coverage_unit.outcome": [
+      "assessed",
+      "partial",
+      "blocked",
+      "not_checked"
+    ],
+    "source_mapping.kind": [
+      "git",
+      "files"
+    ],
+    "source.kind": [
+      "git",
+      "snapshot"
+    ],
+    "source_intent": [
+      "historical",
+      "moving_target"
+    ],
+    "source_basis": [
+      "unverified",
+      "evidence_recorded"
+    ],
+    "reference.resolution": [
+      "resolved",
+      "unresolved",
+      "unavailable",
+      "tombstoned"
+    ],
+    "file.kind": [
+      "file",
+      "directory",
+      "symlink"
+    ],
+    "upload.purpose": [
+      "result",
+      "context",
+      "body",
+      "metadata"
+    ],
+    "upload.input_mode": [
+      "directory",
+      "archive",
+      "file",
+      "object"
+    ],
+    "upload.state": [
+      "open",
+      "sealing",
+      "sealed",
+      "abandoned"
+    ],
+    "content_object.state": [
+      "staged",
+      "ready",
+      "deleting"
+    ],
+    "object_pin.state": [
+      "active",
+      "released"
+    ],
+    "plan.state": [
+      "open",
+      "committed",
+      "expired"
+    ],
+    "lifecycle_plan.operation": [
+      "archive",
+      "trash",
+      "restore",
+      "purge"
+    ],
+    "workflow.scope": [
+      "project.read",
+      "source.read",
+      "version.read",
+      "package.export",
+      "context.write",
+      "import.publish",
+      "generation.request",
+      "draft.write",
+      "draft.publish",
+      "scan.request",
+      "job.read",
+      "job.cancel"
+    ],
+    "file.preview": [
+      "html",
+      "browser",
+      "text",
+      "download",
+      "unavailable"
+    ],
+    "source.retention_mode": [
+      "reference_only",
+      "selected_snapshot"
+    ],
+    "evidence.capture_status": [
+      "verified",
+      "reference_only",
+      "unavailable"
+    ],
+    "verification.outcome": [
+      "captured",
+      "matched",
+      "mismatch",
+      "unavailable"
+    ],
+    "source.availability": [
+      "available",
+      "unavailable",
+      "denied"
+    ],
+    "source.bytes_origin": [
+      "retained_snapshot",
+      "approved_source"
+    ],
+    "viewer_profile": [
+      "html_js_v1"
+    ],
+    "maintenance.schedule.mode": [
+      "manual",
+      "interval",
+      "calendar"
+    ],
+    "maintenance.scope": [
+      "selected_projects",
+      "all_allowed_projects"
+    ],
+    "maintenance.depth": [
+      "change_focused",
+      "full_scope",
+      "deep_semantic"
+    ],
+    "maintenance.missed_runs": [
+      "coalesce_one"
+    ],
+    "automatic action": [
+      "disabled",
+      "propose",
+      "auto"
+    ],
+    "content_generation": [
+      "disabled",
+      "propose",
+      "draft"
+    ],
+    "search.index_reason": [
+      "not_indexed",
+      "interrupted",
+      "cancelled",
+      "read_failed",
+      "decode_failed",
+      "integrity_failed",
+      "resource_exhausted",
+      "storage_failed",
+      "unsupported_body",
+      "failed_unknown"
+    ]
+  },
   "$defs": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "path": {
+      "type": "string",
+      "format": "relative-path"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "time": {
+      "type": "string",
+      "format": "utc-time"
+    },
+    "checkpoint": {
+      "type": "object",
+      "properties": {
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "inventory_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "accepted_bytes": {
+          "$ref": "#/$defs/decimal"
+        },
+        "complete_input": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "generation",
+        "inventory_sha256",
+        "accepted_bytes",
+        "complete_input"
+      ],
+      "additionalProperties": false
+    },
+    "result_target": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "$ref": "#/$defs/id"
+        },
+        "document_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "draft_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "project_id",
+        "document_id"
+      ],
+      "additionalProperties": false
+    },
+    "context_target": {
+      "type": "object",
+      "properties": {
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "page_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "render_instance_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "version_id",
+        "page_path",
+        "render_instance_id"
+      ],
+      "additionalProperties": false
+    },
+    "body_question": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "action": {
+          "enum": [
+            "question"
+          ]
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "page_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "operation_id",
+        "action",
+        "version_id",
+        "page_path"
+      ],
+      "additionalProperties": false
+    },
+    "body_annotation_create": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "action": {
+          "enum": [
+            "annotation_create"
+          ]
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "page_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "operation_id",
+        "action",
+        "version_id",
+        "page_path"
+      ],
+      "additionalProperties": false
+    },
+    "body_annotation_edit": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "action": {
+          "enum": [
+            "annotation_edit"
+          ]
+        },
+        "annotation_id": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "operation_id",
+        "action",
+        "annotation_id"
+      ],
+      "additionalProperties": false
+    },
+    "body_generation": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "action": {
+          "enum": [
+            "generation"
+          ]
+        },
+        "project_id": {
+          "$ref": "#/$defs/id"
+        },
+        "document_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "operation_id",
+        "action",
+        "project_id",
+        "document_id"
+      ],
+      "additionalProperties": false
+    },
+    "body_evidence_verification": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "action": {
+          "enum": [
+            "evidence_verification"
+          ]
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "operation_id",
+        "action",
+        "version_id",
+        "evidence_id"
+      ],
+      "additionalProperties": false
+    },
+    "metadata_import": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "action": {
+          "enum": [
+            "import"
+          ]
+        },
+        "project_id": {
+          "$ref": "#/$defs/id"
+        },
+        "document_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "operation_id",
+        "action",
+        "project_id",
+        "document_id"
+      ],
+      "additionalProperties": false
+    },
+    "metadata_draft_replace": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "action": {
+          "enum": [
+            "draft_replace"
+          ]
+        },
+        "draft_id": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "operation_id",
+        "action",
+        "draft_id"
+      ],
+      "additionalProperties": false
+    },
+    "body_target": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/body_question"
+        },
+        {
+          "$ref": "#/$defs/body_annotation_create"
+        },
+        {
+          "$ref": "#/$defs/body_annotation_edit"
+        },
+        {
+          "$ref": "#/$defs/body_generation"
+        },
+        {
+          "$ref": "#/$defs/body_evidence_verification"
+        }
+      ]
+    },
+    "metadata_target": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/metadata_import"
+        },
+        {
+          "$ref": "#/$defs/metadata_draft_replace"
+        }
+      ]
+    },
+    "upload_create": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "purpose": {
+              "enum": [
+                "result"
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/result_target"
+            },
+            "input_mode": {
+              "enum": [
+                "directory",
+                "archive",
+                "file"
+              ]
+            },
+            "selection_name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "purpose",
+            "target",
+            "input_mode"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "purpose": {
+              "enum": [
+                "context"
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/context_target"
+            },
+            "input_mode": {
+              "enum": [
+                "object"
+              ]
+            },
+            "selection_name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "purpose",
+            "target",
+            "input_mode"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "purpose": {
+              "enum": [
+                "body"
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/body_target"
+            },
+            "input_mode": {
+              "enum": [
+                "object"
+              ]
+            },
+            "selection_name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "purpose",
+            "target",
+            "input_mode"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "purpose": {
+              "enum": [
+                "metadata"
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/metadata_target"
+            },
+            "input_mode": {
+              "enum": [
+                "object"
+              ]
+            },
+            "selection_name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "purpose",
+            "target",
+            "input_mode"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "git",
+            "snapshot"
+          ]
+        },
+        "retention_mode": {
+          "enum": [
+            "reference_only",
+            "selected_snapshot"
+          ]
+        },
+        "release_label": {
+          "type": "string"
+        },
+        "repo_id": {
+          "$ref": "#/$defs/id"
+        },
+        "object_format": {
+          "enum": [
+            "sha1",
+            "sha256"
+          ]
+        },
+        "exact_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "snapshot_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "asset_path": {
+          "$ref": "#/$defs/path"
+        },
+        "bytes_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "retention_mode"
+      ],
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capture_status": {
+          "enum": [
+            "verified",
+            "reference_only",
+            "unavailable"
+          ]
+        },
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "line_start": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "line_end": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bytes_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "required": [
+        "id",
+        "source_id",
+        "capture_status",
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "region": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "page_path": {
+          "$ref": "#/$defs/path"
+        },
+        "label": {
+          "type": "string"
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "id",
+        "page_path"
+      ],
+      "additionalProperties": false
+    },
+    "page": {
+      "type": "object",
+      "properties": {
+        "page_path": {
+          "$ref": "#/$defs/path"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_path"
+      ],
+      "additionalProperties": false
+    },
+    "reference": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "document_id": {
+          "$ref": "#/$defs/id"
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "page_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "region_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resolution": {
+          "enum": [
+            "resolved",
+            "unresolved",
+            "unavailable",
+            "tombstoned"
+          ]
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "document_id",
+        "version_id",
+        "page_path",
+        "region_id"
+      ],
+      "additionalProperties": false
+    },
+    "dependency": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string"
+        },
+        "integrity": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "generation": {
+      "type": "object",
+      "properties": {
+        "tool": {
+          "type": "string",
+          "minLength": 1
+        },
+        "skill_contract_version": {
+          "type": "string"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "tool"
+      ],
+      "additionalProperties": false
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "enum": [
+            "1.0"
+          ]
+        },
+        "document": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "project_id": {
+              "$ref": "#/$defs/id"
+            },
+            "title": {
+              "type": "string"
+            },
+            "question": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "version": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "base_version_id": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source_intent": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "historical",
+                    "moving_target"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "content": {
+          "type": "object",
+          "properties": {
+            "default_page": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/path"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "external_dependencies": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/dependency"
+              }
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "pages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/page"
+          }
+        },
+        "regions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/region"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          }
+        },
+        "generation": {
+          "$ref": "#/$defs/generation"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "generated_metadata": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "enum": [
+            "1.0"
+          ]
+        },
+        "document": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "project_id": {
+              "$ref": "#/$defs/id"
+            },
+            "title": {
+              "type": "string"
+            },
+            "question": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "project_id",
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "version": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "base_version_id": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source_intent": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "historical",
+                    "moving_target"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "created_at": {
+              "$ref": "#/$defs/time"
+            }
+          },
+          "required": [
+            "id",
+            "base_version_id",
+            "source_intent",
+            "created_at"
+          ],
+          "additionalProperties": false
+        },
+        "content": {
+          "type": "object",
+          "properties": {
+            "default_page": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/path"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "external_dependencies": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/dependency"
+              }
+            },
+            "inventory": {
+              "type": "string",
+              "minLength": 1
+            },
+            "payload_sha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          },
+          "required": [
+            "default_page",
+            "inventory",
+            "payload_sha256"
+          ],
+          "additionalProperties": false
+        },
+        "pages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/page"
+          }
+        },
+        "regions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/region"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          }
+        },
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "viewer_profile": {
+          "enum": [
+            "html_js_v1"
+          ]
+        },
+        "source_basis": {
+          "enum": [
+            "unverified",
+            "evidence_recorded"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "document",
+        "version",
+        "content",
+        "viewer_profile",
+        "source_basis"
+      ],
+      "additionalProperties": false
+    },
+    "object_ref": {
+      "type": "object",
+      "properties": {
+        "object_id": {
+          "$ref": "#/$defs/id"
+        },
+        "bytes_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "byte_size": {
+          "$ref": "#/$defs/decimal"
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "object_id",
+        "bytes_sha256",
+        "byte_size",
+        "media_type"
+      ],
+      "additionalProperties": false
+    },
+    "import_request": {
+      "type": "object",
+      "properties": {
+        "upload_id": {
+          "$ref": "#/$defs/id"
+        },
+        "document_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project_id": {
+          "$ref": "#/$defs/id"
+        },
+        "base_version_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        },
+        "metadata_ref": {
+          "$ref": "#/$defs/object_ref"
+        }
+      },
+      "required": [
+        "upload_id",
+        "document_id"
+      ],
+      "additionalProperties": false
+    },
+    "pin_summary": {
+      "type": "object",
+      "properties": {
+        "staging": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "adopted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "active_work": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "recovery": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "staging",
+        "adopted",
+        "active_work",
+        "recovery"
+      ],
+      "additionalProperties": false
+    },
+    "upload_summary": {
+      "type": "object",
+      "properties": {
+        "upload_id": {
+          "$ref": "#/$defs/id"
+        },
+        "originating_principal_id": {
+          "$ref": "#/$defs/id"
+        },
+        "originating_device_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "purpose": {
+          "enum": [
+            "result",
+            "context",
+            "body",
+            "metadata"
+          ]
+        },
+        "input_mode": {
+          "enum": [
+            "directory",
+            "archive",
+            "file",
+            "object"
+          ]
+        },
+        "selection_name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/result_target"
+            },
+            {
+              "$ref": "#/$defs/context_target"
+            },
+            {
+              "$ref": "#/$defs/body_target"
+            },
+            {
+              "$ref": "#/$defs/metadata_target"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "open",
+            "sealing",
+            "sealed",
+            "abandoned"
+          ]
+        },
+        "byte_size": {
+          "$ref": "#/$defs/decimal"
+        },
+        "staging_bytes": {
+          "$ref": "#/$defs/decimal"
+        },
+        "created_at": {
+          "$ref": "#/$defs/time"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/time"
+        },
+        "reusable": {
+          "type": "boolean"
+        },
+        "unavailable_reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pin_summary": {
+          "$ref": "#/$defs/pin_summary"
+        },
+        "pins_url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "detail_url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "^\"upload-[^\"]+\"$"
+        }
+      },
+      "required": [
+        "upload_id",
+        "originating_principal_id",
+        "originating_device_id",
+        "purpose",
+        "input_mode",
+        "selection_name",
+        "target",
+        "state",
+        "byte_size",
+        "staging_bytes",
+        "created_at",
+        "updated_at",
+        "reusable",
+        "unavailable_reason",
+        "pin_summary",
+        "pins_url",
+        "detail_url",
+        "revision",
+        "etag"
+      ],
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "details": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryable",
+        "details"
+      ],
+      "additionalProperties": false
+    },
+    "upload_detail": {
+      "type": "object",
+      "properties": {
+        "upload_id": {
+          "$ref": "#/$defs/id"
+        },
+        "originating_principal_id": {
+          "$ref": "#/$defs/id"
+        },
+        "originating_device_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "purpose": {
+          "enum": [
+            "result",
+            "context",
+            "body",
+            "metadata"
+          ]
+        },
+        "input_mode": {
+          "enum": [
+            "directory",
+            "archive",
+            "file",
+            "object"
+          ]
+        },
+        "selection_name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/result_target"
+            },
+            {
+              "$ref": "#/$defs/context_target"
+            },
+            {
+              "$ref": "#/$defs/body_target"
+            },
+            {
+              "$ref": "#/$defs/metadata_target"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "open",
+            "sealing",
+            "sealed",
+            "abandoned"
+          ]
+        },
+        "byte_size": {
+          "$ref": "#/$defs/decimal"
+        },
+        "staging_bytes": {
+          "$ref": "#/$defs/decimal"
+        },
+        "created_at": {
+          "$ref": "#/$defs/time"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/time"
+        },
+        "reusable": {
+          "type": "boolean"
+        },
+        "unavailable_reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pin_summary": {
+          "$ref": "#/$defs/pin_summary"
+        },
+        "pins_url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "detail_url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "checkpoint": {
+          "$ref": "#/$defs/checkpoint"
+        },
+        "ranges_url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entries_url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seal_job_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seal_operation_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sealed_content_set_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sealed_object_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/object_ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "^\"upload-[^\"]+\"$"
+        },
+        "transport_entry": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "upload_id",
+        "originating_principal_id",
+        "originating_device_id",
+        "purpose",
+        "input_mode",
+        "selection_name",
+        "target",
+        "state",
+        "byte_size",
+        "staging_bytes",
+        "created_at",
+        "updated_at",
+        "reusable",
+        "unavailable_reason",
+        "pin_summary",
+        "pins_url",
+        "detail_url",
+        "checkpoint",
+        "ranges_url",
+        "entries_url",
+        "error",
+        "seal_job_id",
+        "seal_operation_id",
+        "sealed_content_set_id",
+        "sealed_object_ref",
+        "revision",
+        "etag"
+      ],
+      "additionalProperties": false
+    },
+    "schedule": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "manual",
+            "interval",
+            "calendar"
+          ]
+        },
+        "interval_seconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 60
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cron": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "mode",
+        "interval_seconds",
+        "cron",
+        "timezone"
+      ],
+      "additionalProperties": false
+    },
+    "maintenance": {
+      "type": "object",
+      "properties": {
+        "schedule": {
+          "$ref": "#/$defs/schedule"
+        },
+        "scope": {
+          "enum": [
+            "selected_projects",
+            "all_allowed_projects"
+          ]
+        },
+        "project_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "depth": {
+          "enum": [
+            "change_focused",
+            "full_scope",
+            "deep_semantic"
+          ]
+        },
+        "missed_runs": {
+          "enum": [
+            "coalesce_one"
+          ]
+        },
+        "max_concurrent_ai_jobs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_provider_attempts_per_run": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_run_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "auto_apply": {
+          "type": "object",
+          "properties": {
+            "backlink_index_repair": {
+              "enum": [
+                "disabled",
+                "propose",
+                "auto"
+              ]
+            },
+            "related_explanation": {
+              "enum": [
+                "disabled",
+                "propose",
+                "auto"
+              ]
+            },
+            "topic_assignment": {
+              "enum": [
+                "disabled",
+                "propose",
+                "auto"
+              ]
+            },
+            "freshness_assessment": {
+              "enum": [
+                "disabled",
+                "propose",
+                "auto"
+              ]
+            }
+          },
+          "required": [
+            "backlink_index_repair",
+            "related_explanation",
+            "topic_assignment",
+            "freshness_assessment"
+          ],
+          "additionalProperties": false
+        },
+        "content_generation": {
+          "enum": [
+            "disabled",
+            "propose",
+            "draft"
+          ]
+        }
+      },
+      "required": [
+        "schedule",
+        "scope",
+        "project_ids",
+        "depth",
+        "missed_runs",
+        "max_concurrent_ai_jobs",
+        "max_provider_attempts_per_run",
+        "max_run_seconds",
+        "auto_apply",
+        "content_generation"
+      ],
+      "additionalProperties": false
+    },
+    "source_mapping": {
+      "type": "object",
+      "properties": {
+        "source_id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": [
+            "git",
+            "files"
+          ]
+        },
+        "root_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repo_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retention_mode": {
+          "enum": [
+            "reference_only",
+            "selected_snapshot"
+          ]
+        },
+        "provider_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "source_id",
+        "kind",
+        "root_path",
+        "repo_id",
+        "retention_mode",
+        "provider_ids"
+      ],
+      "additionalProperties": false
+    },
+    "project_settings": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lifecycle": {
+          "enum": [
+            "active",
+            "archived"
+          ]
+        },
+        "source_mode_default": {
+          "enum": [
+            "pinned",
+            "current"
+          ]
+        },
+        "provider_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "output_destination": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source_mapping"
+          }
+        },
+        "post_work_scan_enabled": {
+          "type": "boolean"
+        },
+        "maintenance": {
+          "$ref": "#/$defs/maintenance_override"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "renderer_mapping": {
+      "type": "object",
+      "properties": {
+        "origin": {
+          "type": "string",
+          "format": "https-origin"
+        },
+        "upstream": {
+          "type": "string",
+          "format": "loopback-origin"
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "reassignable": {
+          "enum": [
+            false
+          ]
+        }
+      },
+      "required": [
+        "origin",
+        "upstream",
+        "version_id",
+        "reassignable"
+      ],
+      "additionalProperties": false
+    },
     "config": {
       "type": "object",
       "properties": {
@@ -196,26 +2269,78 @@
       ],
       "additionalProperties": false
     },
-    "project_settings": {
+    "scope": {
       "type": "object",
       "properties": {
-        "name": {
-          "type": "string",
-          "minLength": 1
-        },
-        "lifecycle": {
+        "kind": {
           "enum": [
-            "active",
-            "archived"
+            "version",
+            "page",
+            "region"
           ]
         },
-        "source_mode_default": {
-          "enum": [
-            "pinned",
-            "current"
+        "page_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
-        "provider_id": {
+        "region_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "page_path",
+        "region_id"
+      ],
+      "additionalProperties": false
+    },
+    "source_identity": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "git",
+            "snapshot"
+          ]
+        },
+        "repo_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "object_format": {
+          "anyOf": [
+            {
+              "enum": [
+                "sha1",
+                "sha256"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exact_revision": {
           "anyOf": [
             {
               "type": "string",
@@ -226,7 +2351,149 @@
             }
           ]
         },
-        "output_destination": {
+        "snapshot_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "repo_id",
+        "object_format",
+        "exact_revision",
+        "snapshot_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "location": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "line_start": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "line_end": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "path",
+        "line_start",
+        "line_end"
+      ],
+      "additionalProperties": false
+    },
+    "citation": {
+      "type": "object",
+      "properties": {
+        "basis": {
+          "enum": [
+            "observed_input",
+            "posthoc_verified"
+          ]
+        },
+        "read_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verification_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "input_origin": {
+          "anyOf": [
+            {
+              "enum": [
+                "daemon_supplied",
+                "native_observed"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target_set_id": {
+          "$ref": "#/$defs/id"
+        },
+        "source": {
+          "$ref": "#/$defs/source_identity"
+        },
+        "location": {
+          "$ref": "#/$defs/location"
+        },
+        "bytes_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "package_evidence_ref": {
+          "type": "object",
+          "properties": {
+            "version_id": {
+              "$ref": "#/$defs/id"
+            },
+            "evidence_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "version_id",
+            "evidence_id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "basis",
+        "read_id",
+        "verification_id",
+        "input_origin",
+        "target_set_id",
+        "source",
+        "location",
+        "bytes_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "explanation_reference": {
+      "type": "object",
+      "properties": {
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "page_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "region_id": {
           "anyOf": [
             {
               "type": "string",
@@ -237,17 +2504,106 @@
             }
           ]
         },
-        "sources": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/source_mapping"
-          }
+        "bytes_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "required": [
+        "version_id",
+        "page_path",
+        "region_id",
+        "bytes_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "coverage": {
+      "type": "object",
+      "properties": {
+        "coverage_set_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
-        "post_work_scan_enabled": {
+        "unit_kind": {
+          "enum": [
+            "version",
+            "page",
+            "region"
+          ]
+        },
+        "eligible": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "assessed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "complete": {
           "type": "boolean"
         },
-        "maintenance": {
-          "$ref": "#/$defs/maintenance_override"
+        "units_url": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "coverage_set_id",
+        "unit_kind",
+        "eligible",
+        "assessed",
+        "complete",
+        "units_url"
+      ],
+      "additionalProperties": false
+    },
+    "schedule_override": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "manual",
+            "interval",
+            "calendar"
+          ]
+        },
+        "interval_seconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 60
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cron": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [],
@@ -341,32 +2697,328 @@
       "required": [],
       "additionalProperties": false
     },
-    "id": {
-      "type": "string",
-      "format": "uuid"
-    },
-    "schedule_override": {
+    "normalization_context": {
       "type": "object",
       "properties": {
-        "mode": {
-          "enum": [
-            "manual",
-            "interval",
-            "calendar"
-          ]
+        "document_id": {
+          "$ref": "#/$defs/id"
         },
-        "interval_seconds": {
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "base_version_id": {
           "anyOf": [
             {
-              "type": "integer",
-              "minimum": 60
+              "$ref": "#/$defs/id"
             },
             {
               "type": "null"
             }
           ]
         },
-        "cron": {
+        "created_at": {
+          "$ref": "#/$defs/time"
+        },
+        "title_snapshot": {
+          "type": "string"
+        },
+        "omitted_fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "schema_version": {
+          "enum": [
+            "1.0"
+          ]
+        },
+        "normalizer_version": {
+          "enum": [
+            "1.0"
+          ]
+        },
+        "project_id": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "document_id",
+        "version_id",
+        "base_version_id",
+        "created_at",
+        "title_snapshot",
+        "omitted_fields",
+        "schema_version",
+        "normalizer_version",
+        "project_id"
+      ],
+      "additionalProperties": false
+    },
+    "pairing_create": {
+      "type": "object",
+      "properties": {
+        "device_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "device_label"
+      ],
+      "additionalProperties": false
+    },
+    "pairing_poll": {
+      "type": "object",
+      "properties": {
+        "polling_secret": {
+          "type": "string",
+          "pattern": "[0-9a-f]{64}"
+        }
+      },
+      "required": [
+        "polling_secret"
+      ],
+      "additionalProperties": false
+    },
+    "pairing_decision": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "origin": {
+          "type": "string",
+          "format": "origin"
+        }
+      },
+      "required": [
+        "code",
+        "origin"
+      ],
+      "additionalProperties": false
+    },
+    "pairing": {
+      "type": "object",
+      "properties": {
+        "pairing_id": {
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+        },
+        "device_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "origin": {
+          "type": "string",
+          "format": "origin"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "utc-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "utc-time"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "approved",
+            "rejected",
+            "expired"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "\"pairing-[0-9a-f-]{36}-r[1-9][0-9]*\""
+        }
+      },
+      "required": [
+        "pairing_id",
+        "device_label",
+        "origin",
+        "created_at",
+        "expires_at",
+        "state",
+        "revision",
+        "etag"
+      ],
+      "additionalProperties": false
+    },
+    "pairing_created": {
+      "type": "object",
+      "properties": {
+        "pairing_id": {
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+        },
+        "device_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "origin": {
+          "type": "string",
+          "format": "origin"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "utc-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "utc-time"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "approved",
+            "rejected",
+            "expired"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "\"pairing-[0-9a-f-]{36}-r[1-9][0-9]*\""
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "polling_secret": {
+          "type": "string",
+          "pattern": "[0-9a-f]{64}"
+        }
+      },
+      "required": [
+        "pairing_id",
+        "device_label",
+        "origin",
+        "created_at",
+        "expires_at",
+        "state",
+        "revision",
+        "etag",
+        "code",
+        "polling_secret"
+      ],
+      "additionalProperties": false
+    },
+    "device_session": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+        },
+        "principal_id": {
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+        },
+        "library_id": {
+          "type": "string",
+          "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+        },
+        "scope": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "owner"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        "device_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "origin": {
+          "type": "string",
+          "format": "origin"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "utc-time"
+        },
+        "last_seen_at": {
+          "type": "string",
+          "format": "utc-time"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "utc-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "active",
+            "expired",
+            "revoked"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "\"session-[0-9a-f-]{36}-[0-9a-f]{64}\""
+        }
+      },
+      "required": [
+        "session_id",
+        "principal_id",
+        "library_id",
+        "scope",
+        "device_label",
+        "origin",
+        "created_at",
+        "last_seen_at",
+        "expires_at",
+        "state",
+        "revision",
+        "etag"
+      ],
+      "additionalProperties": false
+    },
+    "pairing_list": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pairing"
+          }
+        },
+        "next_cursor": {
           "anyOf": [
             {
               "type": "string",
@@ -376,20 +3028,822 @@
               "type": "null"
             }
           ]
-        },
-        "timezone": {
-          "type": "string",
-          "minLength": 1
         }
       },
-      "required": [],
+      "required": [
+        "items",
+        "next_cursor"
+      ],
       "additionalProperties": false
     },
-    "source_mapping": {
+    "device_session_list": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/device_session"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "query_project": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "lifecycle": {
+          "enum": [
+            "active",
+            "archived"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "permissions_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "updated_at": {
+          "$ref": "#/$defs/time"
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "^\"[^\"\\r\\n]+\"$"
+        }
+      },
+      "required": [
+        "project_id",
+        "name",
+        "lifecycle",
+        "revision",
+        "permissions_revision",
+        "updated_at",
+        "etag"
+      ],
+      "additionalProperties": false
+    },
+    "query_document": {
+      "type": "object",
+      "properties": {
+        "document_id": {
+          "$ref": "#/$defs/id"
+        },
+        "project_id": {
+          "$ref": "#/$defs/id"
+        },
+        "title": {
+          "type": "string"
+        },
+        "lifecycle": {
+          "enum": [
+            "active",
+            "archived",
+            "trash",
+            "purged"
+          ]
+        },
+        "latest_version_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "updated_at": {
+          "$ref": "#/$defs/time"
+        },
+        "versions_url": {
+          "type": "string"
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "^\"[^\"\\r\\n]+\"$"
+        }
+      },
+      "required": [
+        "document_id",
+        "project_id",
+        "title",
+        "lifecycle",
+        "latest_version_id",
+        "revision",
+        "updated_at",
+        "versions_url",
+        "etag"
+      ],
+      "additionalProperties": false
+    },
+    "query_version": {
+      "type": "object",
+      "properties": {
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "document_id": {
+          "$ref": "#/$defs/id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "base_version_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title_snapshot": {
+          "type": "string"
+        },
+        "default_page": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "viewer_profile": {
+          "enum": [
+            "html_js_v1"
+          ]
+        },
+        "source_basis": {
+          "enum": [
+            "unverified",
+            "evidence_recorded"
+          ]
+        },
+        "payload_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "supplied_metadata_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "manifest_url": {
+          "type": "string"
+        },
+        "supplied_metadata_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files_url": {
+          "type": "string"
+        },
+        "render_bootstrap_url": {
+          "type": "string"
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "^\"[^\"\\r\\n]+\"$"
+        }
+      },
+      "required": [
+        "version_id",
+        "document_id",
+        "sequence",
+        "base_version_id",
+        "title_snapshot",
+        "default_page",
+        "viewer_profile",
+        "source_basis",
+        "payload_sha256",
+        "manifest_sha256",
+        "supplied_metadata_sha256",
+        "manifest_url",
+        "supplied_metadata_url",
+        "files_url",
+        "render_bootstrap_url",
+        "etag"
+      ],
+      "additionalProperties": false
+    },
+    "query_file": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "kind": {
+          "enum": [
+            "file",
+            "directory",
+            "symlink"
+          ]
+        },
+        "byte_size": {
+          "$ref": "#/$defs/decimal"
+        },
+        "bytes_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "link_target": {
+          "type": "string"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "preview": {
+          "enum": [
+            "download",
+            "unavailable"
+          ]
+        },
+        "file_url": {
+          "type": "string"
+        },
+        "files_url": {
+          "type": "string"
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "^\"[^\"\\r\\n]+\"$"
+        }
+      },
+      "required": [
+        "path",
+        "kind",
+        "byte_size",
+        "preview",
+        "file_url",
+        "etag"
+      ],
+      "additionalProperties": false
+    },
+    "render_bootstrap": {
+      "type": "object",
+      "properties": {
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "viewer_profile": {
+          "enum": [
+            "html_js_v1"
+          ]
+        },
+        "default_page": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selected_page": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requested_page": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "navigation_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files_url": {
+          "type": "string"
+        },
+        "selected_file_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delivery": {
+          "enum": [
+            "authenticated_attachment",
+            "loopback_renderer_origin"
+          ]
+        },
+        "renderer_available": {
+          "type": "boolean"
+        },
+        "render_sessions_url": {
+          "type": "string"
+        },
+        "renderer_construction": {
+          "type": "string"
+        },
+        "renderer_unavailable_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "version_id",
+        "viewer_profile",
+        "default_page",
+        "selected_page",
+        "requested_page",
+        "navigation_path",
+        "files_url",
+        "selected_file_url",
+        "delivery",
+        "renderer_available"
+      ],
+      "additionalProperties": false
+    },
+    "personal_reader_preference": {
+      "type": "object",
+      "properties": {
+        "exists": {
+          "type": "boolean"
+        },
+        "value": {
+          "type": "object",
+          "properties": {
+            "default_page": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/path"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "default_page"
+          ],
+          "additionalProperties": false
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "etag": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "required_precondition": {
+          "enum": [
+            "if_none_match_star"
+          ]
+        },
+        "page_position_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "exists",
+        "value",
+        "revision",
+        "etag",
+        "page_position_url"
+      ],
+      "additionalProperties": false
+    },
+    "personal_reading_position": {
+      "type": "object",
+      "properties": {
+        "exists": {
+          "type": "boolean"
+        },
+        "value": {
+          "type": "object",
+          "properties": {
+            "page_path": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/path"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "page_query": {
+              "type": "string"
+            },
+            "page_fragment": {
+              "type": "string"
+            },
+            "opened": {
+              "type": "boolean"
+            },
+            "first_opened_at": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "last_opened_at": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "page_path",
+            "page_query",
+            "page_fragment",
+            "opened",
+            "first_opened_at",
+            "last_opened_at"
+          ],
+          "additionalProperties": false
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "etag": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "required_precondition": {
+          "enum": [
+            "if_none_match_star"
+          ]
+        },
+        "page_position_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "exists",
+        "value",
+        "revision",
+        "etag",
+        "page_position_url"
+      ],
+      "additionalProperties": false
+    },
+    "personal_page_position": {
+      "type": "object",
+      "properties": {
+        "exists": {
+          "type": "boolean"
+        },
+        "value": {
+          "type": "object",
+          "properties": {
+            "page_query": {
+              "type": "string"
+            },
+            "page_fragment": {
+              "type": "string"
+            },
+            "position": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "page_query",
+            "page_fragment",
+            "position"
+          ],
+          "additionalProperties": false
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "etag": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "required_precondition": {
+          "enum": [
+            "if_none_match_star"
+          ]
+        },
+        "page_position_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "exists",
+        "value",
+        "revision",
+        "etag",
+        "page_position_url"
+      ],
+      "additionalProperties": false
+    },
+    "staging_summary": {
+      "type": "object",
+      "properties": {
+        "staging_bytes": {
+          "$ref": "#/$defs/decimal"
+        },
+        "pending_upload_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pending_uploads_url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "staging_bytes",
+        "pending_upload_count",
+        "pending_uploads_url"
+      ],
+      "additionalProperties": false
+    },
+    "configuration_view": {
+      "type": "object",
+      "properties": {
+        "config_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "^\"[^\"\\r\\n]+\"$"
+        },
+        "configuration": {
+          "$ref": "#/$defs/config"
+        }
+      },
+      "required": [
+        "config_revision",
+        "etag",
+        "configuration"
+      ],
+      "additionalProperties": false
+    },
+    "query_project_list": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/query_project"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "query_document_list": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/query_document"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "query_version_list": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/query_version"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "query_file_list": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/query_file"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "project_register_request": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "project_register_response": {
+      "$ref": "#/$defs/query_project"
+    },
+    "project_source_row": {
       "type": "object",
       "properties": {
         "source_id": {
-          "$ref": "#/$defs/id"
+          "type": "string",
+          "minLength": 1
         },
         "kind": {
           "enum": [
@@ -397,14 +3851,11 @@
             "files"
           ]
         },
-        "root_path": {
-          "type": "string",
-          "minLength": 1
-        },
         "repo_id": {
           "anyOf": [
             {
-              "$ref": "#/$defs/id"
+              "type": "string",
+              "minLength": 1
             },
             {
               "type": "null"
@@ -423,144 +3874,8 @@
             "type": "string",
             "minLength": 1
           }
-        }
-      },
-      "required": [
-        "source_id",
-        "kind",
-        "root_path",
-        "repo_id",
-        "retention_mode",
-        "provider_ids"
-      ],
-      "additionalProperties": false
-    },
-    "maintenance": {
-      "type": "object",
-      "properties": {
-        "schedule": {
-          "$ref": "#/$defs/schedule"
         },
-        "scope": {
-          "enum": [
-            "selected_projects",
-            "all_allowed_projects"
-          ]
-        },
-        "project_ids": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/id"
-          }
-        },
-        "depth": {
-          "enum": [
-            "change_focused",
-            "full_scope",
-            "deep_semantic"
-          ]
-        },
-        "missed_runs": {
-          "enum": [
-            "coalesce_one"
-          ]
-        },
-        "max_concurrent_ai_jobs": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "max_provider_attempts_per_run": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "max_run_seconds": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "auto_apply": {
-          "type": "object",
-          "properties": {
-            "backlink_index_repair": {
-              "enum": [
-                "disabled",
-                "propose",
-                "auto"
-              ]
-            },
-            "related_explanation": {
-              "enum": [
-                "disabled",
-                "propose",
-                "auto"
-              ]
-            },
-            "topic_assignment": {
-              "enum": [
-                "disabled",
-                "propose",
-                "auto"
-              ]
-            },
-            "freshness_assessment": {
-              "enum": [
-                "disabled",
-                "propose",
-                "auto"
-              ]
-            }
-          },
-          "required": [
-            "backlink_index_repair",
-            "related_explanation",
-            "topic_assignment",
-            "freshness_assessment"
-          ],
-          "additionalProperties": false
-        },
-        "content_generation": {
-          "enum": [
-            "disabled",
-            "propose",
-            "draft"
-          ]
-        }
-      },
-      "required": [
-        "schedule",
-        "scope",
-        "project_ids",
-        "depth",
-        "missed_runs",
-        "max_concurrent_ai_jobs",
-        "max_provider_attempts_per_run",
-        "max_run_seconds",
-        "auto_apply",
-        "content_generation"
-      ],
-      "additionalProperties": false
-    },
-    "schedule": {
-      "type": "object",
-      "properties": {
-        "mode": {
-          "enum": [
-            "manual",
-            "interval",
-            "calendar"
-          ]
-        },
-        "interval_seconds": {
-          "anyOf": [
-            {
-              "type": "integer",
-              "minimum": 60
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "cron": {
+        "last_observed_revision": {
           "anyOf": [
             {
               "type": "string",
@@ -571,46 +3886,1601 @@
             }
           ]
         },
-        "timezone": {
+        "last_observed_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_availability": {
+          "enum": [
+            null,
+            "available",
+            "unavailable",
+            "denied"
+          ]
+        },
+        "last_observation_reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "source_id",
+        "kind",
+        "repo_id",
+        "retention_mode",
+        "provider_ids",
+        "last_observed_revision",
+        "last_observed_at",
+        "last_availability",
+        "last_observation_reason"
+      ],
+      "additionalProperties": false
+    },
+    "project_sources_view": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/project_source_row"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "evidence_verification_request": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "expected_bytes_sha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "expected_bytes_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "expected_excerpt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "expected_excerpt"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "expected_bytes_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "expected_excerpt_ref": {
+              "type": "object",
+              "properties": {
+                "upload_id": {
+                  "$ref": "#/$defs/id"
+                }
+              },
+              "required": [
+                "upload_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "expected_excerpt_ref"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "evidence_verification_response": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "verification_id": {
+          "$ref": "#/$defs/id"
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "outcome": {
+          "enum": [
+            "captured",
+            "matched",
+            "mismatch",
+            "unavailable"
+          ]
+        },
+        "target_set_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "location": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "$ref": "#/$defs/path"
+            },
+            "line_start": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "line_end": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "bytes_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bytes_origin": {
+          "enum": [
+            null,
+            "approved_source",
+            "retained_snapshot"
+          ]
+        },
+        "checked_at": {
+          "$ref": "#/$defs/time"
+        },
+        "verified_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "operation_id",
+        "verification_id",
+        "version_id",
+        "evidence_id",
+        "outcome",
+        "target_set_id",
+        "source",
+        "location",
+        "bytes_sha256",
+        "bytes_origin",
+        "checked_at",
+        "verified_at",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "verification_history_row": {
+      "type": "object",
+      "properties": {
+        "verification_id": {
+          "$ref": "#/$defs/id"
+        },
+        "outcome": {
+          "enum": [
+            "captured",
+            "matched",
+            "mismatch",
+            "unavailable"
+          ]
+        },
+        "checked_at": {
+          "$ref": "#/$defs/time"
+        },
+        "verified_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
           "type": "string",
           "minLength": 1
         }
       },
       "required": [
-        "mode",
-        "interval_seconds",
-        "cron",
-        "timezone"
+        "verification_id",
+        "outcome",
+        "checked_at",
+        "verified_at"
       ],
       "additionalProperties": false
     },
-    "renderer_mapping": {
+    "verification_history_page": {
       "type": "object",
       "properties": {
-        "origin": {
-          "type": "string",
-          "format": "https-origin"
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/verification_history_row"
+          }
         },
-        "upstream": {
-          "type": "string",
-          "format": "loopback-origin"
-        },
-        "version_id": {
-          "$ref": "#/$defs/id"
-        },
-        "reassignable": {
-          "enum": [
-            false
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },
       "required": [
-        "origin",
-        "upstream",
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "source_check_pending": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "state": {
+          "enum": [
+            "accepted"
+          ]
+        },
+        "operation_url": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "operation_id",
+        "state",
+        "operation_url"
+      ],
+      "additionalProperties": false
+    },
+    "source_observation_scope_request": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "version"
+              ]
+            },
+            "page_path": {
+              "enum": [
+                ""
+              ]
+            },
+            "region_id": {
+              "enum": [
+                ""
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "page"
+              ]
+            },
+            "page_path": {
+              "$ref": "#/$defs/path"
+            },
+            "region_id": {
+              "enum": [
+                ""
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "page_path"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "region"
+              ]
+            },
+            "page_path": {
+              "$ref": "#/$defs/path"
+            },
+            "region_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "page_path",
+            "region_id"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "source_observation_request": {
+      "type": "object",
+      "properties": {
+        "source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "scope": {
+          "$ref": "#/$defs/source_observation_scope_request"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "source_observation_scope": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "version",
+            "page",
+            "region"
+          ]
+        },
+        "page_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "region_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "declared": {
+          "type": "boolean"
+        },
+        "reason": {
+          "enum": [
+            null,
+            "region_not_declared"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "page_path",
+        "region_id",
+        "declared",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "source_observation_row": {
+      "type": "object",
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "availability": {
+          "enum": [
+            "available",
+            "unavailable",
+            "denied"
+          ]
+        },
+        "classification": {
+          "enum": [
+            "direct",
+            "indirect",
+            "unchanged",
+            "unavailable",
+            "denied"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "changed_paths": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/path"
+          }
+        },
+        "dependency_scope": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/path"
+          }
+        },
+        "reassessment_required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "source_id",
+        "observation_id",
+        "availability",
+        "classification",
+        "reason",
+        "changed_paths",
+        "dependency_scope",
+        "reassessment_required"
+      ],
+      "additionalProperties": false
+    },
+    "source_observation_response": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "run_id": {
+          "$ref": "#/$defs/id"
+        },
+        "target_set_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "captured_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observed_at": {
+          "$ref": "#/$defs/time"
+        },
+        "scope": {
+          "$ref": "#/$defs/source_observation_scope"
+        },
+        "coverage_set_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source_observation_row"
+          }
+        }
+      },
+      "required": [
+        "operation_id",
+        "run_id",
+        "target_set_id",
+        "captured_at",
+        "observed_at",
+        "scope",
+        "coverage_set_id",
+        "sources"
+      ],
+      "additionalProperties": false
+    },
+    "observation_coverage_unit_row": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "version",
+            "page",
+            "region"
+          ]
+        },
+        "page_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "region_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "not_checked"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "discrepancy": {
+          "type": "null"
+        },
+        "assessment_id": {
+          "type": "null"
+        },
+        "target_set_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "page_path",
+        "region_id",
+        "outcome",
+        "reason",
+        "discrepancy",
+        "assessment_id",
+        "target_set_id"
+      ],
+      "additionalProperties": false
+    },
+    "observation_coverage_page": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/observation_coverage_unit_row"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "observation_applicable": {
+      "type": "object",
+      "properties": {
+        "source_intent": {
+          "enum": [
+            null,
+            "historical",
+            "moving_target"
+          ]
+        },
+        "target_set_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "captured_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "status": {
+          "enum": [
+            "not_assessed",
+            "unable_to_verify",
+            "reassessment_needed"
+          ]
+        },
+        "coverage": {
+          "$ref": "#/$defs/coverage"
+        },
+        "assessed_at": {
+          "type": "null"
+        },
+        "reassessment_required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "source_intent",
+        "target_set_id",
+        "captured_at",
+        "scope",
+        "status",
+        "coverage",
+        "assessed_at",
+        "reassessment_required"
+      ],
+      "additionalProperties": false
+    },
+    "observation_assessments_page": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/assessment_history_row"
+          }
+        },
+        "next_cursor": {
+          "type": "null"
+        },
+        "applicable": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/observation_applicable"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor",
+        "applicable"
+      ],
+      "additionalProperties": false
+    },
+    "observation_coverage_query": {
+      "type": "object",
+      "properties": {
+        "coverage_set_id": {
+          "$ref": "#/$defs/id"
+        },
+        "attempt_run_id": {
+          "$ref": "#/$defs/id"
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        }
+      },
+      "required": [
+        "coverage_set_id"
+      ],
+      "additionalProperties": false
+    },
+    "source_status_summary": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "reason": {
+          "enum": [
+            null,
+            "source_not_registered",
+            "missing_source",
+            "missing_retained_bytes",
+            "retained_bytes_corrupt",
+            "source_denied",
+            "not_observed"
+          ]
+        },
+        "configured_source_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "last_observed_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "available",
+        "reason",
+        "configured_source_count",
+        "last_observed_at"
+      ],
+      "additionalProperties": false
+    },
+    "source_changed_event_body": {
+      "type": "object",
+      "properties": {
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "run_id": {
+          "$ref": "#/$defs/id"
+        },
+        "classification": {
+          "enum": [
+            "direct",
+            "indirect"
+          ]
+        }
+      },
+      "required": [
         "version_id",
-        "reassignable"
+        "run_id",
+        "classification"
+      ],
+      "additionalProperties": false
+    },
+    "source_availability_changed_event_body": {
+      "type": "object",
+      "properties": {
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "run_id": {
+          "$ref": "#/$defs/id"
+        },
+        "availability": {
+          "enum": [
+            "available",
+            "unavailable",
+            "denied"
+          ]
+        }
+      },
+      "required": [
+        "version_id",
+        "run_id",
+        "availability"
+      ],
+      "additionalProperties": false
+    },
+    "source_read_missing_details": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_set_id": {
+          "$ref": "#/$defs/id"
+        },
+        "coverage_set_id": {
+          "$ref": "#/$defs/id"
+        },
+        "attempt_run_id": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "assessment_history_row": {
+      "type": "object",
+      "properties": {
+        "assessment_id": {
+          "$ref": "#/$defs/id"
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "target_set_id": {
+          "$ref": "#/$defs/id"
+        },
+        "state": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "assessment_id",
+        "version_id",
+        "scope",
+        "target_set_id"
+      ],
+      "additionalProperties": false
+    },
+    "evidence_view_excerpt": {
+      "type": "object",
+      "properties": {
+        "bytes_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "data_base64": {
+          "type": "string",
+          "pattern": "(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?"
+        }
+      },
+      "required": [
+        "bytes_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "evidence_item_view": {
+      "type": "object",
+      "properties": {
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authored": {
+          "$ref": "#/$defs/evidence"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "availability": {
+          "enum": [
+            "available",
+            "unavailable",
+            "denied"
+          ]
+        },
+        "bytes_origin": {
+          "enum": [
+            null,
+            "retained_snapshot",
+            "approved_source"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "service_verification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/verification_history_row"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verifications_url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "excerpt": {
+          "$ref": "#/$defs/evidence_view_excerpt"
+        }
+      },
+      "required": [
+        "version_id",
+        "evidence_id",
+        "authored",
+        "source",
+        "availability",
+        "bytes_origin",
+        "reason",
+        "service_verification",
+        "verifications_url"
+      ],
+      "additionalProperties": false
+    },
+    "search_index_reason": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "not_indexed",
+            "interrupted",
+            "cancelled",
+            "read_failed",
+            "decode_failed",
+            "integrity_failed",
+            "resource_exhausted",
+            "storage_failed",
+            "unsupported_body",
+            "failed_unknown"
+          ]
+        },
+        "version_count": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        }
+      },
+      "required": [
+        "code",
+        "version_count"
+      ],
+      "additionalProperties": false
+    },
+    "search_index": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "empty",
+            "pending",
+            "partial",
+            "complete",
+            "failed"
+          ]
+        },
+        "versions_total": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "versions_complete": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files_total": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files_discovered": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "html_total": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "html_complete": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "html_pending": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "html_failed": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unsupported_bodies": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "discovery_complete": {
+          "type": "boolean"
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "static_only"
+            ]
+          }
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/search_index_reason"
+          }
+        }
+      },
+      "required": [
+        "state",
+        "versions_total",
+        "versions_complete",
+        "files_total",
+        "files_discovered",
+        "html_total",
+        "html_complete",
+        "html_pending",
+        "html_failed",
+        "unsupported_bodies",
+        "discovery_complete",
+        "limitations",
+        "reasons"
+      ],
+      "additionalProperties": false
+    },
+    "search_hit": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "document",
+            "page",
+            "region",
+            "source",
+            "attachment"
+          ]
+        },
+        "project_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "document_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "version_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "lifecycle": {
+          "type": "string",
+          "enum": [
+            "active",
+            "archived"
+          ]
+        },
+        "page_path": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "relative-path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "region_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "anchor_state": {
+          "type": "string",
+          "enum": [
+            "not_applicable",
+            "pending",
+            "present",
+            "missing",
+            "ambiguous"
+          ]
+        },
+        "body_state": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "complete",
+            "unsupported",
+            "failed",
+            "not_applicable"
+          ]
+        },
+        "match_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "title",
+              "path",
+              "region",
+              "topic",
+              "source",
+              "body"
+            ]
+          }
+        },
+        "snippet": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "project_id",
+        "document_id",
+        "version_id",
+        "sequence",
+        "title",
+        "lifecycle",
+        "page_path",
+        "region_id",
+        "source_id",
+        "anchor_state",
+        "body_state",
+        "match_fields",
+        "snippet"
+      ],
+      "additionalProperties": false
+    },
+    "search_filters": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lifecycle": {
+          "type": "string",
+          "enum": [
+            "active",
+            "archived",
+            "all"
+          ]
+        },
+        "versions": {
+          "type": "string",
+          "enum": [
+            "latest",
+            "all"
+          ]
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "document",
+                "page",
+                "region",
+                "source",
+                "attachment"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "project_id",
+        "lifecycle",
+        "versions",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "search_page": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "normalized": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "empty",
+                "literal_and"
+              ]
+            }
+          },
+          "required": [
+            "text",
+            "normalized",
+            "mode"
+          ],
+          "additionalProperties": false
+        },
+        "filters": {
+          "$ref": "#/$defs/search_filters"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/search_hit"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "total_matches": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "index": {
+          "$ref": "#/$defs/search_index"
+        }
+      },
+      "required": [
+        "query",
+        "filters",
+        "items",
+        "next_cursor",
+        "total_matches",
+        "index"
+      ],
+      "additionalProperties": false
+    },
+    "search_response": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/search_page"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "data",
+        "request_id"
+      ],
+      "additionalProperties": false
+    },
+    "search_query": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "q": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "project_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "lifecycle": {
+          "type": "string",
+          "enum": [
+            "active",
+            "archived",
+            "all"
+          ]
+        },
+        "versions": {
+          "type": "string",
+          "enum": [
+            "latest",
+            "all"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "document",
+            "page",
+            "region",
+            "source",
+            "attachment"
+          ]
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        }
+      }
+    },
+    "search_error_details": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "enum": [
+            "invalid_query",
+            "query_too_long",
+            "malformed_phrase",
+            "invalid_lifecycle",
+            "invalid_versions",
+            "invalid_kind",
+            "invalid_page_size",
+            "cursor_mismatch",
+            "unknown_duplicate_or_empty_query"
+          ]
+        }
+      },
+      "required": [
+        "reason"
       ],
       "additionalProperties": false
     }
+  },
+  "error_http": {
+    "INVALID_REQUEST": 400,
+    "INVALID_ENUM": 400,
+    "UNSUPPORTED_SCHEMA": 400,
+    "INVALID_STATE_SCHEMA": 400,
+    "FORBIDDEN": 403,
+    "NOT_FOUND": 404,
+    "OPERATION_CONFLICT": 409,
+    "VERSION_CONFLICT": 409,
+    "IMMUTABLE_VERSION_CONFLICT": 409,
+    "INVALID_TRANSITION": 409,
+    "STALE_PLAN": 409,
+    "INPUT_CHANGED": 409,
+    "PRECONDITION_FAILED": 412,
+    "PRECONDITION_REQUIRED": 428,
+    "PACKAGE_INVALID": 422,
+    "UNSAFE_PATH": 422,
+    "HASH_MISMATCH": 422,
+    "INVALID_EVIDENCE": 422,
+    "FEATURE_NOT_READY": 503,
+    "OPERATION_RECONCILIATION_REQUIRED": 409,
+    "AUTH_REQUIRED": 401,
+    "SESSION_EXPIRED": 401,
+    "SESSION_REVOKED": 401,
+    "ORIGIN_REJECTED": 403,
+    "RATE_LIMITED": 429,
+    "SERVICE_RECOVERING": 503,
+    "CONTENT_INTEGRITY_ERROR": 503,
+    "SOURCE_UNAVAILABLE": 409,
+    "FILE_ACCESS_ERROR": 503
   }
 }

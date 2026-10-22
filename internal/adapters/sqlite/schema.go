@@ -95,4 +95,75 @@ CREATE TABLE required_units(coverage_set_id TEXT NOT NULL REFERENCES coverage_se
 CREATE TABLE assessments(assessment_id TEXT PRIMARY KEY,version_id TEXT NOT NULL,page_path TEXT NOT NULL DEFAULT '',region_id TEXT NOT NULL DEFAULT '',target_set_id TEXT NOT NULL,coverage_set_id TEXT NOT NULL,state TEXT NOT NULL,scope_json BLOB NOT NULL CHECK(json_valid(scope_json)),evidence_json BLOB,config_revision INTEGER NOT NULL CHECK(config_revision>=1),permissions_revision INTEGER NOT NULL CHECK(permissions_revision>=1),origin TEXT NOT NULL,created_at TEXT NOT NULL);
 CREATE TABLE assessment_units(coverage_set_id TEXT NOT NULL,assessment_id TEXT NOT NULL,target_set_id TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('version','page','region')),page_path TEXT NOT NULL DEFAULT '',region_id TEXT NOT NULL DEFAULT '',outcome TEXT NOT NULL CHECK(outcome IN ('assessed','partial','blocked','not_checked')),discrepancy TEXT,reason TEXT,PRIMARY KEY(coverage_set_id,assessment_id,kind,page_path,region_id));
 `,
+	`CREATE TABLE derived_work(
+ job_id TEXT PRIMARY KEY REFERENCES jobs(job_id),
+ version_id TEXT NOT NULL REFERENCES document_versions(version_id),
+ work_kind TEXT NOT NULL CHECK(work_kind<>''),
+ extractor_revision INTEGER NOT NULL CHECK(extractor_revision>=1),
+ after_path TEXT NOT NULL DEFAULT '',
+ UNIQUE(version_id,work_kind,extractor_revision)
+);
+CREATE TABLE search_indexes(
+ version_id TEXT PRIMARY KEY REFERENCES document_versions(version_id),
+ job_id TEXT REFERENCES jobs(job_id),
+ extractor_revision INTEGER NOT NULL CHECK(extractor_revision>=1),
+ revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>=1),
+ discovery_complete INTEGER NOT NULL DEFAULT 0 CHECK(discovery_complete IN(0,1)),
+ state TEXT NOT NULL CHECK(state<>''),
+ reason TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE search_units(
+ unit_id INTEGER PRIMARY KEY,
+ version_id TEXT NOT NULL REFERENCES document_versions(version_id),
+ kind TEXT NOT NULL CHECK(kind<>''),
+ page_path TEXT NOT NULL DEFAULT '', region_id TEXT NOT NULL DEFAULT '',
+ source_id TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '',
+ input_hash TEXT NOT NULL DEFAULT '',
+ state TEXT NOT NULL CHECK(state<>''),
+ body_state TEXT NOT NULL CHECK(body_state<>''),
+ anchor_state TEXT NOT NULL CHECK(anchor_state<>''),
+ reason TEXT NOT NULL DEFAULT '',
+ UNIQUE(version_id,kind,page_path,region_id,source_id),
+ CHECK(region_id='' OR page_path!='')
+);
+CREATE INDEX search_units_by_version ON search_units(version_id,kind,page_path);
+CREATE TABLE search_chunks(
+ chunk_id INTEGER PRIMARY KEY,
+ unit_id INTEGER NOT NULL REFERENCES search_units(unit_id) ON DELETE CASCADE,
+ part TEXT NOT NULL CHECK(part<>''),
+ ordinal INTEGER NOT NULL CHECK(ordinal>=0),
+ title TEXT NOT NULL, path TEXT NOT NULL, terms TEXT NOT NULL, body TEXT NOT NULL,
+ display_body TEXT NOT NULL,
+ UNIQUE(unit_id,part,ordinal)
+);
+CREATE VIRTUAL TABLE search_words USING fts5(
+ title,path,terms,body,content='search_chunks',content_rowid='chunk_id',tokenize='unicode61'
+);
+CREATE VIRTUAL TABLE search_grams USING fts5(
+ title,path,terms,body,content='search_chunks',content_rowid='chunk_id',tokenize='trigram'
+);
+CREATE TRIGGER search_chunks_insert AFTER INSERT ON search_chunks BEGIN
+ INSERT INTO search_words(rowid,title,path,terms,body) VALUES(new.chunk_id,new.title,new.path,new.terms,new.body);
+ INSERT INTO search_grams(rowid,title,path,terms,body) VALUES(new.chunk_id,new.title,new.path,new.terms,new.body);
+END;
+CREATE TRIGGER search_chunks_delete AFTER DELETE ON search_chunks BEGIN
+ INSERT INTO search_words(search_words,rowid,title,path,terms,body) VALUES('delete',old.chunk_id,old.title,old.path,old.terms,old.body);
+ INSERT INTO search_grams(search_grams,rowid,title,path,terms,body) VALUES('delete',old.chunk_id,old.title,old.path,old.terms,old.body);
+END;
+CREATE TRIGGER search_chunks_update AFTER UPDATE ON search_chunks BEGIN
+ INSERT INTO search_words(search_words,rowid,title,path,terms,body) VALUES('delete',old.chunk_id,old.title,old.path,old.terms,old.body);
+ INSERT INTO search_grams(search_grams,rowid,title,path,terms,body) VALUES('delete',old.chunk_id,old.title,old.path,old.terms,old.body);
+ INSERT INTO search_words(rowid,title,path,terms,body) VALUES(new.chunk_id,new.title,new.path,new.terms,new.body);
+ INSERT INTO search_grams(rowid,title,path,terms,body) VALUES(new.chunk_id,new.title,new.path,new.terms,new.body);
+END;
+CREATE TABLE page_anchors(
+ version_id TEXT NOT NULL, page_path TEXT NOT NULL,
+ anchor_id TEXT NOT NULL CHECK(anchor_id!=''),
+ locator_kind TEXT NOT NULL CHECK(locator_kind<>''),
+ occurrences INTEGER NOT NULL CHECK(occurrences>=1),
+ label TEXT NOT NULL DEFAULT '', text_sha256 TEXT NOT NULL DEFAULT '',
+ PRIMARY KEY(version_id,page_path,anchor_id),
+ FOREIGN KEY(version_id,page_path) REFERENCES version_pages(version_id,page_path)
+);
+`,
 }

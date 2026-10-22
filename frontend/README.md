@@ -155,7 +155,7 @@ results. Upload chunks carry `bytes_b64`. Package/file opens return `stream_id`;
 `streamRead` takes that ID and `max_bytes` and returns nullable `data_b64` plus
 `eof`. The adapter consumes a nonempty final EOF chunk before closing and
 cancels only its captured stream. Subscription opens return `subscription_id`;
-`eventsPoll`/`eventsClose` reconstruct a local liveness handle, not a generic
+`eventsPoll`/`eventsClose` reconstruct a local liveness/change-hint handle, not a generic
 API subscription authority. Unit tests force JSON round trips, arbitrary
 0–255 byte hashes, final EOF bytes, typed failures and late-read cancellation.
 These unit tests isolate adapter behavior. Actual Go/Wails execution through
@@ -164,3 +164,32 @@ path is covered by the [native Reader regression](../spikes/viewer/README.md#sha
 and [Reader implementation record](../docs/testing/reader-viewer.md). Production
 desktop onboarding and native file dialogs remain with TASK-003-05; the wider
 responsive and cross-client gate remains TASK-003-06.
+
+## Static Library search (TASK-004-02 M5)
+
+The explicit `features.search` capability enables the labelled Library form.
+`search(SearchRequest): Promise<SearchPage>` is a named HTTP/native operation;
+empty q, all filters, cursor and limit are forwarded without retargeting. Native
+responses use the existing era guard. Required safe `index.reasons` remain intact.
+`search-state.ts` owns request/dispose fences, single-flight more, cursor reset,
+reason labels and exact once-encoded page URLs. The shared UI uses text nodes,
+URL filters and bounded GET progress polling; no job-resume or maintenance action
+is added. `search.test.ts` and `search-state.test.ts` run in both explicit TS test
+lists. The owned Chrome driver is `internal/adapters/http/auth/browser/check_search.py`;
+the pinned native harness adds `--stages app,search`. Seeded reason/fault
+presentation is labelled separately from production extraction and eligibility.
+
+Invalidation hints always start a fresh authenticated search GET, including
+when multiple result pages have accumulated. Starting that GET clears old
+protected rows and pagination state. The registered login-return `q` preserves
+encoded TAB/LF/CR accepted by the search grammar; other controls and other
+query keys retain their existing restrictions. The Chrome regression exercises
+55 accumulated rows, a content-free `library.invalidated` notice, immediate
+row/cursor clearing and the revalidated hidden state, plus three login returns.
+
+The same Chrome driver accepts `--corpus` for complete checked-in Mulgae/Gaori
+imports and exact actual-frame search/open proofs from both projects. The native
+counterpart is `--stages app,corpus`; `tests/manual/check_search_corpus.py`
+coordinates these examples with the fixed HTTP/CLI worksheet and seeded variants.
+All eight canonical sample files round-trip unchanged; ignored tool state is not
+sample content. The corpus helpers add no product hook or new frontend assets.

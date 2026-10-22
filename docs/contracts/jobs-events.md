@@ -148,3 +148,47 @@ Session/scope/lifecycle changes are applied before replay and live delivery;
 hidden version/source data is masked under the common invalidation rules.
 Events neither start AI nor publish semantic assessments. Operation receipt
 polling recovers a 202/uncertain check; no duplicate observation is dispatched.
+
+
+## Additive derived-work foundation (TASK-004-02 M1/M2)
+
+The selected closed job.kind registry adds `derived_index`; Go CreateJob admits it.
+Migration 8 retains `(version_id,work_kind,extractor_revision)` uniqueness and a
+path checkpoint, with current work_kind `search`. This intermediate foundation
+has no enqueue/dispatcher/daemon wiring yet; existing import work selection stays
+unchanged. Later milestones wire the family together before delivered release.
+No new job-resume operation is selected; TASK-004-04 owns manual derived rebuild.
+
+## Delivered derived maintenance (TASK-004-02 M3)
+
+M3 supersedes the intermediate wiring limit above. Publication atomically inserts
+one `derived_index` / `search` job per exact version and extractor revision.
+Seal, import and search share one serial local dispatcher. Startup sweeps all
+published versions in bounded batches and resumes interrupted checkpoints under
+a new attempt generation. Failed/cancelled same-revision jobs remain terminal;
+a new extractor revision quarantines and replaces the prior index while keeping
+job history. Recovery: TASK-004-04 rebuild; no resume route is implemented here.
+
+Only the owner can read/cancel maintenance jobs. The fixed job.result shape is
+`{version_id,work_kind,stage,files_done,files_total,bytes_done,bytes_total,pages_done,pages_total,failed,checkpoint}`.
+Stages are inventory/extract/commit/complete. All counters are decimal strings;
+unknown totals are null. Files count inventoried entries, bytes count static HTML
+input bytes, and pages count completed static HTML pages. Checkpoints are opaque
+hashes containing no extracted text. Failure/cancellation retains this shape and
+safe index reasons, and does not change original files or the published version.
+
+`search.index_updated` uses resource kind `version`, ID version_id, index revision,
+and no body. Replay and live FilterEvent use existing version.read plus exact
+project/version anchors and current lifecycle visibility, matching Check. Hidden
+or trash/purged identities become library.invalidated with no identity/body/revision.
+This event grants no access to maintenance job bodies or extracted snippets.
+`features.search` remains false; search HTTP/CLI/UI delivery remains later work.
+
+Authority revalidation can pause derived maintenance without converting it to a
+terminal extraction failure. Unrelated global setting changes allow the exact
+captured static version to continue; lifecycle or narrowed permission revisions
+fence the current attempt and preserve its resumable checkpoint. Restored
+eligibility reconciles under captured permissions. An internal trusted maintenance
+caller may explicitly reauthorize the same exact target under current revisions;
+no HTTP resume route or new scope action is added. Definitive failures (including
+wrapped EDQUOT as resource_exhausted) and cancellation remain terminal.

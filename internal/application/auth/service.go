@@ -503,6 +503,14 @@ func (s *Service) Events(ctx context.Context, token, epoch string, after int64) 
 			return e
 		}
 		for i, event := range out {
+			if event.Kind == "search.index_updated" {
+				var err error
+				out[i], err = visibleIndexEvent(tx, record, event)
+				if err != nil {
+					return err
+				}
+				continue
+			}
 			if record.Scope.Kind != "owner" {
 				target := "/api/v1/" + event.ResourceKind + "s/" + event.ResourceID
 				e := authorizeScope(tx, record, domain.Request{Method: "GET", Target: target})
@@ -614,6 +622,20 @@ func (a *Authority) AuthorizeWrite(ctx context.Context, tx app.WriteTx, r domain
 	if record.PrincipalID != r.Key.PrincipalID {
 		return domain.ErrDenied
 	}
+	return authorizeAuthenticated(tx, record, r)
+}
+
+// AuthenticateRequestWrite reuses the same authority checks without authenticating
+// the same credential repeatedly inside a bounded search slice.
+func (s *Service) AuthenticateRequestWrite(ctx context.Context, tx app.WriteTx, token string, r domain.Request) (domain.Session, error) {
+	record, err := s.AuthenticateWrite(ctx, tx, token)
+	if err != nil {
+		return record, err
+	}
+	r.Key.PrincipalID = record.PrincipalID
+	return record, authorizeAuthenticated(tx, record, r)
+}
+func authorizeAuthenticated(tx app.WriteTx, record domain.Session, r domain.Request) error {
 	if err := authorizeScope(tx, record, r); err != nil {
 		return err
 	}
@@ -765,6 +787,11 @@ func (s *Service) FilterEvent(ctx context.Context, token string, event domain.Ev
 		}
 		if event.StreamEpoch != epoch {
 			return domain.ErrPrecondition
+		}
+		if event.Kind == "search.index_updated" {
+			var err error
+			event, err = visibleIndexEvent(tx, record, event)
+			return err
 		}
 		if record.Scope.Kind != "owner" {
 			target := "/api/v1/" + event.ResourceKind + "s/" + event.ResourceID
@@ -1047,4 +1074,35 @@ func visibleJob(tx app.WriteTx, j domain.Job) error {
 		}
 	}
 	return nil
+}
+
+// SearchAuthorityCurrent checks generations without re-decoding a large captured
+// scope. A changed stamp or reached expiry requires the ordinary full check.
+func (s *Service) SearchAuthorityCurrent(tx app.WriteTx, record domain.Session, stamp string) (bool, error) {
+	current, err := tx.SearchAuthorityStamp(record)
+	if err != nil {
+		return false, err
+	}
+	if current != stamp {
+		return false, nil
+	}
+	if record.ExpiresAt == nil || s.now().Before(*record.ExpiresAt) {
+		return true, nil
+	}
+	// An ordinary HTTP read may extend owner idle expiry without changing any
+	// authority. Re-evaluate the current session only when the captured expiry is
+	// reached; a touch alone must never restart an otherwise valid search.
+	if record.Scope.Kind == "owner" {
+		state, e := tx.AuthState()
+		if e != nil {
+			return false, e
+		}
+		session, e := tx.SessionByID(record.ID)
+		if e != nil {
+			return false, e
+		}
+		_, e = sec.Check(session, state, s.now())
+		return e == nil, e
+	}
+	return false, nil
 }

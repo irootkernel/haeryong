@@ -115,3 +115,26 @@ The early spike reuses G-AUTH/G-VIEW harnesses and does not implement a duplicat
 Add active source/read-set, pending publication and backup pins to F08. GC during each phase must retain the bytes being relied on; release and cleanup follow the recorded terminal boundary (X14). Validate same-byte revision reads under a concurrent source edit rather than trusting a stale path plus a new digest.
 
 For X06/X13, restore a snapshot older than receipt, device-token, operating-policy and event changes. Rotate the specified epochs, preserve ambiguity and pause affected external/destructive work until normal owner review. Document the actual recovery trust anchor; do not claim an application-level restore defeats every possible full-machine rollback.
+
+
+### Static search foundation worksheet
+
+TASK-004-02 freezes its [search worksheet](search-relevance-worksheet.md) before
+query tuning: X09 controls, unchanged calibration40, direct identifier components,
+component-before-substring pair, normalization/chunk boundaries and approved
+sample targets. M1/M2 exercise schema, pure extraction and real persistence only;
+ranked query/sample observations remain not_run until their implementing milestones.
+
+### Static search query fixtures
+
+`tests/fixtures/search/x09.json` freezes the isolated 18 query rows and R/L
+outcomes before production query execution; the historical calibration plan is
+unchanged. M4 seeds 1,000 documents/5,000 versions using that plan's topic,
+latest/denied/trash rules and runs the actual query service and SQLite adapter.
+This is persistence evidence, not 5,000 public uploads or owner usefulness.
+`tests/fixtures/search-large/generate.py` independently creates >40 MiB static
+HTML with unique boundary literals near 32 KiB, beyond 16/32 MiB and a unique
+terminal literal beyond 40 MiB. The E2E freezes actual bytes, hash, markers and
+normalized offsets before importing. No marker appears in metadata or paths.
+Canonical F12 generator, bytes and 600-second transfer budgets remain unchanged;
+its repeated body is not the unique-tail completeness oracle.

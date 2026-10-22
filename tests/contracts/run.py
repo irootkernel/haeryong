@@ -12,7 +12,7 @@ def main():
     args = parser.parse_args()
     if not args.report.is_absolute() or args.report.exists():
         parser.error("report must be a new explicit absolute private file")
-    return pytest.main([str(Path(__file__).parent / "test_contracts.py"),
+    return pytest.main([str(Path(__file__).parent),
                         "--contract-report", str(args.report)])
 
 

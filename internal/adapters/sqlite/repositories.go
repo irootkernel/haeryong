@@ -330,7 +330,11 @@ func (t *writeTx) PublishVersion(id string, expected int64) error {
 	if err := t.exec("UPDATE documents SET latest_version_id=?,title=?,revision=revision+1 WHERE document_id=?", id, title, documentID); err != nil {
 		return err
 	}
-	return t.appendEvent("document", documentID, "version.published", revision+1, []byte(id))
+	if err := t.appendEvent("document", documentID, "version.published", revision+1, []byte(id)); err != nil {
+		return err
+	}
+	_, err := t.EnqueueSearch(id, domain.SearchExtractorRevision)
+	return err
 }
 func (s *Store) Entries(ctx context.Context, setID, after string, limit int) ([]domain.Entry, error) {
 	s.mu.Lock()

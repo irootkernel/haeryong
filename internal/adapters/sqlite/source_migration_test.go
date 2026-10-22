@@ -23,7 +23,7 @@ var _ = Describe("schema7 source records", Label("persistence"), func() {
 		s := openStore(t, w, nil)
 		health, e := s.Health(ctx)
 		Expect(e).NotTo(HaveOccurred())
-		Expect(health.Library.SchemaRevision).To(Equal(7))
+		Expect(health.Library.SchemaRevision).To(Equal(SchemaRevision))
 		// validateTables ran during Prepare; a restart keeps accepting the rows.
 		Expect(s.RegisterProjectRow(ctx, domain.Project{ID: "11111111-1111-4111-8111-111111111111", Name: "Registered"})).To(Succeed())
 		row, e := s.QueryProjectRow(ctx, "11111111-1111-4111-8111-111111111111")
@@ -268,7 +268,7 @@ var _ = Describe("populated schema-6 upgrade to schema 7", Label("persistence"),
 		Expect(s.Close()).To(Succeed())
 		{
 			db := readDB(t, w.Profile)
-			_, e := db.Exec(`DROP INDEX verifications_by_evidence;DROP INDEX observations_by_source;DROP INDEX observations_by_time;DROP INDEX observations_by_run;DROP INDEX triggers_by_target;DROP INDEX check_intents_state;DROP INDEX observation_runs_by_operation;DROP INDEX observation_runs_by_version;DROP INDEX coverage_sets_by_run;DROP INDEX coverage_sets_by_version;DROP TABLE assessment_units;DROP TABLE assessments;DROP TABLE required_units;DROP TABLE coverage_sets;DROP TABLE check_intents;DROP TABLE reassessment_triggers;DROP TABLE source_observations;DROP TABLE observation_runs;DROP TABLE citation_verifications;DROP TABLE captured_reads;DROP TABLE captured_target_sets;DELETE FROM schema_migrations WHERE revision>6;UPDATE libraries SET schema_revision=6;PRAGMA user_version=6`)
+			_, e := db.Exec(dropSearchSchema + `DROP INDEX verifications_by_evidence;DROP INDEX observations_by_source;DROP INDEX observations_by_time;DROP INDEX observations_by_run;DROP INDEX triggers_by_target;DROP INDEX check_intents_state;DROP INDEX observation_runs_by_operation;DROP INDEX observation_runs_by_version;DROP INDEX coverage_sets_by_run;DROP INDEX coverage_sets_by_version;DROP TABLE assessment_units;DROP TABLE assessments;DROP TABLE required_units;DROP TABLE coverage_sets;DROP TABLE check_intents;DROP TABLE reassessment_triggers;DROP TABLE source_observations;DROP TABLE observation_runs;DROP TABLE citation_verifications;DROP TABLE captured_reads;DROP TABLE captured_target_sets;DELETE FROM schema_migrations WHERE revision>6;UPDATE libraries SET schema_revision=6;PRAGMA user_version=6`)
 			Expect(e).NotTo(HaveOccurred())
 			db.Close()
 		}
@@ -323,7 +323,7 @@ var _ = Describe("populated schema-6 upgrade to schema 7", Label("persistence"),
 		upgraded := openStore(t, w, nil)
 		health, e := upgraded.Health(ctx)
 		Expect(e).NotTo(HaveOccurred())
-		Expect(health.Library.SchemaRevision).To(Equal(7))
+		Expect(health.Library.SchemaRevision).To(Equal(SchemaRevision))
 		row, e := upgraded.QueryProjectRow(ctx, project)
 		Expect(e).NotTo(HaveOccurred())
 		Expect(row.Name).To(Equal("Populated"))

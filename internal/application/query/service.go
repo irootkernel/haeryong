@@ -11,12 +11,15 @@ import (
 	"haeryong.local/haeryong/internal/domain"
 	"net/url"
 	"strconv"
+	"sync"
 )
 
 type Service struct {
-	Store app.Store
-	Auth  *appauth.Service
-	Bytes Bytes
+	Store               app.Store
+	Auth                *appauth.Service
+	Bytes               Bytes
+	searchMu            sync.Mutex
+	searchSnapshotCache *searchSnapshotCache
 }
 
 func New(store app.Store, auth *appauth.Service, bytes Bytes) *Service {
@@ -265,7 +268,7 @@ func (s *Service) Capabilities(ctx context.Context, token string) (map[string]an
 		if err != nil {
 			return err
 		}
-		out = map[string]any{"library_id": l.ID, "api_version": "1.0", "runtime_generation": l.RuntimeGeneration, "stream_epoch": l.StreamEpoch, "unfiled_project_id": l.UnfiledProjectID, "features": map[string]bool{"resumable_uploads": true, "atomic_import": true, "cursor_files": true, "streamed_files": true, "byte_ranges": true, "source_verification": true, "html_js_v1": false, "multi_page_loader": false, "renderer": false, "preview": false, "provider": false, "scheduler": false}}
+		out = map[string]any{"library_id": l.ID, "api_version": "1.0", "runtime_generation": l.RuntimeGeneration, "stream_epoch": l.StreamEpoch, "unfiled_project_id": l.UnfiledProjectID, "features": map[string]bool{"resumable_uploads": true, "atomic_import": true, "cursor_files": true, "streamed_files": true, "byte_ranges": true, "source_verification": true, "html_js_v1": false, "multi_page_loader": false, "renderer": false, "preview": false, "provider": false, "scheduler": false, "search": true}}
 		return nil
 	})
 	return out, err

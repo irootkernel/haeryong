@@ -197,3 +197,23 @@ digest-only excerpts and no excerpt. data_base64 is optional, never nullable;
 the bytes hash remains required. Runtime retained-byte authority and the 64 KiB
 inline decision stay covered by the production query specs. The manifest digest
 revision remains additive within runtime schema 1.0.
+
+
+## Static search foundation selection
+
+TASK-004-02 M1 adds provisional closed search shapes and required safe
+`index.reasons`, plus additive `derived_index` job.kind. The feature-named
+`test_search_contracts.py` is selected by `run.py` with the existing contract
+suite; cases/report and manifest cover it. SC08 exercises omitted/extra/null fields,
+unsafe reasons, numeric/nonpositive counts and query controls; SC11 preserves the
+existing workflow.scope. Runtime schema 1.0, author metadata and the historical
+calibration plan remain unchanged. The fixed [worksheet](../../docs/testing/search-relevance-worksheet.md)
+is declared before tuning; no production search results are asserted here.
+
+M4 implements the already selected search shapes in authenticated HTTP and CLI;
+no schema, author metadata, scope action or historical calibration-plan field
+changes. The worksheet now records bounded X09/calibration observations separately
+from its unchanged predeclared oracle, so its selected digest is refreshed.
+Production service/SQLite/HTTP/CLI and public-import evidence remains outside this
+pure fixture suite, in the static-search implementation record. This is an
+additive implementation/evidence update within schema 1.0, not a product gate pass.

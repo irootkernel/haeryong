@@ -2,6 +2,7 @@
 // these named operations to a typed Go proxy. The port accepts no arbitrary
 // URLs, filesystem paths or generic method names from imported content.
 import type {
+  SearchRequest, SearchPage,
   ConfigurationView, ConfigurationPlanRequest, ConfigurationPlanView, ConfigurationCommitRequest, ConfigurationCommitView,
   ProjectSourceView, EvidenceVerificationRequest, EvidenceVerificationResult, SourceObservationRequest, SourceObservationResult,
   AssessmentFilter,
@@ -91,6 +92,7 @@ export type DecidePairingPayload = {
 };
 export type RevokeSessionRequest = { session_id: string };
 export type OperationRequest = { operation_id: string };
+export type SearchCall = SearchRequest;
 export type ListProjectsRequest = { cursor?: string };
 export type ListDocumentsRequest = { project_id?: string; lifecycle?: string; cursor?: string };
 export type DocumentRequest = { document_id: string };
@@ -161,6 +163,7 @@ export interface NativePort {
   call(operation: "revokeOwnSession", payload: {}): Promise<void>;
   call(operation: "serviceStatus", payload: {}): Promise<unknown>;
   call(operation: "subscribeEvents", payload: {}): Promise<EventSubscription>;
+  call(operation: "search", payload: SearchCall): Promise<SearchPage>;
   call(operation: "listProjects", payload: ListProjectsRequest): Promise<ListPage<ProjectView>>;
   call(operation: "listDocuments", payload: ListDocumentsRequest): Promise<ListPage<DocumentView>>;
   call(operation: "documentDetail", payload: DocumentRequest): Promise<DocumentView>;
@@ -227,7 +230,7 @@ export const NATIVE_OPERATIONS = [
   "revokeOwnSession",
   "serviceStatus",
   "subscribeEvents",
-  "listProjects",
+  "search", "listProjects",
   "listDocuments",
   "documentDetail",
   "documentVersions",
@@ -502,6 +505,10 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
     return sourceWrite<SourceObservationResult>(operationId, () => this.#fresh(this.#port.call("runSourceObservation", { version_id: versionId, request, operation_id: operationId }), era), (id) => { if (era !== this.#era) throw new StaleResponseError(); return this.operation(id); });
   }
 
+  search(request: SearchRequest): Promise<SearchPage> {
+    return this.#fresh(this.#port.call("search", { ...request }), this.#era);
+  }
+
   listProjects(cursor?: string): Promise<ListPage<ProjectView>> {
     return this.#fresh(this.#port.call("listProjects", { cursor }), this.#era);
   }
@@ -666,6 +673,8 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
   }
 
   subscribeEvents(): EventSubscription {
+    const listeners = new Set<() => void>();
+    let unlisten: (() => void) | undefined;
     let ended: () => void;
     const closed = new Promise<void>((resolve) => {
       ended = resolve;
@@ -688,13 +697,16 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
           return;
         }
         handle = subscription;
+        unlisten = subscription.onInvalidation?.(() => { if (!finished && era === this.#era) for (const listener of listeners) listener(); });
         void subscription.closed.then(() => ended());
       })
       .catch(() => ended());
     return {
       closed,
+      onInvalidation: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; },
       close: () => {
         finished = true;
+        unlisten?.(); listeners.clear();
         handle?.close();
         ended();
       },

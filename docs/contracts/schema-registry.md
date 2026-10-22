@@ -62,7 +62,7 @@ A stored default value remains an existing resource with its actual validator.
 | draft.action | `reject`, `replace` |
 | finding.decision | `approve`, `reject` |
 | job.state | `queued`, `running`, `paused`, `interrupted`, `reconciling`, `cancelling`, `completed`, `failed`, `cancelled` |
-| job.kind | `upload_seal`, `import`, `generation`, `question`, `scan`, `lifecycle`, `backup`, `export` |
+| job.kind | `upload_seal`, `import`, `generation`, `question`, `scan`, `lifecycle`, `backup`, `export`, `derived_index` |
 | job.resume.decision | `reconcile_only`, `continue`, `retry`; request includes expected_attempt_generation and the job ETag |
 | job_item.state | `pending`, `running`, `completed`, `skipped`, `blocked`, `failed`, `cancelled`; skipped/blocked items retain their exact coverage reason |
 | provider_attempt.dispatch_state | `prepared`, `dispatching`, `running`, `result_saved`, `failed`, `cancelled`, `outcome_unknown` |
@@ -502,3 +502,88 @@ Every current unit is `{kind,page_path,region_id,outcome:"not_checked",reason,
 discrepancy:null,assessment_id:null,target_set_id}`. Assessments items stay empty,
 next_cursor null, assessed_at null, assessed 0 and complete false; observations
 alone never prove aligned_within_scope or outdated_against_target.
+
+
+## Selected static search foundation (TASK-004-02 M1/M2)
+
+**Classification:** additive `job.kind=derived_index`; provisional selected search
+shapes under runtime schema 1.0/API v1. M1/M2 supply fixtures and internal storage,
+not a search route, CLI or enabled UI. `features.search=false` remains explicit.
+The existing `workflow.scope` and author-metadata subset are unchanged.
+`tests/contracts/schema.json` and the complete embedded configuration schema are
+identical. The schema defines `search_query`, `search_hit`, `search_filters`,
+`search_page`, `search_response`, `search_index` and `search_index_reason` as closed
+objects. The page requires `query`, `filters`, `items`, nullable `next_cursor`,
+decimal-string `total_matches` and `index`. Every hit retains its exact immutable
+project/document/version, sequence, kind, title/lifecycle, nullable page/region/source,
+anchor/body states, match fields and nullable plain-text snippet.
+
+`index` requires state (empty/pending/partial/complete/failed), decimal-string or
+unknown-null versions_total/versions_complete/files_total/files_discovered/
+html_total/html_complete/html_pending/html_failed/unsupported_bodies,
+discovery_complete, limitations (`static_only`), and **reasons**, always an array.
+Each reason is exactly `{code,version_count}`; version_count is a positive canonical
+decimal string. Safe codes: `not_indexed`, `interrupted`, `cancelled`, `read_failed`,
+`decode_failed`, `integrity_failed`, `resource_exhausted`, `storage_failed`,
+`unsupported_body`, `failed_unknown`. No diagnostic, path or job identity belongs
+in this projection. Later aggregation counts distinct eligible versions per code,
+uniques/sorts codes by ASCII, and never requires job.read. Multiple failures of
+one version count once per code; counts across codes need not sum to the denominator.
+Unknown terminal failures map to failed_unknown; unsupported bodies are neutral
+limitations, and a known child failure does not invent another unknown cause.
+
+The pure query grammar permits empty q, whitespace AND clauses, and balanced ASCII
+double-quoted literal phrases with doubled quotes inside. SQL/FTS operators remain
+ordinary text. Raw decoded input and normalized semantic text each have a 4,096
+Unicode-scalar control limit. Semantic length sums normalized literal clauses and
+one separator per clause boundary; delimiters are syntax. Invalid UTF-8, controls
+except tab/newline/carriage return, malformed phrases or expansion overflow fail
+before SQL, without truncation. NFC/casefold changes search copies only.
+
+Ranking compares five tiers, strongest first: (1) exact identity/title/path,
+(2) literal title/region phrase, (3) literal path/topic/source phrase,
+(4) all full components, then (5) substring. Within a tier, the descending
+per-clause field score uses title=8, region=6, path=5, topic=4, source=4 and
+body=1, counted once per clause/field. Repetition and hidden corpus frequency
+add no score. For equal (tier, score), assign a one-based ordinal within each
+exact (version_id, page_path) group in the existing tuple order, over eligible,
+fully matched one-hit-per-unit results, before cursor and LIMIT. Counters reset
+for every (tier, score) block. Compare ordinal ascending before the unchanged
+project, document, sequence descending, kind, binary page_path, region_id and
+source_id keys. This diversifies equal-strength evidence without collapsing
+units or overriding strength. Cursor ordering revision 2 rejects pre-A1
+bindings; strict decoding also rejects missing, zero or negative ordinals.
+
+The fixed [worksheet](../testing/search-relevance-worksheet.md) owns predeclared
+X09, calibration40, alias pair and approved sample targets. Fixture validation is
+not execution of these searches. Worker wiring, query, transports and UI remain
+subsequent milestones; no new resume route or scope is selected.
+
+### Derived maintenance progress (TASK-004-02 M3)
+
+This additive intermediate delivery uses the existing job list/show and cancel
+operations, with owner-only visibility for derived_index. Its required job.result
+is `{version_id,work_kind,stage,files_done,files_total,bytes_done,bytes_total,pages_done,pages_total,failed,checkpoint}`;
+work_kind is search, stage is inventory/extract/commit/complete, counters are
+nonnegative decimal strings and unknown totals are null. Files count inventoried
+entries; bytes count static HTML input; pages count completed static HTML pages.
+Checkpoint is an opaque hash. The same shape survives completion/failure/cancel.
+`search.index_updated` has version resource identity and no body; existing
+version.read with exact project/version anchors controls replay/live visibility.
+The [jobs contract](jobs-events.md#delivered-derived-maintenance-task-004-02-m3)
+owns terminal/restart/revision behavior. No new scope, resume or search route is
+implemented here; search capability remains false.
+
+M4 implements the selected search HTTP and CLI projections without changing the
+selected schema or workflow actions. Search reads use existing `version.read`
+and both exact project/version anchors, not `project.read` from ordinary lists.
+The required reasons array is sorted by code, uses distinct selected-version
+counts and maps unknown persisted failure classes to `failed_unknown`. Pending
+bodies and quarantined indexes contribute no body candidates. The matched unit
+identity remains `(version_id, kind, page_path, region_id, source_id)`; page and
+region hits are independent. M5 delivers the typed `search(SearchRequest): Promise<SearchPage>` operation in
+HTTP, the native adapter and the closed Go facade, plus Library presentation and
+capability enablement. Library safe-return query keys include `q`, `project_id`,
+`lifecycle`, `versions` and `kind`. Search All forwards `lifecycle=all` explicitly.
+Requests preserve every supplied filter, cursor and page size; responses retain
+required safe reasons and exact imported identities. There is no job-resume operation.

@@ -2,8 +2,8 @@
 // registered query keys, honest loaded-vs-total counts, one-directory-one-
 // document rows with page/file inventory entry, the shared import control,
 // the labelled Reader/Versions preselection harness, and the original-
-// directory archive download entry for the latest version. Search and AI
-// stay disabled until the service explicitly advertises them.
+// directory archive download entry for the latest version. Static search uses
+// exact-version results only when the service explicitly advertises it.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ShellController } from "../../client/controller.ts";
 import { ApiError } from "../../client/types.ts";
@@ -11,6 +11,8 @@ import type { DocumentView, FileEntryView, ListPage, ProjectView } from "../../c
 import { navigate, useShellRoute } from "../router.tsx";
 import { accumulateDocuments, countLabel, featureEnabled, filterFromSearch, filterToSearch } from "./library-data.ts";
 import type { DocumentAccumulation, LibraryFilter } from "./library-data.ts";
+import { LibrarySearch, LibrarySearchForm } from "./library-search.tsx";
+import { searchFromURL, searchURL } from "./search-state.ts";
 import { DownloadPanel } from "./download-panel.tsx";
 import { ImportControl } from "./import-control.tsx";
 
@@ -31,6 +33,7 @@ type FileEntryState =
 export function LibraryScreen({ controller }: LibraryScreenProps) {
   const client = controller.client;
   const { url } = useShellRoute();
+  const [searchRun, setSearchRun] = useState(0);
   const [projects, setProjects] = useState<ProjectView[]>([]);
   const [accumulation, setAccumulation] = useState<DocumentAccumulation>({ documents: [], exhausted: false });
   const [loading, setLoading] = useState(true);
@@ -45,6 +48,7 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
   const inventoryRequestRef = useRef(0);
   useEffect(() => () => { inventoryRequestRef.current += 1; }, []);
   const filter = useMemo(() => filterFromSearch(url.slice(url.indexOf("?"))), [url]);
+  const searchRequest = useMemo(() => searchFromURL(url), [url]);
   // Loaded protected state is scoped to the stable confirmed authority epoch
   // (library + principal + runtime generation). A genuine epoch change —
   // never a routine same-authority recheck — clears the loaded rows,
@@ -125,8 +129,8 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
   }, [epoch]);
 
   const applyFilter = useCallback((next: LibraryFilter) => {
-    navigate(filterToSearch(next));
-  }, []);
+    navigate(searchRequest ? searchURL({ ...searchRequest, project_id: next.projectId || undefined, lifecycle: next.lifecycle }) : filterToSearch(next));
+  }, [searchRequest]);
 
   const loadMore = useCallback(() => {
     if (cursor !== null) void loadPage(filter, cursor);
@@ -193,7 +197,7 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
         <div className="form-row">
           <label>
             프로젝트
-            <select value={filter.projectId} onChange={(event) => applyFilter({ ...filter, projectId: event.target.value })}>
+            <select aria-label="프로젝트" value={filter.projectId} onChange={(event) => applyFilter({ ...filter, projectId: event.target.value })}>
               <option value="">전체 프로젝트</option>
               {projects.map((project) => (
                 <option key={project.project_id} value={project.project_id}>
@@ -204,15 +208,12 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
           </label>
           <label>
             수명 주기
-            <select value={filter.lifecycle} onChange={(event) => applyFilter({ ...filter, lifecycle: event.target.value as LibraryFilter["lifecycle"] })}>
+            <select aria-label="수명 주기" value={filter.lifecycle} onChange={(event) => applyFilter({ ...filter, lifecycle: event.target.value as LibraryFilter["lifecycle"] })}>
               <option value="active">활성</option>
               <option value="archived">보관</option>
               <option value="all">전체</option>
             </select>
           </label>
-          <button type="button" disabled={!featureEnabled(features, "search")} title={featureEnabled(features, "search") ? undefined : "검색은 아직 제공되지 않습니다."}>
-            검색
-          </button>
           <button type="button" disabled={!featureEnabled(features, "provider")} title={featureEnabled(features, "provider") ? undefined : "AI 기능은 아직 제공되지 않습니다."}>
             AI 질문
           </button>
@@ -220,7 +221,8 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
             가져오기
           </button>
         </div>
-        {error ? (
+        {featureEnabled(features, "search") ? <LibrarySearchForm onSearch={() => setSearchRun(run => run + 1)} request={searchRequest} projectId={filter.projectId} lifecycle={filter.lifecycle} /> : <p>검색은 아직 제공되지 않습니다.</p>}
+        {error && !searchRequest ? (
           <p className="hint" role="alert">
             {error}
           </p>
@@ -229,6 +231,8 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
           <p className="hint" role="alert">
             서비스 계약이 호환되지 않아 보호된 문서 목록을 표시하지 않습니다.
           </p>
+        ) : searchRequest && featureEnabled(features, "search") ? (
+          <LibrarySearch key={url + "|" + epoch + "|" + searchRun} client={client} request={searchRequest} />
         ) : (
           <>
             <p className="hint" data-testid="library-count">

@@ -15,3 +15,14 @@ type QueryReadTx interface {
 	QuerySource(version, id string) (domain.Source, error)
 	QueryEvidence(version, id string) (domain.Evidence, error)
 }
+
+// SearchReadTx streams candidates from the eligible ready corpus, without a
+// hidden first-N cap. Each physical chunk slice is authenticated; grouping/ranking runs outside the lock.
+type SearchReadTx interface {
+	SearchCorpus(domain.SearchSelection) ([]domain.SearchVersionState, error)
+	SearchHighWater() (int64, error)
+	SearchSnapshotSlice(domain.SearchSelection, string, int64) (domain.SearchSnapshotSlice, error)
+	SearchReadStamp(domain.SearchSelection) (string, error)
+	SearchAuthorityStamp(domain.Session) (string, error)
+	SearchCandidates(domain.SearchSelection, string, int64, int64) (domain.SearchSlice, error)
+}

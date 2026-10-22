@@ -23,9 +23,11 @@ import (
 	appconfig "haeryong.local/haeryong/internal/application/configuration"
 	importer "haeryong.local/haeryong/internal/application/import"
 	"haeryong.local/haeryong/internal/application/query"
+	"haeryong.local/haeryong/internal/application/search"
 	"haeryong.local/haeryong/internal/application/service"
 	appsource "haeryong.local/haeryong/internal/application/source"
 	storage "haeryong.local/haeryong/internal/application/storage"
+	"haeryong.local/haeryong/internal/application/work"
 	"haeryong.local/haeryong/internal/domain"
 	sec "haeryong.local/haeryong/internal/security/session"
 	"net"
@@ -186,7 +188,9 @@ func run() error {
 	// the store unclosed rather than pretending quiescence.
 	workerCtx, stopWorker := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	workerDone := make(chan error, 1)
-	go func() { workerDone <- imports.Run(workerCtx) }()
+	go func() {
+		workerDone <- (work.Dispatcher{Store: store, Imports: imports, Derived: search.NewWorker(store, store)}).Run(workerCtx)
+	}()
 	defer func() {
 		stopWorker()
 		if workerError := <-workerDone; workerError != nil && !errors.Is(workerError, context.Canceled) {

@@ -100,6 +100,8 @@ export function safeReturn(value: string | null): string {
       /^\/settings\/(general|connection|sessions|projects|ai|maintenance|storage|retention|backup|about)$/.test(path);
     const queryKeys = new Set([
       "q",
+      "versions",
+      "kind",
       "project_id",
       "topic_id",
       "lifecycle",
@@ -118,7 +120,10 @@ export function safeReturn(value: string | null): string {
         if (!validDecodedPage(entry)) return "/";
         continue;
       }
-      if (/[\u0000-\u001f\u007f]/.test(entry)) return "/";
+      // Search grammar accepts TAB/LF/CR as whitespace; preserve their once-
+      // encoded query values through login without relaxing any other key.
+      const controls = key === "q" ? /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/ : /[\u0000-\u001f\u007f]/;
+      if (controls.test(entry)) return "/";
     }
     return known ? path + url.search + url.hash : "/";
   } catch {

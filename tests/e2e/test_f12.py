@@ -11,6 +11,7 @@ import zipfile
 import pytest
 
 from .harness import Proxy, digest, operation, write_json
+from .test_search import F12SearchProbe
 
 pytestmark = pytest.mark.e2e
 
@@ -29,7 +30,7 @@ def assert_download(root, expected):
     assert (root / "represented-empty").is_dir()
 
 
-def test_canonical_f12_response_loss_resume_cursor_range_download_and_restart(product, owner, canonical_f12, tmp_path):
+def test_canonical_f12_response_loss_resume_cursor_range_download_and_restart(product, owner, canonical_f12, tmp_path, request, record_testsuite_property):
     started = time.monotonic()
     deadline = started + 600
     source = tmp_path / "large-result.zip"
@@ -73,6 +74,7 @@ def test_canonical_f12_response_loss_resume_cursor_range_download_and_restart(pr
         assert len({key, accepted["upload_create_operation_id"], accepted["upload_complete_operation_id"]}) == 3
         published = product.job(owner, accepted["result"]["job_id"], timeout=remaining())
         version = published["version_id"]
+
         entries = product.files(owner, version, 37)
         listed = product.cli(["files", "list", "--version", version, "--limit", "37"], client=caller, timeout=remaining(), ndjson=True)
         assert [row["data"] for row in listed] == entries
@@ -114,8 +116,11 @@ def test_canonical_f12_response_loss_resume_cursor_range_download_and_restart(pr
         before = tmp_path / "download-before"
         product.cli(["files", "download", "--version", version, "--output", str(before)], client=caller, timeout=remaining())
         assert_download(before, expected)
+        remaining()
         product.stop()
         product.start()
+        search_probe = F12SearchProbe(product, owner, canonical_f12, version)
+        request.addfinalizer(search_probe.close)
         assert product.files(owner, version, 37) == entries
         listed = product.cli(["files", "list", "--version", version, "--limit", "37"], client=caller, timeout=remaining(), ndjson=True)
         assert [row["data"] for row in listed] == entries
@@ -123,9 +128,13 @@ def test_canonical_f12_response_loss_resume_cursor_range_download_and_restart(pr
         product.cli(["files", "download", "--version", version, "--output", str(after)], client=caller, timeout=remaining())
         assert_download(after, expected)
         remaining()
+        transfer_elapsed = time.monotonic() - started
+        # The original transfer must finish within 600 seconds. Index observation
+        # has its own workload budget and does not extend that transfer deadline.
+        record_testsuite_property("SC20", json.dumps(search_probe.finish(900)))
     report = {"fixture": "Canonical F12 through actual CLI/daemon/public API", "archive_bytes": canonical_f12["archive_bytes"],
               "archive_sha256": archive_hash, "expanded_bytes": canonical_f12["expanded_bytes"],
-              "files": expected, "represented_entries": len(entries), "elapsed_seconds": time.monotonic()-started,
+              "files": expected, "represented_entries": len(entries), "elapsed_seconds": transfer_elapsed,
               "complete_resume_cursor_range_download_restart": True}
     if path := os.environ.get("HAERYONG_TASK005_WORKLOAD_REPORT"):
         write_json(path, report)

@@ -156,6 +156,8 @@ export interface DeviceSession {
 }
 
 export interface EventSubscription {
+  /** Content-free change hint; callers must re-read under current authority. */
+  onInvalidation?(listener: () => void): () => void;
   closed: Promise<void>;
   close(): void;
 }
@@ -711,6 +713,37 @@ export class UnknownOutcomeError extends Error {
   readonly operation: string;
 }
 
+// Static search preserves exact imported identities and safe aggregate reasons.
+export type SearchKind = "document" | "page" | "region" | "source" | "attachment";
+export interface SearchRequest {
+  q: string;
+  project_id?: string;
+  lifecycle?: "active" | "archived" | "all";
+  versions?: "latest" | "all";
+  kind?: SearchKind;
+  cursor?: string;
+  limit?: number;
+}
+export type IndexReasonCode = "not_indexed" | "interrupted" | "cancelled" | "read_failed" | "decode_failed" | "integrity_failed" | "resource_exhausted" | "storage_failed" | "unsupported_body" | "failed_unknown";
+export interface IndexReasonView { code: IndexReasonCode; version_count: string }
+export interface SearchHit {
+  kind: SearchKind; project_id: string; document_id: string; version_id: string;
+  sequence: number; title: string; lifecycle: string;
+  page_path: string | null; region_id: string | null; source_id: string | null;
+  anchor_state: string; body_state: string; match_fields: string[]; snippet: string | null;
+}
+export interface SearchPage {
+  query: { text: string; normalized: string; mode: string };
+  filters: { project_id: string | null; lifecycle: string; versions: string; kind: SearchKind | null };
+  items: SearchHit[]; next_cursor: string | null; total_matches: string;
+  index: {
+    state: "empty" | "pending" | "partial" | "complete" | "failed";
+    versions_total: string | null; versions_complete: string | null; files_total: string | null; files_discovered: string | null;
+    html_total: string | null; html_complete: string | null; html_pending: string | null; html_failed: string | null;
+    unsupported_bodies: string | null; discovery_complete: boolean; limitations: string[]; reasons: IndexReasonView[];
+  };
+}
+
 export interface HaeryongClient {
   /** Trusted public browser origin, never a child-supplied navigation host. */
   readonly publicOrigin?: string | null;
@@ -737,6 +770,7 @@ export interface HaeryongClient {
   verifySourceEvidence(versionId: string, evidenceId: string, request: EvidenceVerificationRequest, operationId: string): Promise<EvidenceVerificationResult>;
   runSourceObservation(versionId: string, request: SourceObservationRequest, operationId: string): Promise<SourceObservationResult>;
   // Library reads
+  search(request: SearchRequest): Promise<SearchPage>;
   listProjects(cursor?: string): Promise<ListPage<ProjectView>>;
   listDocuments(filter: { projectId?: string; lifecycle?: string; cursor?: string }): Promise<ListPage<DocumentView>>;
   documentDetail(documentId: string): Promise<DocumentView>;

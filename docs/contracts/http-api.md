@@ -414,3 +414,73 @@ retained_bytes_corrupt, source_denied, not_observed. A later weaker observation
 replaces that source's prior status; aggregate precedence applies after this
 replacement. Storage failure returns 503 SERVICE_RECOVERING, never fabricated
 not_observed health. See [selection and scope rules](schema-registry.md#source-and-assessment-views).
+
+
+## Provisional static search selection (TASK-004-02 M1)
+
+M4 implements this additive provisional selection. M5 ships the shared Library
+UI and all three transports together and enables `features.search=true`. GET/HEAD `/api/v1/search` accepts only q, project_id, lifecycle
+(active default/archived/all), versions (latest default/all), optional kind
+(document/page/region/source/attachment), cursor and limit (50 default, 1–200).
+Only q may be empty. Duplicate, unknown or other empty fields are invalid. HEAD
+uses the same status/headers and no body. Successful GET uses the closed
+`search_response` `{data,request_id}` schema; see the [registry](schema-registry.md#selected-static-search-foundation-task-004-02-m1m2).
+Empty q produces no MATCH, zero items/count and honest index status/reasons.
+Pending/partial is HTTP 200 rather than a false complete no-match.
+
+Selected 400 INVALID_REQUEST details.reason values are invalid_query,
+query_too_long, malformed_phrase, invalid_lifecycle, invalid_versions, invalid_kind,
+invalid_page_size, cursor_mismatch and unknown_duplicate_or_empty_query.
+Authentication remains 401; absent version.read is 403; hidden targets are
+nondisclosing 404. Recovering/timeouts use 503 SERVICE_RECOVERING, retryable=true,
+Retry-After: 2. A query deadline has details.reason=query_timeout; other
+search storage failures have empty details. Both use the same bodyless HEAD guard.
+Eligibility reuses source.Check unchanged: owner or existing version.read with
+both project and exact-version scope anchors, before results/counts/snippets/
+coverage/cursors/events. No search.read, source.read or project.read is added.
+
+M4 search evaluates literal AND clauses, unicode61/trigram candidates and a direct
+1–2-character fallback over the eligible ready corpus. Long phrases nominate a
+bounded prefix candidate superset, then verify the entire normalized literal in
+one source chunk. Aliases may satisfy unquoted components only. Repetition and
+hidden corpus frequency do not increase rank. Order is exact identity/title/path,
+literal title/region phrase, literal path/topic/source phrase, full components,
+then substring. Descending per-clause field score weights are title=8, region=6,
+path=5, topic=4, source=4 and body=1, once per clause/field. Equal (tier, score)
+results compare a one-based ordinal within exact (version_id, page_path) groups,
+computed in the existing tuple order over eligible fully matched one-hit-per-unit
+results before cursor/LIMIT, resetting per strength block. Unchanged keys follow:
+project, document, sequence descending, kind, binary page_path, region_id, source_id.
+Ordering revision 2 invalidates pre-A1 cursor bindings; the strict decoder rejects
+missing, zero and negative ordinals.
+Candidate discovery and snapshot streams examine at most 64 physical rows per
+transaction, including misses, and yield after the first completed row at an
+8 ms row-iteration budget. These are work budgets, not author input limits or a hard
+wall-clock promise for an individual SQLite operation. SQL preparation and
+nomination have the independent 64-row work bound; their time is recorded
+separately from each iterator's elapsed budget. Snapshot versions, page
+and file inventory, unit facts and metadata chunks are paged separately; counts,
+validation projections, encoding and hashing run outside the store lock. Selected Store-owned visibility generations bracket the complete snapshot.
+Visible changes between its pages require a restart; hidden publications, staged
+pages and quarantined unit/chunk/anchor cleanup do not. Physical connection
+replacement preserves those generations. Each candidate slice checks current authority
+generations and applies the captured eligibility relation; full authentication
+runs at the start and end, and a changed authority generation requires the
+ordinary full check. Authentication, permission and explicit-target failures
+retain their normal error classes. Start/end selected visible-state bindings
+must match. A visible change restarts once; a second change returns retryable
+503 query_timeout rather than mixed results. Hidden-only changes between
+complete snapshots preserve the selected binding. The 30-second request
+deadline starts before the first authentication, store-lock waits observe
+cancellation, and post-processing checks cancellation before successful return.
+Empty queries return current corpus coverage without matching. `kind` narrows
+hits rather than coverage. Coverage reasons count distinct selected versions and
+never expose job errors or private diagnostics.
+
+Search cursors bind the normalized parsed clauses, filters/page size, principal,
+library/runtime/auth/stream identity and selected visible version/index/unit
+projection. In all-version mode they exclude mutable document revision/title/
+latest and hidden publications. Visible changes return 400 cursor_mismatch;
+normal restart with unchanged selected state preserves continuation. Search GET
+never enqueues work, reads configured sources or invokes AI. Unsupported methods
+retain ordinary protected route handling. No maintenance/retry route is added.

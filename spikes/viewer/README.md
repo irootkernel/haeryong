@@ -352,3 +352,33 @@ stages, not the production companion, full M14 or the Epic gate.
 scope. Use a distinct receipt path for each run. Shared browser checks and
 remaining Task acceptance are documented in
 [the Reader implementation record](../../docs/testing/reader-viewer.md).
+
+### Static search stage (TASK-004-02 M5)
+
+`python3 -B spikes/viewer/check_reader_native.py --stages app,search --receipt PATH`
+uses the existing beta.28 ReaderMode runtime and compiled shared Library. It
+imports through the real production daemon, exercises search/more/lifecycle and
+opens the exact returned old version and Unicode page. Separate labelled proxy
+responses verify owner/scoped safe-reason rendering through the real native App
+and closed facade. The exact selected old page emits its unique live heading
+and body through the existing isolated context channel; the Go consume receipt
+must match the independently constructed expected byte digest. A distinct
+default page ensures dropping `page_path` cannot accidentally show that page.
+The final seeded run holds a real HTTP200 search response while the mounted
+Library's actual native client advances its era. An owned trusted-host probe
+finds that client through the mounted React host fiber, observes
+`StaleResponseError`, and requires the same live screen with an error and no
+protected rows. No product test hook, logout or replacement client is used.
+These fixtures do not introduce native scoped-credential issuance.
+The existing `--stages app,evidence` regression remains separate. Selected stages
+set `full_qualification=false`; this is not the whole desktop/device gate.
+
+`--stages app,corpus` adds SC19 search/open examples from both complete checked-in
+Mulgae/Gaori trees. `tests/manual/search_corpus_support.py` imports and downloads
+every canonical file unchanged, awaits public index completion, and supplies the
+exact expected identities. The existing `viewer.loaded` message is observed only
+from the actual imported iframe; document/version/page must equal the selected
+search result. No authored sample script is changed. The option is explicit and
+is excluded from the default full-qualification stages; selected runs retain
+`full_qualification=false`. `tests/manual/check_search_corpus.py` coordinates the
+Chrome `--corpus` and native examples with the HTTP/CLI worksheet.
