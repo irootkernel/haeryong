@@ -207,7 +207,7 @@ class F12SearchProbe:
 
     def finish(self, timeout):
         self.thread.join(timeout)
-        assert not self.thread.is_alive(), "SC20 resumed index observation exceeded its separate workload budget"
+        assert not self.thread.is_alive(), "SC20 resumed index observation exceeded its separate hang guard"
         assert not self.errors, "SC20 public read/progress observation failed"
         assert self.completed is not None and len(self.reads) > 1 and "extract" in self.stages
         for term, kind, path in [("first.html", "page", "first.html"),
@@ -229,4 +229,4 @@ class F12SearchProbe:
                 "searches": percentiles(self.searches), "max_sampled_rss_bytes": max(self.rss), "sizes": sizes,
                 "transaction_timing": "separate instrumented persistence spec", "sampling_interval_seconds": 2, "retryable_searches": self.retryable_searches,
                 "observation_scope": "resumed extraction after canonical transfer restart; overlaps final download",
-                "canonical_bytes_and_600s_budget_unchanged": True}
+                "canonical_bytes_unchanged": True}

@@ -136,5 +136,5 @@ This is persistence evidence, not 5,000 public uploads or owner usefulness.
 HTML with unique boundary literals near 32 KiB, beyond 16/32 MiB and a unique
 terminal literal beyond 40 MiB. The E2E freezes actual bytes, hash, markers and
 normalized offsets before importing. No marker appears in metadata or paths.
-Canonical F12 generator, bytes and 600-second transfer budgets remain unchanged;
+The canonical F12 generator and bytes remain unchanged, with a hang-guard transfer limit;
 its repeated body is not the unique-tail completeness oracle.

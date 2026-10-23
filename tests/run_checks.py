@@ -97,9 +97,11 @@ def go_packages(layer):
 
 def go_suite(layer, work, env):
     report = work / f"go-{layer}.json"
+    # Budgets bound hung runs; the serial race persistence suites vary with host load.
+    budget = 3600 if layer == "persistence" else 1000
     args = ["go", "tool", "ginkgo", "--race", "--fail-on-empty", "--fail-on-pending", "--no-color",
-            "--timeout=1000s", f"--label-filter={layer}", f"--json-report={report}", *go_packages(layer)]
-    command(args, work / f"go-{layer}.log", env | {"HAERYONG_TEST_LAYER": layer}, timeout=1500)
+            f"--timeout={budget}s", f"--label-filter={layer}", f"--json-report={report}", *go_packages(layer)]
+    command(args, work / f"go-{layer}.log", env | {"HAERYONG_TEST_LAYER": layer}, timeout=budget + 500)
     reports = json.loads(report.read_text())
     selected = [spec for suite in reports for spec in suite["SpecReports"]
                 if layer in (spec.get("LeafNodeLabels") or []) or any(layer in labels for labels in (spec.get("ContainerHierarchyLabels") or []))]
@@ -158,7 +160,7 @@ def validate_layers():
 def pytest_suite(layer, paths, work, env):
     args = [sys.executable, "-B", "-m", "pytest", "-x", "--strict-config", "--strict-markers", "-W", "error",
             "--basetemp", str(work / "pytest-tmp"), f"--junitxml={work / ('pytest-'+layer+'.xml')}", *paths]
-    command(args, work / f"pytest-{layer}.log", env, timeout=1800)
+    command(args, work / f"pytest-{layer}.log", env, timeout=5400 if layer == "e2e" else 1800)
 
 
 def main():

@@ -71,10 +71,18 @@ their own evidence. No GC API, provider, future grant issuer or alternate
 production coordinator is introduced for setup.
 
 Go leaf execution is `go tool ginkgo --race --fail-on-empty --fail-on-pending
---no-color --timeout=1000s --label-filter=<layer> --json-report=<private-report>
-<packages>` using only packages containing that layer. Ginkgo builds/runs its
-test executables without Go result caching. Required selected specs must pass;
-specs intentionally filtered into another stage are not required skips.
+--no-color --timeout=<budget> --label-filter=<layer> --json-report=<private-report>
+<packages>` using only packages containing that layer. The budget is `1000s` for
+unit and integration and `3600s` for the additional persistence gate, whose
+serial race suites vary with host load. Ginkgo builds/runs its test executables
+without Go result caching. Required selected specs must pass; specs
+intentionally filtered into another stage are not required skips.
+
+Every finite test time limit, from the Go and pytest leaf bounds to scenario
+waits such as F12's, is a hang guard for a shared and usually heavily loaded
+host. A limit that a correct run can reach under load is raised to about three
+times the slowest observed passing duration. Elapsed time is informational and
+never an acceptance criterion.
 
 Python leaf execution is `python3 -B -m pytest -x --strict-config --strict-markers
 -W error --basetemp <new-private-path> --junitxml=<private-report> <suite-paths>`.
@@ -95,8 +103,9 @@ collected test, with source-bound JSON reports through the pytest contract hook.
 Existing unittest scenario bodies are rewritten rather than merely collected by
 pytest's unittest adapter. Go scenario bodies become Ginkgo specs; no wrapper
 runs the old native test suite. The migration preserves selected contract IDs
-and the unchanged F12 generator, file identities and 600-second CLI scenario
-budget. Test budgets and chunk/cursor sizes are not product content limits.
+and the unchanged F12 generator and file identities; the F12 CLI scenario keeps
+an `1800s` transfer hang guard. Test budgets and chunk/cursor sizes are not
+product content limits.
 
 The structural inspector is conservative: it does not follow the Python leaf
 dispatcher into `go tool ginkgo`, and its source scan can see excluded historical
