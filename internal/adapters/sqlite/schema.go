@@ -166,4 +166,59 @@ CREATE TABLE page_anchors(
  FOREIGN KEY(version_id,page_path) REFERENCES version_pages(version_id,page_path)
 );
 `,
+	`CREATE TABLE reference_materializations(
+ from_version_id TEXT PRIMARY KEY REFERENCES document_versions(version_id),
+ manifest_sha256 TEXT NOT NULL CHECK(length(manifest_sha256)=64),
+ reference_revision INTEGER NOT NULL CHECK(reference_revision>=1),
+ state TEXT NOT NULL CHECK(state<>''),
+ job_id TEXT NOT NULL REFERENCES jobs(job_id),
+ revision INTEGER NOT NULL CHECK(revision>=1)
+);
+CREATE TABLE authored_references(
+ from_version_id TEXT NOT NULL,
+ metadata_reference_id TEXT NOT NULL CHECK(metadata_reference_id<>''),
+ from_page_path TEXT,
+ from_region_id TEXT,
+ target_document_id TEXT NOT NULL,
+ target_version_id TEXT NOT NULL,
+ target_page_path TEXT,
+ target_region_id TEXT,
+ page_query TEXT NOT NULL DEFAULT '',
+ page_fragment TEXT NOT NULL DEFAULT '',
+ relation TEXT,
+ label TEXT,
+ authored_json BLOB NOT NULL,
+ CHECK(from_region_id IS NULL OR from_page_path IS NOT NULL),
+ CHECK(target_region_id IS NULL OR target_page_path IS NOT NULL),
+ PRIMARY KEY(from_version_id,metadata_reference_id),
+ FOREIGN KEY(from_version_id) REFERENCES reference_materializations(from_version_id)
+);
+CREATE INDEX authored_references_target
+ ON authored_references(target_version_id,from_version_id,metadata_reference_id);
+CREATE TABLE authored_edges(
+ edge_id TEXT PRIMARY KEY,
+ from_version_id TEXT NOT NULL,
+ metadata_reference_id TEXT NOT NULL,
+ from_page_path TEXT,
+ from_region_id TEXT,
+ target_project_id TEXT NOT NULL,
+ target_document_id TEXT NOT NULL,
+ target_version_id TEXT NOT NULL,
+ target_page_path TEXT,
+ target_region_id TEXT,
+ from_page_sha256 TEXT,
+ from_anchor_sha256 TEXT,
+ target_page_sha256 TEXT,
+ target_anchor_sha256 TEXT,
+ anchor_revision INTEGER NOT NULL CHECK(anchor_revision>=1),
+ UNIQUE(from_version_id,metadata_reference_id),
+ CHECK(from_region_id IS NULL OR from_page_path IS NOT NULL),
+ CHECK(target_region_id IS NULL OR target_page_path IS NOT NULL),
+ FOREIGN KEY(from_version_id,metadata_reference_id)
+  REFERENCES authored_references(from_version_id,metadata_reference_id)
+);
+CREATE INDEX authored_edges_target
+ ON authored_edges(target_version_id,target_page_path,target_region_id,
+                  from_version_id,metadata_reference_id);
+`,
 }

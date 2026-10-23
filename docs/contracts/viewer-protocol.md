@@ -82,11 +82,58 @@ Host display context may contain ordinary JSON without fixed author-facing field
 | child `viewer.ready` | profile and optional page-local region context | Confirm the loaded page instance |
 | child `region.selected` | page-local region ID or fallback selection, optional text and state/context_ref | Update reader context; Ask/Notes/Review remain host actions |
 | child `state.changed` | page-local selection and JSON display state/context_ref | Track the selected scenario as display context, not source evidence |
-| child `reference.requested` | known optional library reference ID | Resolve a known library reference through normal authorized host navigation |
+| child `reference.requested` | exactly `{reference_id:string}` | Only an enabled current channel may dispatch an opt-in reference; the host verifies the declaration and current source page before authorized resolution |
+| host `reference.navigation` | exactly `{enabled:boolean}` | Bound to the current protocol/page/render-instance envelope, monotonic sequence and private channel generation; the loader defaults to disabled and the host enables only for `featureEnabled(capabilities.features,"references")` |
 | child `viewer.error` | plain error code/message, optional details context_ref | Show a readable error and recovery action |
 | child `region.focused` | page-local `region_id` plus `found`/`focused` booleans | Honest observed result of ONE host-initiated `region.focus` attempt on the current binding: `found` reports a matching document element and `focused` that it actually received focus. A modal host overlay or an inert background makes `focused` false; a logical region without a matching element makes `found` false and never blocks reading. Message delivery alone is not an ack, and this message upgrades no selection, evidence, verification or authority |
 | host `region.focus` | page-local region ID | Request focus/highlight within the selected page. Both request entrypoints — the optional host `region` deep-link hash on page ready and the host-owned outline — first focus the frame element itself under the channel's captured guard and only then dispatch; the loader attempts real element focus (adding `tabindex="-1"` only when absent) and answers with `region.focused`. Focus is best-effort: in the native viewer the first programmatic attempt may honestly report `focused=false` before the page has been read, and reading the page with real keyboard input followed by re-selection focused the declared region in the measured runs; the child acknowledgment remains the only success authority and no pointer recovery or cause beyond these measurements is claimed |
 | host `theme.set` | named theme and presentation tokens | Update artifact appearance without passing owner/agent or delivery credentials |
+
+The reference callback is absent unless `features.references` is explicitly true.
+The loader intercepts only an ordinary primary activation of an opt-in
+`a[data-haeryong-reference]` on that enabled channel. Absent/false capabilities,
+unmarked links, modifiers, downloads and new-window/named-target activations keep
+their existing href behavior. Capability loss sends `reference.navigation` with
+`enabled=false`, removes the host callback and discards pending snapshots and
+resolutions. Fabricated requests cannot bypass the host gate. The child supplies
+no target URL, source-version override or privileged action.
+
+The Reader receives the captured version, page, host context, reload and render
+generation, plus a correlated position snapshot. It checks dispatch authority
+and the source declaration before resolving. Authored source aliases and unique
+Unicode-equivalent spellings are preserved; the host sends its captured current
+page and the declared region to the bound resolver, which validates canonical
+source identity and placement. Stale navigation, channel replacement
+and logout discard the result. Unresolved, unavailable, denied and gone targets
+leave the source usable with a local notice. Only a validated host-generated
+relative canonical Reader URL can push a target entry. The source URL, position
+and host entry context are retained in `history.state` under `safeReturn`
+validation and the current library/principal/runtime binding, without credentials.
+Each reference pushes one target entry. Back and Forward retain ordinary history
+traversal. The host return action pushes one explicit entry at the saved source
+URL with its saved host context and position, independently of intervening child
+session-history entries. Restoring position also requires that saved context to
+match the current entry. A nested reference replaces the immediate return context
+without serializing a return chain. Artifact query/fragment and host
+`#region` remain independently encoded values.
+
+Within one viewer effect/channel, repeated reports equal to the URL-normalized
+initial tuple retain the host's original opaque tuple only until the first
+report of any other tuple. After that first different tuple, every report is
+recorded exactly as reported, including a later return to the normalized initial
+spelling. A reload creates a fresh tracker. No percent decoding is involved.
+A hash-only host history entry with absent state retains the live document's
+context. A different host route with absent state establishes a new context
+before rendering, including an explicit safe connect return.
+
+`ReaderRoute` parses the host region once into a typed intent. The host binds its
+selection to the exact version/page/context/reload immediately and queues focus
+until that page's explicit channel-ready callback. Hash-only changes use the same
+guarded outline focus path, including actual modal close and frame focus before
+dispatch. Page navigation clears an old intent. Missing or ambiguous elements
+never choose an arbitrary match; failed focus reports an honest notice. Late
+acknowledgments must match the selected region and full captured channel identity.
+The isolated viewer does not independently read the host hash.
 
 ### Large context transfer messages
 

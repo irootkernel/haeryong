@@ -340,6 +340,5 @@ func (s *Service) RenderBootstrap(ctx context.Context, token, id, requested stri
 	return out, nil
 }
 func isHTML(p string) bool {
-	ext := strings.ToLower(path.Ext(p))
-	return ext == ".html" || ext == ".htm"
+	return domain.IsHTMLPath(p)
 }

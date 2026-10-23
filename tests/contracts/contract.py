@@ -205,6 +205,25 @@ def validate(name, value, code='INVALID_REQUEST'):
             if data < rule.get('minimum', data) or data > rule.get('maximum', data):
                 fail(code, at, 'number outside typed range')
     walk(SCHEMA['$defs'][name], value, '')
+    if name in ('reference_from_view', 'reference_exact_target'):
+        if value['region_id'] is not None and value['page_path'] is None:
+            fail(code, '/page_path', 'region requires exact page')
+    if name == 'reference_view':
+        if value['resolution'] == 'unresolved' and value['reader_url'] is not None:
+            target = value['target']
+            if target is None or (target['page_path'] is not None and target['resolved_path'] is None):
+                fail(code, '/reader_url', 'fallback requires an authorized exact page or version')
+        validate('reference_from_view', value['from'], code)
+        if value['target'] is not None and value['resolution'] != 'tombstoned':
+            validate('reference_exact_target', value['target'], code)
+    if name in ('reference_page', 'reference_response', 'reference_resolution_response'):
+        if name == 'reference_page':
+            for row in value['items']:
+                validate('reference_view', row, code)
+        elif name == 'reference_response':
+            validate('reference_page', value['data'], code)
+        else:
+            validate('reference_view', value['data'], code)
     if name == 'explanation_reference' and value['region_id'] is not None and value['page_path'] is None:
         fail(code, '/page_path', 'region requires an exact page')
     return value

@@ -479,6 +479,16 @@ func (t *writeTx) stoppedOwnership(j domain.Job) error {
 		if reason == "" {
 			reason = "interrupted"
 		}
+		w, err := t.DerivedWork(j.ID)
+		if err != nil {
+			return err
+		}
+		if w.WorkKind == "references" {
+			if err = t.FailReferences(j.ID); err != nil {
+				return err
+			}
+			return t.ReferenceProgress(j.ID, "complete", w.AfterPath, 0, 0)
+		}
 		return t.FailSearch(j.ID, reason)
 	case "import":
 		if err := t.exec("DELETE FROM metadata_indexes WHERE job_id=?", j.ID); err != nil {

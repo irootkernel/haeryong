@@ -10,7 +10,8 @@ pytestmark = pytest.mark.e2e
 def derived_jobs(product, owner, version):
     rows = product.data("GET", "/api/v1/jobs", client=owner)["items"]
     return [row for row in rows if row["kind"] == "derived_index"
-            and row.get("result", {}).get("version_id") == version]
+            and row.get("result", {}).get("version_id") == version
+            and row.get("result", {}).get("work_kind") == "search"]
 
 
 def assert_progress(value, version):

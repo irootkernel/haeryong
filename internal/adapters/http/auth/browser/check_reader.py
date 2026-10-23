@@ -17,14 +17,15 @@ os.environ['HAERYONG_TEST_STATE_DIR']=env['HAERYONG_TEST_STATE_DIR']
 spec=importlib.util.spec_from_file_location('h',REPO/'tests/e2e/harness.py');h=importlib.util.module_from_spec(spec);spec.loader.exec_module(h)
 cli=str(args.browser_cli.resolve(strict=True))
 session=work.name;product=None;opened=False
-proof={'scope':__doc__,'runtime':str(work),'complete':False,'cases':[]}
+proof={'scope':__doc__,'runtime':str(work),'complete':False,'cases':[],'driver_sha256':hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest()}
 def fingerprints():
  paths=sorted([p for folder in ['cmd','internal'] for p in (REPO/folder).rglob('*.go') if not p.name.endswith('_test.go')]+[REPO/'go.mod',REPO/'go.sum']+[p for p in (REPO/'internal/webassets/dist').rglob('*') if p.is_file()])
  return {str(p.relative_to(REPO)):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
 def call(args,result=False):
  p=subprocess.run([cli,'--session='+session,*args],cwd=work,env=env,capture_output=True,text=True,timeout=90)
  if p.returncode!=0 or '### Error' in p.stdout:
-  proof['browser_error'] = p.stdout.split('### Error',1)[-1].split('###',1)[0][:1800]
+  diagnostic=p.stdout.split('### Error',1)[1] if '### Error' in p.stdout else p.stderr or p.stdout
+  proof['browser_error']=diagnostic.replace(globals().get('owner',{}).get('token','<no-token>'),'[redacted]')[:1800]
   raise AssertionError('Browser operation failed; see bounded private fixture receipt')
  if result:
   m=re.search(r'### Result\s*\n',p.stdout);assert m
@@ -46,7 +47,7 @@ try:
  route=product.endpoint+f'/documents/{document}/versions/{version}?'+urllib.parse.urlencode({'page':'first.html','page_query':'scenario=1','page_fragment':''})
  smoke=js("""async page=>{
    const opens=[];
-   page.on('request',r=>{if(r.method()==='POST'&&new URL(r.url()).pathname.endsWith('/render-sessions'))opens.push(r.url());});
+   page.on('request',r=>{if(r.method()==='POST'&&r.url().split('?')[0].endsWith('/render-sessions'))opens.push(r.url());});
    await page.goto(ROUTE);
    const frame=page.frameLocator('iframe[title="결과 뷰어"]');
    await frame.locator('#heading').waitFor({timeout:20000});
@@ -89,8 +90,8 @@ try:
    const secondURL=page.url();
    const secondHistory=await page.evaluate(()=>history.length);
    if(opens.length!==initialOpens)throw Error('child link reopened render delivery');
-   const secondParams=new URL(secondURL).searchParams;
-   if(secondParams.get('page_query')!=='scenario=2'||secondParams.get('page_fragment')!=='part')throw Error('child exact query/fragment lost');
+   const secondParams=await page.evaluate(value=>{const p=new URL(value).searchParams;return {query:p.get('page_query'),fragment:p.get('page_fragment')};},secondURL);
+   if(secondParams.query!=='scenario=2'||secondParams.fragment!=='part')throw Error('child exact query/fragment lost');
    await page.goBack();
    await page.frameLocator('iframe').locator('#heading').waitFor();
    await page.waitForFunction(()=>new URL(location.href).searchParams.get('page')==='first.html');
@@ -123,14 +124,15 @@ try:
    await page.frameLocator('iframe').locator('#popup').click();
    const popup=await popupPromise;
    await popup.waitForURL(u=>u.pathname.startsWith('/documents/'));
-   if(popup.url().startsWith(new URL(f.url()).origin+'/'))throw Error('popup stayed on raw renderer');
+   if(popup.url().startsWith((await page.evaluate(value=>new URL(value).origin,f.url()))+'/'))throw Error('popup stayed on raw renderer');
    await popup.frameLocator('iframe').getByRole('heading',{name:'둘째 페이지',exact:true}).waitFor();
    const popupURL=popup.url(); await popup.close();
    await page.getByRole('button',{name:'새 버전 가져오기',exact:true}).click();
    const control=page.getByTestId('import-control'); await control.waitFor();
-   await page.getByTestId('base-preview').filter({hasText:new URL(page.url()).pathname.split('/')[4]}).waitFor();
+   const identity=await page.evaluate(()=>({document:location.pathname.split('/')[2],version:location.pathname.split('/')[4]}));
+   await page.getByTestId('base-preview').filter({hasText:identity.version}).waitFor();
    const preselected=await control.evaluate(el=>({preselected:el.dataset.preselected,values:Array.from(el.querySelectorAll('select')).map(s=>({value:s.value,disabled:s.disabled}))}));
-   if(preselected.preselected!=='true'||!preselected.values.some(s=>s.value===new URL(page.url()).pathname.split('/')[2]&&s.disabled))throw Error('Reader Import exact document not preselected');
+   if(preselected.preselected!=='true'||!preselected.values.some(s=>s.value===identity.document&&s.disabled))throw Error('Reader Import exact document not preselected');
    await page.getByRole('button',{name:'가져오기 패널 닫기',exact:true}).click();
    const baseRoute=page.url().split('?')[0];
    await page.goto(baseRoute);

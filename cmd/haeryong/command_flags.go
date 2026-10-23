@@ -21,6 +21,12 @@ func validateCommandFlags(opt options) error {
 		verb = args[1]
 	}
 	switch args[0] {
+	case "references":
+		if verb == "list" {
+			add("version cursor limit")
+		} else if verb == "resolve" {
+			add("version reference-id page region")
+		}
 	case "search":
 		add("query project lifecycle versions kind cursor limit")
 	case "import":
@@ -97,6 +103,11 @@ func validateCommandFlags(opt options) error {
 	for name := range opt.flags {
 		if !allowed[name] {
 			return invalid("flag is unsupported for this command: --" + name)
+		}
+	}
+	if args[0] == "references" {
+		if _, err := referenceCLIPath(opt); err != nil {
+			return err
 		}
 	}
 	if scope := opt.flags["scope"]; scope != "" {

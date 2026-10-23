@@ -16,8 +16,7 @@ import (
 // The closed native operation set is a cross-language contract: every named
 // case dispatched by (*ReaderService).invoke must appear in the TypeScript
 // NATIVE_OPERATIONS public list or the NativeWireOperation wire-only union,
-// and vice versa. This parity gate is descriptive: it never asserts a fixed
-// count (52/48/4 are current facts, not invariants) — it fails on any
+// and vice versa. No fixed count is asserted. The gate fails on any
 // duplicate, any missing entry in either direction, any overlap between the
 // public and wire lists, and any non-literal the extractors cannot see.
 
@@ -254,7 +253,7 @@ func TestReaderNativeOperationsParity(t *testing.T) {
 		t.Fatalf("Go operation cases missing from the TypeScript declarations: %s", strings.Join(extra, ", "))
 	}
 	// The source/configuration family must stay exposed in all transports.
-	for _, required := range []string{"search", "configurationView", "configurationPlan", "configurationPlanCommit", "projectRegister", "projectSources", "verifySourceEvidence", "runSourceObservation"} {
+	for _, required := range []string{"versionReferences", "resolveReference", "search", "configurationView", "configurationPlan", "configurationPlanCommit", "projectRegister", "projectSources", "verifySourceEvidence", "runSourceObservation"} {
 		found := false
 		for _, name := range public {
 			if name == required {

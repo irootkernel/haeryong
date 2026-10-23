@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -1491,6 +1492,145 @@ func TestReaderSourceConfigurationOperationsAndCheckPostOutcomes(t *testing.T) {
 						t.Fatalf("lost 201/202 outcome: %#v", value)
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestReaderReferenceNamedCallsPreserveEncodingAndTypedErrors(t *testing.T) {
+	for _, status := range []int{200, 404, 410} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			calls := 0
+			service, _, _ := newReaderFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+				if !strings.HasPrefix(r.URL.Path, "/api/v1/versions/v1/references") {
+					return false
+				}
+				calls++
+				if r.Method != "GET" || r.Header.Get("Authorization") != "Bearer test-owner-credential" {
+					t.Error("reference request lost its fixed authenticated read")
+				}
+				if strings.HasSuffix(r.URL.Path, "/resolve") {
+					expected := url.Values{"reference_id": {"ref/%2F + 한글?#"}, "page_path": {"nested/%2F + 한글.html"}, "region_id": {"영역/%2F +"}}
+					if !reflect.DeepEqual(r.URL.Query(), expected) {
+						t.Error("reference fields decoded twice or lost", r.URL.Query())
+					}
+				} else if r.URL.Query().Get("cursor") != "opaque/+%" || r.URL.Query().Get("limit") != "0" {
+					t.Error("list cursor/limit changed", r.URL.Query())
+				}
+				if status == 200 {
+					dataReply(w, 200, map[string]any{"id": "reference-result"})
+				} else {
+					details := map[string]any{}
+					code := "NOT_FOUND"
+					if status == 410 {
+						details = map[string]any{"document_id": "d1", "version_id": "v1"}
+						code = "TARGET_GONE"
+					}
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(status)
+					json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": code, "retryable": false, "details": details}})
+				}
+				return true
+			})
+			for operation, payload := range map[string]string{"versionReferences": `{"version_id":"v1","cursor":"opaque/+%","limit":0}`, "resolveReference": `{"version_id":"v1","reference_id":"ref/%2F + 한글?#","page_path":"nested/%2F + 한글.html","region_id":"영역/%2F +"}`} {
+				if status == 200 {
+					value := invokeOK(t, service, operation, payload).(map[string]any)
+					if value["id"] != "reference-result" {
+						t.Fatal(value)
+					}
+				} else {
+					err := invokeFail(t, service, operation, payload)
+					if err.Status != status || (status == 404 && len(err.Details) != 0) || (status == 410 && !reflect.DeepEqual(err.Details, map[string]any{"document_id": "d1", "version_id": "v1"})) {
+						t.Fatal("reference error details changed", err)
+					}
+				}
+			}
+			if calls != 2 {
+				t.Fatal("missing named reference call", calls)
+			}
+		})
+	}
+}
+
+func TestReaderReferencePayloadAndDetachedAuthorityAreDenied(t *testing.T) {
+	service, daemon, _ := newReaderFixture(t, nil)
+	before := len(daemon.seen())
+	for operation, payloads := range map[string][]string{
+		"versionReferences": {`{"version_id":"v1","url":"/api/v1/configuration"}`, `{"version_id":null}`, `{"version_id":"v1","limit":"10"}`, `{"version_id":"v1","cursor":null}`, `{}`, `null`},
+		"resolveReference":  {`{"version_id":"v1","reference_id":"r","target":"/settings"}`, `{"version_id":"v1"}`, `{"version_id":"v1","reference_id":3}`, `{"version_id":"v1","reference_id":"r","page_path":null}`},
+	} {
+		for _, payload := range payloads {
+			if err := invokeFail(t, service, operation, payload); err.Status != 400 || err.Code != "NATIVE_PAYLOAD_INVALID" {
+				t.Fatal("open reference payload admitted", err)
+			}
+		}
+	}
+	if len(daemon.seen()) != before {
+		t.Fatal("invalid native payload reached HTTP")
+	}
+	auth, err := service.authority()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failure := service.dispose(auth.attachmentID); failure != nil {
+		t.Fatal(failure)
+	}
+	before = len(daemon.seen())
+	for _, operation := range []string{"versionReferences", "resolveReference"} {
+		if failure := invokeFail(t, service, operation, `{"version_id":"v1","reference_id":"r"}`); failure.Status != 401 {
+			t.Fatal("detached reference call admitted", failure)
+		}
+	}
+	if len(daemon.seen()) != before {
+		t.Fatal("detached reference request reached HTTP")
+	}
+}
+
+func TestReaderReferenceCancellationDiscardsAnAttachmentRead(t *testing.T) {
+	for _, operation := range []string{"versionReferences", "resolveReference"} {
+		t.Run(operation, func(t *testing.T) {
+			entered, cancelled := make(chan struct{}), make(chan struct{})
+			service, _, _ := newReaderFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+				if !strings.HasPrefix(r.URL.Path, "/api/v1/versions/v1/references") {
+					return false
+				}
+				close(entered)
+				<-r.Context().Done()
+				close(cancelled)
+				return true
+			})
+			t.Cleanup(service.CloseOwned)
+			done := make(chan *wireError, 1)
+			payload := `{"version_id":"v1"}`
+			if operation == "resolveReference" {
+				payload = `{"version_id":"v1","reference_id":"r"}`
+			}
+			go func() { _, err := service.invoke(operation, json.RawMessage(payload)); done <- err }()
+
+			select {
+			case <-entered:
+			case <-time.After(10 * time.Second):
+				t.Fatal("reference request never entered")
+			}
+			auth, failure := service.authority()
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			if failure = service.dispose(auth.attachmentID); failure != nil {
+				t.Fatal(failure)
+			}
+			select {
+			case <-cancelled:
+			case <-time.After(10 * time.Second):
+				t.Fatal("attachment disposal did not cancel reference HTTP")
+			}
+			select {
+			case err := <-done:
+				if err == nil || err.Code != "NATIVE_SESSION_REPLACED" {
+					t.Fatal("stale reference result escaped", err)
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatal("cancelled reference call did not return")
 			}
 		})
 	}

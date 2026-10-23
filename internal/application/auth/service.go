@@ -503,7 +503,7 @@ func (s *Service) Events(ctx context.Context, token, epoch string, after int64) 
 			return e
 		}
 		for i, event := range out {
-			if event.Kind == "search.index_updated" {
+			if event.Kind == "search.index_updated" || event.Kind == "references.updated" {
 				var err error
 				out[i], err = visibleIndexEvent(tx, record, event)
 				if err != nil {
@@ -788,7 +788,7 @@ func (s *Service) FilterEvent(ctx context.Context, token string, event domain.Ev
 		if event.StreamEpoch != epoch {
 			return domain.ErrPrecondition
 		}
-		if event.Kind == "search.index_updated" {
+		if event.Kind == "search.index_updated" || event.Kind == "references.updated" {
 			var err error
 			event, err = visibleIndexEvent(tx, record, event)
 			return err

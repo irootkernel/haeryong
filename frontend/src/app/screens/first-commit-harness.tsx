@@ -19,6 +19,7 @@ import { BrowserCredentialStore } from "../../client/store.ts";
 import type { Capabilities, DocumentView, FileEntryView, HaeryongClient, ListPage, PersonalView, ProjectView, RenderBootstrapView, SessionInfo, SuppliedMetadataStream, VersionView } from "../../client/types.ts";
 import { useShellRoute } from "../router.tsx";
 import { App } from "../shell.tsx";
+import { parseRegionIntent } from "./reader-navigation.ts";
 import { ReaderScreen } from "./reader.tsx";
 import { SourcePanel } from "./source-panel.tsx";
 import type { MetadataState, SuppliedMetadata } from "./evidence-view.ts";
@@ -97,6 +98,8 @@ const fileEntries: FileEntryView[] = [
 
 const scriptedClient = {
   publicOrigin: null,
+  async versionReferences() { return { items: [], next_cursor: null, materialization: { state: "ready", reason: null } }; },
+  async resolveReference(): Promise<never> { throw new Error("references disabled in this fixture"); },
   async versionDetail(versionId: string): Promise<VersionView> {
     const version = versions.find((candidate) => candidate.id === versionId);
     if (!version) throw new Error("unknown fixture version");
@@ -185,7 +188,7 @@ export function FirstCommitHarness() {
     });
   });
   return <div>
-    <div id="reader-mount"><ReaderScreen controller={fixtureController} documentId={documentId} versionId={selection.versionId} page={selection.page} pageQuery="" pageFragment="" /></div>
+    <div id="reader-mount"><ReaderScreen regionIntent={parseRegionIntent(location.hash)} controller={fixtureController} documentId={documentId} versionId={selection.versionId} page={selection.page} pageQuery="" pageFragment="" /></div>
     <div id="panel-mount"><SourcePanel controller={fixtureController} version={null} versionId={versions[0].id} pagePath="first.html" regionId={panelSelection.regionId} contextKey={panelSelection.contextKey} metadata={panelMetadataState} /></div>
   </div>;
 }

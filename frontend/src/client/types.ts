@@ -744,6 +744,24 @@ export interface SearchPage {
   };
 }
 
+export interface VersionReferencesRequest { versionId: string; cursor?: string; limit?: number }
+export interface ResolveReferenceRequest { versionId: string; referenceId: string; pagePath?: string; regionId?: string }
+export interface ReferenceTarget {
+  document_id: string; version_id: string; page_path: string | null; region_id: string | null;
+  requested_path: string | null; resolved_path: string | null; page_query: string; page_fragment: string;
+}
+export interface ReferenceView {
+  id: string; from: { page_path: string | null; region_id: string | null };
+  relation: string | null; label: string | null;
+  resolution: "resolved" | "unresolved" | "unavailable" | "tombstoned"; reason: string | null;
+  edge_id: string | null; target: ReferenceTarget | Pick<ReferenceTarget, "document_id" | "version_id"> | null;
+  reader_url: string | null;
+}
+export interface ReferencePage {
+  items: ReferenceView[]; next_cursor: string | null;
+  materialization: { state: "pending" | "ready" | "failed"; reason: string | null };
+}
+
 export interface HaeryongClient {
   /** Trusted public browser origin, never a child-supplied navigation host. */
   readonly publicOrigin?: string | null;
@@ -769,6 +787,8 @@ export interface HaeryongClient {
   projectSources(projectId: string, cursor?: string): Promise<ListPage<ProjectSourceView>>;
   verifySourceEvidence(versionId: string, evidenceId: string, request: EvidenceVerificationRequest, operationId: string): Promise<EvidenceVerificationResult>;
   runSourceObservation(versionId: string, request: SourceObservationRequest, operationId: string): Promise<SourceObservationResult>;
+  versionReferences(request: VersionReferencesRequest): Promise<ReferencePage>;
+  resolveReference(request: ResolveReferenceRequest): Promise<ReferenceView>;
   // Library reads
   search(request: SearchRequest): Promise<SearchPage>;
   listProjects(cursor?: string): Promise<ListPage<ProjectView>>;

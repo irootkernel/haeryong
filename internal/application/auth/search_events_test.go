@@ -152,29 +152,44 @@ var _ = It("SC07 masks replay/live search events exactly like Check and keeps ma
 			Expect(e).To(HaveOccurred())
 		}
 	}
-	for _, r := range readers {
-		visible, e := auth.FilterEvent(ctx, r.token, event)
-		Expect(e).NotTo(HaveOccurred())
-		replay, e := auth.Events(ctx, r.token, epoch, after)
-		Expect(e).NotTo(HaveOccurred())
-		found := false
-		for _, v := range replay {
-			if v.Sequence == event.Sequence {
-				Expect(v.Kind).To(Equal(visible.Kind))
-				found = true
+	db, err := sql.Open("sqlite", filepath.Join(selection.DataDir, "storage", "library.sqlite"))
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(func() { Expect(db.Close()).To(Succeed()) })
+	for _, kind := range []string{"search.index_updated", "references.updated"} {
+		event.Kind = kind
+		event.Body = nil
+		if kind == "references.updated" {
+			event.Body = []byte(`{"target_id":"must-not-leak"}`)
+		}
+		_, err = db.Exec(`UPDATE events SET kind=?,body=? WHERE sequence=?`, kind, event.Body, event.Sequence)
+		Expect(err).NotTo(HaveOccurred())
+
+		for _, r := range readers {
+			visible, e := auth.FilterEvent(ctx, r.token, event)
+			Expect(e).NotTo(HaveOccurred())
+			replay, e := auth.Events(ctx, r.token, epoch, after)
+			Expect(e).NotTo(HaveOccurred())
+			found := false
+			for _, v := range replay {
+				if v.Sequence == event.Sequence {
+					Expect(v).To(Equal(visible))
+					found = true
+				}
 			}
+			Expect(found).To(BeTrue())
+			if r.visible {
+				Expect(visible.Kind).To(Equal(event.Kind))
+				Expect(visible.ResourceID).To(Equal(version))
+			} else {
+				Expect(visible.Kind).To(Equal("library.invalidated"))
+				Expect(visible.ResourceID).To(BeEmpty())
+				Expect(visible.Revision).To(BeZero())
+			}
+			Expect(visible.Body).To(BeEmpty())
 		}
-		Expect(found).To(BeTrue())
-		if r.visible {
-			Expect(visible.Kind).To(Equal("search.index_updated"))
-			Expect(visible.ResourceID).To(Equal(version))
-		} else {
-			Expect(visible.Kind).To(Equal("library.invalidated"))
-			Expect(visible.ResourceID).To(BeEmpty())
-			Expect(visible.Revision).To(BeZero())
-		}
-		Expect(visible.Body).To(BeEmpty())
 	}
+	event.Kind = "search.index_updated"
+	event.Body = nil
 	// A pending immutable version is not readable even to the owner: Check
 	// requires publication, independently of lifecycle and scope.
 	unpublished := id()
@@ -183,25 +198,27 @@ var _ = It("SC07 masks replay/live search events exactly like Check and keeps ma
 	})).To(Succeed())
 	hiddenEvent := event
 	hiddenEvent.ResourceID = unpublished
+	hiddenEvent.Kind = "references.updated"
 	masked, e := auth.FilterEvent(ctx, poll.Token, hiddenEvent)
 	Expect(e).NotTo(HaveOccurred())
 	Expect(masked.Kind).To(Equal("library.invalidated"))
 	Expect(masked.ResourceID).To(BeEmpty())
-	db, err := sql.Open("sqlite", filepath.Join(selection.DataDir, "storage", "library.sqlite"))
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(func() { Expect(db.Close()).To(Succeed()) })
+
 	for _, lifecycle := range []string{"archived", "trash", "purged"} {
 		_, err = db.Exec(`UPDATE documents SET lifecycle=? WHERE document_id=?`, lifecycle, doc)
 		Expect(err).NotTo(HaveOccurred())
 		for _, r := range readers {
-			v, e := auth.FilterEvent(ctx, r.token, event)
-			Expect(e).NotTo(HaveOccurred())
-			if lifecycle == "archived" && r.visible {
-				Expect(v.Kind).To(Equal("search.index_updated"))
-			} else {
-				Expect(v.Kind).To(Equal("library.invalidated"))
-				Expect(v.ResourceID).To(BeEmpty())
-				Expect(v.Body).To(BeEmpty())
+			for _, kind := range []string{"search.index_updated", "references.updated"} {
+				event.Kind = kind
+				v, e := auth.FilterEvent(ctx, r.token, event)
+				Expect(e).NotTo(HaveOccurred())
+				if lifecycle == "archived" && r.visible {
+					Expect(v.Kind).To(Equal(event.Kind))
+				} else {
+					Expect(v.Kind).To(Equal("library.invalidated"))
+					Expect(v.ResourceID).To(BeEmpty())
+					Expect(v.Body).To(BeEmpty())
+				}
 			}
 		}
 	}

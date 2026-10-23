@@ -14,7 +14,6 @@ export interface ChannelOptions {
   position?(correlationId: string, snapshot: { scroll_x?: unknown; scroll_y?: unknown }): void;
   positionApplied?(correlationId: string, result: Record<string, unknown>): void;
   location?(report: Record<string, unknown>): void;
-  reference?(id: string): void;
 }
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype;
 const uuid = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
@@ -50,6 +49,7 @@ export class ViewerChannel {
   #displaySequence = 0;
   #ready = false;
   #announcement: string | null = null;
+  #reference: ((id: string) => void) | undefined;
 
   constructor(options: ChannelOptions) { this.#options = options; }
 
@@ -116,14 +116,19 @@ export class ViewerChannel {
       this.#received = data.sequence as number; this.#options.positionApplied?.(payload.correlation_id, payload);
     } else if (type === "viewer.location" && payload.page_path === this.#binding.page_path) {
       this.#received = data.sequence as number; this.#options.location?.(payload);
-    } else if (type === "reference.requested" && typeof payload.reference_id === "string") {
-      this.#received = data.sequence as number; this.#options.reference?.(payload.reference_id);
+    } else if (type === "reference.requested" && this.#reference && Object.keys(payload).length === 1 && typeof payload.reference_id === "string" && payload.reference_id !== "") {
+      this.#received = data.sequence as number; this.#reference(payload.reference_id);
     }
   }
 
   #send(type: string, payload: DisplayContext): void {
     if (!this.#port || !this.#binding) return;
     this.#port.postMessage({ protocol_version: "1.0", ...this.#binding, sequence: ++this.#sequence, type, payload });
+  }
+
+  referenceNavigation(callback?: (id: string) => void): void {
+    this.#options.guard(); this.#reference = callback;
+    this.#send("reference.navigation", { enabled: callback !== undefined });
   }
 
   focus(region: string): void { this.#options.guard(); this.#send("region.focus", { region_id: region }); }
@@ -147,7 +152,7 @@ export class ViewerChannel {
 
   dispose(): void {
     this.#generation++; this.#port?.close(); this.#port = null; this.#contexts = null;
-    this.#binding = null; this.#ready = false; this.#announcement = null;
+    this.#binding = null; this.#ready = false; this.#reference = undefined; this.#announcement = null;
     this.#sequence = 0; this.#received = 0; this.#displaySequence = 0;
   }
 }

@@ -510,8 +510,9 @@ alone never prove aligned_within_scope or outdated_against_target.
 shapes under runtime schema 1.0/API v1. M1/M2 supply fixtures and internal storage,
 not a search route, CLI or enabled UI. `features.search=false` remains explicit.
 The existing `workflow.scope` and author-metadata subset are unchanged.
-`tests/contracts/schema.json` and the complete embedded configuration schema are
-identical. The schema defines `search_query`, `search_hit`, `search_filters`,
+At this TASK-004-02 boundary, `tests/contracts/schema.json` and the complete
+embedded configuration schema were identical. The schema defines `search_query`,
+`search_hit`, `search_filters`,
 `search_page`, `search_response`, `search_index` and `search_index_reason` as closed
 objects. The page requires `query`, `filters`, `items`, nullable `next_cursor`,
 decimal-string `total_matches` and `index`. Every hit retains its exact immutable
@@ -587,3 +588,102 @@ capability enablement. Library safe-return query keys include `q`, `project_id`,
 `lifecycle`, `versions` and `kind`. Search All forwards `lifecycle=all` explicitly.
 Requests preserve every supplied filter, cursor and page size; responses retain
 required safe reasons and exact imported identities. There is no job-resume operation.
+
+## Selected reference metadata foundation (TASK-004-03 M1)
+
+Compatibility is **additive** within runtime schema 1.0 and API v1. The closed
+`reference` metadata definition gains only optional `from`, `relation`,
+`page_query`, `page_fragment`; the existing required id/document_id/version_id/
+page_path/region_id and optional label/resolution remain accepted. Embedded
+`internal/application/import/metadata-schema.json` definitions equal the
+corresponding `tests/contracts/schema.json` definitions.
+
+When present, `from` is a non-null closed object requiring a non-null relative
+`page_path` and nullable nonempty `region_id`. Omission means version-level
+provenance, without choosing a default page. Missing required nested keys,
+unknown fields, malformed paths/IDs and explicit null for the new optional
+fields are invalid. `relation` is free authored text, not a source-dependency
+verdict. Navigation fields are raw strings; omission normalizes to empty strings.
+They do not change immutable page identity. Neither an author-supplied resolution
+nor a display label proves service resolution or authority.
+
+The shared pure `internal/application/referencecodec` decoder, exposed by the
+importer `DecodeReference` facade, validates these structures without querying a
+target or requiring a supplied pages/regions inventory. The original reference
+JSON remains unchanged. Missing/unavailable target or DOM anchors are deferred
+resolution states, not structural metadata errors. Duplicate version-local
+reference IDs remain invalid. The new contract fixtures are synthetic metadata
+checks; they do not establish a delivered resolution API.
+
+Migration 9 adds typed structural-reference repositories and Go admission for
+`derived_work.work_kind=references`; it introduces no new job kind/scope or
+runtime enqueue in M1. At that milestone `features.references` was absent, and routes, transports, jobs,
+events and Reader delivery remained with later milestones. The accepted intended
+read contract remains safe GET/HEAD, source-only cursors/events and eligibility
+checks on both endpoints. M1 does not claim those unimplemented surfaces pass.
+
+M4 now advertises the additive boolean `features.references=true` alongside
+the implemented list/resolve operations and shared Reader delivery. Its absence
+or false value still disables marked-link dispatch and interception in all
+clients; it does not disable ordinary artifact href navigation. The closed
+`reference.navigation {enabled:boolean}` message is bound to the current page
+channel as specified in [the viewer protocol](viewer-protocol.md). No new
+management/native passthrough or author-required metadata is introduced.
+
+M1 also selects the provisional closed `reference_view`, exact/minimal-gone target,
+materialization, page and response schemas for the later GET/HEAD consumers.
+A resolved view requires an edge UUID, exact target and relative Reader URL;
+unresolved has an explicit safe reason and no edge/route; unavailable masks target,
+edge, label and route; tombstoned carries only minimal document/version identity
+and no usable edge. `resolution_pending` distinguishes asynchronous edge work
+from a pending DOM anchor. Region requires page on source and target. List state
+is pending/ready/failed with its corresponding safe reason and nullable cursor.
+Synthetic response fixtures test shape invariants, not implemented authorization,
+lifecycle, resolution, events or HTTP endpoints.
+
+M2 wires `derived_work.work_kind=references` into the existing `derived_index`
+family in `internal/application/work/maintenance.go`. Its job result retains the
+fixed derived progress keys, with `work_kind=references` and source-manifest
+counters; terminal failure preserves committed progress. `references.updated`
+contains only source version identity/materialization revision and no body.
+Incoming edge changes emit no source event/revision. These additions select no
+reference read route, CLI operation or capability; the M1 response shapes remain
+provisional until their implementing milestone.
+
+
+## Implemented reference projections (TASK-004-03 M3)
+
+The selected closed `reference_from_view`, `reference_view`,
+`reference_exact_target`, `reference_gone_target`, `reference_materialization_view`,
+`reference_page`, `reference_response` and `reference_resolution_response`
+definitions in `tests/contracts/schema.json` now describe implemented API
+responses. Every definition embedded in the configuration and metadata schemas
+equals its machine copy, as RF01 enforces by subset equality; the machine copy
+additionally holds these reference response shapes.
+The earlier M1/M2 delivery statements describe those milestone boundaries.
+
+`ReferenceView` has exactly `id`, `from`, `relation`, `label`, `resolution`,
+`reason`, `edge_id`, `target` and `reader_url`. `from` has nullable `page_path`
+and `region_id`. Resolution is `resolved`, `unresolved`, `unavailable` or
+`tombstoned`. Resolved requires a persisted UUID edge, authorized `ExactTarget`,
+relative host Reader URL and null reason. Unresolved has a safe reason and no
+edge; an authorized exact-page/version fallback route is allowed, without a
+successful region selection. A bound source-context rejection can have null
+target/route. Unavailable masks label/target/edge/route. Tombstoned exposes only
+`GoneTarget` and no edge/route. Relation/from remain source-authored provenance.
+
+`ExactTarget` contains exactly `document_id`, `version_id`, nullable `page_path`,
+`region_id`, `requested_path`, `resolved_path`, and raw string `page_query` and
+`page_fragment`. Requested spelling and resolved immutable inventory spelling
+are distinct. `GoneTarget` contains only `document_id` and `version_id`.
+Region requires page. Reader URLs use the existing document/exact-version route,
+query-encoded page/artifact navigation, and host `#region` only for a validated
+resolved region. A page-less reference stays page-less.
+
+Reasons are null or `target_unavailable`, `page_missing`, `anchor_missing`,
+`anchor_ambiguous`, `anchor_pending`, `resolution_pending`, `anchor_drift`,
+`source_context_mismatch`, `ambiguous_reference_context` or `ambiguous_path`.
+Explicit resolution of an ambiguous canonical path is 400; list keeps its typed
+unresolved row. Collection materialization state is independent of these live
+target states. List has no target-derived total or filter. Current source-only
+cursor binding and D4 historical authority are defined in the HTTP contract.

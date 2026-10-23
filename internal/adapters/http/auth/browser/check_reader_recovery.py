@@ -35,9 +35,9 @@ SCENARIOS = {
     'consumed-handoff': r"""async page=>{
    const keys=[],handoffs=[];let renewals=0;
    page.on('request',r=>{
-     const u=new URL(r.url());
-     if(r.method()==='POST'&&u.pathname.endsWith('/render-sessions'))keys.push(r.headers()['idempotency-key']);
-     if(r.method()==='POST'&&u.pathname==='/__haeryong/handoff')handoffs.push(new URLSearchParams(r.postData()).get('secret'));
+     const path=r.url().split('?')[0];
+     if(r.method()==='POST'&&path.endsWith('/render-sessions'))keys.push(r.headers()['idempotency-key']);
+     if(r.method()==='POST'&&path.replace(/^https?:\/\/[^/]+/,'')==='/__haeryong/handoff')handoffs.push(decodeURIComponent((String(r.postData()).split('&').find(field=>field.startsWith('secret='))||'secret=').slice(7).replace(/\+/g,' ')));
    });
    await page.route('**/api/v1/versions/*/render-sessions',async route=>{
      const response=await route.fetch(),body=await response.json();
@@ -64,7 +64,7 @@ SCENARIOS = {
     'initial-renew-close': r"""async page=>{
    const keys=[],handoffs=[],statuses=[];let renewals=0,closeSeen=false,closeAck=false,release;
    const barrier=new Promise(resolve=>release=resolve);
-   page.on('request',r=>{const u=new URL(r.url());if(r.method()==='POST'&&u.pathname.endsWith('/render-sessions'))keys.push(r.headers()['idempotency-key']);if(r.method()==='POST'&&u.pathname==='/__haeryong/handoff')handoffs.push(true);});
+   page.on('request',r=>{const path=r.url().split('?')[0];if(r.method()==='POST'&&path.endsWith('/render-sessions'))keys.push(r.headers()['idempotency-key']);if(r.method()==='POST'&&path.replace(/^https?:\/\/[^/]+/,'')==='/__haeryong/handoff')handoffs.push(true);});
    await page.route('**/api/v1/versions/*/render-sessions/*/renew',async route=>{
      renewals++;
      if(renewals===1){await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{code:'TRANSIENT_BACKEND',retryable:true}})});return;}
@@ -91,7 +91,7 @@ SCENARIOS = {
  }""",
     'unknown-open': r"""async page=>{
    const keys=[];let handoffs=0;
-   page.on('request',r=>{const u=new URL(r.url());if(r.method()==='POST'&&u.pathname.endsWith('/render-sessions'))keys.push(r.headers()['idempotency-key']);if(r.method()==='POST'&&u.pathname==='/__haeryong/handoff')handoffs++;});
+   page.on('request',r=>{const path=r.url().split('?')[0];if(r.method()==='POST'&&path.endsWith('/render-sessions'))keys.push(r.headers()['idempotency-key']);if(r.method()==='POST'&&path.replace(/^https?:\/\/[^/]+/,'')==='/__haeryong/handoff')handoffs++;});
    await page.route('**/api/v1/versions/*/render-sessions',async route=>{
      const response=await route.fetch();
      if(keys.length===1){if(response.status()!==201)throw Error('first open not committed');await route.abort('failed');return;}
@@ -146,7 +146,7 @@ for variant in ['held-open', 'held-first-renew', 'lost-open']:
       const variant=VARIANT, keys=[], sessions=[], closes=[];
       let committed=false,release,firstRenew=true;
       const barrier=new Promise(resolve=>release=resolve);
-      page.on('request',r=>{if(r.method()==='POST'&&new URL(r.url()).pathname.endsWith('/render-sessions'))keys.push(r.headers()['idempotency-key']);});
+      page.on('request',r=>{if(r.method()==='POST'&&r.url().split('?')[0].endsWith('/render-sessions'))keys.push(r.headers()['idempotency-key']);});
       await page.route('**/api/v1/versions/*/render-sessions',async route=>{
         const response=await route.fetch(),body=await response.json();
         if(body.data)sessions.push(body.data.session_id);
@@ -164,7 +164,7 @@ for variant in ['held-open', 'held-first-renew', 'lost-open']:
         await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{code:'TRANSIENT_BACKEND',retryable:true}})});
       });
       await page.route('**/api/v1/versions/*/render-sessions/*/close',async route=>{
-        const id=new URL(route.request().url()).pathname.split('/').at(-2);
+        const id=route.request().url().split('?')[0].split('/').at(-2);
         const response=await route.fetch();if(response.status()!==204)throw Error('captured Close did not acknowledge');
         closes.push(id);await route.fulfill({response});
       });
@@ -187,13 +187,13 @@ for variant in ['held-open', 'held-first-renew', 'lost-open']:
 
 SCENARIOS['lost-close-manual-retry'] = r'''async page=>{
   const keys=[],closed=[];let failRenew=true,lostAck=false;
-  page.on('request',r=>{if(r.method()==='POST'&&new URL(r.url()).pathname.endsWith('/render-sessions'))keys.push(r.headers()['idempotency-key']);});
+  page.on('request',r=>{if(r.method()==='POST'&&r.url().split('?')[0].endsWith('/render-sessions'))keys.push(r.headers()['idempotency-key']);});
   await page.route('**/api/v1/versions/*/render-sessions/*/renew',async route=>{
     if(failRenew){failRenew=false;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{code:'TRANSIENT_BACKEND',retryable:true}})});return;}
     await route.continue();
   });
   await page.route('**/api/v1/versions/*/render-sessions/*/close',async route=>{
-    closed.push(new URL(route.request().url()).pathname.split('/').at(-2));
+    closed.push(route.request().url().split('?')[0].split('/').at(-2));
     const response=await route.fetch();if(response.status()!==204)throw Error('actual Close not committed');
     if(!lostAck){lostAck=true;await route.abort('failed');return;}
     await route.fulfill({response});
@@ -210,7 +210,7 @@ SCENARIOS['lost-close-manual-retry'] = r'''async page=>{
 
 SCENARIOS['independently-dead-receipt'] = r'''async page=>{
   const keys=[];let independentlyClosed=false;
-  page.on('request',r=>{if(r.method()==='POST'&&new URL(r.url()).pathname.endsWith('/render-sessions'))keys.push(r.headers()['idempotency-key']);});
+  page.on('request',r=>{if(r.method()==='POST'&&r.url().split('?')[0].endsWith('/render-sessions'))keys.push(r.headers()['idempotency-key']);});
   await page.route('**/api/v1/versions/*/render-sessions',async route=>{
     const response=await route.fetch(),body=await response.json();
     if(keys.length===1){

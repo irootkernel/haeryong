@@ -1,5 +1,6 @@
 // React history subscription over the shared canonical route registry.
 import { useEffect, useState } from "react";
+import { readerContext } from "./reader-context.ts";
 import { parseRoute } from "./routes.ts";
 import type { ShellRoute } from "./routes.ts";
 export { parseRoute, safeReturn } from "./routes.ts";
@@ -21,11 +22,23 @@ export function useShellRoute(): RouteState {
     route: parseRoute(location.pathname),
   }));
   useEffect(() => {
-    const update = () =>
+    let documentURL = location.pathname + location.search;
+    let context = typeof history.state?.haeryongReaderContext === "string" ? history.state.haeryongReaderContext : crypto.randomUUID();
+    const update = () => {
+      const nextDocument = location.pathname + location.search;
+      // Native hash navigation creates a history entry without state. Retain
+      // the live page context for that hash-only selection. A new route (also
+      // an explicit connect return) must establish its own context before render.
+      context = readerContext(documentURL, nextDocument, context, history.state?.haeryongReaderContext, () => crypto.randomUUID());
+      if (typeof history.state?.haeryongReaderContext !== "string") {
+        history.replaceState({ ...history.state, haeryongReaderContext: context }, "", location.href);
+      }
+      documentURL = nextDocument;
       setState({
         url: location.pathname + location.search + location.hash,
         route: parseRoute(location.pathname),
       });
+    };
     window.addEventListener("popstate", update);
     window.addEventListener("hashchange", update);
     // Every initial history entry gets one unique Reader context: two
@@ -34,7 +47,7 @@ export function useShellRoute(): RouteState {
     // and any other state members are preserved, and the notification is a
     // one-shot popstate because the next pass sees the stamped state.
     if (typeof history.state?.haeryongReaderContext !== "string") {
-      history.replaceState({ ...history.state, haeryongReaderContext: crypto.randomUUID() }, "", location.href);
+      history.replaceState({ ...history.state, haeryongReaderContext: context }, "", location.href);
       window.dispatchEvent(new PopStateEvent("popstate"));
     }
     return () => { window.removeEventListener("popstate", update); window.removeEventListener("hashchange", update); };

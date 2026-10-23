@@ -1,4 +1,5 @@
 import type {
+  VersionReferencesRequest, ResolveReferenceRequest, ReferencePage, ReferenceView,
   SearchRequest, SearchPage,
   ConfigurationView, ConfigurationPlanRequest, ConfigurationPlanView, ConfigurationCommitRequest, ConfigurationCommitView,
   ProjectSourceView, EvidenceVerificationRequest, EvidenceVerificationResult, SourceObservationRequest, SourceObservationResult,
@@ -198,6 +199,19 @@ export class HttpHaeryongClient implements HaeryongClient {
   }
   runSourceObservation(versionId: string, request: SourceObservationRequest, operationId: string): Promise<SourceObservationResult> {
     return this.#sourceWrite(`/api/v1/versions/${encodeURIComponent(versionId)}/source-observations`, request, operationId);
+  }
+
+  versionReferences(request: VersionReferencesRequest): Promise<ReferencePage> {
+    const params = new URLSearchParams();
+    if (request.cursor !== undefined) params.set("cursor", request.cursor);
+    if (request.limit !== undefined) params.set("limit", String(request.limit));
+    return this.#request("GET", `/api/v1/versions/${encodeURIComponent(request.versionId)}/references?${params}`);
+  }
+  resolveReference(request: ResolveReferenceRequest): Promise<ReferenceView> {
+    const params = new URLSearchParams({ reference_id: request.referenceId });
+    if (request.pagePath !== undefined) params.set("page_path", request.pagePath);
+    if (request.regionId !== undefined) params.set("region_id", request.regionId);
+    return this.#request("GET", `/api/v1/versions/${encodeURIComponent(request.versionId)}/references/resolve?${params}`);
   }
 
   search(request: SearchRequest): Promise<SearchPage> {

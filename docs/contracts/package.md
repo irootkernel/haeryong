@@ -109,3 +109,22 @@ Export a selected version as its original directory/files or an archive, preserv
 ## Validation result
 
 Return structured issues with streamed/cursor continuation when needed, identifying actual corrupt bytes/archives, invalid relative addressing, malformed supplied metadata or identity conflicts. Normal JavaScript, network use, multiple HTML pages, unknown extensions, large files and many entries are not validation failures. Missing source/region/reference enrichment is visible as unverified/unresolved context, not discarded payload. Validation confirms structure/integrity and checks actually performed, not factual correctness, external dependency availability or support for executing arbitrary native/server programs.
+
+## Optional reference metadata fields (TASK-004-03 M1)
+
+A supplied `references[]` object may additionally include
+`from:{page_path,region_id}`, free-text `relation`, `page_query` and
+`page_fragment`. All four fields are optional. A present `from` must be a closed
+non-null object containing both keys: page_path is a valid non-null relative path;
+region_id is null or a nonempty page-local Unicode ID. Missing from denotes
+version-level provenance. The three other fields are strings; explicit null is
+invalid, and omitted query/fragment normalize to empty strings. Keep query and
+artifact fragment raw and independent of the host region fragment.
+
+These fields do not require an author manifest, pages list or declared regions.
+A valid declaration can name a target not yet present in the library. Its
+structural validation does not resolve that target, validate a DOM anchor or
+trust a supplied resolution flag. Ordinary relative/external hrefs remain payload
+bytes with no canonical-library registration requirement. The shared decoder
+retains original JSON and exact path spelling; later materialization/resolution
+never rewrites the imported declaration or substitutes the latest version.

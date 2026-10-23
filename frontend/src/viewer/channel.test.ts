@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { featureEnabled } from "../app/screens/library-data.ts";
 import { ViewerChannel, type DisplayContext, type PageBinding } from "./channel.ts";
 import type { ContextTransferHost } from "./context-transfer.ts";
 
@@ -12,9 +13,10 @@ function fixture(verify: (ref: string) => Promise<boolean> = async () => false) 
   let child: MessagePort | null = null;
   let active = true, ready = 0, transfers = 0;
   const display: DisplayContext[] = [], errors: string[] = [];
+  const requested: string[] = [], outgoing: { type: string; payload: DisplayContext }[] = [];
   const connections: unknown[] = [];
   const frame = { postMessage(message: unknown, target: string, ports: MessagePort[]) {
-    assert.equal(target, origin); connections.push(message); child = ports[0]!; child.start();
+    assert.equal(target, origin); connections.push(message); child = ports[0]!; child.onmessage = ({ data }) => outgoing.push(data); child.start();
   } } as unknown as Window;
   const host = new ViewerChannel({ frame, origin, page, guard() { if (!active) throw new Error("authority replaced"); }, contexts(_binding, guard) {
     return { async acceptsEcho(ref: string) { return verify(ref); }, async handle() { guard(); transfers++; return { type: "context.transfer.ack", payload: { transfer_id: "transfer", next_offset: 0, credit_bytes: 65536 } }; } } as unknown as ContextTransferHost;
@@ -24,7 +26,7 @@ function fixture(verify: (ref: string) => Promise<boolean> = async () => false) 
   const connect = () => host.accept({ source: frame, origin, data: announcement });
   let sequence = 0;
   const send = (type: string, payload: DisplayContext = {}, override: DisplayContext = {}) => child!.postMessage({ protocol_version: "1.0", ...binding, sequence: ++sequence, type, payload, ...override });
-  return { host, frame, binding, announcement, connections, display, errors, connect, send, counts: () => ({ ready, transfers }), deactivate() { active = false; }, close() { host.dispose(); child?.close(); } };
+  return { requested, outgoing, gate(features?: Record<string, boolean>) { host.referenceNavigation(featureEnabled(features, "references") ? id => requested.push(id) : undefined); }, host, frame, binding, announcement, connections, display, errors, connect, send, counts: () => ({ ready, transfers }), deactivate() { active = false; }, close() { host.dispose(); child?.close(); } };
 }
 
 test("window handshake requires the exact frame, origin and immutable page before assigning a private port", async () => {
@@ -98,4 +100,23 @@ test("late verified echoes cannot replace newer display state or survive channel
     f.send("state.changed", { context_ref: "other-ref" }); await until(() => !!release);
     f.host.dispose(); release!(true); await wait(); assert.equal(f.display.length, 1);
   } finally { f.close(); }
+});
+
+test("RF09-G channel ignores fabricated reference requests when absent/false and closes dispatch on live capability loss", async () => {
+  for (const features of [undefined, {}, { references: false }, { references: true }] as (Record<string, boolean> | undefined)[]) {
+    const f = fixture();
+    try {
+      f.connect(); f.send("viewer.ready", { profile: "html_js_v1" }); await until(() => f.counts().ready === 1);
+      f.gate(features); await until(() => f.outgoing.length === 1);
+      assert.deepEqual(f.outgoing[0]!.payload, { enabled: features?.references === true });
+      f.send("reference.requested", { reference_id: "r" }); await wait();
+      assert.deepEqual(f.requested, features?.references === true ? ["r"] : []);
+      f.send("reference.requested", { reference_id: "forged", url: "/settings" }); await wait(); assert.equal(f.requested.length, features?.references === true ? 1 : 0);
+      if (features?.references === true) {
+        f.gate({ references: false }); await until(() => f.outgoing.length === 2);
+        assert.deepEqual(f.outgoing[1]!.payload, { enabled: false });
+        f.send("reference.requested", { reference_id: "stale" }); await wait(); assert.deepEqual(f.requested, ["r"]);
+      }
+    } finally { f.close(); }
+  }
 });

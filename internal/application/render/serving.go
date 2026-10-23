@@ -59,7 +59,7 @@ func (s *Service) ResolveVersionContent(ctx context.Context, versionID, name str
 				return &Error{Reason: "unresolved_link"}
 			}
 		}
-		out = ResolvedContent{Path: entry.Path, Kind: entry.Kind, HTML: entry.Kind == "file" && isHTML(entry.Path), DocumentID: version.DocumentID}
+		out = ResolvedContent{Path: entry.Path, Kind: entry.Kind, HTML: entry.Kind == "file" && domain.IsHTMLPath(entry.Path), DocumentID: version.DocumentID}
 		if entry.Kind == "symlink" {
 			out.LinkText = entry.LinkText
 		}
@@ -196,11 +196,6 @@ func lookupTx(tx app.WriteTx, set, name string) (domain.Entry, error) {
 		return domain.Entry{}, domain.ErrNotFound
 	}
 	return found, nil
-}
-
-func isHTML(p string) bool {
-	ext := strings.ToLower(path.Ext(p))
-	return ext == ".html" || ext == ".htm"
 }
 
 // SanitizeHandoffTarget keeps the post-handoff client redirect inside this

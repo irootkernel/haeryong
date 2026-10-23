@@ -154,6 +154,8 @@ func newFixture() *fixture {
 	}
 	ack, err = imports.Put(ctx, f.token, upload.ID, importer.Chunk{Path: "alias.html", Kind: "symlink", LinkTarget: "hello.html"}, strings.NewReader(`{"link_target":"hello.html"}`))
 	Expect(err).NotTo(HaveOccurred())
+	ack, err = imports.Put(ctx, f.token, upload.ID, importer.Chunk{Path: "alias", Kind: "symlink", LinkTarget: "hello.html"}, strings.NewReader(`{"link_target":"hello.html"}`))
+	Expect(err).NotTo(HaveOccurred())
 	cp := ack.Checkpoint
 	cp.Generation++
 	cp.Complete = true
@@ -338,6 +340,9 @@ var _ = It("delivers actual verified pages, ranges and authored API-like filenam
 	response, part = f.get(d, "/alias.html", nil)
 	Expect(response.StatusCode).To(Equal(200))
 	Expect(string(part)).To(ContainSubstring(`data-haeryong-page="hello.html"`))
+	response, part = f.get(d, "/alias", nil)
+	Expect(response.StatusCode).To(Equal(200))
+	Expect(part).To(Equal(whole), "suffix-less navigation keeps the canonical HTML derivative byte-identical")
 	status, _ = f.handoff(d)
 	Expect(status).To(Equal(401))
 })

@@ -283,6 +283,10 @@ func (t *writeTx) DeleteDerivedVersion(version string, limit int) (bool, error) 
 	if err != nil || !done {
 		return false, err
 	}
+	done, err = t.ClearReferenceData(version, limit)
+	if err != nil || !done {
+		return false, err
+	}
 	if err = t.exec(`DELETE FROM search_indexes WHERE version_id=?`, version); err != nil {
 		return false, err
 	}

@@ -93,14 +93,16 @@ type ReaderService struct {
 	// Local forget obligation: RAM is cleared at intent, the credential
 	// FILE unlink is tracked separately and stays retryable until it truly
 	// succeeds (or the file is proven already absent).
-	forgetNeeded bool
-	forgetDone   bool
-	forgetErr    string
-	streams      map[string]*readerStream
-	subs         map[string]*readerSubscription
-	renders      []renderRef
-	diagnostics  ReceiptObserver
-	client       *http.Client
+	forgetNeeded    bool
+	forgetDone      bool
+	forgetErr       string
+	referenceReads  map[uint64]context.CancelFunc
+	referenceReadID uint64
+	streams         map[string]*readerStream
+	subs            map[string]*readerSubscription
+	renders         []renderRef
+	diagnostics     ReceiptObserver
+	client          *http.Client
 	// M3 owner-selected filesystem handles (TASK-003-05): opaque,
 	// purpose/attachment/generation-bound; never a path/URL proxy.
 	sources map[string]*sourceHandle
@@ -266,6 +268,10 @@ func (s *ReaderService) currentToken() string {
 
 // request performs one fixed production request. Routes are always built here.
 func (s *ReaderService) request(method, path string, query url.Values, headers map[string]string, body []byte, auth authority) outcome {
+	return s.requestContext(context.Background(), method, path, query, headers, body, auth)
+}
+
+func (s *ReaderService) requestContext(parent context.Context, method, path string, query url.Values, headers map[string]string, body []byte, auth authority) outcome {
 	target := auth.endpoint + path
 	if len(query) != 0 {
 		target += "?" + query.Encode()
@@ -278,7 +284,7 @@ func (s *ReaderService) request(method, path string, query url.Values, headers m
 	if err != nil {
 		return outcome{werr: networkError()}
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(parent)
 	request = request.WithContext(ctx)
 	if auth.token != "" {
 		request.Header.Set("Authorization", "Bearer "+auth.token)
@@ -451,6 +457,64 @@ func decodePayload(raw json.RawMessage, into any) *wireError {
 		return &wireError{Status: 400, Code: "NATIVE_PAYLOAD_INVALID", Retryable: false}
 	}
 	return nil
+}
+
+// Only the two reference operations use this closed native request decoder.
+func decodeReferencePayload(raw json.RawMessage, into any, required ...string) *wireError {
+	invalid := &wireError{Status: 400, Code: "NATIVE_PAYLOAD_INVALID"}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil || fields == nil {
+		return invalid
+	}
+	for _, key := range required {
+		if _, ok := fields[key]; !ok {
+			return invalid
+		}
+	}
+	for _, value := range fields {
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return invalid
+		}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(into) != nil {
+		return invalid
+	}
+	return nil
+}
+
+func (s *ReaderService) cancelReferenceReadsLocked() {
+	for id, cancel := range s.referenceReads {
+		cancel()
+		delete(s.referenceReads, id)
+	}
+}
+
+func (s *ReaderService) referenceRead(path string, params url.Values, auth authority) (any, *wireError) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.mu.Lock()
+	if !s.contextCurrentLocked(auth) || s.attachmentID != auth.attachmentID {
+		s.mu.Unlock()
+		return nil, &wireError{Status: 409, Code: "NATIVE_SESSION_REPLACED"}
+	}
+	if s.referenceReads == nil {
+		s.referenceReads = map[uint64]context.CancelFunc{}
+	}
+	s.referenceReadID++
+	id := s.referenceReadID
+	s.referenceReads[id] = cancel
+	s.mu.Unlock()
+	result := s.requestContext(ctx, "GET", path, params, nil, nil, auth)
+	s.mu.Lock()
+	delete(s.referenceReads, id)
+	current := s.contextCurrentLocked(auth) && s.attachmentID == auth.attachmentID
+	s.mu.Unlock()
+	if !current {
+		return nil, &wireError{Status: 409, Code: "NATIVE_SESSION_REPLACED"}
+	}
+	return result.value, result.werr
 }
 
 // Invoke dispatches one named typed operation. The switch is the whitelist.
@@ -661,6 +725,7 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 			s.logoutBearer = s.token
 			s.forgetAttachmentID = auth.attachmentID
 			s.token = ""
+			s.cancelReferenceReadsLocked()
 			s.forgetNeeded = true
 			s.forgetDone = false
 			s.forgetCredentialFileLocked()
@@ -767,6 +832,41 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 			return nil, werr
 		}
 		return plain(s.request("GET", "/api/v1/versions/"+url.PathEscape(in.VersionID), nil, nil, nil, auth))
+	case "versionReferences":
+		var in struct {
+			VersionID string  `json:"version_id"`
+			Cursor    *string `json:"cursor"`
+			Limit     *int    `json:"limit"`
+		}
+		if werr := decodeReferencePayload(payload, &in, "version_id"); werr != nil {
+			return nil, werr
+		}
+		params := url.Values{}
+		if in.Cursor != nil {
+			params.Set("cursor", *in.Cursor)
+		}
+		if in.Limit != nil {
+			params.Set("limit", strconv.Itoa(*in.Limit))
+		}
+		return s.referenceRead("/api/v1/versions/"+url.PathEscape(in.VersionID)+"/references", params, auth)
+	case "resolveReference":
+		var in struct {
+			VersionID   string  `json:"version_id"`
+			ReferenceID string  `json:"reference_id"`
+			PagePath    *string `json:"page_path"`
+			RegionID    *string `json:"region_id"`
+		}
+		if werr := decodeReferencePayload(payload, &in, "version_id", "reference_id"); werr != nil {
+			return nil, werr
+		}
+		params := url.Values{"reference_id": {in.ReferenceID}}
+		if in.PagePath != nil {
+			params.Set("page_path", *in.PagePath)
+		}
+		if in.RegionID != nil {
+			params.Set("region_id", *in.RegionID)
+		}
+		return s.referenceRead("/api/v1/versions/"+url.PathEscape(in.VersionID)+"/references/resolve", params, auth)
 	case "versionFiles":
 		var in struct {
 			VersionID string `json:"version_id"`
@@ -1354,6 +1454,7 @@ func (s *ReaderService) attach() (any, *wireError) {
 	}
 	previousAttachment := s.attachmentID
 	s.generation++
+	s.cancelReferenceReadsLocked()
 	s.attachmentID = attachment
 	// A successful re-attach is a filesystem-era boundary too: pending picker
 	// leases die and the PREVIOUS attachment's owner-selected handles are
@@ -1442,6 +1543,7 @@ func (s *ReaderService) loadRememberedCredential() (bool, *wireError) {
 	s.base = credential.Endpoint
 	s.token = credential.Token
 	s.generation++
+	s.cancelReferenceReadsLocked()
 	// The installation is a filesystem-era boundary for picker leases too:
 	// a panel result captured before the installation can never register.
 	s.fsEpoch++
@@ -1514,6 +1616,7 @@ func (s *ReaderService) activateAdoptedCredential(credential client.Credential, 
 	// filesystem handles (their anchored roots and unfinished temps) so
 	// nothing outlives the replaced context; drain them outside the lock.
 	s.generation++
+	s.cancelReferenceReadsLocked()
 	previousAttachment := s.attachmentID
 	s.attachmentID = ""
 	s.fsEpoch++
@@ -1573,6 +1676,7 @@ func (s *ReaderService) dispose(captured string) *wireError {
 		dropFile = s.logoutSeen
 		s.attachmentID = ""
 		s.generation++
+		s.cancelReferenceReadsLocked()
 		s.logoutSeen = false
 		streams = make([]*readerStream, 0, len(s.streams))
 		for _, stream := range s.streams {
@@ -2042,6 +2146,7 @@ func (s *ReaderService) eventsPoll(payload json.RawMessage, auth authority) (any
 // renderer delivery and stream this attachment still owns.
 func (s *ReaderService) CloseOwned() {
 	s.mu.Lock()
+	s.cancelReferenceReadsLocked()
 	renders := s.renders
 	s.renders = nil
 	streams := make([]*readerStream, 0, len(s.streams))

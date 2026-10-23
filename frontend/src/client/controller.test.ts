@@ -129,6 +129,8 @@ class FakeClient implements HaeryongClient, CredentialAware {
     this.calls.push("listProjects");
     throw new Error("not used in controller tests");
   }
+  versionReferences(): Promise<never> { throw new Error("unused references fake"); }
+  resolveReference(): Promise<never> { throw new Error("unused reference fake"); }
   search(): Promise<import("./types.ts").SearchPage> { throw new Error("unused search fake"); }
   listDocuments(): Promise<never> {
     this.calls.push("listDocuments");

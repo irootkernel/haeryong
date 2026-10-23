@@ -205,3 +205,79 @@ page row activates verified EOF; region read state derives from that page and
 its page-local anchors, without a bulk region update. Actual body-read failure
 sets the page's failed body state and safe reason under the current worker
 generation fence. No schema migration or original-content mutation is needed.
+
+## Reference storage foundation (TASK-004-03 M1, migration 9)
+
+This additive foundation implements the logical authored-reference storage rows.
+TASK-004-03 delivered materialization jobs in M2, list/resolve APIs and CLI in M3,
+and clients and Reader navigation in M4; `features.references` is true.
+Migration 9 is DDL only and preserves the immutable revision-8 manifests,
+payloads and prior rows.
+
+`reference_materializations` is keyed by the published `from_version_id` with a
+real FK to `document_versions`. It stores manifest SHA-256, reference revision,
+job identity, source-only revision and state. SQL checks nonempty state; Go
+write/read admission permits only `building`, `ready`, `failed`. A future nonempty
+SQL enum is unsupported by the current typed reader. There is no pre-publication
+reference staging or import-actor authority reconstruction.
+
+`authored_references` uses `(from_version_id, metadata_reference_id)` and preserves
+submitted source/target paths, optional source region, target document/version/
+page/region, relation, label, navigation query/fragment and exact authored JSON.
+`authored_references_target(target_version_id, from_version_id,
+metadata_reference_id)` supports bounded incoming scans. Unknown target IDs have
+no target FK and do not prevent preserving the declaration. Composite outgoing
+and incoming cursors use exact binary identities; one internal slice is at most
+64 rows, not a reference-count/content limit.
+
+`authored_edges` has a separate deterministic UUIDv5 ID derived from length-prefixed
+UTF-8 library/version/local-reference identities in a fixed application namespace.
+It stores canonical resolved source/target anchors and page/anchor hashes, with
+one edge per authored reference and a target lookup index. Existing pins and
+recorded hashes cannot be overwritten by a conflicting put. Only identical
+canonical identities/hashes can advance the anchor revision. Structural resolution
+is independent of the publisher or read history; every future public view must
+apply current eligibility/lifecycle to both endpoints. GET/HEAD will not create
+edges. Target trash/purge must retain incoming edges and minimal lifecycle facts;
+new references to already-purged targets cannot gain a structural edge. The
+logical tombstones row above does not require a physical tombstones table: the
+selected historical-gone policy uses retained `documents.lifecycle='purged'`.
+
+The typed implementation is in `internal/domain/references.go`,
+`internal/application/storage/references.go` and
+`internal/adapters/sqlite/references.go`. Exact table/index declaration validation
+extends the existing schema inventory without weakening its FTS/shadow checks.
+Upgrade failure uses the existing verified pre-migration DB-plus-required-object
+recovery set and transactional rollback; old binaries refuse schema 9. Restore
+the verified database and required objects together; never edit a revision number
+to downgrade a live database. This foundation has no automatic backfill yet.
+
+### Delivered reference work foundation (TASK-004-03 M2)
+
+Publication atomically registers the references work key after search. Startup
+registers both kinds search-first for every published version. The combined
+reference revision has a pinned extractor/anchor/parser mapping; changed code
+requires a new reference revision, while terminal same-key jobs retain history.
+
+The three derived passes commit immutable declarations, attempt outgoing exact
+pins, then use `authored_references_target` for incoming pending pins. The own
+search terminal gate fixes source anchors before its reference turn. Either the
+source's outgoing pass sees final target anchors, or the target's later incoming
+pass sees the already-committed declaration. Neither job waits on other reference
+work. Unknown targets and unavailable/ambiguous anchors create no edge. Page-only
+pins require the canonical regular HTML entry under the shared renderer
+classification and its inventory hash, independently of extraction; region pins additionally require current page
+EOF and matching page/anchor hashes;
+recorded hash disagreement preserves the original edge as anchor drift.
+
+`internal/adapters/sqlite/reference_work.go` owns reference attempt/system-input
+fences and source-only materialization transitions. Incoming commits recheck the
+source declaration and both endpoints' immutable identities/current anchors;
+they change neither the referring materialization revision nor its events.
+`ClearReferenceData` removes only rows owned by the permanently removed referring
+source, in bounded batches. Cleanup of a target never cascades through other
+sources' incoming edges. No target lifecycle workflow is added here.
+
+All structural writes remain authority-free derived maintenance. Read projection
+and historical-gone eligibility remain with TASK-004-03 M3; M2 enables no reference
+read API or capability and does not change immutable manifests or directory bytes.

@@ -192,3 +192,79 @@ eligibility reconciles under captured permissions. An internal trusted maintenan
 caller may explicitly reauthorize the same exact target under current revisions;
 no HTTP resume route or new scope action is added. Definitive failures (including
 wrapped EDQUOT as resource_exhausted) and cancellation remain terminal.
+
+## Delivered reference maintenance foundation (TASK-004-03 M2)
+
+`derived_work.work_kind=references` shares `derived_index` and the existing serial
+local dispatcher. `internal/adapters/sqlite/import.go` enqueues its exact-version
+work in the publication transaction. `internal/application/work/maintenance.go`
+routes both kinds in the daemon and importer entrypoints. Its bounded startup
+sweep registers each published version's current search before references; it
+includes historical versions and reuses terminal same-key identities.
+
+There is one reference job per `(version_id,work_kind,referenceRevision)`. The
+selection query applies own-search terminality before ranking/LIMIT, and the
+reference processor checks it again before claiming. Completed, failed and
+cancelled search jobs are terminal; a genuinely absent search job is allowed.
+Other search states wait without taking a reference turn. Cancellation remains
+runnable while the gate is closed. Reference work never waits for another
+reference job and never invokes a search fence.
+
+`internal/application/references/worker.go` persists declaration byte offsets at
+top-level member and reference-array boundaries,
+outgoing local keys and incoming binary `(from_version_id,metadata_reference_id)`
+keys in separate phases. Prepared declarations commit before structural attempts;
+each row/checkpoint change shares the attempt-fenced transaction. Enumeration
+uses at most 64 physical rows and yields after the 8 ms iterator slice. Immutable
+object verification, JSON decoding and normalization occur outside the writer
+lock. Non-reference manifest values share the importer streaming walker and yield
+at top-level member boundaries after the deadline, without rescanning on resume.
+Page-only pins use immutable inventory and the shared renderer HTML classification;
+metadata page declarations alone are insufficient. Only region pins need
+current completed extraction. In-version aliases resolve to canonical edge paths.
+Current immutable identities and required anchor snapshots are checked again before
+edge writes. Interrupted attempts resume under a new generation. Definitive
+failure/cancellation keeps its same-key history; no public resume is added.
+
+Reference progress retains the fixed result shape above. Files/bytes describe
+its own generated manifest, with unknown totals null. It reuses indexed source
+anchors without reading page bodies (`pages_done=0`, `pages_total=null`). Failed
+or cancelled work preserves the last committed counters; a terminal stage does
+not claim a completed manifest. Incoming outcomes never add target-derived
+counts to the source's materialization or progress.
+
+`references.updated` has version resource identity, source materialization
+revision and no body. It fires only for that version's own ready/failed
+transition. Incoming edge changes emit no referring-version event and never
+advance its materialization revision. Live and replay filtering use current
+source version eligibility, including lifecycle masking, through the existing
+index-event projector. This is source state; it grants no target access.
+
+The pinned unit mapping in `internal/application/references/revision_test.go`
+requires `referenceRevision` to advance with search extraction, anchor algorithm
+or reference parser changes. The derived-work milestone itself enabled no
+reference route, CLI, Reader dispatch or `features.references` capability;
+M3 supplies the read routes/CLI and M4 supplies client/Reader delivery and its
+capability. The source-only event boundary above is unchanged.
+
+
+### Reference read/event boundary (TASK-004-03 M3)
+
+GET/HEAD list and resolve never write declarations, materializations, edges,
+jobs, checkpoints, revisions or the outbox. Existing system maintenance alone
+creates edges; a ready source without an edge reports `resolution_pending`.
+Incoming processing persists only its private checkpoint and edge changes,
+without a per-row job event. Otherwise hidden incoming cardinality would become
+a count of replacement `library.invalidated` notifications. Ordinary source
+materialization ready/failed and the target's own existing completion events
+retain their documented semantics.
+
+`references.updated` is source-only: source version identity, its materialization
+revision and no body. Target incoming updates never emit a referring-version
+notification or replacement invalidation, and never increment that source
+revision. Live and replay use the same current source eligibility masking as
+search-index notifications. Paired deterministic hidden-target/unknown-target
+fixtures compare complete source-only live/replay objects with matched hidden
+control work; incoming slices separately assert no appended event. Authorized
+owner/target subscribers still receive the target's own events. Reference list
+cursors therefore exclude every target/edge/global-outbox generation.

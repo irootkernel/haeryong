@@ -39,6 +39,18 @@ Viewer fixtures first demonstrate useful html_js_v1 JavaScript: a scenario/simul
 
 Malformed host control messages include wrong types, wrong render/document/version/page IDs, stale channel identifiers and repeated messages. Separate protocol validation from content quotas: optional regions may be discovered dynamically, and valid large context is streamed/staged automatically. These checks apply to the host control protocol; author JavaScript's internal state and DOM remain unrestricted. Alter imported local package bytes and renderer versions to exercise input/wrapper integrity (X16), preserving actual module/worker bytes. An external dependency is not falsely included in the local package's immutable-byte guarantee. A valid-looking selection event must still be incapable of starting a scan, modifying review state or granting a new source root.
 
+## Reference fixture execution boundaries
+
+TASK-004-03's F03 builder in `tests/manual/reference_support.py` uses runtime
+project/document/version identities, an exact cross-project marked reference and
+a separate successor that removes the prior target page. F13 adds sibling IDs,
+Unicode/percent/plus/space paths, id/data/both anchors, duplicate/missing/runtime-
+only anchors and an unannotated page. [Pinned reference evidence](pinned-references.md)
+records their actual browser/native scope. Native initial programmatic focus may
+be false; an input/reselection recovery row must assert a true current-channel
+ack. Explicit safe connect-return is separate from TASK-004-05's automatic
+reconnect composition. Backlink UI remains TASK-004-04's implementing owner.
+
 ## Focused reconciliation cases
 
 Extend the existing F/X fixtures with the following small variants; these are planned implementation inputs, not new artifact restrictions or executed evidence.

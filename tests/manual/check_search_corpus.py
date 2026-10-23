@@ -105,7 +105,7 @@ def run(receipt):
                 cursor = page.get('next_cursor')
                 if not cursor:
                     break
-            derived = [j for j in jobs if j['kind'] == 'derived_index' and j.get('result', {}).get('version_id') == version]
+            derived = [j for j in jobs if j['kind'] == 'derived_index' and j.get('result', {}).get('version_id') == version and j.get('result', {}).get('work_kind') == 'search']
             if derived:
                 assert len(derived) == 1
                 job = product.data('GET', '/api/v1/jobs/' + derived[0]['job_id'], client=owner)

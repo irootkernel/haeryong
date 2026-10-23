@@ -361,7 +361,27 @@ func (s *Service) parseMetadata(ctx context.Context, r *bufio.Reader, i domain.I
 			})
 		case "pages", "regions", "sources", "evidence", "references":
 			definition := map[string]string{"pages": "page", "regions": "region", "sources": "source", "evidence": "evidence", "references": "reference"}[key]
+			index := -1
 			return metadataArray(r, func(raw []byte) error {
+				index++
+				if key == "references" {
+					pointer := fmt.Sprintf("/references/%d", index)
+					reference, e := DecodeReference(raw)
+					if e != nil {
+						var diagnostic *MetadataError
+						if errors.As(e, &diagnostic) {
+							return invalidMeta(pointer + strings.TrimPrefix(diagnostic.Pointer, "/references"))
+						}
+						return e
+					}
+					if sink == nil {
+						return nil
+					}
+					if e = sink(key, reference.ID, raw); errors.Is(e, domain.ErrConflict) {
+						return invalidMeta(pointer + "/id")
+					}
+					return e
+				}
 				item, e := decodeMeta(raw, definition)
 				if e != nil {
 					return invalidMeta("/" + key)

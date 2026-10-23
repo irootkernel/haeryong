@@ -25,7 +25,7 @@ func isProductCommand(opt options) bool {
 		return true
 	}
 	switch opt.command[0] {
-	case "search", "import", "package", "uploads", "documents", "files", "operations", "jobs", "config", "projects", "events", "sources", "evidence", "assessments":
+	case "references", "search", "import", "package", "uploads", "documents", "files", "operations", "jobs", "config", "projects", "events", "sources", "evidence", "assessments":
 		return true
 	case "doctor", "status":
 		if opt.flags["credential"] != "" || opt.flags["client-dir"] != "" {
@@ -146,6 +146,8 @@ func productCommand(ctx context.Context, opt options, emit func(any) error) erro
 
 	args := opt.command
 	switch args[0] {
+	case "references":
+		return referenceCLI(ctx, api, opt, emit)
 	case "search":
 		if len(args) != 1 {
 			return invalid("search accepts flags only")

@@ -29,6 +29,7 @@ let announcement = crypto.randomUUID();
 let renderInstance = crypto.randomUUID();
 let port: MessagePort | null = null;
 let parentOrigin: string | null = null;
+let referencesEnabled = false;
 let sequence = 0, hostSequence = 0, generation = 0;
 type Payload = Record<string, unknown>;
 let latestError: Payload | null = null;
@@ -55,7 +56,7 @@ function locationState(): Payload {
 }
 
 function dispose(): void {
-  generation++;
+  generation++; referencesEnabled = false;
   port?.close(); port = null; sequence = 0; hostSequence = 0;
   for (const transfer of transfers.values()) {
     if (transfer.retryTimer !== null) clearTimeout(transfer.retryTimer);
@@ -76,6 +77,9 @@ const applied = (correlation: string, result: Payload) => { appliedCorrelations.
 function reply(data: unknown): void {
   if (!object(data) || data.protocol_version !== PROTOCOL || !Object.entries(binding()).every(([key, value]) => data[key] === value) || !Number.isSafeInteger(data.sequence) || (data.sequence as number) <= hostSequence || !object(data.payload)) return;
   const payload = data.payload;
+  if (data.type === "reference.navigation" && Object.keys(payload).length === 1 && typeof payload.enabled === "boolean") {
+    hostSequence = data.sequence as number; referencesEnabled = payload.enabled; return;
+  }
   if (data.type === "region.focus" && typeof payload.region_id === "string") {
     hostSequence = data.sequence as number;
     // A host outline selection must give the region itself real document
@@ -83,7 +87,9 @@ function reply(data: unknown): void {
     // tabindex="-1" is added only when the author did not declare one, and
     // the honest result (found/focused) is reported back — a modal overlay
     // or a logical region without a matching element never fakes success.
-    const region = document.getElementById(payload.region_id);
+    const candidates = Array.from(document.querySelectorAll<HTMLElement>("[id],[data-haeryong-region]"))
+      .filter(element => element.getAttribute("id") === payload.region_id || element.getAttribute("data-haeryong-region") === payload.region_id);
+    const region = candidates.length === 1 ? candidates[0] : null;
     let found = false, focused = false;
     if (region) {
       found = true;
@@ -278,6 +284,16 @@ const interceptNewWindow = (event: Event): void => {
   event.preventDefault();
   window.open(logical, "_blank", "noopener");
 };
+addEventListener("click", (event) => {
+  const mouse = event as MouseEvent;
+  const anchor = (event.target as Element | null)?.closest?.("a[data-haeryong-reference]");
+  if (!referencesEnabled || !port || event.defaultPrevented || mouse.button !== 0 || mouse.metaKey || mouse.ctrlKey || mouse.shiftKey || mouse.altKey || !anchor || anchor.hasAttribute("download")) return;
+  const target = anchor.getAttribute("target") || document.querySelector("base[target]")?.getAttribute("target") || "";
+  if (target && target.toLowerCase() !== "_self") return;
+  const id = anchor.getAttribute("data-haeryong-reference");
+  if (!id) return;
+  event.preventDefault(); send("reference.requested", { reference_id: id });
+}, true);
 addEventListener("click", (event) => {
   const mouse = event as MouseEvent;
   if (mouse.button !== 0 && mouse.button !== 1) return;

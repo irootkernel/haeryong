@@ -117,10 +117,10 @@ func (h *Handler) Handles(r *http.Request) bool {
 			return true
 		}
 		if len(p) == 3 {
-			return p[2] == "files" || p[2] == "file" || p[2] == "metadata" || p[2] == "render-bootstrap" || p[2] == "package" || p[2] == "source-evidence" || p[2] == "source-evidence-verifications" || p[2] == "assessments"
+			return p[2] == "references" || p[2] == "files" || p[2] == "file" || p[2] == "metadata" || p[2] == "render-bootstrap" || p[2] == "package" || p[2] == "source-evidence" || p[2] == "source-evidence-verifications" || p[2] == "assessments"
 		}
 		if len(p) == 4 {
-			return p[2] == "source-evidence" || p[2] == "assessments" && p[3] == "coverage"
+			return p[2] == "source-evidence" || p[2] == "assessments" && p[3] == "coverage" || referenceRoute(p)
 		}
 		return len(p) == 5 && p[2] == "source-evidence" && p[4] == "verifications"
 	}
@@ -137,7 +137,7 @@ func bearer(r *http.Request) (string, error) {
 	return strings.TrimPrefix(values[0], "Bearer "), nil
 }
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/api/v1/search" {
+	if r.URL.Path == "/api/v1/search" || referenceRoute(route(r)) {
 		ctx, cancel := context.WithTimeout(r.Context(), query.SearchTimeout)
 		defer cancel()
 		r = r.WithContext(ctx)
@@ -158,6 +158,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := route(r)
+	if referenceRoute(p) {
+		h.references(w, r, token, p)
+		return
+	}
 	if len(p) == 1 && p[0] == "search" {
 		h.search(w, r, token)
 		return
@@ -775,7 +779,17 @@ func failure(w http.ResponseWriter, r *http.Request, err error) {
 	details := map[string]any{}
 	var invalid *query.Error
 	var missing *query.Missing
+	var referenceInvalid *query.ReferenceInvalid
+	var targetGone *query.TargetGone
 	switch {
+	case errors.As(err, &referenceInvalid):
+		status, code = 400, "INVALID_REQUEST"
+		details["pointer"] = referenceInvalid.Pointer
+		details["reason"] = referenceInvalid.Reason
+	case errors.As(err, &targetGone):
+		status, code = 410, "TARGET_GONE"
+		details["document_id"] = targetGone.Target.DocumentID
+		details["version_id"] = targetGone.Target.VersionID
 	case errors.As(err, &invalid):
 		status, code = 400, "INVALID_REQUEST"
 		details["reason"] = invalid.Reason
@@ -846,7 +860,7 @@ func failure(w http.ResponseWriter, r *http.Request, err error) {
 		// definite delivery denial must not trigger logout or endless retries.
 		retryable = false
 	}
-	if r.URL.Path == "/api/v1/search" && status == 503 {
+	if (r.URL.Path == "/api/v1/search" || referenceRoute(route(r))) && status == 503 {
 		code = "SERVICE_RECOVERING"
 		details = map[string]any{}
 		retryable = true

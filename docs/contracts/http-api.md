@@ -65,7 +65,8 @@ In the last column, `K` means a required Idempotency-Key; `N` means a named natu
 | GET /versions/{id}/assessments | authorized version/target scope | Published history, target_set_id and version/page/region scope filters, typed coverage and selected applicable summary; no unknown or zero-unit scope is silently aligned | - |
 | GET /versions/{id}/assessments/coverage?coverage_set_id={id} | authorized version/target scope | Cursor fixed required-unit tuples, outcome/reason/discrepancy and contributing assessment_id/target_set_id; counts derive from these records | - |
 | GET /search | scoped authenticated | Title/text/region/topic/source results with eligibility filtering before counts/snippets | - |
-| GET /versions/{id}/references | scoped authenticated | Pinned outgoing edges and authorized resolution states | - |
+| GET/HEAD /versions/{id}/references | scoped authenticated | Source-only cursor collection of persisted declarations and guarded live resolution states | - |
+| GET/HEAD /versions/{id}/references/resolve?reference_id={id} | scoped authenticated | One immutable query-form ID, optional bound source page_path/region_id; exact authorized target or minimal historical gone | - |
 | GET /versions/{id}/backlinks | scoped authenticated | Incoming canonical edges with visibility filtering | - |
 | GET /versions/{id}/related | scoped authenticated | Separate overlays with rationale, origin, current decision and individual validators | - |
 | GET /topic-assignments | owner, exact document/version/page/region filters | Existing assignments including owner pin/rejection state and each ETag | - |
@@ -484,3 +485,64 @@ latest and hidden publications. Visible changes return 400 cursor_mismatch;
 normal restart with unchanged selected state preserves continuation. Search GET
 never enqueues work, reads configured sources or invokes AI. Unsupported methods
 retain ordinary protected route handling. No maintenance/retry route is added.
+
+
+## Implemented pinned-reference reads (TASK-004-03 M3)
+
+The product router selects `GET/HEAD /api/v1/versions/{source_version}/references`
+and its `/resolve` child before the preserved future-route catalogue. List accepts
+only `cursor` and `limit` (default 50, range 1–200), ordered by the binary immutable
+metadata reference ID. Data is exactly `{items,next_cursor,materialization:{state,reason}}`.
+Materialization is `pending/materialization_pending`, `ready/null` or
+`failed/materialization_failed`. Ready describes source declaration completeness,
+not target resolution. Single resolution requires `reference_id`, decoded once
+as a query value; optional `page_path` and `region_id` describe the source context.
+A region requires its page. No supplied target or latest-version switch is accepted.
+
+Authenticate first, then apply `source.Check` to the referring version and target.
+Current intersected `version.read` and exact project/version anchors suffice;
+`source.read` is not required. Active and archived targets are eligible. Unknown,
+mismatched, denied and trash targets give an unavailable list row, with null
+label/target/edge/route, or a generic 404 with empty details for single resolution.
+D4 historical gone requires an existing consistent structural edge, a retained
+purged document, source eligibility, and current target authority (owner or exact
+project/version anchors with `version.read`). List returns a minimal tombstoned
+target; single returns 410 `TARGET_GONE` with only `document_id` and `version_id`
+in details. No prior read witness is required; no purged bytes/title is inspected.
+
+Read-only projections never create edges, enqueue work or update reference/job/
+checkpoint/revision/outbox state. Eligible but incomplete structural work returns
+200 `unresolved` with `resolution_pending`; missing/ambiguous/pending/drifting
+anchors keep their specific safe reason. A bound click first proves the static
+marked source context in verified bytes outside the writer transaction. Reference
+placement shares the search extractor's HTML element scope/implied-end grammar;
+valid omitted end tags stay valid, while links in later paragraph/list/table
+siblings fail `source_context_mismatch` before any target projection. Detached
+work rejoins current authority and the same immutable inventory/anchor snapshots
+before output. Target lifecycle is checked before target anchor diagnostics.
+
+Cursors bind library/runtime, current principal/scope, source manifest/reference
+revision/materialization readiness revision, limit and last binary ID. Target
+existence, indexes, edges and outbox heads are excluded. A target-only update may
+change a row's live resolution, never its membership or cursor bytes. Enumeration
+uses at most 64 rows per transaction and yields after 8 ms of cooperative work.
+The 30-second request deadline starts before outer authentication. The resolver's
+own store operations and lock waits observe cancellation, and successful output
+checks the context again. The existing foundation reader's pin release after a
+source-context read is the exception: `foundation.Store.Read` uses
+`context.Background()` for that release, which is not cancellable, so a cancelled
+or expired request returns once the store gate frees.
+
+Every HEAD path is bodyless, including errors, with the GET status and headers.
+400 `INVALID_REQUEST` details contain the offending `pointer` and safe `reason`;
+this covers malformed UUID/query, duplicate/unknown/empty parameters, absent ID,
+region without page, invalid page size and cursor mismatch. Authentication uses
+existing 401 mappings; missing `version.read` is 403. Storage/deadline failures
+are retryable 503 `SERVICE_RECOVERING`, with `Retry-After: 2` and
+`details.reason=query_timeout` for deadline/cancellation. M4 delivers both named
+reference operations through HTTP, the native transport/facade and the shared
+Reader, and advertises `features.references=true`. The clients still require
+explicit true: absent/false installs no reference callback or interception and
+performs no resolver call. Ordinary href fallback remains usable. The
+[pinned-reference record](../testing/pinned-references.md) distinguishes actual
+browser/native proof from test-owned capability and error projections.

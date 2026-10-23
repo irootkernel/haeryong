@@ -954,6 +954,39 @@
         },
         "label": {
           "type": "string"
+        },
+        "from": {
+          "type": "object",
+          "properties": {
+            "page_path": {
+              "$ref": "#/$defs/path"
+            },
+            "region_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "page_path",
+            "region_id"
+          ],
+          "additionalProperties": false
+        },
+        "relation": {
+          "type": "string"
+        },
+        "page_query": {
+          "type": "string"
+        },
+        "page_fragment": {
+          "type": "string"
         }
       },
       "required": [
@@ -5448,6 +5481,511 @@
       },
       "required": [
         "reason"
+      ],
+      "additionalProperties": false
+    },
+    "reference_from_view": {
+      "type": "object",
+      "properties": {
+        "page_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "region_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "page_path",
+        "region_id"
+      ],
+      "additionalProperties": false
+    },
+    "reference_exact_target": {
+      "type": "object",
+      "properties": {
+        "document_id": {
+          "$ref": "#/$defs/id"
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "page_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "region_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requested_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resolved_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "page_query": {
+          "type": "string"
+        },
+        "page_fragment": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "document_id",
+        "version_id",
+        "page_path",
+        "region_id",
+        "requested_path",
+        "resolved_path",
+        "page_query",
+        "page_fragment"
+      ],
+      "additionalProperties": false
+    },
+    "reference_gone_target": {
+      "type": "object",
+      "properties": {
+        "document_id": {
+          "$ref": "#/$defs/id"
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "document_id",
+        "version_id"
+      ],
+      "additionalProperties": false
+    },
+    "reference_view": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "from": {
+              "$ref": "#/$defs/reference_from_view"
+            },
+            "relation": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "label": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "resolution": {
+              "enum": [
+                "resolved"
+              ]
+            },
+            "reason": {
+              "type": "null"
+            },
+            "edge_id": {
+              "$ref": "#/$defs/id"
+            },
+            "target": {
+              "$ref": "#/$defs/reference_exact_target"
+            },
+            "reader_url": {
+              "type": "string",
+              "pattern": "^/documents/[0-9a-f-]{36}/versions/[0-9a-f-]{36}(?:[?#].*)?$"
+            }
+          },
+          "required": [
+            "id",
+            "from",
+            "relation",
+            "label",
+            "resolution",
+            "reason",
+            "edge_id",
+            "target",
+            "reader_url"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "from": {
+              "$ref": "#/$defs/reference_from_view"
+            },
+            "relation": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "label": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "resolution": {
+              "enum": [
+                "unresolved"
+              ]
+            },
+            "reason": {
+              "enum": [
+                "page_missing",
+                "anchor_missing",
+                "anchor_ambiguous",
+                "anchor_pending",
+                "resolution_pending",
+                "anchor_drift",
+                "source_context_mismatch",
+                "ambiguous_reference_context",
+                "ambiguous_path"
+              ]
+            },
+            "edge_id": {
+              "type": "null"
+            },
+            "target": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/reference_exact_target"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reader_url": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^/documents/[0-9a-f-]{36}/versions/[0-9a-f-]{36}(?:[?#].*)?$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "from",
+            "relation",
+            "label",
+            "resolution",
+            "reason",
+            "edge_id",
+            "target",
+            "reader_url"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "from": {
+              "$ref": "#/$defs/reference_from_view"
+            },
+            "relation": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "label": {
+              "type": "null"
+            },
+            "resolution": {
+              "enum": [
+                "unavailable"
+              ]
+            },
+            "reason": {
+              "enum": [
+                "target_unavailable"
+              ]
+            },
+            "edge_id": {
+              "type": "null"
+            },
+            "target": {
+              "type": "null"
+            },
+            "reader_url": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "id",
+            "from",
+            "relation",
+            "label",
+            "resolution",
+            "reason",
+            "edge_id",
+            "target",
+            "reader_url"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "from": {
+              "$ref": "#/$defs/reference_from_view"
+            },
+            "relation": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "label": {
+              "type": "null"
+            },
+            "resolution": {
+              "enum": [
+                "tombstoned"
+              ]
+            },
+            "reason": {
+              "type": "null"
+            },
+            "edge_id": {
+              "type": "null"
+            },
+            "target": {
+              "$ref": "#/$defs/reference_gone_target"
+            },
+            "reader_url": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "id",
+            "from",
+            "relation",
+            "label",
+            "resolution",
+            "reason",
+            "edge_id",
+            "target",
+            "reader_url"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "reference_materialization_view": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "enum": [
+                "pending"
+              ]
+            },
+            "reason": {
+              "enum": [
+                "materialization_pending"
+              ]
+            }
+          },
+          "required": [
+            "state",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "enum": [
+                "ready"
+              ]
+            },
+            "reason": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "state",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "enum": [
+                "failed"
+              ]
+            },
+            "reason": {
+              "enum": [
+                "materialization_failed"
+              ]
+            }
+          },
+          "required": [
+            "state",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "reference_page": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference_view"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "materialization": {
+          "$ref": "#/$defs/reference_materialization_view"
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor",
+        "materialization"
+      ],
+      "additionalProperties": false
+    },
+    "reference_response": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/reference_page"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "data",
+        "request_id"
+      ],
+      "additionalProperties": false
+    },
+    "reference_resolution_response": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/reference_view"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "data",
+        "request_id"
       ],
       "additionalProperties": false
     }

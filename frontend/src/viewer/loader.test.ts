@@ -16,11 +16,14 @@ async function page() {
   const handlers = new Map<string, ((event: unknown) => void)[]>();
   const announcements: Record<string, unknown>[] = [];
   const parent = { postMessage(message: Record<string, unknown>) { announcements.push(message); } };
+  let baseTarget: string | null = null;
   const document = {
     currentScript: { dataset: { haeryongDocument: "document", haeryongVersion: "version", haeryongPage: encodeURI("한글.html") } },
     readyState: "complete" as const,
     activeElement: null as unknown,
+    querySelector() { return baseTarget === null ? null : { getAttribute() { return baseTarget; } }; },
     getElementById(id: string) { return fakeRegions.get(id) ?? null; },
+    querySelectorAll() { return [...fakeRegions].map(([id, region]) => Object.assign(region, { getAttribute(name: string) { return name === "id" ? id : null; } })); },
   };
   const replacements: Record<string, unknown> = {
     window: globalThis, parent, scrollX: 0, scrollY: 0,
@@ -44,7 +47,7 @@ async function page() {
   let sequence = 0;
   const send = (type: string, payload: Record<string, unknown>, overrides: Record<string, unknown> = {}) => channel.port1.postMessage({ protocol_version: "1.0", ...binding, sequence: ++sequence, type, payload, ...overrides });
   const api = (globalThis as typeof globalThis & { __haeryong: { state(value: unknown): Promise<void>; sendContext(value: unknown): Promise<Record<string, unknown>> } }).__haeryong;
-  return { handlers, announcements, messages, connect, send, api, close() {
+  return { setBaseTarget(value: string | null) { baseTarget = value; }, handlers, announcements, messages, connect, send, api, close() {
     for (const handler of handlers.get("pagehide") ?? []) handler({});
     channel.port1.close(); channel.port2.close();
     for (const [name, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); }
@@ -163,4 +166,44 @@ test("region.focus answers with the observed result: missing element, focused el
     assert.equal(acks()[2]!.payload.found, true);
     assert.equal(acks()[2]!.payload.focused, false);
   } finally { fakeRegions.clear(); p.close(); }
+});
+
+test("RF09-G actual loader defaults disabled, intercepts only enabled primary marked activation, and revokes on the live channel", async () => {
+  const p = await page();
+  try {
+    p.connect(); await until(() => p.messages.length === 1);
+    const click = (options: Record<string, unknown> = {}) => {
+      let prevented = false;
+      const attrs = new Map<string, string>([["href", "fallback.html"], ["data-haeryong-reference", "r/%2F +"]]);
+      if (options.unmarked) attrs.delete("data-haeryong-reference");
+      if (options.download) attrs.set("download", "");
+      if (options.target) attrs.set("target", String(options.target));
+      const anchor = { target: options.target ?? "", getAttribute(name: string) { return attrs.get(name) ?? null; }, hasAttribute(name: string) { return attrs.has(name); } };
+      const event = { button: 0, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...options, target: { closest(selector: string) { return selector === "a[data-haeryong-reference]" ? attrs.has("data-haeryong-reference") ? anchor : null : selector === "a[target='_blank']" ? attrs.get("target") === "_blank" ? anchor : null : anchor; } }, get defaultPrevented() { return prevented; }, preventDefault() { prevented = true; } };
+      for (const handler of p.handlers.get("click")!) handler(event);
+      return prevented;
+    };
+    assert.equal(click(), false);
+    p.send("reference.navigation", { enabled: false }); await pause(); assert.equal(click(), false);
+    p.send("reference.navigation", { enabled: true }, { render_instance_id: crypto.randomUUID() }); await pause(); assert.equal(click(), false);
+    p.send("reference.navigation", { enabled: true, url: "/settings" }); await pause(); assert.equal(click(), false);
+    p.send("reference.navigation", { enabled: true }); await pause();
+    for (const options of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }, { target: "_blank" }, { target: "named" }, { unmarked: true }, { download: true }]) assert.equal(click(options), false);
+    p.setBaseTarget("_blank"); assert.equal(click(), false); p.setBaseTarget(null);
+    assert.equal(click(), true); await until(() => p.messages.some(message => message.type === "reference.requested"));
+    assert.deepEqual(p.messages.filter(message => message.type === "reference.requested").map(message => message.payload), [{ reference_id: "r/%2F +" }]);
+    p.send("reference.navigation", { enabled: false }); await pause(); assert.equal(click(), false);
+    await pause(); assert.equal(p.messages.filter(message => message.type === "reference.requested").length, 1);
+  } finally { p.close(); }
+});
+
+test("RF10 duplicate static region anchors never focus an arbitrary first element", async () => {
+  const p = await page();
+  try {
+    p.connect(); await until(() => p.messages.length === 1);
+    const doc = document as unknown as { querySelectorAll(): unknown[] };
+    doc.querySelectorAll = () => [1, 2].map(() => ({ getAttribute(name: string) { return name === "id" ? "duplicate" : null; }, focus() { assert.fail("ambiguous anchor received focus"); } }));
+    p.send("region.focus", { region_id: "duplicate" }); await until(() => p.messages.length === 2);
+    assert.deepEqual(p.messages[1]!.payload, { region_id: "duplicate", found: false, focused: false });
+  } finally { p.close(); }
 });

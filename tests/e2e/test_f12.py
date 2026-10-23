@@ -12,6 +12,7 @@ import pytest
 
 from .harness import Proxy, digest, operation, write_json
 from .test_search import F12SearchProbe
+from .test_references import reference_ready
 
 pytestmark = pytest.mark.e2e
 
@@ -132,6 +133,11 @@ def test_canonical_f12_response_loss_resume_cursor_range_download_and_restart(pr
         # The original transfer must finish within its 1800-second hang guard. Index
         # observation has its own guard and does not extend that transfer deadline.
         record_testsuite_property("SC20", json.dumps(search_probe.finish(1200)))
+        reference_started = time.monotonic()
+        reference_job = reference_ready(product, owner, version)
+        record_testsuite_property("RF07-F12", json.dumps({
+            "elapsed_after_search_seconds": time.monotonic() - reference_started,
+            "progress": reference_job["result"], "same_production_backfill_processor": True}))
     report = {"fixture": "Canonical F12 through actual CLI/daemon/public API", "archive_bytes": canonical_f12["archive_bytes"],
               "archive_sha256": archive_hash, "expanded_bytes": canonical_f12["expanded_bytes"],
               "files": expected, "represented_entries": len(entries), "elapsed_seconds": transfer_elapsed,

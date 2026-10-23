@@ -48,3 +48,50 @@ var _ = It("routes all three work kinds serially through the existing ledger and
 	Expect(d.Run(ctx)).To(Succeed())
 	Expect(calls).To(Equal([]string{"sweep", "seal", "derived", "import"}))
 })
+
+type routerTx struct {
+	app.WriteTx
+	calls *[]string
+}
+
+func (t routerTx) DerivedWork(id string) (domain.DerivedWork, error) {
+	return domain.DerivedWork{JobID: id, VersionID: "v", WorkKind: id}, nil
+}
+func (t routerTx) Job(id string) (domain.Job, error) {
+	return domain.Job{ID: id, Kind: "derived_index", State: "completed"}, nil
+}
+func (t routerTx) ReferenceSearchTerminal(string) (bool, error) {
+	*t.calls = append(*t.calls, "gate")
+	return false, nil
+}
+func (t routerTx) SearchVersions(after string, _ int) ([]string, error) {
+	if after == "" {
+		return []string{"old", "new"}, nil
+	}
+	return nil, nil
+}
+func (t routerTx) EnqueueSearch(v string, _ int64) (string, error) {
+	*t.calls = append(*t.calls, "search:"+v)
+	return "", nil
+}
+func (t routerTx) EnqueueReferences(v string, _ int64) (string, error) {
+	*t.calls = append(*t.calls, "references:"+v)
+	return "", nil
+}
+
+var _ = It("RF07 router selects each maintenance kind and sweeps all versions search-first", Label("unit"), func() {
+	calls := []string{}
+	r := work.NewMaintenance(store{tx: routerTx{calls: &calls}}, nil)
+	Expect(r.Process(context.Background(), "search")).To(Succeed())
+	Expect(calls).To(BeEmpty())
+	Expect(r.Process(context.Background(), "references")).To(Succeed())
+	Expect(calls).To(Equal([]string{"gate"}))
+	calls = nil
+	done, err := r.Sweep(context.Background())
+	Expect(err).NotTo(HaveOccurred())
+	Expect(done).To(BeFalse())
+	Expect(calls).To(Equal([]string{"search:old", "references:old", "search:new", "references:new"}))
+	done, err = r.Sweep(context.Background())
+	Expect(err).NotTo(HaveOccurred())
+	Expect(done).To(BeTrue())
+})

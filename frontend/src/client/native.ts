@@ -2,6 +2,7 @@
 // these named operations to a typed Go proxy. The port accepts no arbitrary
 // URLs, filesystem paths or generic method names from imported content.
 import type {
+  VersionReferencesRequest, ResolveReferenceRequest, ReferencePage, ReferenceView,
   SearchRequest, SearchPage,
   ConfigurationView, ConfigurationPlanRequest, ConfigurationPlanView, ConfigurationCommitRequest, ConfigurationCommitView,
   ProjectSourceView, EvidenceVerificationRequest, EvidenceVerificationResult, SourceObservationRequest, SourceObservationResult,
@@ -92,6 +93,8 @@ export type DecidePairingPayload = {
 };
 export type RevokeSessionRequest = { session_id: string };
 export type OperationRequest = { operation_id: string };
+export type VersionReferencesCall = { version_id: string; cursor?: string; limit?: number };
+export type ResolveReferenceCall = { version_id: string; reference_id: string; page_path?: string; region_id?: string };
 export type SearchCall = SearchRequest;
 export type ListProjectsRequest = { cursor?: string };
 export type ListDocumentsRequest = { project_id?: string; lifecycle?: string; cursor?: string };
@@ -163,6 +166,8 @@ export interface NativePort {
   call(operation: "revokeOwnSession", payload: {}): Promise<void>;
   call(operation: "serviceStatus", payload: {}): Promise<unknown>;
   call(operation: "subscribeEvents", payload: {}): Promise<EventSubscription>;
+  call(operation: "versionReferences", payload: VersionReferencesCall): Promise<ReferencePage>;
+  call(operation: "resolveReference", payload: ResolveReferenceCall): Promise<ReferenceView>;
   call(operation: "search", payload: SearchCall): Promise<SearchPage>;
   call(operation: "listProjects", payload: ListProjectsRequest): Promise<ListPage<ProjectView>>;
   call(operation: "listDocuments", payload: ListDocumentsRequest): Promise<ListPage<DocumentView>>;
@@ -230,6 +235,7 @@ export const NATIVE_OPERATIONS = [
   "revokeOwnSession",
   "serviceStatus",
   "subscribeEvents",
+  "versionReferences", "resolveReference",
   "search", "listProjects",
   "listDocuments",
   "documentDetail",
@@ -503,6 +509,13 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
   runSourceObservation(versionId: string, request: SourceObservationRequest, operationId: string): Promise<SourceObservationResult> {
     const era = this.#era;
     return sourceWrite<SourceObservationResult>(operationId, () => this.#fresh(this.#port.call("runSourceObservation", { version_id: versionId, request, operation_id: operationId }), era), (id) => { if (era !== this.#era) throw new StaleResponseError(); return this.operation(id); });
+  }
+
+  versionReferences(request: VersionReferencesRequest): Promise<ReferencePage> {
+    return this.#fresh(this.#port.call("versionReferences", { version_id: request.versionId, cursor: request.cursor, limit: request.limit }), this.#era);
+  }
+  resolveReference(request: ResolveReferenceRequest): Promise<ReferenceView> {
+    return this.#fresh(this.#port.call("resolveReference", { version_id: request.versionId, reference_id: request.referenceId, page_path: request.pagePath, region_id: request.regionId }), this.#era);
   }
 
   search(request: SearchRequest): Promise<SearchPage> {

@@ -954,6 +954,39 @@
         },
         "label": {
           "type": "string"
+        },
+        "from": {
+          "type": "object",
+          "properties": {
+            "page_path": {
+              "$ref": "#/$defs/path"
+            },
+            "region_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "page_path",
+            "region_id"
+          ],
+          "additionalProperties": false
+        },
+        "relation": {
+          "type": "string"
+        },
+        "page_query": {
+          "type": "string"
+        },
+        "page_fragment": {
+          "type": "string"
         }
       },
       "required": [

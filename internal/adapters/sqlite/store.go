@@ -26,7 +26,7 @@ import (
 	driverSQLite "modernc.org/sqlite"
 )
 
-const SchemaRevision = 8
+const SchemaRevision = 9
 
 type Boundary string
 
@@ -590,7 +590,12 @@ func (s *Store) validateTables(ctx context.Context, revision int) error {
 		return errors.New("partial database schema")
 	}
 	if revision >= 8 {
-		return s.validateSearchDeclarations(ctx)
+		if err := s.validateSearchDeclarations(ctx); err != nil {
+			return err
+		}
+	}
+	if revision >= 9 {
+		return s.validateReferenceDeclarations(ctx)
 	}
 	return nil
 }

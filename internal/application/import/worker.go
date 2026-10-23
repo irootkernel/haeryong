@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"haeryong.local/haeryong/internal/application/auth"
-	"haeryong.local/haeryong/internal/application/search"
 	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/application/work"
 	"haeryong.local/haeryong/internal/domain"
@@ -18,7 +17,7 @@ import (
 
 // Run keeps existing callers on the same serial dispatcher as production.
 func (s *Service) Run(ctx context.Context) error {
-	return (work.Dispatcher{Store: s.Store, Imports: s, Derived: search.NewWorker(s.Store, s.Bytes)}).Run(ctx)
+	return (work.Dispatcher{Store: s.Store, Imports: s, Derived: work.NewMaintenance(s.Store, s.Bytes)}).Run(ctx)
 }
 func (s *Service) Process(ctx context.Context, id string) error {
 	var j domain.Job

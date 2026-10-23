@@ -70,6 +70,12 @@ func New(core *appauth.Service, policy Policy, protected http.Handler) (http.Han
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// This precedes the outer Guard, hence the first authentication/lock wait.
+	if isReferenceRead(r) {
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		r = r.WithContext(ctx)
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
@@ -594,17 +600,25 @@ func fail(w http.ResponseWriter, r *http.Request, err error) {
 		retryable = true
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
 	details := map[string]any{}
 	var missing missingHeader
 	if errors.As(err, &missing) {
 		details["missing"] = string(missing)
 	}
+	if isReferenceRead(r) && status == 503 && (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) {
+		details["reason"] = "query_timeout"
+	}
 	message := http.StatusText(status)
 	if code == "FEATURE_NOT_READY" {
 		message = "This capability is not implemented yet."
 	}
-	json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": code, "message": message, "retryable": retryable, "details": details}, "request_id": requestID()})
+	body, _ := json.Marshal(map[string]any{"error": map[string]any{"code": code, "message": message, "retryable": retryable, "details": details}, "request_id": requestID()})
+	body = append(body, '\n')
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.WriteHeader(status)
+	if r.Method != "HEAD" {
+		_, _ = w.Write(body)
+	}
 }
 
 func (h *handler) events(w http.ResponseWriter, r *http.Request, token string) {
@@ -830,4 +844,19 @@ func (h *handler) pollEvents(w http.ResponseWriter, r *http.Request, token strin
 	h.private(w, r, token, func() {
 		respond(w, r, 200, map[string]any{"items": items, "stream_epoch": epoch, "head": strconv.FormatInt(head, 10), "next_cursor": fmt.Sprintf("%s:%d", epoch, after), "resync": resync}, nil)
 	})
+}
+
+func isReferenceRead(r *http.Request) bool {
+	if r.Method != "GET" && r.Method != "HEAD" {
+		return false
+	}
+	parts := strings.Split(strings.TrimPrefix(strings.TrimSuffix(r.URL.EscapedPath(), "/"), "/api/v1/"), "/")
+	for i, part := range parts {
+		decoded, err := url.PathUnescape(part)
+		if err != nil {
+			return false
+		}
+		parts[i] = decoded
+	}
+	return len(parts) >= 3 && parts[0] == "versions" && parts[2] == "references" && (len(parts) == 3 || len(parts) == 4 && parts[3] == "resolve")
 }

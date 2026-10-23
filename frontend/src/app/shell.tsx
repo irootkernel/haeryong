@@ -1,3 +1,4 @@
+import { parseRegionIntent } from "./screens/reader-navigation.ts";
 // Trusted application shell: navigation, service indicator, route screens and
 // the connection-state banner. Screens without an implementing owner render a
 // truthful not-implemented placeholder; capability absence is never faked.
@@ -138,6 +139,7 @@ function ReaderRoute({ controller, path }: { controller: ShellController; path: 
       page={params.has("page") ? params.get("page") : null}
       pageQuery={params.get("page_query") ?? ""}
       pageFragment={params.get("page_fragment") ?? ""}
+      regionIntent={parseRegionIntent(location.hash)}
     />
   );
 }

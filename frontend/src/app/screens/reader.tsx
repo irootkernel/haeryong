@@ -1,6 +1,6 @@
 // Trusted shared Reader. Authored documents live only in IsolatedViewer;
 // personal state, import controls and file destinations belong to this host.
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ShellController } from "../../client/controller.ts";
 import { ApiError } from "../../client/types.ts";
 import type { DocumentView, FileEntryView, PagePositionValue, ProjectView, ReadingPositionValue, RenderBootstrapView, VersionView } from "../../client/types.ts";
@@ -14,6 +14,8 @@ import { DownloadPanel } from "./download-panel.tsx";
 import { VersionHeader } from "./version-header.tsx";
 import { SourcePanel } from "./source-panel.tsx";
 import { acceptRegionFocusResult, acceptRegionSelection, parseSuppliedMetadata, readStream, regionRequestStale, regionSelectionMatches, regionsOfPage, verifyMetadataBytes, type MetadataState } from "./evidence-view.ts";
+import { featureEnabled } from "./library-data.ts";
+import { ReaderReferences, readerChannelReady, HostRegionFocus, regionFocusMatches, pushReference, referringPage, returnToReferringPage, type ReaderPageContext, type RegionIntent } from "./reader-navigation.ts";
 import { navigate } from "../router.tsx";
 
 interface ReaderProps {
@@ -23,6 +25,7 @@ interface ReaderProps {
   page: string | null;
   pageQuery: string;
   pageFragment: string;
+  regionIntent?: RegionIntent | null;
 }
 type FileList = { items: FileEntryView[]; cursor: string | null; busy: boolean; issue: string | null };
 type Selection = { context: string; bootstrap: RenderBootstrapView; location: ReaderLocation | null; restore?: { scroll_x?: unknown; scroll_y?: unknown } };
@@ -108,7 +111,7 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
   const [reload, setReload] = useState(0);
   const [suppliedMetaBox, setSuppliedMetaBox] = useState<{ versionId: string; state: MetadataState }>(() => ({ versionId, state: { kind: "loading" } }));
   const [suppliedMetaReload, setSuppliedMetaReload] = useState(0);
-  const [regionSelection, setRegionSelection] = useState<{ versionId: string; pagePath: string; context: string | null; reload: number; regionId: string } | null>(null);
+  const [regionSelection, setRegionSelection] = useState<{ versionId: string; pagePath: string; context: string | null; reload: number; regionId: string; intentKey: string | null } | null>(null);
   const [contextOpen, setContextOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
   const [filesFilter, setFilesFilter] = useState("");
@@ -134,6 +137,25 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
   const live = useRef(true);
   useEffect(() => { live.current = true; return () => { live.current = false; queueMicrotask(() => { if (!live.current) personal.dispose(); }); }; }, [personal]);
   const context = contextOf();
+  const routeRegion = props.regionIntent?.regionId ?? null;
+  const [hashFocus] = useState(() => new HostRegionFocus());
+  const [channelReady, setChannelReady] = useState<ReaderPageContext | null>(null);
+  const channelRef = useRef<ReaderPageContext | null>(null);
+  const referenceRoute = useRef({ versionId, context, page: props.page, reload });
+  const referenceOwner = JSON.stringify([controller.state.capabilities?.library_id, controller.state.session?.principal_id, controller.state.capabilities?.runtime_generation]);
+  const references = useMemo(() => {
+    const authority = controller.captureDispatchAuthority();
+    return new ReaderReferences({ client,
+      guard: () => controller.requireVerifiedDispatch(authority),
+      current: () => {
+        const channel = channelRef.current, route = referenceRoute.current;
+        return channel && live.current && channel.versionId === route.versionId && channel.pagePath === route.page && channel.context === route.context && channel.reload === route.reload ? channel : null;
+      },
+      navigate: (url, position) => pushReference(url, referenceOwner, position), notice: setNotice,
+    });
+  }, [client, controller, referenceOwner]);
+  const referencesEnabled = featureEnabled(controller.state.capabilities?.features, "references");
+  references.enable(referencesEnabled);
   // The route identity a host-side flow must still match after its awaits.
   // A null context means the router effect has not stamped this initial
   // history entry yet; no bootstrap, open or mount may proceed against it.
@@ -260,7 +282,10 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
       const bootstrap = await client.renderBootstrap(versionId, selected ?? undefined);
       guard();
       const location = bootstrap.selected_page === null ? null : { page: bootstrap.selected_page, query: props.pageQuery, fragment: props.pageFragment };
-      const restore = restoreRef.current?.context === context ? restoreRef.current.position : undefined;
+      const retained = referringPage(history.state?.haeryongReaderPosition, referenceOwner);
+      const currentURL = locationHash();
+      const restore = restoreRef.current?.context === context ? restoreRef.current.position
+        : location !== null && retained?.context === context && retained.url === readerURL(documentId, versionId, location) + currentURL ? retained.position : undefined;
       const next: Selection = { context, bootstrap, location, restore };
       frameSelection.current = next; locationRef.current = location;
       setSelection(next);
@@ -290,20 +315,20 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
     } catch (error) { if (own === filesGeneration.current) setFiles((old) => ({ ...old, busy: false, issue: errorText(error) })); }
   };
   const mirror = (location: ReaderLocation) => {
+    const changedPage = locationRef.current?.page !== location.page;
     locationRef.current = location;
-    // Region selection is page-local: navigation clears it until the new
-    // page's own region event arrives with its captured tuple.
-    setRegionSelection(null);
-    history.replaceState(history.state, "", readerURL(documentId, versionId, location) + locationHash());
+    if (changedPage) setRegionSelection(null);
+    history.replaceState(history.state, "", readerURL(documentId, versionId, location) + (changedPage ? "" : locationHash()));
     window.dispatchEvent(new PopStateEvent("popstate"));
   };
-  const captureRegion = (event: { versionId: string; pagePath: string; context: string | null; regionId: string }) => {
+  const captureRegion = (event: ReaderPageContext & { regionId: string }) => {
+    if (event.context !== context || event.reload !== reload || event.renderGeneration !== channelRef.current?.renderGeneration) return;
     // Late or cross-page/cross-context region events are matched against the
     // event's OWN captured tuple (the viewer channel's context) and the
     // current selection; an old callback can never retag its region as a new
     // context's selection.
     if (acceptRegionSelection({ versionId: event.versionId, pagePath: event.pagePath, regionId: event.regionId }, { versionId, pagePath: locationRef.current?.page ?? null })) {
-      setRegionSelection({ versionId: event.versionId, pagePath: event.pagePath, context: event.context, reload, regionId: event.regionId });
+      setRegionSelection({ versionId: event.versionId, pagePath: event.pagePath, context: event.context, reload, regionId: event.regionId, intentKey: routeRegion });
     }
   };
   // Host outline selection: bind the exact current page's region context
@@ -316,9 +341,10 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
   reloadRef.current = reload;
   const selectRegion = (region: { id: string; label?: unknown }) => {
     if (currentPage === null) { setNotice("페이지가 열려 있지 않아 영역을 선택할 수 없습니다."); return; }
-    setRegionSelection({ versionId, pagePath: currentPage, context, reload, regionId: region.id });
+    selectedRegionRef.current = region.id;
+    setRegionSelection({ versionId, pagePath: currentPage, context, reload, regionId: region.id, intentKey: routeRegion });
     const captured = { versionId, context, page: currentPage, reload, handle: regionFocus.current as unknown };
-    const cancelled = () => regionRequestStale(captured, {
+    const cancelled = () => selectedRegionRef.current !== region.id || regionRequestStale(captured, {
       live: live.current,
       versionId: currentRoute.current.versionId,
       context: currentRoute.current.context,
@@ -379,15 +405,25 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
   // Region ownership is render-guarded on the full [version,page,context,
   // reload] identity: any mismatch renders as unselected, so a stale scalar
   // region cannot reach the panel (or a first query) under a new selection.
-  const regionId = regionSelection !== null
+  referenceRoute.current = { versionId, context, page: currentPage, reload };
+  hashFocus.bind(currentPage !== null && context !== null ? { versionId, pagePath: currentPage, context, reload } : null, routeRegion);
+  const regionId = regionSelection !== null && regionSelection.intentKey === routeRegion
     && regionSelectionMatches(regionSelection, { versionId, pagePath: currentPage, context, reload })
-    ? regionSelection.regionId : null;
+    ? regionSelection.regionId : hashFocus.selection()?.regionId ?? null;
+  const selectedRegionRef = useRef(regionId);
+  selectedRegionRef.current = regionId;
+  useEffect(() => {
+    // Selection belongs to this route immediately; focus waits for the exact
+    // page's explicit ready callback. The outline path keeps modal-close rules.
+    hashFocus.flush(channelReady, id => selectRegion({ id }));
+  }, [routeRegion, versionId, currentPage, context, reload, channelReady]);
+  const returnContext = referringPage(history.state?.haeryongReferenceReturn, referenceOwner);
   return <div className="reader">
     <header className="reader-header"><div><h1>{currentVersion?.title_snapshot ?? docInfo?.document.title ?? "결과 읽기"}</h1><p className="muted-code">{versionId}</p>
         <VersionHeader version={currentVersion} pagePath={currentPage} metadata={suppliedMeta.kind === "ready" ? suppliedMeta.metadata : null} />
         {suppliedMeta.kind === "error" && <div className="banner" data-tone="warning" role="alert"><p>공급 메타데이터를 확인하지 못했습니다: {suppliedMeta.problem} — 결과 읽기에는 영향이 없습니다.</p><button onClick={() => setSuppliedMetaReload((value) => value + 1)}>메타데이터 다시 불러오기</button></div>}
       </div></header>
-    <div className="form-row reader-actions"><button onClick={() => void continueReading()}>이어서 읽기</button><button disabled={!selection?.location} onClick={() => void setDefault().catch((error) => setNotice(errorText(error)))}>기본 페이지로 지정</button><button onClick={() => void setDefault(true).catch((error) => setNotice(errorText(error)))}>기본 페이지 설정 해제</button><button id="reader-files-toggle" className="narrow-only" aria-expanded={filesOpen} aria-controls="reader-files-panel" onClick={() => { setContextOpen(false); setFilesOpen((value) => !value); }}>파일 목록</button><button id="reader-context-toggle" aria-expanded={contextOpen} aria-controls="reader-context-panel" onClick={() => { setFilesOpen(false); setContextOpen((value) => !value); }}>근거 패널</button><button disabled={!currentDocInfo} onClick={() => setImportOpen(true)}>새 버전 가져오기</button></div>
+    <div className="form-row reader-actions">{returnContext && <button onClick={() => { controller.requireVerifiedDispatch(controller.captureDispatchAuthority()); returnToReferringPage(referenceOwner); }}>참조한 페이지로 돌아가기</button>}<button onClick={() => void continueReading()}>이어서 읽기</button><button disabled={!selection?.location} onClick={() => void setDefault().catch((error) => setNotice(errorText(error)))}>기본 페이지로 지정</button><button onClick={() => void setDefault(true).catch((error) => setNotice(errorText(error)))}>기본 페이지 설정 해제</button><button id="reader-files-toggle" className="narrow-only" aria-expanded={filesOpen} aria-controls="reader-files-panel" onClick={() => { setContextOpen(false); setFilesOpen((value) => !value); }}>파일 목록</button><button id="reader-context-toggle" aria-expanded={contextOpen} aria-controls="reader-context-panel" onClick={() => { setFilesOpen(false); setContextOpen((value) => !value); }}>근거 패널</button><button disabled={!currentDocInfo} onClick={() => setImportOpen(true)}>새 버전 가져오기</button></div>
     {notice && <p role="status">{notice}</p>}
     {entries.map((entry) => <div className="banner" data-tone="warning" key={personalKey(entry.target)}>
       <p>{entry.target.version.slice(0, 8)} · {{ "reader-preference": "기본 페이지", "reading-position": "마지막 연 페이지", "page-position": "페이지 위치" }[entry.target.kind]}{entry.target.page ? ` · ${entry.target.page}` : ""}: {entry.issue ?? (personal.recoverable(entry.target) ? "이전 화면의 저장 결과가 확인되지 않았습니다. 원래 요청으로 다시 확인하세요." : entry.conflict ? "다른 기기에서 변경된 상태입니다. 유지할 값을 선택하세요." : "저장 결과를 확인하는 중입니다.")}</p>
@@ -404,7 +440,14 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
       <h3>파일</h3><ul>{files.items.filter((item) => !(item.kind === "file" && html(item.path)) && filterMatches(item, filesFilter)).map((item) => <li key={item.path}>{item.kind === "file" ? <button className="link" onClick={() => { setDownload({ versionId, path: item.path }); setFilesOpen(false); }}>{item.path}</button> : <span>{item.path} ({item.kind})</span>}</li>)}</ul>
       {files.issue && <div role="alert"><p>파일 목록 오류: {files.issue}</p><button onClick={() => { if (files.cursor) void more(); else { const own = ++filesGeneration.current; setFiles((old) => ({ ...old, busy: true })); void client.versionFiles(versionId).then((page) => { if (own === filesGeneration.current) setFiles({ items: page.items, cursor: page.next_cursor, busy: false, issue: null }); }).catch((error) => { if (own === filesGeneration.current) setFiles((old) => ({ ...old, busy: false, issue: errorText(error) })); }); } }}>목록 다시 불러오기</button></div>}{files.busy && <p role="status">목록을 불러오는 중…</p>}{files.cursor && <button disabled={files.busy} onClick={() => void more()}>더 불러오기</button>}
     </Sheet>
-    {selection?.bootstrap.renderer_available && selection.location && context !== null && selection.context === context ? <IsolatedViewer key={JSON.stringify([versionId, selection.context, reload])} controller={controller} owner={owner} context={selection.context} documentId={documentId} versionId={versionId} initial={selection.location} restore={selection.restore} personal={personal} focusHandle={regionFocus} onLocation={mirror} onNotice={setNotice} onRegion={captureRegion} onRegionFocus={(result) => { if (!acceptRegionFocusResult(result, { versionId, pagePath: currentPage })) return; if (!result.found) setNotice(`선언된 영역 ${result.regionId}에 대응하는 문서 요소를 찾지 못했습니다. 영역 ID는 메타데이터의 논리 식별자이며 읽기에는 영향이 없습니다.`); else if (!result.focused) setNotice(`영역 ${result.regionId}에 초점을 맞추지 못했습니다(오버레이가 열려 있거나 페이지가 초점을 받을 수 없습니다). 본문에서 방향키로 읽은 뒤 영역을 다시 선택하면 초점이 이동하는 경우가 있습니다.`); else setNotice(`영역 ${result.regionId}에 초점을 맞췄습니다.`); }} /> : !issue && !selection ? <p role="status">결과를 확인하는 중…</p> : selection?.location === null ? <p>페이지를 선택하거나 원본 파일을 내려받으세요.</p> : null}
+    {selection?.bootstrap.renderer_available && selection.location && context !== null && selection.context === context ? <IsolatedViewer key={JSON.stringify([versionId, selection.context, reload])} controller={controller} owner={owner} context={selection.context} documentId={documentId} versionId={versionId} initial={selection.location} restore={selection.restore} initialRegion={routeRegion ?? undefined} reload={reload} personal={personal}
+      onChannelReady={(page) => {
+        const route = referenceRoute.current;
+        if (!readerChannelReady(page, { versionId: route.versionId, context: route.context ?? "", reload: route.reload })) return;
+        channelRef.current = page; setChannelReady(page);
+      }}
+      onChannelClosed={() => { channelRef.current = null; setChannelReady(null); }}
+      onReference={referencesEnabled ? event => { void references.request(event); } : undefined} focusHandle={regionFocus} onLocation={mirror} onNotice={setNotice} onRegion={captureRegion} onRegionFocus={(result) => { if (result.context !== context || result.reload !== reload || !regionFocusMatches(result, channelRef.current, selectedRegionRef.current)) return; if (!acceptRegionFocusResult(result, { versionId, pagePath: currentPage })) return; if (!result.found) setNotice(`선언된 영역 ${result.regionId}에 대응하는 문서 요소를 찾지 못했습니다. 영역 ID는 메타데이터의 논리 식별자이며 읽기에는 영향이 없습니다.`); else if (!result.focused) setNotice(`영역 ${result.regionId}에 초점을 맞추지 못했습니다(오버레이가 열려 있거나 페이지가 초점을 받을 수 없습니다). 본문에서 방향키로 읽은 뒤 영역을 다시 선택하면 초점이 이동하는 경우가 있습니다.`); else setNotice(`영역 ${result.regionId}에 초점을 맞췄습니다.`); }} /> : !issue && !selection ? <p role="status">결과를 확인하는 중…</p> : selection?.location === null ? <p>페이지를 선택하거나 원본 파일을 내려받으세요.</p> : null}
     <Sheet id="reader-context-panel" openerId="reader-context-toggle" className="reader-context" open={contextVisible} modal={contextModal} label="문맥 및 근거 패널" onClose={() => setContextOpen(false)}>
       {!wideLayout && <button onClick={() => setContextOpen(false)}>문맥 닫기</button>}
       {suppliedMeta.kind === "ready" && currentPage !== null && regionsOfPage(suppliedMeta.metadata, currentPage).length > 0 && <div className="region-outline"><h3>영역 개요(현재 페이지)</h3><ul>{regionsOfPage(suppliedMeta.metadata, currentPage).map((region) => <li key={region.id}><button className="link" data-selected={regionId === region.id ? "true" : undefined} aria-current={regionId === region.id ? "true" : undefined} onClick={() => selectRegion(region)}>{typeof region.label === "string" && region.label !== "" ? region.label : region.id}</button></li>)}</ul><p className="hint">영역을 선택하면 해당 페이지의 문맥이 그 영역에 묶이고, 페이지 요소에 실제 초점을 시도해 결과를 알립니다. 좁은 화면에서는 문맥 패널이 닫힌 뒤 초점이 시도됩니다. 선언된 영역이 문서 요소와 연결되지 않아도 읽기·페이지 문맥은 그대로 유지됩니다.</p></div>}

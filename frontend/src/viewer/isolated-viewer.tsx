@@ -1,16 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ShellController } from "../client/controller.ts";
 import type { ContextClient } from "../client/context-types.ts";
 import type { PersonalTarget, PersonalOperations } from "../app/screens/personal-operations.ts";
 import { BrowserContextJournal, ContextTransferHost, freshContextVerifier } from "./context-transfer.ts";
+import { featureEnabled } from "../app/screens/library-data.ts";
+import type { ReaderPageContext, ReferenceActivation } from "../app/screens/reader-navigation.ts";
 import { ViewerChannel } from "./channel.ts";
 import { RenderSessionLease } from "./render-session.ts";
+import { ReaderLocationTracker, type ReaderLocation } from "./reader-location.ts";
 
-export interface ReaderLocation { page: string; query: string; fragment: string }
+export type { ReaderLocation } from "./reader-location.ts";
 export interface ViewerProps {
   controller: ShellController;
   owner: string;
   context: string;
+  reload: number;
+  initialRegion?: string;
+  onChannelReady?(page: ReaderPageContext): void;
+  onChannelClosed?(): void;
+  onReference?(event: ReferenceActivation): void;
   documentId: string;
   versionId: string;
   initial: ReaderLocation;
@@ -29,7 +37,7 @@ export interface ViewerProps {
    * version/page/host-context identity beside the region id; the host binds
    * the stored selection to that exact identity and never retags it.
    */
-  onRegion?(selection: { versionId: string; pagePath: string; context: string | null; regionId: string }): void;
+  onRegion?(selection: ReaderPageContext & { regionId: string }): void;
   /**
    * Honest result of a host-initiated region.focus attempt, observed inside
    * the page, carrying the CAPTURED channel identity beside the values:
@@ -38,7 +46,7 @@ export interface ViewerProps {
    * never a fake success from message delivery alone). The host rejects a
    * late ack whose captured tuple no longer matches the current selection.
    */
-  onRegionFocus?(result: { versionId: string; pagePath: string; context: string | null; regionId: string; found: boolean; focused: boolean }): void;
+  onRegionFocus?(result: ReaderPageContext & { regionId: string; found: boolean; focused: boolean }): void;
 }
 const uuid = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
 const message = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
@@ -51,6 +59,9 @@ export function IsolatedViewer(props: ViewerProps) {
   const form = useRef<HTMLFormElement>(null);
   const callbacks = useRef(props);
   callbacks.current = props;
+  const referenceConfig = useRef<(() => void) | null>(null);
+  const referencesEnabled = featureEnabled(props.controller.state.capabilities?.features, "references");
+  useLayoutEffect(() => { referenceConfig.current?.(); }, [referencesEnabled]);
   const [failure, setFailure] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [retry, setRetry] = useState(0);
@@ -88,6 +99,9 @@ export function IsolatedViewer(props: ViewerProps) {
     let generation = 0, announcement: string | null = null;
     let poll: ReturnType<typeof setInterval> | null = null;
     let positionRequest: string | null = null, applyRequest: string | null = null;
+    let referenceGeneration = 0;
+    let pendingReference: { correlation: string; id: string; generation: number } | null = null;
+    const locationTracker = new ReaderLocationTracker(initial);
     let current = initial, observed: string | null = null;
     let lastPosition: string | null = null;
     const guard = () => { if (!active) throw new Error("이전 페이지 연결입니다."); controller.requireVerifiedDispatch(captured); };
@@ -95,7 +109,7 @@ export function IsolatedViewer(props: ViewerProps) {
     const target = (kind: PersonalTarget["kind"], page: string | null = null): PersonalTarget => ({ version: props.versionId, kind, page });
     const observe = (report: Record<string, unknown>) => {
       if (typeof report.page_path !== "string" || typeof report.page_query !== "string" || typeof report.page_fragment !== "string") return;
-      current = { page: report.page_path, query: report.page_query, fragment: report.page_fragment };
+      current = locationTracker.observe({ page: report.page_path, query: report.page_query, fragment: report.page_fragment });
       callbacks.current.onLocation(current);
       const next = JSON.stringify(current);
       if (next === observed) return;
@@ -110,7 +124,10 @@ export function IsolatedViewer(props: ViewerProps) {
       if (announcement === loaded.announcement_id) return;
       announcement = loaded.announcement_id;
       const own = ++generation;
-      channel?.dispose(); channel = null;
+      channel?.dispose(); channel = null; referenceConfig.current = null;
+      referenceGeneration++; pendingReference = null;
+      if (props.focusHandle) props.focusHandle.current = null;
+      callbacks.current.onChannelClosed?.();
       if (poll) clearInterval(poll);
       positionRequest = null; applyRequest = null; lastPosition = null;
       setLoaded(false);
@@ -120,8 +137,21 @@ export function IsolatedViewer(props: ViewerProps) {
         guard(); if (own !== generation || boot.selected_page !== loaded.page_path) return;
         const page = loaded.page_path as string;
         const pageGuard = () => { guard(); if (own !== generation) throw new Error("이전 페이지 연결입니다."); };
+        const capturedPage: ReaderPageContext = { versionId: props.versionId, pagePath: page, context: props.context, reload: props.reload, renderGeneration: loaded.render_instance_id as string };
         const contextClient = client as unknown as ContextClient;
         const identity = { libraryId: controller.state.capabilities!.library_id, principalId: controller.state.session!.principal_id, sessionId: controller.state.session!.session_id };
+        let restoreRegion = props.restore && page === initial.page ? props.initialRegion ?? null : null;
+        const beginSnapshots = () => {
+          if (poll) clearInterval(poll);
+          poll = setInterval(() => {
+            try { pageGuard(); if (!positionRequest) { positionRequest = crypto.randomUUID(); next.requestSnapshot(positionRequest); } }
+            catch (error) { notify(error); }
+          }, 750);
+        };
+        const applyRestore = () => {
+          applyRequest = crypto.randomUUID();
+          next.applyPosition({ correlation_id: applyRequest, position: props.restore! });
+        };
         const next = new ViewerChannel({
           frame: frame.current!.contentWindow!, origin: origin!,
           page: { document_id: props.documentId, version_id: props.versionId, page_path: page },
@@ -130,25 +160,26 @@ export function IsolatedViewer(props: ViewerProps) {
           ready(payload) {
             pageGuard(); setLoaded(true); observe({ ...payload, page_path: page });
             if (Number.isFinite(payload.scroll_x) && Number.isFinite(payload.scroll_y)) lastPosition = JSON.stringify([payload.scroll_x, payload.scroll_y, current.query, current.fragment]);
-            const region = new URLSearchParams(location.hash.slice(1)).get("region");
-            if (region) focusRegion(region);
+            referenceConfig.current = () => {
+              pageGuard(); referenceGeneration++;
+              const enabled = featureEnabled(controller.state.capabilities?.features, "references") && !!callbacks.current.onReference;
+              if (!enabled) pendingReference = null;
+              next.referenceNavigation(enabled ? (id) => {
+                pageGuard();
+                if (!featureEnabled(controller.state.capabilities?.features, "references")) return;
+                const correlation = crypto.randomUUID();
+                pendingReference = { correlation, id, generation: referenceGeneration };
+                next.requestSnapshot(correlation);
+              } : undefined);
+            };
+            referenceConfig.current();
+            callbacks.current.onChannelReady?.(capturedPage);
             const publicOrigin = client.publicOrigin;
             if (publicOrigin) next.route(new URL(`/documents/${props.documentId}/versions/${props.versionId}`, publicOrigin).href);
-            const beginSnapshots = () => {
-              if (poll) clearInterval(poll);
-              poll = setInterval(() => {
-                try {
-                  pageGuard();
-                  if (positionRequest) return;
-                  positionRequest = crypto.randomUUID();
-                  next.requestSnapshot(positionRequest);
-                } catch (error) { notify(error); }
-              }, 750);
-            };
             if (props.restore && page === initial.page) {
-              applyRequest = crypto.randomUUID();
-              next.applyPosition({ correlation_id: applyRequest, position: props.restore });
-              // Polling begins only after the correlated restore acknowledgement.
+              // A return entry retains both its selected region and exact scroll.
+              // Focus the initial region first, then restore the saved position.
+              if (restoreRegion === null) applyRestore();
             } else beginSnapshots();
           },
           positionApplied(correlation, result) {
@@ -161,6 +192,16 @@ export function IsolatedViewer(props: ViewerProps) {
             }, 750);
           },
           position(correlation, position) {
+            if (pendingReference?.correlation === correlation && Number.isFinite(position.scroll_x) && Number.isFinite(position.scroll_y)) {
+              const pending = pendingReference; pendingReference = null;
+              const referenceGuard = () => {
+                pageGuard();
+                if (pending.generation !== referenceGeneration || !featureEnabled(controller.state.capabilities?.features, "references")) throw new Error("이전 참조 요청입니다.");
+              };
+              referenceGuard();
+              callbacks.current.onReference?.({ ...capturedPage, referenceId: pending.id, position: { scroll_x: position.scroll_x as number, scroll_y: position.scroll_y as number }, guard: referenceGuard });
+              return;
+            }
             if (correlation !== positionRequest || !Number.isFinite(position.scroll_x) || !Number.isFinite(position.scroll_y)) return;
             positionRequest = null;
             const stamp = JSON.stringify([position.scroll_x, position.scroll_y, current.query, current.fragment]);
@@ -176,13 +217,18 @@ export function IsolatedViewer(props: ViewerProps) {
             // matches the tuple before assigning a selection, so late or
             // cross-page events never rely on commit ordering.
             if (type === "region.selected") {
-              callbacks.current.onRegion?.({ versionId: props.versionId, pagePath: page, context: props.context, regionId: String(payload.region_id) });
+              callbacks.current.onRegion?.({ ...capturedPage, regionId: String(payload.region_id) });
               callbacks.current.onNotice(`선택한 영역: ${String(payload.region_id)}`);
             } else if (type === "region.focused") {
+              if (restoreRegion !== null && payload.region_id === restoreRegion) {
+                const expected = restoreRegion; restoreRegion = null;
+                if (callbacks.current.initialRegion === expected) applyRestore();
+                else beginSnapshots();
+              }
               // The ack travels with its OWN captured channel identity (the
               // effect closure's version/page/context), never the latest
               // parent props, so a late A-page ack cannot retag page B.
-              callbacks.current.onRegionFocus?.({ versionId: props.versionId, pagePath: page, context: props.context, regionId: String(payload.region_id), found: payload.found === true, focused: payload.focused === true });
+              callbacks.current.onRegionFocus?.({ ...capturedPage, regionId: String(payload.region_id), found: payload.found === true, focused: payload.focused === true });
             } else {
               callbacks.current.onNotice("페이지 context를 확인했습니다.");
             }
@@ -199,6 +245,7 @@ export function IsolatedViewer(props: ViewerProps) {
         const capturedFrame = frame.current;
         const focusRegion = (regionId: string): void => {
           pageGuard();
+          if (restoreRegion !== null && regionId !== restoreRegion) { restoreRegion = null; beginSnapshots(); }
           capturedFrame?.focus({ preventScroll: true });
           next.focus(regionId);
         };
@@ -225,14 +272,16 @@ export function IsolatedViewer(props: ViewerProps) {
       handoff.submit();
     }).catch((error) => { if (active) setFailure(message(error)); });
     return () => {
-      active = false; generation++;
+      active = false; generation++; referenceGeneration++; pendingReference = null;
+      referenceConfig.current = null;
+      callbacks.current.onChannelClosed?.();
       window.removeEventListener("message", onMessage);
       if (poll) clearInterval(poll);
       channel?.dispose();
       if (props.focusHandle) props.focusHandle.current = null;
       void lease.stop().catch(() => { /* Expiring delivery remains owned by its captured session. */ });
     };
-  }, [props.controller, props.owner, props.context, props.documentId, props.versionId, props.personal, initial, retry, lease]);
+  }, [props.controller, props.owner, props.context, props.documentId, props.versionId, props.reload, props.personal, initial, retry, lease]);
 
   return <section className="reader-content" aria-label="결과 뷰어">
     {failure && <div className="banner" role="alert"><p>페이지 연결을 확인하지 못했습니다: {failure}</p><button disabled={closing} onClick={() => void reopen()}>{closing ? "이전 연결을 닫는 중…" : "다시 열기"}</button></div>}

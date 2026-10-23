@@ -19,7 +19,7 @@ import (
 )
 
 // Test-only reverse construction, never a live product downgrade or an old binary.
-const dropSearchSchema = `DROP TRIGGER search_chunks_insert;DROP TRIGGER search_chunks_update;DROP TRIGGER search_chunks_delete;DROP TABLE search_words;DROP TABLE search_grams;DROP TABLE search_chunks;DROP TABLE search_units;DROP TABLE search_indexes;DROP TABLE derived_work;DROP TABLE page_anchors;`
+const dropSearchSchema = dropReferenceSchema + `DROP TRIGGER search_chunks_insert;DROP TRIGGER search_chunks_update;DROP TRIGGER search_chunks_delete;DROP TABLE search_words;DROP TABLE search_grams;DROP TABLE search_chunks;DROP TABLE search_units;DROP TABLE search_indexes;DROP TABLE derived_work;DROP TABLE page_anchors;`
 
 func searchSeed(s *Store) (string, error) {
 	h, err := s.Health(ctx)
@@ -129,7 +129,7 @@ func assertSearchTwoProjects(db *sql.DB) {
 func searchPriorRows(db *sql.DB) map[string]string {
 	GinkgoHelper()
 	assertSearchTwoProjects(db)
-	names, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'search_%' AND name NOT IN ('derived_work','page_anchors') ORDER BY name`)
+	names, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'search_%' AND name NOT IN ('derived_work','page_anchors','reference_materializations','authored_references','authored_edges') ORDER BY name`)
 	Expect(err).NotTo(HaveOccurred())
 	var tables []string
 	for names.Next() {
@@ -268,7 +268,7 @@ var _ = Describe("SC10 schema8 recovery and postings", Label("persistence"), fun
 			}
 			ready := openStore(t, w, nil)
 			Expect(searchPriorRows(ready.db)).To(Equal(prior))
-			Expect(ready.validateTables(ctx, 8)).To(Succeed())
+			Expect(ready.validateTables(ctx, SchemaRevision)).To(Succeed())
 			Expect(ready.db.QueryRow("SELECT count(*) FROM schema_migrations WHERE revision=8").Scan(&count)).To(Succeed())
 			Expect(count).To(Equal(1))
 			snapshots, err = filepath.Glob(filepath.Join(w.Profile.DataDir, "storage", "pre-migration-*.sqlite"))
@@ -366,10 +366,10 @@ var _ = Describe("SC10 schema8 recovery and postings", Label("persistence"), fun
 			t := GinkgoT()
 			_, w := profile(t)
 			s := openStore(t, w, nil)
-			Expect(s.validateTables(ctx, 8)).To(Succeed(), "pinned engine has exactly data/idx/docsize/config shadows")
+			Expect(s.validateTables(ctx, SchemaRevision)).To(Succeed(), "pinned engine has exactly data/idx/docsize/config shadows")
 			_, err := s.db.Exec(tamper)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(s.validateTables(ctx, 8)).NotTo(Succeed())
+			Expect(s.validateTables(ctx, SchemaRevision)).NotTo(Succeed())
 			Expect(s.Close()).To(Succeed())
 			failed := New(nil)
 			_, _, err = failed.Prepare(ctx, w.Profile)

@@ -186,3 +186,22 @@ service exit 5; healthy zero-match, pending or partial coverage use exit 0.
 No receipt, implicit indexing, retry or rebuild action is selected. Recovery:
 TASK-004-04 rebuild. The public route/CLI work while `features.search` remains
 false pending M5's complete client/UI delivery.
+
+
+## Implemented reference commands (TASK-004-03 M3)
+
+`haeryong references list --version ID [--cursor C --limit N] --json` emits the
+closed reference collection. `haeryong references resolve --version ID
+--reference-id ID [--page PATH --region ID] --json` emits one typed reference
+view. These use the selected protected credential and normal library/profile
+identity preflight, then exactly one corresponding GET. Query-form IDs are
+encoded once, preserving slash, dot, percent and Unicode. No implicit retry,
+rebuild, target selection or operation ID is added. Foreign flags fail before
+credential/network access; region requires page and limit is 1–200.
+
+Exit 0 includes honest 200 unresolved states. Invalid flags/API input exit 2;
+authentication/authorization and hidden or unknown target, source or reference
+(`NOT_FOUND`) follow the shared registry's exit 3; `TARGET_GONE` exits 4 and
+service unavailability exits 5. These additive commands remain
+read-only. M4 separately delivers the shared clients/Reader flow and enables
+`features.references`; the CLI never changes that capability.

@@ -166,6 +166,8 @@ def test_signal_shutdown_crash_recovery_and_missing_storage_never_create_substit
 
 @pytest.mark.parametrize("args", [
     ["events", "--metadata", "unused"],
+    ["references", "list", "--version", "11111111-1111-4111-8111-111111111111", "--operation-id", "unused"],
+    ["references", "resolve", "--version", "11111111-1111-4111-8111-111111111111", "--reference-id", "r", "--region", "orphan"],
     ["files", "download", "--version", "fixture", "--output", "out", "--directory", "ignored"],
     ["auth", "sessions", "list", "--project", "ignored"],
     ["package", "validate", "input", "--base-version", "ignored"],

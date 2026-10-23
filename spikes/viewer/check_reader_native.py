@@ -2,14 +2,14 @@
 import argparse,importlib.util,json,os,pathlib,shutil,subprocess,tempfile,time,urllib.parse,urllib.error,urllib.request,hashlib,signal,sys
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--receipt',type=pathlib.Path,required=True)
-parser.add_argument('--stages',default='selfcheck,app,seed,restart,crash,evidence,search')
+parser.add_argument('--stages',default='selfcheck,app,seed,restart,crash,evidence,search,references')
 args=parser.parse_args()
 STAGES=set(args.stages.split(','))
-ALL_STAGES={'selfcheck','app','seed','restart','crash','evidence','search'}
+ALL_STAGES={'selfcheck','app','seed','restart','crash','evidence','search','references'}
 assert sys.platform=='darwin','this check requires the existing native macOS Wails harness'
-assert STAGES and STAGES<=ALL_STAGES|{'corpus'},STAGES
+assert STAGES and STAGES<=ALL_STAGES|{'corpus','reference-corpus'},STAGES
 assert not ('restart' in STAGES and 'seed' not in STAGES),'restart requires the seed stage'
-assert not (STAGES&{'seed','restart','crash','evidence','search','corpus'} and 'app' not in STAGES),'these stages require app setup'
+assert not (STAGES&{'seed','restart','crash','evidence','search','references','corpus','reference-corpus'} and 'app' not in STAGES),'these stages require app setup'
 REPO=pathlib.Path(__file__).resolve().parents[2]
 RECEIPT=args.receipt.resolve()
 assert RECEIPT.parent.is_dir(),'receipt parent must exist'
@@ -27,7 +27,7 @@ def fingerprints():
     paths=sorted([p for folder in ['cmd','internal'] for p in (REPO/folder).rglob('*.go') if not p.name.endswith('_test.go')]+[REPO/'go.mod',REPO/'go.sum']+[p for p in (REPO/'internal/webassets/dist').rglob('*') if p.is_file()]
                  +[p for p in (REPO/'desktop').rglob('*') if p.is_file()]
                  +[REPO/'spikes/viewer/desktop/main.go',REPO/'spikes/viewer/desktop/reader_mode.go',REPO/'spikes/viewer/desktop/go.mod',REPO/'spikes/viewer/desktop/go.sum']
-                 +[REPO/'frontend/native.html',REPO/'frontend/vite.native.config.ts',REPO/'frontend/src/native-main.tsx',REPO/'frontend/src/client/native-bridge.ts',REPO/'frontend/src/client/native-wire.ts',REPO/'frontend/src/client/native.ts'])
+                 +[REPO/'frontend/native.html',REPO/'frontend/vite.native.config.ts',REPO/'frontend/src/native-main.tsx',REPO/'frontend/src/client/native-bridge.ts',REPO/'frontend/src/client/native-wire.ts',REPO/'frontend/src/client/native.ts',REPO/'spikes/viewer/check_reader_native.py',REPO/'spikes/viewer/reference_native.py',REPO/'spikes/viewer/reference_corpus_native.py',REPO/'spikes/viewer/reference_corpus_probe.js',REPO/'tests/manual/search_corpus_support.py',REPO/'spikes/viewer/reference_probe.js',REPO/'tests/manual/reference_support.py'])
     return {str(p.relative_to(REPO)):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
 def receipts(pid):
     path=state/f'native-reader-receipts-{pid}.json'
@@ -712,6 +712,16 @@ for(let i=0;i<6;i++){try{await fetch('wails://denied/'+i);}catch(e){}}
             finally:
                 seeded_server.shutdown();seeded_server.server_close()
 
+    if 'references' in STAGES:
+        ref_spec=importlib.util.spec_from_file_location('reference_native',REPO/'spikes/viewer/reference_native.py')
+        ref_support=importlib.util.module_from_spec(ref_spec);ref_spec.loader.exec_module(ref_support)
+        ref_support.run(REPO,work,state,product,owner,launch,proof)
+
+    if 'reference-corpus' in STAGES:
+        spec=importlib.util.spec_from_file_location('reference_corpus_native',REPO/'spikes/viewer/reference_corpus_native.py')
+        support=importlib.util.module_from_spec(spec);spec.loader.exec_module(support)
+        support.run(REPO,work,state,product,owner,launch,proof)
+
     # 4) forced crash fabricates no close receipt; lease expiry stays distinct.
     if 'crash' in STAGES:
             crash=launch(['--reader','--reader-port','9271','--reader-path',app_path],'120s')
@@ -727,6 +737,7 @@ for(let i=0;i<6;i++){try{await fetch('wails://denied/'+i);}catch(e){}}
     assert fingerprints()==before,'inputs changed during observations'
     proof['daemon_alive_after_runs']=True
     proof['input_sha256']=hashlib.sha256(json.dumps(before,sort_keys=True).encode()).hexdigest()
+    proof['inputs']=before
     proof['binary_sha256']=hashlib.sha256((work/'native').read_bytes()).hexdigest()
     proof['complete']=True
 finally:

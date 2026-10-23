@@ -208,6 +208,8 @@ class SyntheticNativePort {
         this.script.sessionStatus = "";
         return { adopted: true, durability: "confirmed" };
       }
+      case "versionReferences": return { items: [], next_cursor: null, materialization: { state: "ready", reason: null } };
+      case "resolveReference": throw new ApiError(404, "NOT_FOUND", false);
       case "abandonPairingAttempt": {
         this.script.abandonCalls++;
         const outcome = this.script.abandonResults.shift() ?? "abandoned";

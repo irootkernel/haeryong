@@ -13,7 +13,7 @@ func admits(value string, allowed ...string) bool {
 	return false
 }
 func validateDerivedWork(v domain.DerivedWork) error {
-	if v.JobID == "" || v.VersionID == "" || !admits(v.WorkKind, "search") || v.ExtractorRevision < 1 {
+	if v.JobID == "" || v.VersionID == "" || !admits(v.WorkKind, "search", "references") || v.ExtractorRevision < 1 {
 		return domain.ErrUnsupportedDerivedData
 	}
 	return nil
