@@ -17,6 +17,9 @@ func (t *writeTx) ReferenceSearchTerminal(version string) (bool, error) {
 	return !blocked, err
 }
 func (t *writeTx) EnqueueReferences(version string, revision int64) (string, error) {
+	return t.enqueueReferences(version, revision, false)
+}
+func (t *writeTx) enqueueReferences(version string, revision int64, rebuild bool) (string, error) {
 	var id string
 	err := t.tx.QueryRowContext(t.ctx, `SELECT job_id FROM derived_work WHERE version_id=? AND work_kind='references' AND extractor_revision=?`, version, revision).Scan(&id)
 	if err == nil {
@@ -63,7 +66,19 @@ func (t *writeTx) EnqueueReferences(version string, revision int64) (string, err
 	if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		return "", err
 	}
-	if err = t.PutReferenceMaterialization(domain.ReferenceMaterialization{FromVersionID: v.ID, ManifestSHA: v.ManifestSHA, ReferenceRevision: revision, Revision: old.Revision + 1, State: "building", JobID: id}); err != nil {
+	if rebuild && old.JobID != "" && old.ReferenceRevision == revision {
+		previous, e := t.Job(old.JobID)
+		if e != nil {
+			return "", e
+		}
+		if !terminal(previous.State) || old.ManifestSHA != v.ManifestSHA || old.ReferenceRevision != revision {
+			return "", domain.ErrConflict
+		}
+		err = t.exec(`UPDATE reference_materializations SET job_id=?,state='building',revision=revision+1 WHERE from_version_id=? AND job_id=? AND revision=?`, id, v.ID, old.JobID, old.Revision)
+	} else {
+		err = t.PutReferenceMaterialization(domain.ReferenceMaterialization{FromVersionID: v.ID, ManifestSHA: v.ManifestSHA, ReferenceRevision: revision, Revision: old.Revision + 1, State: "building", JobID: id})
+	}
+	if err != nil {
 		return "", err
 	}
 	return id, t.ReferenceProgress(id, "inventory", "", 0, 0)

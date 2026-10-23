@@ -758,9 +758,20 @@ export interface ReferenceView {
   reader_url: string | null;
 }
 export interface ReferencePage {
+  counts: { edge_count: string; referenced_document_count: string };
   items: ReferenceView[]; next_cursor: string | null;
   materialization: { state: "pending" | "ready" | "failed"; reason: string | null };
 }
+
+export interface BacklinksRequest extends VersionReferencesRequest { pagePath?: string; regionId?: string }
+export interface LinkEndpoint { document_id: string; version_id: string; page_path: string | null; region_id: string | null }
+export interface Backlink { edge_id: string; reference_id: string; from: LinkEndpoint; target: LinkEndpoint; relation: string | null; label: string | null; reader_url: string }
+export interface BacklinkPage { scope: { version_id: string; page_path: string | null; region_id: string | null }; items: Backlink[]; next_cursor: string | null; counts: { edge_count: string; referring_document_count: string } }
+export type IndexValidationReason = "reverse_index_definition_missing" | "reverse_index_definition_changed" | "search_index_missing" | "search_owner_missing" | "search_index_incomplete" | "validation_changed" | "search_index_divergence" | "materialization_pending" | "materialization_incomplete" | "anchor_prerequisite_pending" | "reference_index_divergence";
+export interface IndexValidation { version_id: string; kind: "search" | "references"; state: "consistent" | "inconsistent" | "incomplete"; counts: { checked: string; missing: string; unexpected: string; mismatched: string }; reasons: IndexValidationReason[] }
+export interface IndexRebuild { version_id: string; kind: "search" | "references" | "all"; job_ids: string[]; operation_id: string }
+export interface IndexValidationRequest { versionId: string; kind: "search" | "references" }
+export interface IndexRebuildRequest { versionId: string; kind: "search" | "references" | "all"; operationId: string }
 
 export interface HaeryongClient {
   /** Trusted public browser origin, never a child-supplied navigation host. */
@@ -787,6 +798,9 @@ export interface HaeryongClient {
   projectSources(projectId: string, cursor?: string): Promise<ListPage<ProjectSourceView>>;
   verifySourceEvidence(versionId: string, evidenceId: string, request: EvidenceVerificationRequest, operationId: string): Promise<EvidenceVerificationResult>;
   runSourceObservation(versionId: string, request: SourceObservationRequest, operationId: string): Promise<SourceObservationResult>;
+  versionBacklinks(request: BacklinksRequest): Promise<BacklinkPage>;
+  validateVersionIndexes(request: IndexValidationRequest): Promise<IndexValidation>;
+  rebuildVersionIndexes(request: IndexRebuildRequest): Promise<IndexRebuild>;
   versionReferences(request: VersionReferencesRequest): Promise<ReferencePage>;
   resolveReference(request: ResolveReferenceRequest): Promise<ReferenceView>;
   // Library reads

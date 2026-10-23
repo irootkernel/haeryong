@@ -281,3 +281,32 @@ sources' incoming edges. No target lifecycle workflow is added here.
 All structural writes remain authority-free derived maintenance. Read projection
 and historical-gone eligibility remain with TASK-004-03 M3; M2 enables no reference
 read API or capability and does not change immutable manifests or directory bytes.
+
+## Backlink projection and non-destructive rebuild (TASK-004-04)
+
+SchemaRevision stays 9. The canonical authored_edges_target B-tree is the reverse
+access path; there is no duplicated authored_backlinks relation. Incoming traversal
+uses its NULL-first target-page/region/source-version/local-reference key, at most
+64 raw entries before read-time eligibility/anchor projection. Outgoing counts
+use only the selected source-version UNIQUE prefix. Request-local admitted document
+ID sets give exact distinct-document counts without a library-wide reader traversal.
+Owner reverse-index validation may traverse canonical physical rowid slices before
+filtering; each admitted covering tuple is compared with its NOT INDEXED base row
+by rowid. Search validation uses version/unit-prefixed seeks and compares immutable
+inventory and deterministic chunk/anchor expectations with required derived rows,
+including their absence. Legitimate empty extraction requires no body chunks.
+
+Explicit owner rebuild re-owns terminal current-revision derived_work slots in a
+single receipt transaction with new queued jobs and strictly increasing index/
+materialization revisions. Ordinary puts/enqueue retain their strict transitions;
+old jobs, results, events, object_pins and older revision slots remain retained.
+Reference replay preserves declarations and canonical pins, including historical
+edges to purged targets; it never invokes source-deletion cleanup. Search cleanup
+is bounded and references remain gated on that exact version's terminal search job.
+
+The only physical reverse repair is atomic REINDEX of the intact migration-9 index
+with its checkpoint, followed by a yield/cancellation check. SQL-context shutdown
+rolls back the transaction; restart fences/resumes nonterminal work. Missing/changed
+DDL is not repaired online or by a new offline surface; strict startup rejection
+and the EPIC-005 verified-restore dependency remain. A corrupt/missing historical
+canonical identity/hash cannot be fabricated from a currently purged target.

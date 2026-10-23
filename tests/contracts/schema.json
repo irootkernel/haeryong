@@ -5946,12 +5946,29 @@
         },
         "materialization": {
           "$ref": "#/$defs/reference_materialization_view"
+        },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "edge_count": {
+              "$ref": "#/$defs/decimal"
+            },
+            "referenced_document_count": {
+              "$ref": "#/$defs/decimal"
+            }
+          },
+          "required": [
+            "edge_count",
+            "referenced_document_count"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
         "items",
         "next_cursor",
-        "materialization"
+        "materialization",
+        "counts"
       ],
       "additionalProperties": false
     },
@@ -5981,6 +5998,352 @@
         "request_id": {
           "type": "string",
           "minLength": 1
+        }
+      },
+      "required": [
+        "data",
+        "request_id"
+      ],
+      "additionalProperties": false
+    },
+    "backlink_endpoint": {
+      "type": "object",
+      "properties": {
+        "document_id": {
+          "$ref": "#/$defs/id"
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "page_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "region_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "document_id",
+        "version_id",
+        "page_path",
+        "region_id"
+      ],
+      "additionalProperties": false
+    },
+    "backlink_scope": {
+      "type": "object",
+      "properties": {
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "page_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "region_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "version_id",
+        "page_path",
+        "region_id"
+      ],
+      "additionalProperties": false
+    },
+    "backlink_view": {
+      "type": "object",
+      "properties": {
+        "edge_id": {
+          "$ref": "#/$defs/id"
+        },
+        "reference_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "from": {
+          "$ref": "#/$defs/backlink_endpoint"
+        },
+        "target": {
+          "$ref": "#/$defs/backlink_endpoint"
+        },
+        "relation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reader_url": {
+          "type": "string",
+          "pattern": "^/documents/[0-9a-f-]{36}/versions/[0-9a-f-]{36}(?:\\?[^#]*)?(?:#region=[^#]+)?$"
+        }
+      },
+      "required": [
+        "edge_id",
+        "reference_id",
+        "from",
+        "target",
+        "relation",
+        "label",
+        "reader_url"
+      ],
+      "additionalProperties": false
+    },
+    "backlink_page": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/backlink_scope"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/backlink_view"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "edge_count": {
+              "$ref": "#/$defs/decimal"
+            },
+            "referring_document_count": {
+              "$ref": "#/$defs/decimal"
+            }
+          },
+          "required": [
+            "edge_count",
+            "referring_document_count"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "scope",
+        "items",
+        "next_cursor",
+        "counts"
+      ],
+      "additionalProperties": false
+    },
+    "index_validation": {
+      "type": "object",
+      "properties": {
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "search",
+            "references"
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "consistent",
+            "inconsistent",
+            "incomplete"
+          ]
+        },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "checked": {
+              "$ref": "#/$defs/decimal"
+            },
+            "missing": {
+              "$ref": "#/$defs/decimal"
+            },
+            "unexpected": {
+              "$ref": "#/$defs/decimal"
+            },
+            "mismatched": {
+              "$ref": "#/$defs/decimal"
+            }
+          },
+          "required": [
+            "checked",
+            "missing",
+            "unexpected",
+            "mismatched"
+          ],
+          "additionalProperties": false
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "enum": [
+              "reverse_index_definition_missing",
+              "reverse_index_definition_changed",
+              "search_index_missing",
+              "search_owner_missing",
+              "search_index_incomplete",
+              "validation_changed",
+              "search_index_divergence",
+              "materialization_pending",
+              "materialization_incomplete",
+              "anchor_prerequisite_pending",
+              "reference_index_divergence"
+            ]
+          }
+        }
+      },
+      "required": [
+        "version_id",
+        "kind",
+        "state",
+        "counts",
+        "reasons"
+      ],
+      "additionalProperties": false
+    },
+    "index_rebuild_request": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "search",
+            "references",
+            "all"
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "index_rebuild": {
+      "type": "object",
+      "properties": {
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "search",
+            "references",
+            "all"
+          ]
+        },
+        "job_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "version_id",
+        "kind",
+        "job_ids",
+        "operation_id"
+      ],
+      "additionalProperties": false
+    },
+    "backlink_response": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/backlink_page"
+        },
+        "request_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "data",
+        "request_id"
+      ],
+      "additionalProperties": false
+    },
+    "index_validation_response": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/index_validation"
+        },
+        "request_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "data",
+        "request_id"
+      ],
+      "additionalProperties": false
+    },
+    "index_rebuild_response": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/index_rebuild"
+        },
+        "request_id": {
+          "type": "string"
         }
       },
       "required": [

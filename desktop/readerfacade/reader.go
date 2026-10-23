@@ -459,7 +459,7 @@ func decodePayload(raw json.RawMessage, into any) *wireError {
 	return nil
 }
 
-// Only the two reference operations use this closed native request decoder.
+// Reference and derived-index operations use this closed native request decoder.
 func decodeReferencePayload(raw json.RawMessage, into any, required ...string) *wireError {
 	invalid := &wireError{Status: 400, Code: "NATIVE_PAYLOAD_INVALID"}
 	var fields map[string]json.RawMessage
@@ -832,6 +832,50 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 			return nil, werr
 		}
 		return plain(s.request("GET", "/api/v1/versions/"+url.PathEscape(in.VersionID), nil, nil, nil, auth))
+	case "versionBacklinks":
+		var in struct {
+			VersionID string  `json:"version_id"`
+			Cursor    *string `json:"cursor"`
+			Limit     *int    `json:"limit"`
+			Page      *string `json:"page_path"`
+			Region    *string `json:"region_id"`
+		}
+		if werr := decodeReferencePayload(payload, &in, "version_id"); werr != nil {
+			return nil, werr
+		}
+		params := url.Values{}
+		if in.Cursor != nil {
+			params.Set("cursor", *in.Cursor)
+		}
+		if in.Limit != nil {
+			params.Set("limit", strconv.Itoa(*in.Limit))
+		}
+		if in.Page != nil {
+			params.Set("page_path", *in.Page)
+		}
+		if in.Region != nil {
+			params.Set("region_id", *in.Region)
+		}
+		return s.referenceRead("/api/v1/versions/"+url.PathEscape(in.VersionID)+"/backlinks", params, auth)
+	case "validateVersionIndexes":
+		var in struct {
+			VersionID string `json:"version_id"`
+			Kind      string `json:"kind"`
+		}
+		if werr := decodeReferencePayload(payload, &in, "version_id", "kind"); werr != nil {
+			return nil, werr
+		}
+		return s.referenceRead("/api/v1/versions/"+url.PathEscape(in.VersionID)+"/indexes/validate", url.Values{"kind": {in.Kind}}, auth)
+	case "rebuildVersionIndexes":
+		var in struct {
+			VersionID   string `json:"version_id"`
+			Kind        string `json:"kind"`
+			OperationID string `json:"operation_id"`
+		}
+		if werr := decodeReferencePayload(payload, &in, "version_id", "kind", "operation_id"); werr != nil {
+			return nil, werr
+		}
+		return decision(s.request("POST", "/api/v1/versions/"+url.PathEscape(in.VersionID)+"/indexes/rebuild", nil, map[string]string{"Idempotency-Key": in.OperationID}, jsonBody(map[string]string{"kind": in.Kind}), auth))
 	case "versionReferences":
 		var in struct {
 			VersionID string  `json:"version_id"`

@@ -2,6 +2,7 @@
 // these named operations to a typed Go proxy. The port accepts no arbitrary
 // URLs, filesystem paths or generic method names from imported content.
 import type {
+  BacklinksRequest, BacklinkPage, IndexValidation, IndexValidationRequest, IndexRebuild, IndexRebuildRequest,
   VersionReferencesRequest, ResolveReferenceRequest, ReferencePage, ReferenceView,
   SearchRequest, SearchPage,
   ConfigurationView, ConfigurationPlanRequest, ConfigurationPlanView, ConfigurationCommitRequest, ConfigurationCommitView,
@@ -93,6 +94,9 @@ export type DecidePairingPayload = {
 };
 export type RevokeSessionRequest = { session_id: string };
 export type OperationRequest = { operation_id: string };
+export type BacklinksCall = { version_id: string; cursor?: string; limit?: number; page_path?: string; region_id?: string };
+export type IndexValidationCall = { version_id: string; kind: "search" | "references" };
+export type IndexRebuildCall = { version_id: string; kind: "search" | "references" | "all"; operation_id: string };
 export type VersionReferencesCall = { version_id: string; cursor?: string; limit?: number };
 export type ResolveReferenceCall = { version_id: string; reference_id: string; page_path?: string; region_id?: string };
 export type SearchCall = SearchRequest;
@@ -166,6 +170,9 @@ export interface NativePort {
   call(operation: "revokeOwnSession", payload: {}): Promise<void>;
   call(operation: "serviceStatus", payload: {}): Promise<unknown>;
   call(operation: "subscribeEvents", payload: {}): Promise<EventSubscription>;
+  call(operation: "versionBacklinks", payload: BacklinksCall): Promise<BacklinkPage>;
+  call(operation: "validateVersionIndexes", payload: IndexValidationCall): Promise<IndexValidation>;
+  call(operation: "rebuildVersionIndexes", payload: IndexRebuildCall): Promise<DecisionResult>;
   call(operation: "versionReferences", payload: VersionReferencesCall): Promise<ReferencePage>;
   call(operation: "resolveReference", payload: ResolveReferenceCall): Promise<ReferenceView>;
   call(operation: "search", payload: SearchCall): Promise<SearchPage>;
@@ -235,6 +242,7 @@ export const NATIVE_OPERATIONS = [
   "revokeOwnSession",
   "serviceStatus",
   "subscribeEvents",
+  "versionBacklinks", "validateVersionIndexes", "rebuildVersionIndexes",
   "versionReferences", "resolveReference",
   "search", "listProjects",
   "listDocuments",
@@ -511,6 +519,16 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
     return sourceWrite<SourceObservationResult>(operationId, () => this.#fresh(this.#port.call("runSourceObservation", { version_id: versionId, request, operation_id: operationId }), era), (id) => { if (era !== this.#era) throw new StaleResponseError(); return this.operation(id); });
   }
 
+  versionBacklinks(request: BacklinksRequest): Promise<BacklinkPage> {
+    return this.#fresh(this.#port.call("versionBacklinks", { version_id: request.versionId, cursor: request.cursor, limit: request.limit, page_path: request.pagePath, region_id: request.regionId }), this.#era);
+  }
+  validateVersionIndexes(request: IndexValidationRequest): Promise<IndexValidation> {
+    return this.#fresh(this.#port.call("validateVersionIndexes", { version_id: request.versionId, kind: request.kind }), this.#era);
+  }
+  rebuildVersionIndexes(request: IndexRebuildRequest): Promise<IndexRebuild> {
+    const era = this.#era;
+    return sourceWrite<IndexRebuild>(request.operationId, () => this.#fresh(this.#port.call("rebuildVersionIndexes", { version_id: request.versionId, kind: request.kind, operation_id: request.operationId }), era), id => { if (era !== this.#era) throw new StaleResponseError(); return this.operation(id); }, true);
+  }
   versionReferences(request: VersionReferencesRequest): Promise<ReferencePage> {
     return this.#fresh(this.#port.call("versionReferences", { version_id: request.versionId, cursor: request.cursor, limit: request.limit }), this.#era);
   }

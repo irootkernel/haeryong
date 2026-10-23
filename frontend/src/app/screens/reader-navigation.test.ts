@@ -30,7 +30,7 @@ function setup() {
   const calls: unknown[] = [], navigations: string[] = [], notices: string[] = [];
   let result = view(), declared = view(), resolve: (() => Promise<ReferenceView>) | null = null;
   const flow = new ReaderReferences({ client: {
-    async versionReferences(request) { calls.push(["list", request]); return { items: [declared], next_cursor: null, materialization: { state: "ready", reason: null } }; },
+    async versionReferences(request) { calls.push(["list", request]); return { counts: { edge_count: "1", referenced_document_count: "1" }, items: [declared], next_cursor: null, materialization: { state: "ready", reason: null } }; },
     async resolveReference(request) { calls.push(["resolve", request]); return resolve ? resolve() : result; },
   }, current: () => current, guard: () => { if (!alive) throw Error("logout"); }, navigate(url) { navigations.push(url); }, notice(message) { notices.push(message); } });
   return { flow, calls, navigations, notices, enable(features?: Record<string, boolean>) { flow.enable(featureEnabled(features, "references")); }, move(next: ReaderPageContext | null) { current = next; }, logout() { alive = false; }, declared(value: ReferenceView) { declared = value; }, result(value: ReferenceView) { result = value; }, resolver(fn: () => Promise<ReferenceView>) { resolve = fn; } };

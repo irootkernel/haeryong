@@ -98,7 +98,10 @@ const fileEntries: FileEntryView[] = [
 
 const scriptedClient = {
   publicOrigin: null,
-  async versionReferences() { return { items: [], next_cursor: null, materialization: { state: "ready", reason: null } }; },
+  async versionBacklinks(): Promise<never> { throw new Error("backlinks disabled in this fixture"); },
+  async validateVersionIndexes(): Promise<never> { throw new Error("indexes disabled in this fixture"); },
+  async rebuildVersionIndexes(): Promise<never> { throw new Error("indexes disabled in this fixture"); },
+  async versionReferences() { return { counts: { edge_count: "0", referenced_document_count: "0" }, items: [], next_cursor: null, materialization: { state: "ready", reason: null } }; },
   async resolveReference(): Promise<never> { throw new Error("references disabled in this fixture"); },
   async versionDetail(versionId: string): Promise<VersionView> {
     const version = versions.find((candidate) => candidate.id === versionId);

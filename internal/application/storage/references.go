@@ -55,6 +55,14 @@ func (p PreparedReference) Ready() bool  { return p.ready }
 // grant no read authority. Public readers apply both endpoint eligibility rules;
 // maintenance supplies structurally verified canonical paths/anchors before a put.
 type ReferenceTx interface {
+	IncomingEdgeKeys(string, *string, *string, *domain.EdgeKey, int) ([]domain.EdgeKey, error)
+	OutgoingEdgeKeys(string, string, int) ([]domain.EdgeKey, error)
+	CanonicalEdgeKeys(int64, int) ([]domain.EdgeKey, error)
+	CanonicalEdgeKey(int64) (domain.EdgeKey, error)
+	ReferenceIndexDefinition() (string, error)
+	HasIndexedEdge(domain.EdgeKey) (bool, error)
+	ReindexReferences() error
+	RebuildIndexes(string, string) ([]string, error)
 	ReferenceLifecycle(string) (domain.ReferenceLifecycle, error)
 	ClearReferenceData(string, int) (bool, error)
 	EnqueueReferences(string, int64) (string, error)

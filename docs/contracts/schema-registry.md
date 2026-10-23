@@ -687,3 +687,38 @@ Explicit resolution of an ambiguous canonical path is 400; list keeps its typed
 unresolved row. Collection materialization state is independent of these live
 target states. List has no target-derived total or filter. Current source-only
 cursor binding and D4 historical authority are defined in the HTTP contract.
+
+## Backlinks and index recovery wire additions (TASK-004-04)
+
+The additive provisional machine definitions in `tests/contracts/schema.json` are
+`backlink_scope`, `backlink_endpoint`, `backlink_view`, `backlink_page`,
+`backlink_response`, `index_validation`, `index_validation_response`,
+`index_rebuild_request`, `index_rebuild` and `index_rebuild_response`.
+All objects are closed. IDs are service UUIDs except immutable local reference IDs;
+optional page/region/relation/label and cursor absences are explicit nulls. Region
+requires its page, and Reader URLs are relative exact-version routes.
+
+Backlink data is `{scope:{version_id,page_path,region_id},items,next_cursor,
+counts:{edge_count,referring_document_count}}`. Each item has `edge_id`,
+`reference_id`, `from`, `target`, `relation`, `label`, `reader_url`; endpoint fields
+are document_id/version_id/page_path/region_id. Counts include only currently
+eligible resolved canonical edges; distinct referring documents span referring
+versions. Incoming order follows authored_edges_target, with NULL-first anchors.
+The existing `reference_page` gains required live
+`counts:{edge_count,referenced_document_count}`; target documents deduplicate across
+versions and existing source-only declaration cursors remain unchanged.
+
+Index validation returns version_id, kind search/references, state
+consistent/inconsistent/incomplete, four decimal check counters and the closed safe
+reason set in `index_validation` (including `anchor_prerequisite_pending` for
+admitted pending anchor extraction). Missing required inventory-derived rows
+are inconsistent; legitimate empty extraction and completed missing/ambiguous
+anchors do not imply missing derived work. Reader rows/counts rejoin current
+eligibility after counting; declaration cursors remain source-only.
+Index rebuild accepts only kind search/references/all and returns version_id,
+kind, job_ids and operation_id; committed 202 means job creation, separately from
+job outcome. New shared operations are versionBacklinks, validateVersionIndexes
+and rebuildVersionIndexes. The [HTTP contract](http-api.md#backlinks-and-deterministic-index-recovery-task-004-04)
+owns filtering, cursor, error, cancellation and supported recovery boundaries.
+No job.kind/workflow.scope enum or database migration changes. The existing
+backlink_index_repair configuration/finding names retain EPIC-008/009 ownership.

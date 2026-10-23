@@ -67,6 +67,7 @@ type ReferenceMaterialization struct {
 	Reason *string `json:"reason"`
 }
 type ReferenceList struct {
+	Counts          OutgoingCounts           `json:"counts"`
 	Items           []ReferenceView          `json:"items"`
 	NextCursor      *string                  `json:"next_cursor"`
 	Materialization ReferenceMaterialization `json:"materialization"`
@@ -248,22 +249,55 @@ func (s *Service) referencesAttempt(ctx context.Context, token, version string, 
 	}
 	// Rejoin all detached inventory/anchor work under current authority, one row
 	// per short transaction. Nothing in a read path starts or repairs maintenance.
-	for _, p := range checks {
-		if err = s.referenceProjectionCurrent(ctx, token, version, p); err != nil {
-			return out, err
+	rejoin := func(refresh bool) error {
+		for _, p := range checks {
+			if refresh {
+				current, err := s.projectReference(ctx, token, p.declaration, ReferenceOptions{})
+				if err != nil {
+					return err
+				}
+				if !reflect.DeepEqual(current.view, p.view) {
+					return errReferenceChanged
+				}
+				p = current
+			}
+			if err := s.referenceProjectionCurrent(ctx, token, version, p); err != nil {
+				return err
+			}
 		}
+		return s.referenceRead(ctx, token, version, func(tx app.WriteTx, record domain.Session, e source.Eligibility) error {
+			current, err := referenceBinding(tx, record, e, limit)
+			if err != nil {
+				return err
+			}
+			if current.binding != snap.binding {
+				return errReferenceChanged
+			}
+			return ctx.Err()
+		})
 	}
-	err = s.referenceRead(ctx, token, version, func(tx app.WriteTx, record domain.Session, e source.Eligibility) error {
-		current, err := referenceBinding(tx, record, e, limit)
-		if err != nil {
-			return err
-		}
-		if current.binding != snap.binding {
-			return errReferenceChanged
-		}
-		return ctx.Err()
-	})
-	return out, err
+	if err = rejoin(false); err != nil {
+		return out, err
+	}
+	counts, signature, err := s.outgoingCounts(ctx, token, version)
+	if err != nil {
+		return out, err
+	}
+	confirm, current, err := s.outgoingCounts(ctx, token, version)
+	if err != nil {
+		return out, err
+	}
+	if signature != current || counts != confirm {
+		return out, errReferenceChanged
+	}
+	// Equal counts can both follow a target change in either direction. Compare
+	// every returned view with a fresh projection, including negative rows that
+	// captured no target snapshot, then rejoin its snapshots and source binding.
+	if err = rejoin(true); err != nil {
+		return out, err
+	}
+	out.Counts = counts
+	return out, nil
 }
 func (s *Service) ResolveReference(ctx context.Context, token, version, id string, o ReferenceOptions) (ReferenceView, error) {
 	ctx, cancel := context.WithTimeout(ctx, ReferenceTimeout)

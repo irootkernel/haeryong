@@ -67,7 +67,9 @@ In the last column, `K` means a required Idempotency-Key; `N` means a named natu
 | GET /search | scoped authenticated | Title/text/region/topic/source results with eligibility filtering before counts/snippets | - |
 | GET/HEAD /versions/{id}/references | scoped authenticated | Source-only cursor collection of persisted declarations and guarded live resolution states | - |
 | GET/HEAD /versions/{id}/references/resolve?reference_id={id} | scoped authenticated | One immutable query-form ID, optional bound source page_path/region_id; exact authorized target or minimal historical gone | - |
-| GET /versions/{id}/backlinks | scoped authenticated | Incoming canonical edges with visibility filtering | - |
+| GET/HEAD /versions/{id}/backlinks | scoped authenticated | Incoming canonical edges with visibility filtering | - |
+| GET/HEAD /versions/{id}/indexes/validate?kind={kind} | owner | Read-only deterministic derived-index comparison; honest consistent/inconsistent/incomplete result | - |
+| POST /versions/{id}/indexes/rebuild | owner | Exact-version same-revision replacement jobs; kind search/references/all; no job resume | K |
 | GET /versions/{id}/related | scoped authenticated | Separate overlays with rationale, origin, current decision and individual validators | - |
 | GET /topic-assignments | owner, exact document/version/page/region filters | Existing assignments including owner pin/rejection state and each ETag | - |
 | PUT /topic-assignments/{id} | owner + individual If-Match | Set pinned/accepted-or-rejected decision; record rejection fingerprint and prevent silent AI override | K |
@@ -546,3 +548,103 @@ explicit true: absent/false installs no reference callback or interception and
 performs no resolver call. Ordinary href fallback remains usable. The
 [pinned-reference record](../testing/pinned-references.md) distinguishes actual
 browser/native proof from test-owned capability and error projections.
+
+## Backlinks and deterministic index recovery (TASK-004-04)
+
+These additive provisional operations reuse schema revision 9. `/related` remains
+catalogued as 503 FEATURE_NOT_READY; no related-operation client or AI producer is enabled.
+`capabilities.features.backlinks=true` advertises the complete shared Links delivery.
+
+`GET/HEAD /api/v1/versions/{id}/backlinks` accepts only `page_path`, `region_id`,
+`cursor`, `limit` (default 50, 1–200). Region requires page. Paths/IDs are decoded
+once; the selected page is resolved through the existing exact-first path rules.
+Omitted page selects the exact version; page selects that target page including
+its regions; page+region selects the exact page-local region. Whole-version edges
+are never attributed to every page. Data is the closed `backlink_page` registry
+shape: `{scope,items,next_cursor,counts:{edge_count,referring_document_count}}`.
+Items contain edge/reference IDs, exact source/target document/version/page/region,
+nullable authored relation/label and a relative Reader URL to the referring anchor.
+Counts are decimal strings over all matching currently validated visible edges;
+referring documents are distinct across their versions. A free-text authored
+relation is not proof of a code dependency or an AI recommendation.
+
+Read-time two-endpoint source.Check, current intersected scopes/permissions,
+lifecycle and live anchor/hash validation precede rows, labels, counts and cursor
+binding. Active/archived are eligible; unknown, denied, trash and purged incoming
+endpoints contribute nothing. A direct backlink request for a hidden/trash/purged
+selected version is 404. An authorized referring document still uses the existing
+D4 minimal historical tombstone/410 rule; no purged title/body or latest target is
+substituted. Optional unresolved declarations remain source-context information,
+never validated backlinks.
+
+Incoming iteration uses the existing target index's NULL-first page/region,
+source-version/local-reference order, at most 64 raw rows per store turn before
+projection. Document deduplication uses a request-local set of admitted IDs.
+Work scales with that selected incoming scope; outgoing reference counts scan only
+the selected source version. Memory scales with admitted distinct documents plus
+the finite slice/result page. Hidden raw positions never enter a public cursor.
+Backlink cursors bind current principal/grant/scope, library/runtime, selected
+manifest/filter/limit and visible projection/count state. Visible changes require
+a fresh first page; denied-only mutations cannot invalidate the binding. Reads
+recheck detached snapshots and perform no indexing or durable writes.
+
+`GET/HEAD .../references` adds live decimal
+`counts:{edge_count,referenced_document_count}` for resolved eligible canonical
+outgoing edges/distinct target documents across target versions. Its declaration
+membership, order and source-only cursor binding are unchanged. Live counts may
+change between requests independently of that declaration cursor.
+
+Input/cursor errors are 400 INVALID_REQUEST with safe pointer/reason, authentication
+uses the existing 401/403 registry, and hidden identities are non-disclosing 404.
+Every HEAD, including errors, is bodyless with GET status/headers. Storage/deadline
+errors are retryable 503 SERVICE_RECOVERING with Retry-After: 2 and safe
+query_timeout for deadline/cancellation. The read deadline begins before authentication.
+
+Owner-only `GET/HEAD /versions/{id}/indexes/validate?kind=search|references`
+returns `{version_id,kind,state,counts:{checked,missing,unexpected,mismatched},reasons}`.
+Counts are decimal structural check observations, not semantic coverage or global
+library totals. A completed 200 can be consistent, inconsistent or incomplete.
+Reference validation checks exact migration-9 reverse-index DDL first, manifest
+versus declarations, expected structural resolution, and canonical NOT INDEXED
+versus forced covering-index tuples with bounded independent traversals. Safe
+missing/changed-definition reasons replace raw SQLite diagnostics. Search validation
+checks current index ownership/revision/readiness and compares immutable inventory
+with required units, deterministic metadata/body chunk ordinals and static anchors.
+Traversal uses selected-version/unit prefixes, with at most 64 raw rows per turn;
+missing required units/chunks/anchors are inconsistent even if completion markers
+remain. Empty extraction legitimately requires no body chunks. Pending admitted
+anchor prerequisites are incomplete with `anchor_prerequisite_pending`; completed
+missing/ambiguous anchors remain legitimate structural observations. Reverse
+covering tuples are compared with a canonical `NOT INDEXED` rowid point lookup
+after both physical and canonical endpoint eligibility checks; an admitted
+mismatch is retryable SERVICE_RECOVERING on public reads and `mismatched` in owner
+validation. Returned references and live counts are rejoined after counting;
+changes restart within the deadline without changing source-only cursors. It does not rerun ranking,
+certify arbitrary FTS posting bytes, read Git or establish semantic correctness.
+
+Owner-only K `POST /versions/{id}/indexes/rebuild`, body
+`{kind:"search"|"references"|"all"}`, requires Idempotency-Key and returns durable
+202 `{version_id,kind,job_ids,operation_id}`. Unknown/duplicate body members are
+invalid. It rejects affected nonterminal work with 409 OPERATION_CONFLICT. In one
+current-owner receipt transaction it replaces terminal current-revision derived_work
+slots with new queued derived_index jobs, retaining historical jobs/results/events,
+object_pins, intact declarations and canonical/D4 edges. Same-key replay returns the
+same job IDs; a different body conflicts. Search/all queues search before references;
+reference-only replays declarations/outgoing/incoming without destructive cleanup.
+
+Physical reverse repair is only REINDEX main.authored_edges_target under the exact
+intact DDL, with its private checkpoint committed atomically. This explicit owner
+maintenance step is the sole full-index store-gate exception. Durable owner cancel
+is honored at pre/post-step boundaries; an arriving cancel waits for the gate and
+cannot interrupt running SQL or become durable before its transaction commits.
+Daemon-context cancellation rolls back uncommitted SQL/checkpoint changes; restart
+fences the old attempt and resumes its last committed checkpoint. No resume route,
+new migration, offline repair command, DROP/CREATE or sqlite_master edit is exposed.
+
+Online recovery covers reconstructible failed/partial/stale derived rows and reverse
+content divergence under an intact definition while the library can open. Missing
+or altered DDL remains strictly startup-refused and rebuild-refused. There is no
+supported repair for that startup-blocking damage before EPIC-005's verified restore;
+preserve the library and do not bypass validation or claim an existing snapshot is
+a general restore guarantee. Conflicting authoritative hashes/identities or lost
+historical edge evidence are not repaired by inventing provenance.

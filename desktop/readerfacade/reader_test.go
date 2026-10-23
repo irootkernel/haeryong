@@ -1635,3 +1635,53 @@ func TestReaderReferenceCancellationDiscardsAnAttachmentRead(t *testing.T) {
 		})
 	}
 }
+
+func TestBacklinkIndexNamedTransportParity(t *testing.T) {
+	for _, status := range []int{200, 404, 503} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			calls := 0
+			service, daemon, _ := newReaderFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+				if !strings.Contains(r.URL.Path, "/backlinks") && !strings.Contains(r.URL.Path, "/indexes/") {
+					return false
+				}
+				calls++
+				if r.Header.Get("Authorization") != "Bearer test-owner-credential" {
+					t.Error("missing authority")
+				}
+				if strings.HasSuffix(r.URL.Path, "/backlinks") && r.URL.Query().Get("region_id") != "영역/+%" {
+					t.Error("lost exact anchor", r.URL.Query())
+				}
+				if strings.HasSuffix(r.URL.Path, "/rebuild") && (r.Method != "POST" || r.Header.Get("Idempotency-Key") != "op1") {
+					t.Error("rebuild lost receipt identity")
+				}
+				if status == 200 {
+					dataReply(w, 200, map[string]any{"id": "BL"})
+				} else {
+					w.WriteHeader(status)
+					json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": "NOT_FOUND", "retryable": false, "details": map[string]any{}}})
+				}
+				return true
+			})
+			payloads := map[string]string{"versionBacklinks": `{"version_id":"v1","page_path":"p/+%","region_id":"영역/+%","limit":7}`, "validateVersionIndexes": `{"version_id":"v1","kind":"references"}`, "rebuildVersionIndexes": `{"version_id":"v1","kind":"references","operation_id":"op1"}`}
+			for operation, payload := range payloads {
+				if status == 200 {
+					invokeOK(t, service, operation, payload)
+				} else if e := invokeFail(t, service, operation, payload); e.Status != status {
+					t.Fatal(e)
+				}
+			}
+			if calls != 3 {
+				t.Fatal("missing calls", calls)
+			}
+			before := len(daemon.seen())
+			for operation := range payloads {
+				if e := invokeFail(t, service, operation, `{"version_id":"v1","url":"/api/v1/configuration"}`); e.Status != 400 {
+					t.Fatal(e)
+				}
+			}
+			if len(daemon.seen()) != before {
+				t.Fatal("open payload reached daemon")
+			}
+		})
+	}
+}

@@ -13,7 +13,7 @@ export class PendingSourceWriteError extends Error {
   }
 }
 
-export async function reconcileSourceWrite<T>(operationId: string, operation: (id: string) => Promise<OperationView>): Promise<T> {
+export async function reconcileSourceWrite<T>(operationId: string, operation: (id: string) => Promise<OperationView>, acceptCreatedJob = false): Promise<T> {
   for (;;) {
     let receipt: OperationView;
     try { receipt = await operation(operationId); }
@@ -22,7 +22,7 @@ export async function reconcileSourceWrite<T>(operationId: string, operation: (i
       throw new PendingSourceWriteError(operationId, cause);
     }
     if (receipt.operation_id !== operationId) throw new PendingSourceWriteError(operationId);
-    if (receipt.state === "completed" && (receipt.original_status === 200 || receipt.original_status === 201)) {
+    if (receipt.state === "completed" && (receipt.original_status === 200 || receipt.original_status === 201 || (acceptCreatedJob && receipt.original_status === 202))) {
       return receipt.result_metadata as T;
     }
     if (receipt.state === "failed") {
@@ -34,12 +34,12 @@ export async function reconcileSourceWrite<T>(operationId: string, operation: (i
   }
 }
 
-export async function sourceWrite<T>(operationId: string, dispatch: () => Promise<DecisionResult>, operation: (id: string) => Promise<OperationView>): Promise<T> {
+export async function sourceWrite<T>(operationId: string, dispatch: () => Promise<DecisionResult>, operation: (id: string) => Promise<OperationView>, acceptCreatedJob = false): Promise<T> {
   try {
     const result = await dispatch();
-    if (result.kind === "committed") return result.body as T;
+    if (result.kind === "committed" || (acceptCreatedJob && result.kind === "accepted" && Array.isArray((result.body as { job_ids?: unknown })?.job_ids))) return result.body as T;
   } catch (cause) {
     if (!(cause instanceof UncertainResponseError || cause instanceof NetworkError || (cause instanceof ApiError && cause.code === "OPERATION_RECONCILIATION_REQUIRED"))) throw cause;
   }
-  return reconcileSourceWrite<T>(operationId, operation);
+  return reconcileSourceWrite<T>(operationId, operation, acceptCreatedJob);
 }

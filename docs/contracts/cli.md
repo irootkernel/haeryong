@@ -205,3 +205,29 @@ authentication/authorization and hidden or unknown target, source or reference
 service unavailability exits 5. These additive commands remain
 read-only. M4 separately delivers the shared clients/Reader flow and enables
 `features.references`; the CLI never changes that capability.
+
+## Backlinks and owner index recovery (TASK-004-04)
+
+`haeryong backlinks list --version ID [--page PATH --region ID --cursor C --limit N]
+--json` emits one closed backlink_page, with complete visible scoped edge/distinct
+referring-document counts and an optional next_cursor. Region requires page;
+limit is 1–200. Existing `references list` adds live outgoing counts while retaining
+its declaration pagination. Query encoding and protected credential preflight
+remain unchanged; foreign flags/invalid command shapes fail before network access.
+
+`haeryong indexes validate --version ID --kind search|references --json` emits the
+read-only validation result. Every completed HTTP 200 exits 0, including
+inconsistent/incomplete; only registry error responses produce nonzero exits.
+`haeryong indexes rebuild --version ID --kind search|references|all
+[--operation-id ID] --json` uses the standard durable mutation journal and receipt
+reconciliation and returns its operation_id/result with created job_ids. Poll the
+original receipt/job identities to inspect the independent outcome; do not create a
+new key after a transport timeout. Current owner authority is required for both
+index commands, and rebuilding never happens implicitly during reading/search.
+
+Rebuild replaces terminal same-revision work slots while retaining job history and
+D4 edges. Ordinary same-key enqueue remains terminal/idempotent. Job cancellation
+is effective at atomic REINDEX boundaries, not a mid-statement abort. Missing or
+altered reverse-index DDL remains startup-refused: no offline repair CLI is added;
+supported recovery awaits EPIC-005 verified restore. The physical repair scope is
+an intact-definition reverse index's contents, as specified in the HTTP contract.

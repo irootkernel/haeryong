@@ -26,6 +26,8 @@ daemon lifetime, streamed transfers, native isolation and page/transfer
 recovery on the available Darwin host. Whole-Task review and Main delegated acceptance establish this delivery
 boundary; TASK-003-06 owns the assembled responsive/cross-client gate.
 
+TASK-004-04 adds canonical scoped backlinks, separate Reader Links sections and owner-only deterministic index validation/rebuild without a schema migration or AI. [The backlink record](testing/backlinks.md) separates executed checks, recovery limits and pending completion review.
+
 ## Start here
 
 | Reader | Recommended path |

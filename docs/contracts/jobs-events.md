@@ -268,3 +268,31 @@ fixtures compare complete source-only live/replay objects with matched hidden
 control work; incoming slices separately assert no appended event. Authorized
 owner/target subscribers still receive the target's own events. Reference list
 cursors therefore exclude every target/edge/global-outbox generation.
+
+## Explicit derived-index recovery (TASK-004-04)
+
+The owner validate/rebuild surface in [HTTP](http-api.md#backlinks-and-deterministic-index-recovery-task-004-04)
+supersedes the earlier future-rebuild limitation. It keeps job.kind=derived_index,
+work_kind search/references, current semantic extractor revisions, fixed decimal
+progress shape and the single WorkJobs/Router. No /jobs/{id}/resume operation ships.
+Owner rebuild rejects affected nonterminal work, atomically re-owns only terminal
+current-revision slots under its operation receipt, and retains old jobs/results,
+events, object_pins, declarations and historical canonical edges. Search/all queues
+references behind that version's terminal search work before cleanup begins.
+
+A reference replacement starts with a private repair phase. REINDEX and checkpoint
+advance share one transaction; the worker then yields without finishing the job.
+A durable cancel before that transaction prevents it; a durable cancel after it
+stops later work while retaining the repaired index. A cancel arriving during the
+SQL statement waits for the shared store gate and is not durable/acknowledged yet.
+Terminal completion races retain the existing terminal no-op cancel semantics.
+Daemon shutdown cancels the SQL context and rolls back an uncommitted repair and
+checkpoint together. Restart fences prior attempt generations and resumes the
+committed checkpoint. No lock-independent abort signal or new scheduling queue is
+introduced. Failed/cancelled replacement jobs require a new explicit rebuild.
+
+references.updated stays source-only; incoming work and global index reconstruction
+emit no target-derived source revisions, per-incoming-row events or hidden counts.
+Existing owner-only job visibility and event masking apply. No backlink event or
+live-update promise is introduced; Links refetches on scope/open/explicit refresh.
+backlink_index_repair policy/findings remain with EPIC-008/009 and no AI is called.

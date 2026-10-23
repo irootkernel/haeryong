@@ -62,7 +62,7 @@ def test_reference_RF08_provisional_response_shapes_never_validate_hidden_edges(
     gone = dict(row, resolution='tombstoned', target={'document_id': identifier, 'version_id': identifier},
                 edge_id=None, reader_url=None)
     unresolved = dict(row, resolution='unresolved', reason='resolution_pending', edge_id=None, reader_url=None)
-    page = {'items': [row, unavailable, gone, unresolved], 'next_cursor': None,
+    page = {'counts': {'edge_count': '1', 'referenced_document_count': '1'}, 'items': [row, unavailable, gone, unresolved], 'next_cursor': None,
             'materialization': {'state': 'ready', 'reason': None}}
     c.validate('reference_response', {'data': page, 'request_id': 'fixture'})
     fallback = dict(unresolved, reader_url=f'/documents/{identifier}/versions/{identifier}?page=a.html')

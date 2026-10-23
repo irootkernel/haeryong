@@ -21,6 +21,15 @@ func validateCommandFlags(opt options) error {
 		verb = args[1]
 	}
 	switch args[0] {
+	case "backlinks":
+		if verb == "list" {
+			add("version cursor limit page region")
+		}
+	case "indexes":
+		add("version kind")
+		if verb == "rebuild" {
+			add("operation-id")
+		}
 	case "references":
 		if verb == "list" {
 			add("version cursor limit")
@@ -103,6 +112,11 @@ func validateCommandFlags(opt options) error {
 	for name := range opt.flags {
 		if !allowed[name] {
 			return invalid("flag is unsupported for this command: --" + name)
+		}
+	}
+	if args[0] == "backlinks" || args[0] == "indexes" {
+		if _, err := connectedCLIPath(opt); err != nil {
+			return err
 		}
 	}
 	if args[0] == "references" {

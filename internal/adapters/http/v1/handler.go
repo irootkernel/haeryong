@@ -89,6 +89,9 @@ func (h *Handler) Handles(r *http.Request) bool {
 		return false
 	}
 	if r.Method == http.MethodPost {
+		if len(p) == 4 && p[0] == "versions" && p[2] == "indexes" && p[3] == "rebuild" {
+			return true
+		}
 		if len(p) == 3 && p[0] == "versions" && p[2] == "render-sessions" {
 			return true
 		}
@@ -117,10 +120,10 @@ func (h *Handler) Handles(r *http.Request) bool {
 			return true
 		}
 		if len(p) == 3 {
-			return p[2] == "references" || p[2] == "files" || p[2] == "file" || p[2] == "metadata" || p[2] == "render-bootstrap" || p[2] == "package" || p[2] == "source-evidence" || p[2] == "source-evidence-verifications" || p[2] == "assessments"
+			return p[2] == "backlinks" || p[2] == "references" || p[2] == "files" || p[2] == "file" || p[2] == "metadata" || p[2] == "render-bootstrap" || p[2] == "package" || p[2] == "source-evidence" || p[2] == "source-evidence-verifications" || p[2] == "assessments"
 		}
 		if len(p) == 4 {
-			return p[2] == "source-evidence" || p[2] == "assessments" && p[3] == "coverage" || referenceRoute(p)
+			return p[2] == "indexes" && p[3] == "validate" || p[2] == "source-evidence" || p[2] == "assessments" && p[3] == "coverage" || referenceRoute(p)
 		}
 		return len(p) == 5 && p[2] == "source-evidence" && p[4] == "verifications"
 	}
@@ -137,7 +140,7 @@ func bearer(r *http.Request) (string, error) {
 	return strings.TrimPrefix(values[0], "Bearer "), nil
 }
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/api/v1/search" || referenceRoute(route(r)) {
+	if r.URL.Path == "/api/v1/search" || referenceRoute(route(r)) || connectedRoute(route(r)) {
 		ctx, cancel := context.WithTimeout(r.Context(), query.SearchTimeout)
 		defer cancel()
 		r = r.WithContext(ctx)
@@ -158,6 +161,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := route(r)
+	if connectedRoute(p) {
+		h.connected(w, r, token, p)
+		return
+	}
 	if referenceRoute(p) {
 		h.references(w, r, token, p)
 		return
@@ -811,6 +818,8 @@ func failure(w http.ResponseWriter, r *http.Request, err error) {
 				details[key] = value
 			}
 		}
+	case errors.Is(err, domain.ErrConflict):
+		status, code = 409, "OPERATION_CONFLICT"
 	case errors.Is(err, domain.ErrPrecondition):
 		status, code = 412, "PRECONDITION_FAILED"
 	case errors.Is(err, sec.ErrMissing):
@@ -860,7 +869,7 @@ func failure(w http.ResponseWriter, r *http.Request, err error) {
 		// definite delivery denial must not trigger logout or endless retries.
 		retryable = false
 	}
-	if (r.URL.Path == "/api/v1/search" || referenceRoute(route(r))) && status == 503 {
+	if (r.URL.Path == "/api/v1/search" || referenceRoute(route(r)) || connectedRoute(route(r))) && status == 503 {
 		code = "SERVICE_RECOVERING"
 		details = map[string]any{}
 		retryable = true

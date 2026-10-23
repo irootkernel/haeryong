@@ -205,7 +205,7 @@ def validate(name, value, code='INVALID_REQUEST'):
             if data < rule.get('minimum', data) or data > rule.get('maximum', data):
                 fail(code, at, 'number outside typed range')
     walk(SCHEMA['$defs'][name], value, '')
-    if name in ('reference_from_view', 'reference_exact_target'):
+    if name in ('reference_from_view', 'reference_exact_target', 'backlink_scope', 'backlink_endpoint'):
         if value['region_id'] is not None and value['page_path'] is None:
             fail(code, '/page_path', 'region requires exact page')
     if name == 'reference_view':
@@ -224,6 +224,15 @@ def validate(name, value, code='INVALID_REQUEST'):
             validate('reference_page', value['data'], code)
         else:
             validate('reference_view', value['data'], code)
+    if name == 'backlink_view':
+        validate('backlink_endpoint', value['from'], code)
+        validate('backlink_endpoint', value['target'], code)
+    if name == 'backlink_page':
+        validate('backlink_scope', value['scope'], code)
+        for row in value['items']:
+            validate('backlink_view', row, code)
+    if name == 'backlink_response':
+        validate('backlink_page', value['data'], code)
     if name == 'explanation_reference' and value['region_id'] is not None and value['page_path'] is None:
         fail(code, '/page_path', 'region requires an exact page')
     return value

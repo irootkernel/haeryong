@@ -5,6 +5,11 @@ import "haeryong.local/haeryong/internal/domain"
 // SearchTx owns derived persistence and bounded maintenance operations.
 // Callbacks remain short; extraction and object reads belong outside Write.
 type SearchTx interface {
+	SearchAuditUnits(string, *domain.SearchUnit, int) ([]domain.SearchUnit, error)
+	SearchAuditUnit(domain.SearchUnit) (domain.SearchUnit, error)
+	SearchAuditChunks(int64, string, int, int) ([]int, error)
+	SearchAuditChunk(int64, string, int) (bool, error)
+	SearchAuditAnchors(string, string, string, int) ([]domain.PageAnchor, error)
 	EnqueueSearch(string, int64) (string, error)
 	SearchVersions(string, int) ([]string, error)
 	SuspendSearch(string, int64) error

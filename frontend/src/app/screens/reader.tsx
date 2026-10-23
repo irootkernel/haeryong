@@ -12,6 +12,8 @@ import type { PersonalTarget } from "./personal-operations.ts";
 import { ImportControl } from "./import-control.tsx";
 import { DownloadPanel } from "./download-panel.tsx";
 import { VersionHeader } from "./version-header.tsx";
+import { LinksPanel } from "./links-panel.tsx";
+import { ReaderLinksNavigation } from "./links-navigation.ts";
 import { SourcePanel } from "./source-panel.tsx";
 import { acceptRegionFocusResult, acceptRegionSelection, parseSuppliedMetadata, readStream, regionRequestStale, regionSelectionMatches, regionsOfPage, verifyMetadataBytes, type MetadataState } from "./evidence-view.ts";
 import { featureEnabled } from "./library-data.ts";
@@ -112,6 +114,7 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
   const [suppliedMetaBox, setSuppliedMetaBox] = useState<{ versionId: string; state: MetadataState }>(() => ({ versionId, state: { kind: "loading" } }));
   const [suppliedMetaReload, setSuppliedMetaReload] = useState(0);
   const [regionSelection, setRegionSelection] = useState<{ versionId: string; pagePath: string; context: string | null; reload: number; regionId: string; intentKey: string | null } | null>(null);
+  const [contextTab, setContextTab] = useState<"evidence" | "links">("evidence");
   const [contextOpen, setContextOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
   const [filesFilter, setFilesFilter] = useState("");
@@ -140,6 +143,7 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
   const routeRegion = props.regionIntent?.regionId ?? null;
   const [hashFocus] = useState(() => new HostRegionFocus());
   const [channelReady, setChannelReady] = useState<ReaderPageContext | null>(null);
+  const [linksNavigation] = useState(() => new ReaderLinksNavigation());
   const channelRef = useRef<ReaderPageContext | null>(null);
   const referenceRoute = useRef({ versionId, context, page: props.page, reload });
   const referenceOwner = JSON.stringify([controller.state.capabilities?.library_id, controller.state.session?.principal_id, controller.state.capabilities?.runtime_generation]);
@@ -418,6 +422,8 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
     hashFocus.flush(channelReady, id => selectRegion({ id }));
   }, [routeRegion, versionId, currentPage, context, reload, channelReady]);
   const returnContext = referringPage(history.state?.haeryongReferenceReturn, referenceOwner);
+  linksNavigation.bind(contextVisible && contextTab === "links"
+    ? JSON.stringify([epoch, documentId, versionId, currentPage, regionId, context, reload, props.pageQuery, props.pageFragment]) : null);
   return <div className="reader">
     <header className="reader-header"><div><h1>{currentVersion?.title_snapshot ?? docInfo?.document.title ?? "결과 읽기"}</h1><p className="muted-code">{versionId}</p>
         <VersionHeader version={currentVersion} pagePath={currentPage} metadata={suppliedMeta.kind === "ready" ? suppliedMeta.metadata : null} />
@@ -451,9 +457,30 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
     <Sheet id="reader-context-panel" openerId="reader-context-toggle" className="reader-context" open={contextVisible} modal={contextModal} label="문맥 및 근거 패널" onClose={() => setContextOpen(false)}>
       {!wideLayout && <button onClick={() => setContextOpen(false)}>문맥 닫기</button>}
       {suppliedMeta.kind === "ready" && currentPage !== null && regionsOfPage(suppliedMeta.metadata, currentPage).length > 0 && <div className="region-outline"><h3>영역 개요(현재 페이지)</h3><ul>{regionsOfPage(suppliedMeta.metadata, currentPage).map((region) => <li key={region.id}><button className="link" data-selected={regionId === region.id ? "true" : undefined} aria-current={regionId === region.id ? "true" : undefined} onClick={() => selectRegion(region)}>{typeof region.label === "string" && region.label !== "" ? region.label : region.id}</button></li>)}</ul><p className="hint">영역을 선택하면 해당 페이지의 문맥이 그 영역에 묶이고, 페이지 요소에 실제 초점을 시도해 결과를 알립니다. 좁은 화면에서는 문맥 패널이 닫힌 뒤 초점이 시도됩니다. 선언된 영역이 문서 요소와 연결되지 않아도 읽기·페이지 문맥은 그대로 유지됩니다.</p></div>}
-      <div className="reader-evidence">
+      <div role="tablist" aria-label="문맥 탭" onKeyDown={event => {
+        const tabs = ["evidence", "links"] as const;
+        let next = tabs.indexOf(contextTab);
+        if (event.key === "ArrowRight" || event.key === "ArrowLeft") next = 1 - next;
+        else if (event.key === "Home") next = 0; else if (event.key === "End") next = 1; else return;
+        event.preventDefault(); const selected = tabs[next]!; setContextTab(selected); document.getElementById(`reader-${selected}-tab`)?.focus();
+      }}>{(["evidence", "links"] as const).map(tab => <button key={tab} id={`reader-${tab}-tab`} role="tab" aria-selected={contextTab === tab} aria-controls={`reader-${tab}-content`} tabIndex={contextTab === tab ? 0 : -1} onClick={() => setContextTab(tab)}>{tab === "evidence" ? "Evidence" : "Links"}</button>)}</div>
+      <div role="tabpanel" id="reader-evidence-content" aria-labelledby="reader-evidence-tab" hidden={contextTab !== "evidence"} className="reader-evidence">
       <SourcePanel controller={controller} version={currentVersion} versionId={versionId} pagePath={currentPage} regionId={regionId} contextKey={`${context ?? "initial"}:${reload}`} metadata={suppliedMeta} />
       </div>
+      {contextVisible && contextTab === "links" && <div role="tabpanel" id="reader-links-content" aria-labelledby="reader-links-tab"><LinksPanel key={`${referenceOwner}:${versionId}:${currentPage}:${regionId}:${context}:${reload}`} controller={controller} versionId={versionId} pagePath={currentPage} regionId={regionId} onNavigate={async (url, active) => {
+        const authority = controller.captureDispatchAuthority();
+        await linksNavigation.request({
+          active: () => live.current && active(),
+          guard: () => controller.requireVerifiedDispatch(authority),
+          route: () => location.pathname + location.search + location.hash,
+          readPosition: async () => {
+            const saved = currentPage ? await personal.read(target("page-position", currentPage)) : null;
+            const position = saved?.exists ? (saved.value as PagePositionValue).position : null;
+            return { scroll_x: Number(position?.scroll_x) || 0, scroll_y: Number(position?.scroll_y) || 0 };
+          },
+          navigate: position => pushReference(url, referenceOwner, position),
+        });
+      }} /></div>}
     </Sheet>
     </div>
     {download?.versionId === versionId && <div ref={downloadRegion} role="region" aria-label="선택한 파일 내려받기" tabIndex={-1}><button onClick={() => setDownload(null)}>파일 내려받기 닫기</button><DownloadPanel key={download.versionId + ":" + download.path} controller={controller} versionId={download.versionId} filePath={download.path} /></div>}

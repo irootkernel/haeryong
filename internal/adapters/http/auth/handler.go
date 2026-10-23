@@ -858,5 +858,5 @@ func isReferenceRead(r *http.Request) bool {
 		}
 		parts[i] = decoded
 	}
-	return len(parts) >= 3 && parts[0] == "versions" && parts[2] == "references" && (len(parts) == 3 || len(parts) == 4 && parts[3] == "resolve")
+	return len(parts) >= 3 && parts[0] == "versions" && (parts[2] == "backlinks" && len(parts) == 3 || parts[2] == "indexes" && len(parts) == 4 && parts[3] == "validate" || parts[2] == "references" && (len(parts) == 3 || len(parts) == 4 && parts[3] == "resolve"))
 }

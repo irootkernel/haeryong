@@ -27,7 +27,7 @@ func (s *firstReferenceAuth) Write(ctx context.Context, _ func(app.WriteTx) erro
 }
 
 var _ = It("RF08 starts the reference deadline before the outer auth Guard and suppresses HEAD errors", Label("unit"), func() {
-	for _, path := range []string{"v/references", "v%2Fmalformed/references", "v/references/resolve"} {
+	for _, path := range []string{"v/references", "v%2Fmalformed/references", "v/references/resolve", "v/backlinks", "v/indexes/validate"} {
 		for _, method := range []string{"GET", "HEAD"} {
 			store := &firstReferenceAuth{}
 			h, err := New(appauth.New(store), Policy{Hosts: []string{"127.0.0.1:9270"}, Origins: []string{"http://127.0.0.1:9270"}}, nil)

@@ -103,7 +103,11 @@ func matrixReferenceData(raw []byte, resolve bool, resolution, document, version
 	}
 	var want any = view
 	if !resolve {
-		want = map[string]any{"items": []any{view}, "next_cursor": nil, "materialization": map[string]any{"state": "ready", "reason": nil}}
+		live := "0"
+		if resolution == "resolved" {
+			live = "1"
+		}
+		want = map[string]any{"counts": map[string]any{"edge_count": live, "referenced_document_count": live}, "items": []any{view}, "next_cursor": nil, "materialization": map[string]any{"state": "ready", "reason": nil}}
 	}
 	var actual any
 	if err := json.Unmarshal(raw, &actual); err != nil {

@@ -173,6 +173,11 @@ func (s *Worker) turn(ctx context.Context, j domain.Job) error {
 		}
 	}
 	switch c.Phase {
+	case "repair":
+		// One owner-requested atomic SQL step. The daemon context can roll it
+		// back; owner cancellation is checked at the surrounding turn boundaries.
+		c.Phase = "declarations"
+		return s.save(ctx, j, c, func(tx app.WriteTx) error { return tx.ReindexReferences() })
 	case "declarations":
 		var object domain.Object
 		if err = s.batch(ctx, j, func(tx app.WriteTx, _ domain.DerivedWork) error {

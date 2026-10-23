@@ -1,4 +1,5 @@
 import type {
+  BacklinksRequest, BacklinkPage, IndexValidation, IndexValidationRequest, IndexRebuild, IndexRebuildRequest,
   VersionReferencesRequest, ResolveReferenceRequest, ReferencePage, ReferenceView,
   SearchRequest, SearchPage,
   ConfigurationView, ConfigurationPlanRequest, ConfigurationPlanView, ConfigurationCommitRequest, ConfigurationCommitView,
@@ -176,12 +177,12 @@ export class HttpHaeryongClient implements HaeryongClient {
 
   configurationView(): Promise<ConfigurationView> { return this.#request("GET", "/api/v1/configuration"); }
 
-  #sourceWrite<T>(path: string, body: unknown, operationId: string): Promise<T> {
+  #sourceWrite<T>(path: string, body: unknown, operationId: string, acceptCreatedJob = false): Promise<T> {
     const era = this.#era;
     return sourceWrite<T>(operationId, async () => {
       const outcome = await this.#exchange("POST", path, body, { "Idempotency-Key": operationId });
       return { kind: outcome.status === 202 ? "accepted" : "committed", body: outcome.data };
-    }, (id) => { if (era !== this.#era) throw new StaleResponseError(); return this.operation(id); });
+    }, (id) => { if (era !== this.#era) throw new StaleResponseError(); return this.operation(id); }, acceptCreatedJob);
   }
 
   configurationPlan(request: ConfigurationPlanRequest, operationId: string): Promise<ConfigurationPlanView> {
@@ -201,6 +202,20 @@ export class HttpHaeryongClient implements HaeryongClient {
     return this.#sourceWrite(`/api/v1/versions/${encodeURIComponent(versionId)}/source-observations`, request, operationId);
   }
 
+  versionBacklinks(request: BacklinksRequest): Promise<BacklinkPage> {
+    const params = new URLSearchParams();
+    if (request.cursor !== undefined) params.set("cursor", request.cursor);
+    if (request.limit !== undefined) params.set("limit", String(request.limit));
+    if (request.pagePath !== undefined) params.set("page_path", request.pagePath);
+    if (request.regionId !== undefined) params.set("region_id", request.regionId);
+    return this.#request("GET", `/api/v1/versions/${encodeURIComponent(request.versionId)}/backlinks?${params}`);
+  }
+  validateVersionIndexes(request: IndexValidationRequest): Promise<IndexValidation> {
+    return this.#request("GET", `/api/v1/versions/${encodeURIComponent(request.versionId)}/indexes/validate?${new URLSearchParams({ kind: request.kind })}`);
+  }
+  rebuildVersionIndexes(request: IndexRebuildRequest): Promise<IndexRebuild> {
+    return this.#sourceWrite(`/api/v1/versions/${encodeURIComponent(request.versionId)}/indexes/rebuild`, { kind: request.kind }, request.operationId, true);
+  }
   versionReferences(request: VersionReferencesRequest): Promise<ReferencePage> {
     const params = new URLSearchParams();
     if (request.cursor !== undefined) params.set("cursor", request.cursor);

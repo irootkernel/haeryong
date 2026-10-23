@@ -208,7 +208,8 @@ class SyntheticNativePort {
         this.script.sessionStatus = "";
         return { adopted: true, durability: "confirmed" };
       }
-      case "versionReferences": return { items: [], next_cursor: null, materialization: { state: "ready", reason: null } };
+      case "versionBacklinks": case "validateVersionIndexes": case "rebuildVersionIndexes": throw new ApiError(503, "FEATURE_NOT_READY", false);
+      case "versionReferences": return { counts: { edge_count: "0", referenced_document_count: "0" }, items: [], next_cursor: null, materialization: { state: "ready", reason: null } };
       case "resolveReference": throw new ApiError(404, "NOT_FOUND", false);
       case "abandonPairingAttempt": {
         this.script.abandonCalls++;

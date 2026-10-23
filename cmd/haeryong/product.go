@@ -25,7 +25,7 @@ func isProductCommand(opt options) bool {
 		return true
 	}
 	switch opt.command[0] {
-	case "references", "search", "import", "package", "uploads", "documents", "files", "operations", "jobs", "config", "projects", "events", "sources", "evidence", "assessments":
+	case "backlinks", "indexes", "references", "search", "import", "package", "uploads", "documents", "files", "operations", "jobs", "config", "projects", "events", "sources", "evidence", "assessments":
 		return true
 	case "doctor", "status":
 		if opt.flags["credential"] != "" || opt.flags["client-dir"] != "" {
@@ -146,6 +146,15 @@ func productCommand(ctx context.Context, opt options, emit func(any) error) erro
 
 	args := opt.command
 	switch args[0] {
+	case "backlinks", "indexes":
+		path, err := connectedCLIPath(opt)
+		if err != nil {
+			return err
+		}
+		if args[0] == "indexes" && args[1] == "rebuild" {
+			return call("POST", path, map[string]string{"kind": opt.flags["kind"]})
+		}
+		return call("GET", path, nil)
 	case "references":
 		return referenceCLI(ctx, api, opt, emit)
 	case "search":
