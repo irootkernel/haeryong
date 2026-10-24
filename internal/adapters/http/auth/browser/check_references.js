@@ -72,7 +72,78 @@ async page => {
     await page.goBack();await target();await page.goForward();await loaded(c.source,c.source_page);
     return {source:await current(),saved_scroll:saved,actual_scroll:actual,restored_context:state.haeryongReaderContext};
   });
-  if(!c.synthetic) return {cases,errors,requests,scope:'M11 corpus opt-in; synthetic matrix belongs to default run'};
+  if(c.knowledge_gate) {
+    await check('T6 saved reader question: search, original controls and cited facts (agent-only)',async()=>{
+      const observations=[];
+      for(const [name,identity,q,path] of [['mulgae',c.target,'failed_run_recovery','recovery/inventory.html'],['gaori',c.source,'await_run',c.source_page],['gaori',c.source,'"replacement start"',c.source_page],['mulgae',c.target,'reconciliation_state',c.target_page]]) {
+        // Include all versions because the fixture deliberately publishes a successor.
+        await page.goto(c.base+'/library?q='+encodeURIComponent(q)+'&versions=all');
+        const hit=page.getByTestId('search-hit').filter({hasText:path}).first();await hit.waitFor();
+        await hit.getByRole('link',{name:'일치하는 페이지 열기',exact:true}).click();await loaded(identity,path);
+        const controls=path.includes('inventory') ? [] : name==='mulgae' ? [
+          ['#compose-mapping','omit','Omitting the failed selected optional role'],
+          ['#compose-mapping','replace','CompositeRoleAlreadySatisfied'],
+          ['#compose-publication','cli','exact returned composite run_id'],
+          ['#compose-publication','mcp','retryable: false'],
+          ['#compose-publication','none','CompositeRoleAlreadySatisfied'],
+          ['#compose-source','root-missing','diagnostics cannot replace'],
+          ['#compose-source','ancestor-missing','CompositeLineageMismatch']
+        ] : [
+          ['#lifecycle-observation','await','waiter only'],
+          ['#lifecycle-observation','cancel','does not guarantee killed'],
+          ['#lifecycle-session','lost','identical-looking ID'],
+          ['#lifecycle-observation','disconnect','reconciliation of the command and final artifacts']
+        ];
+        const output=frame().locator('[data-output]').first();
+        for(const [selector,value,expected] of controls){
+          await frame().locator(selector).selectOption(value);
+          const text=await output.textContent();if(!text.includes(expected))throw Error('reader prediction missing '+expected);
+          observations.push({project:name,control:selector,value,observed:text});
+        }
+        const claims=await frame().locator('.claim-text').allTextContents();
+        observations.push({project:name,page:path,claims,evidence:await frame().locator('.sources .identity').allTextContents()});
+      }
+      // Preserve actual source text and statement scope for the agent's answer.
+      if(!observations.some(r=>r.project==='mulgae'&&r.claims?.some(t=>t.includes('accepted root role'))))throw Error('accepted-role fact absent');
+      await page.screenshot({path:c.work+'/knowledge-controls.png'});
+      return {reader:'agent-only; familiar with corpus',observations,regeneration:false};
+    });
+    await check('T6 real-source Evidence action and exact Reader reopen',async()=>{
+      await go(c.target_route);await loaded(c.target,c.target_page);await selection(c.target,c.target_page,c.region);
+      const open=async()=>{
+        await page.getByRole('button',{name:'근거 패널',exact:true}).click();
+        const panel=page.locator('section[aria-label="근거 및 출처 패널"]');await panel.waitFor();
+        await panel.getByRole('button',{name:/M-S09 · reference_only/}).first().click();
+        return panel.locator('.evidence-region .evidence-detail').first();
+      };
+      let detail=await open();
+      const observed=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().includes('/source-evidence-verifications?'));
+      await detail.getByRole('button',{name:'출처 근거 확인',exact:true}).click();
+      const response=await observed;const checkResult=(await response.json()).data;
+      if(checkResult.outcome!=='captured'||!checkResult.target_set_id)throw Error('real evidence capture failed');
+      await detail.getByText('확인 결과: 캡처됨',{exact:false}).waitFor();
+      await detail.getByLabel('작성자 선언 다이제스트와 비교',{exact:true}).check();
+      const matching=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().includes('/source-evidence-verifications?'));
+      await detail.getByRole('button',{name:'출처 근거 확인',exact:true}).click();
+      const match=(await (await matching).json()).data;if(match.outcome!=='matched')throw Error('real expected bytes did not match');
+      await page.locator('#reader-copy-link').click();
+      const field=page.getByRole('textbox',{name:'복사할 링크',exact:true});await field.waitFor();const copied=await field.inputValue();
+      if(copied!==c.base+c.target_route||copied.includes(c.token))throw Error('saved explanation copy lost exact tuple');
+      await page.goto(c.base+'/health/live');await page.goto(copied);await loaded(c.target,c.target_page);await selection(c.target,c.target_page,c.region);detail=await open();
+      await detail.getByRole('button',{name:'검증 이력 보기/숨기기',exact:true}).click();
+      await detail.locator('li').filter({hasText:'일치'}).first().waitFor();
+      if(!(await detail.textContent()).includes('reference_only(작성자 선언)'))throw Error('original provenance label lost');
+      await page.screenshot({path:c.work+'/knowledge-evidence.png'});
+      return {capture:checkResult,match,actual_target:await loaded(c.target,c.target_page),copied_url:copied,history_reopened:true,authored_declaration:'reference_only'};
+    });
+    await check('T6 browser identity, nonblank, overlays and console',async()=>{
+      if(!await page.title()||!await frame().locator('h1').textContent())throw Error('blank/wrong page');
+      if(await page.locator('vite-error-overlay').count()||errors.length)throw Error('runtime/framework error');
+      const unexpected=consoleMessages.filter(m=>!(m.level==='warning'&&m.text.startsWith('An iframe which has both allow-scripts and allow-same-origin')));if(unexpected.length)throw Error('unexpected console error '+JSON.stringify(unexpected));
+      return {title:await page.title(),url:await current(),page_errors:errors,console:consoleMessages};
+    });
+  }
+  if(!c.synthetic) return {cases,errors,requests,consoleMessages,scope:'M11 corpus opt-in; synthetic matrix belongs to default run'};
   await check('RF11 nonadjacent child history return and nested immediate replacement',async()=>{
     await source();await anchor('exact').click();await target();
     await frame().locator('#ordinary').click();await loaded(c.target,'b.html');

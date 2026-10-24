@@ -18,11 +18,13 @@ parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--browser-cli',type=Path,required=True)
 parser.add_argument('--receipt',type=Path,required=True)
 parser.add_argument('--corpus',action='store_true',help='M11 opt-in real-sample reference click/selection/focus/return')
+parser.add_argument('--knowledge-gate',action='store_true',help='T6 real Evidence and saved reader task (requires --corpus)')
 args=parser.parse_args()
+assert not args.knowledge_gate or args.corpus
 REPO=Path(__file__).resolve().parents[5]
 receipt=args.receipt.resolve();assert receipt.parent.is_dir()
 os.umask(0o077)
-work=Path(tempfile.mkdtemp(prefix='h4r-',dir=receipt.parent)).resolve()
+work=Path(tempfile.mkdtemp(prefix='h4r-',dir='/tmp')).resolve()
 sockets=Path(tempfile.mkdtemp(prefix='h4r-',dir='/tmp')).resolve()
 env=os.environ|{'TMPDIR':str(work),'HAERYONG_TEST_STATE_DIR':str(work/'app-state'),'PYTHONDONTWRITEBYTECODE':'1','PLAYWRIGHT_DAEMON_SOCKETS_DIR':str(sockets),'PLAYWRIGHT_DAEMON_SESSION_DIR':str(work/'registry'),'GOTOOLCHAIN':'local','GOPROXY':'off','GOSUMDB':'off'}
 os.environ['HAERYONG_TEST_STATE_DIR']=env['HAERYONG_TEST_STATE_DIR']
@@ -30,7 +32,7 @@ def load(name,path):
     spec=importlib.util.spec_from_file_location(name,path);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
 h=load('h',REPO/'tests/e2e/harness.py')
 support=load('reference_support',REPO/'tests/manual/reference_support.py')
-proof={'scope':__doc__,'complete':False,'runtime':str(work),'cases':[],'command':['python3','-B',str(Path(__file__).relative_to(REPO)),'--browser-cli',str(args.browser_cli),'--receipt','<private>']+(['--corpus'] if args.corpus else [])}
+proof={'scope':__doc__,'complete':False,'runtime':str(work),'cases':[],'command':['python3','-B',str(Path(__file__).relative_to(REPO)),'--browser-cli',str(args.browser_cli),'--receipt','<private>']+(['--corpus'] if args.corpus else [])+(['--knowledge-gate'] if args.knowledge_gate else [])}
 product=None;opened=False
 def fingerprints():
     paths=[p for folder in ['cmd','internal'] for p in (REPO/folder).rglob('*.go') if not p.name.endswith('_test.go')]
@@ -52,7 +54,7 @@ try:
     subprocess.run(['go','build','-tags','haeryong_test_state','-o',str(work/'haeryong'),'./cmd/haeryong'],cwd=REPO,env=env,capture_output=True,check=True,timeout=180)
     assert fingerprints()==before,'inputs changed during build'
     product=h.Product(work/'haeryong',work);product.initialize();product.start();owner=product.owner('Reference browser proof')
-    fixture=support.prepare(product,owner,args.corpus);proof['fixture']=fixture
+    fixture=support.prepare_corpus(product,owner,knowledge=True) if args.knowledge_gate else support.prepare(product,owner,args.corpus);proof['fixture']=fixture
     capabilities=product.data('GET','/api/v1/capabilities',client=owner)
     assert capabilities['features']['references'] is True,'full-delivery flag is not enabled'
     proof['production_capability']=True

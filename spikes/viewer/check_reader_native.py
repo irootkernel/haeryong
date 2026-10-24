@@ -14,6 +14,13 @@ assert not (STAGES&{'seed','restart','crash','search','corpus','reference-corpus
 # consume only the common daemon/session setup. The unrelated app smoke opens
 # a CDN-dependent page; T5's no-network selection must not open that page.
 assert not (STAGES&{'evidence','references'} and not STAGES&{'app','versions'}),'these stages require app or versions setup'
+REQUESTED_STAGES=set(STAGES)
+OFFLINE_CORPUS=os.environ.get('HAERYONG_NATIVE_CORPUS_OFFLINE')=='1'
+if OFFLINE_CORPUS:
+    assert STAGES in ({'app','corpus'},{'app','reference-corpus'}),'offline corpus selects exactly one local corpus with common setup'
+    # T6 decision T1: the corpus launches the same compiled App itself. Exclude
+    # only the unrelated CDN smoke; never count that excluded stage as passed.
+    STAGES=STAGES-{'app'}
 REPO=pathlib.Path(__file__).resolve().parents[2]
 RECEIPT=args.receipt.resolve()
 assert RECEIPT.parent.is_dir(),'receipt parent must exist'
@@ -26,6 +33,7 @@ env=os.environ|{'TMPDIR':str(work),'HAERYONG_TEST_STATE_DIR':str(work/'app-state
 os.environ['HAERYONG_TEST_STATE_DIR']=env['HAERYONG_TEST_STATE_DIR']
 spec=importlib.util.spec_from_file_location('h',REPO/'tests/e2e/harness.py');h=importlib.util.module_from_spec(spec);spec.loader.exec_module(h)
 proof={'scope':__doc__,'runtime':str(work),'complete':False,'selected_stages':sorted(STAGES),'full_qualification':STAGES==ALL_STAGES,'driver_sha256':hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),'cases':[]}
+proof.update(requested_stages=sorted(REQUESTED_STAGES),executed_stages=sorted(STAGES),excluded_stages=([{'stage':'app','status':'not_run','reason':'T6 offline corpus excludes unrelated CDN smoke'}] if OFFLINE_CORPUS else []))
 state=work/'state';state.mkdir(mode=0o700)
 def fingerprints():
     paths=sorted([p for folder in ['cmd','internal'] for p in (REPO/folder).rglob('*.go') if not p.name.endswith('_test.go')]+[REPO/'go.mod',REPO/'go.sum']+[p for p in (REPO/'internal/webassets/dist').rglob('*') if p.is_file()]

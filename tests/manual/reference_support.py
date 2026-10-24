@@ -6,6 +6,9 @@ traffic and DOM state; it supplies no host capability, route or focus result.
 import hashlib
 import html
 import json
+import os
+import sqlite3
+import subprocess
 from pathlib import Path
 import time
 import urllib.parse
@@ -130,13 +133,13 @@ CORPUS_FILES = {
 }
 
 
-def prepare_corpus(product, owner):
+def prepare_corpus(product, owner, knowledge=False):
     """RF12 complete checked-in four-file trees, explicit lists and original bytes.
 
     Mulgae is imported first. Historical prose labels remain authored bytes;
     service UUIDs belong only to the external Gaori metadata and private receipt.
     """
-    imported={};hashes={};projects={}
+    imported={};hashes={};projects={};source_inputs={}
     for name,paths in CORPUS_FILES.items():
         assert len(paths)==len(set(paths))==4
         files={p:(REPO/'spikes/knowledge-value/samples'/name/p).read_bytes() for p in paths}
@@ -144,12 +147,15 @@ def prepare_corpus(product, owner):
         projects[name]=project
         metadata={'regions':[{'id':'M11','page_path':'recovery/compose.html'}]}
         if name=='gaori':metadata={'regions':[{'id':'G12','page_path':'gaori/lifecycle.html'}],'references':[{'id':'prior-compose','document_id':imported['mulgae']['document_id'],'version_id':imported['mulgae']['version_id'],'page_path':'recovery/compose.html','region_id':'M11','from':{'page_path':'gaori/lifecycle.html','region_id':'G12'},'relation':'explanatory analogy'}]}
+        if knowledge:
+            source_inputs[name]=knowledge_metadata(product,owner,name,project,metadata)
         imported[name],hashes[name]=publish(product,owner,'corpus-'+name,files,metadata,['--project',project,'--new-document'])
         assert sorted(hashes[name])==sorted(paths)
     s,t=imported['gaori'],imported['mulgae']
     latest,_=publish(product,owner,'corpus-synthetic-successor',{'successor.html':b'<!doctype html><title>Synthetic successor</title><h1>Labelled synthetic successor without the old compose page</h1>'},extra=['--document',t['document_id']])
     assert latest['document_id']==t['document_id'] and latest['version_id']!=t['version_id']
     return {'source':s,'target':t,'latest':latest,'successor_label':'synthetic successor; old compose page removed',
+      'knowledge_sources':source_inputs,'knowledge_gate':knowledge,
       'projects':projects,'source_route':route(s,'gaori/lifecycle.html','G12'),'target_route':route(t,'recovery/compose.html','M11'),
       'source_page':'gaori/lifecycle.html','target_page':'recovery/compose.html','reference':'prior-compose','region':'M11',
       'source_region':'G12','tree_hashes':hashes,'explicit_files':CORPUS_FILES,'synthetic':False,
@@ -168,3 +174,155 @@ def prepare_versions(product, owner):
     new,_=publish(product,owner,'versions-new',files,{'document':{'title':'Versions new metadata'},'regions':[{'page_path':'new.html','id':'same','label':'new region label'}]},['--document',old['document_id']])
     no_html,_=publish(product,owner,'versions-no-html',{'readme.txt':'No HTML; actual version scope\n'},extra=['--new-document'])
     return {'no_html':no_html,'old':old,'new':new,'encoded_route':route(old,SPECIAL,REGION,QUERY,FRAGMENT),'special':SPECIAL,'region':REGION,'query':QUERY,'fragment':FRAGMENT,'synthetic':True}
+
+# T6 opt-in composition only. Default RF12 metadata/worksheets remain unchanged.
+KNOWLEDGE_SOURCES = {
+ 'mulgae': ('cef337cf927b820316f42a41f1441fbc653203f8','README.md',757,782,'M-S09','M11'),
+ 'gaori': ('393af5999bbbb30b5d11e2a17a2325c8cf1833b7','docs/integration-guide.md',298,298,'G-S18','G12'),
+}
+
+
+def knowledge_metadata(product,owner,name,project,metadata):
+    revision,path,start,end,evidence,region=KNOWLEDGE_SOURCES[name]
+    root=REPO.parent/name
+    blob=subprocess.check_output(['git','-C',str(root),'show',revision+':'+path])
+    # Canonical rule: split only on LF; preserve CR and the final LF exactly.
+    selected=b'\n'.join(blob.split(b'\n')[start-1:end])
+    if end<len(blob.split(b'\n')):selected+=b'\n'
+    repo_id=str(uuid.uuid4());source_id=str(uuid.uuid4());denied_repo=str(uuid.uuid4());denied_source=str(uuid.uuid4())
+    source={'id':source_id,'kind':'git','retention_mode':'reference_only','repo_id':repo_id,'object_format':'sha1','exact_revision':revision,'release_label':'T6 fixed released '+name}
+    metadata['sources']=[source,dict(source,id=denied_source,repo_id=denied_repo)]
+    declaration={'id':evidence,'source_id':source_id,'capture_status':'reference_only','path':path,'line_start':start,'line_end':end,'bytes_sha256':hashlib.sha256(selected).hexdigest()}
+    metadata['evidence']=[declaration,dict(declaration,id='unapproved-root',source_id=denied_source)]
+    metadata['regions'][0]['evidence_ids']=[evidence]
+    item={'root':str(root),'revision':revision,'path':path,'line_start':start,'line_end':end,'evidence_id':evidence,'bytes_sha256':declaration['bytes_sha256'],'source_id':source_id,'repo_id':repo_id,'project_id':project}
+    approve_knowledge_source(product,owner,item,root)
+    return item
+
+
+def approve_knowledge_source(product,owner,item,root):
+    return product.cli(['sources','approve','--project',item['project_id'],'--source-id',item['source_id'],'--kind','git','--root-path',str(root),'--repo-id',item['repo_id'],'--retention-mode','reference_only','--confirmed'],client=owner)
+
+
+def knowledge_checks(product,owner,fixture,result):
+    """Actual public source/graph composition; raw corruption only while stopped."""
+    result.update(label='new T6 observation; real sample, synthetic fault/change targets',checks=[])
+    versions={'mulgae':fixture['target'],'gaori':fixture['source']}
+    def get(version,suffix):return product.data('GET','/api/v1/versions/'+version+suffix,client=owner)
+    def verify(version,evidence,body):
+        key=str(uuid.uuid4());route='/api/v1/versions/'+version+'/source-evidence-verifications?'+urllib.parse.urlencode({'evidence_id':evidence})
+        response=product.data('POST',route,client=owner,body=body,headers={'Idempotency-Key':key})
+        assert response['operation_id']==key
+        assert product.data('POST',route,client=owner,body=body,headers={'Idempotency-Key':key})==response
+        return response
+    def authored(version):
+        status,body,_=product.request('GET','/api/v1/versions/'+version+'/metadata?kind=supplied',client=owner,raw=True)
+        assert status==200
+        return hashlib.sha256(body).hexdigest()
+    original={name:authored(v['version_id']) for name,v in versions.items()}
+    checks=[]
+    for name,item in fixture['knowledge_sources'].items():
+        version=versions[name]['version_id'];evidence=item['evidence_id']
+        for body,outcome in [({},'captured'),({'expected_bytes_sha256':item['bytes_sha256']},'matched'),({'expected_bytes_sha256':'0'*64},'mismatch')]:
+            row=verify(version,evidence,body);assert row['outcome']==outcome,(name,outcome,row)
+            assert row['target_set_id'] and row['checked_at']
+            captured=get(version,'/assessments?'+urllib.parse.urlencode({'target_set_id':row['target_set_id']}))['applicable']['captured_at']
+            assert captured
+            checks.append((version,evidence,body,row,captured));result['checks'].append(dict(row,captured_at=captured))
+        denied=verify(version,'unapproved-root',{});assert denied['outcome']=='unavailable' and denied['reason'];result['checks'].append(denied);checks.append((version,'unapproved-root',{},denied,None))
+        missing_root=product.root/('missing-'+name)
+        subprocess.run(['git','init','--quiet',str(missing_root)],check=True,capture_output=True)
+        approve_knowledge_source(product,owner,item,missing_root)
+        hidden_root=product.root/('hidden-'+name);missing_root.rename(hidden_root)
+        try:
+            missing=verify(version,evidence,{});assert missing['outcome']=='unavailable' and missing['reason'];result['checks'].append(missing);checks.append((version,evidence,{},missing,None))
+        finally:hidden_root.rename(missing_root)
+        approve_knowledge_source(product,owner,item,item['root'])
+    product.stop();product.start()
+    for version,evidence,body,row,stamp in checks:
+        history=get(version,'/source-evidence-verifications?'+urllib.parse.urlencode({'evidence_id':evidence}))
+        assert any(r['verification_id']==row['verification_id'] and r['outcome']==row['outcome'] and r['checked_at']==row['checked_at'] for r in history['items'])
+        replay=product.data('POST','/api/v1/versions/'+version+'/source-evidence-verifications?'+urllib.parse.urlencode({'evidence_id':evidence}),client=owner,body=body,headers={'Idempotency-Key':row['operation_id']})
+        assert replay==row
+        if stamp is not None:
+            captured=get(version,'/assessments?'+urllib.parse.urlencode({'target_set_id':row['target_set_id']}))
+            assert captured['applicable']['captured_at']==stamp and captured['applicable']['target_set_id']==row['target_set_id']
+    result['verification_restart_persistence']=True
+    source,target=fixture['source']['version_id'],fixture['target']['version_id']
+    before_refs=get(source,'/references');before_back=get(target,'/backlinks')
+    assert before_refs['counts']=={'edge_count':'1','referenced_document_count':'1'}
+    assert before_back['counts']=={'edge_count':'1','referring_document_count':'1'}
+    assert before_refs['items'][0]['edge_id']==before_back['items'][0]['edge_id']
+    validations=[]
+    for version in (source,target):
+        for kind in ('references','search'):
+            started=time.monotonic();v=get(version,'/indexes/validate?kind='+kind)
+            assert v['state']=='consistent',v
+            validations.append({'version_id':version,'kind':kind,'elapsed_ms':(time.monotonic()-started)*1000,'observed':v})
+    # Same intact-DDL wrong-key recipe as BL C06. No running product connection.
+    product.stop();dbpath=product.data_dir/'storage/library.sqlite'
+    def connect():return sqlite3.connect(dbpath)
+    with connect() as db:
+        definition=db.execute("SELECT sql FROM sqlite_master WHERE name='authored_edges_target'").fetchone()[0]
+        rows=db.execute('SELECT * FROM authored_edges NOT INDEXED ORDER BY rowid').fetchall()
+        wrong=definition.replace('target_version_id,',"(CASE WHEN metadata_reference_id='prior-compose' THEN '"+fixture['latest']['version_id']+"' ELSE target_version_id END),",1)
+        assert wrong!=definition
+        db.execute('PRAGMA writable_schema=ON');db.execute("UPDATE sqlite_master SET sql=? WHERE name='authored_edges_target'",(wrong,))
+    with connect() as db:db.execute('REINDEX main.authored_edges_target')
+    with connect() as db:
+        db.execute('PRAGMA writable_schema=ON');db.execute("UPDATE sqlite_master SET sql=? WHERE name='authored_edges_target'",(definition,))
+    with connect() as db:
+        canonical=db.execute('SELECT count(*) FROM authored_edges NOT INDEXED WHERE target_version_id=?',(target,)).fetchone()[0]
+        indexed=db.execute('SELECT count(*) FROM authored_edges INDEXED BY authored_edges_target WHERE target_version_id=?',(target,)).fetchone()[0]
+        assert canonical==1 and indexed==0
+    product.start()
+    damaged=get(target,'/indexes/validate?kind=references');assert damaged['state']=='inconsistent',damaged
+    key=str(uuid.uuid4());route='/api/v1/versions/'+target+'/indexes/rebuild'
+    repair=product.data('POST',route,client=owner,body={'kind':'references'},headers={'Idempotency-Key':key})
+    deadline=time.monotonic()+120
+    while True:
+        jobs=[product.data('GET','/api/v1/jobs/'+j,client=owner) for j in repair['job_ids']]
+        assert all(j['state'] not in ('failed','cancelled') for j in jobs),jobs
+        if all(j['state']=='completed' for j in jobs):break
+        assert time.monotonic()<deadline,'T6 owner rebuild hang guard'
+        time.sleep(.1)
+    assert product.data('POST',route,client=owner,body={'kind':'references'},headers={'Idempotency-Key':key})==repair
+    assert get(source,'/references')==before_refs and get(target,'/backlinks')==before_back
+    started=time.monotonic();repaired=get(target,'/indexes/validate?kind=references');assert repaired['state']=='consistent'
+    result['C06']={'canonical_count':canonical,'damaged_index_count':indexed,'detected':damaged,'repair':repair,'repaired':repaired,'validation_elapsed_ms':(time.monotonic()-started)*1000,'initial_validations':validations}
+    product.stop()
+    with connect() as db:assert db.execute('SELECT * FROM authored_edges NOT INDEXED ORDER BY rowid').fetchall()==rows
+    product.start();assert get(target,'/backlinks')==before_back
+    # T3 permits a local copy only for this direct-change connection.
+    item=fixture['knowledge_sources']['mulgae'];copy=product.root/'direct-change-mulgae'
+    # Object-only copy/setup: no checkout, filters, hooks, signing or fetch.
+    # Only the disposable copy's objects, index and HEAD may be written.
+    git_env={k:v for k,v in os.environ.items() if not k.startswith('GIT_')}
+    git_env.update(GIT_AUTHOR_NAME='T6 synthetic',GIT_AUTHOR_EMAIL='fixture@example.invalid',GIT_COMMITTER_NAME='T6 synthetic',GIT_COMMITTER_EMAIL='fixture@example.invalid',GIT_NO_REPLACE_OBJECTS='1',GIT_NO_LAZY_FETCH='1',GIT_TERMINAL_PROMPT='0')
+    subprocess.run(['git','-c','core.hooksPath=/dev/null','clone','--bare','--local','--no-hardlinks','--quiet',item['root'],str(copy)],env=git_env,check=True,capture_output=True)
+    def git(*args,input=None):
+        return subprocess.check_output(['git','-c','core.hooksPath=/dev/null','-c','commit.gpgsign=false','-C',str(copy),*args],env=git_env,input=input)
+    original_blob=git('show',item['revision']+':'+item['path'])
+    assert b'do not blindly retry an uncertain mutation' in original_blob
+    changed=original_blob.replace(b'do not blindly retry an uncertain mutation',b'SYNTHETIC changed publication instruction',1)
+    blob=git('hash-object','-w','--stdin',input=changed).decode().strip()
+    mode=git('ls-tree',item['revision'],'--',item['path']).decode().split()[0]
+    git('read-tree',item['revision'])
+    git('update-index','--cacheinfo',mode+','+blob+','+item['path'])
+    tree=git('write-tree').decode().strip()
+    commit=git('commit-tree',tree,'-p',item['revision'],input=b'Synthetic direct cited-source change\n').decode().strip()
+    git('update-ref','--no-deref','HEAD',commit)
+    approve_knowledge_source(product,owner,item,copy)
+    observation=product.data('POST','/api/v1/versions/'+target+'/source-observations',client=owner,body={'scope':{'kind':'region','page_path':'recovery/compose.html','region_id':'M11'}} ,headers={'Idempotency-Key':str(uuid.uuid4())})
+    assessment=get(target,'/assessments?'+urllib.parse.urlencode({'page_path':'recovery/compose.html','region_id':'M11','scope_kind':'region','target_set_id':observation['target_set_id']}))
+    assert assessment['applicable']['reassessment_required'] is True,assessment
+    result['direct_change']={'label':'synthetic commit in disposable local copy','observation':observation,'assessment':assessment}
+    approve_knowledge_source(product,owner,item,item['root'])
+    product.stop();product.start()
+    for name,v in versions.items():assert authored(v['version_id'])==original[name]
+    assert get(source,'/references')==before_refs and get(target,'/backlinks')==before_back
+    persisted=get(target,'/assessments?'+urllib.parse.urlencode({'scope_kind':'region','page_path':'recovery/compose.html','region_id':'M11','target_set_id':observation['target_set_id']}))
+    assert persisted['applicable']==assessment['applicable']
+    result['direct_change']['unchanged_after_restart']=True
+    result['authored_provenance_unchanged']=True
+    return result

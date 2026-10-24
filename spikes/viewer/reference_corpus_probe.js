@@ -22,12 +22,33 @@ const coordinates=p=>({scroll_x:p?.scroll_x,scroll_y:p?.scroll_y});
 const samePosition=(a,b)=>Number.isFinite(a?.scroll_x)&&Number.isFinite(a?.scroll_y)&&a.scroll_x===b?.scroll_x&&a.scroll_y===b?.scroll_y;
 const snapshot=(render,after=0)=>traffic.slice(after).filter(r=>r.direction==='child'&&r.message.type==='reader.position.snapshot'&&r.message.render_instance_id===render).at(-1)?.message;
 const inputPosted=async name=>{const end=Date.now()+20000;for(;;){const status=await window.haeryongNativeCall(701100,[{Operation:'serviceStatus',Payload:{}}]);if(status.value?.native_inputs?.includes(name))return;if(Date.now()>end)throw Error('owned native input not posted: '+name);await new Promise(r=>setTimeout(r,100));}};
-let positionProof,sourceFresh;
+let positionProof,sourceFresh,knowledgeCopy;
 const button=name=>[...document.querySelectorAll('button')].find(b=>b.textContent===name);
+const knowledgeEvidence=async(reopen)=>{
+ if(!reopen){
+  button('링크 복사')?.click();
+  const field=await wait(()=>document.querySelector('[aria-label="복사할 링크"]'),'real sample copied link');knowledgeCopy=field.value;
+  const parsed=new URL(knowledgeCopy);if(parsed.pathname+parsed.search+parsed.hash!==c.target_route)throw Error('native copied sample tuple changed');
+ }
+ button('근거 패널')?.click();await wait(()=>document.querySelector('#reader-context-panel')?.matches(':modal'),'Evidence overlay');
+ const row=await wait(()=>[...document.querySelectorAll('.evidence-region button')].find(b=>b.textContent.startsWith('M-S09 · reference_only')),'real cited evidence row');row.click();
+ const detail=await wait(()=>document.querySelector('.evidence-region .evidence-detail'),'source detail');
+ if(!reopen){
+  const action=[...detail.querySelectorAll('button')].find(b=>b.textContent==='출처 근거 확인');if(!action||action.disabled)throw Error('real Evidence disabled');action.click();
+  await wait(()=>detail.textContent.includes('확인 결과: 캡처됨'),'real fixed-source captured result');
+ }
+ const history=[...detail.querySelectorAll('button')].find(b=>b.textContent==='검증 이력 보기/숨기기');if(!history)throw Error('history control absent');history.click();
+ await wait(()=>[...detail.querySelectorAll('li')].some(n=>n.textContent.includes('캡처됨')),'durable captured history');
+ if(!detail.textContent.includes('reference_only(작성자 선언)'))throw Error('authored provenance upgraded');
+ const text=detail.textContent;document.querySelector('#reader-context-panel').dispatchEvent(new Event('cancel',{cancelable:true}));
+ await wait(()=>!document.querySelector('#reader-context-panel')?.open,'Evidence close');
+ return {reopened:reopen,actual_target:announcement,observed:text};
+};
 const reload=JSON.parse(sessionStorage.getItem('rf12-reload')||'null');
 if(reload){
  rows.push(...reload.rows);sessionStorage.removeItem('rf12-reload');
  await check('RF12 actual native reload retains pinned old target',async()=>{if(url()!==c.target_route)throw Error('reload lost exact target');return {actual_target:await loaded(c.target,c.target_page),focus:await focus(c.target,c.target_page,c.region)};});
+ if(c.knowledge_gate)await check('T6 native real Evidence history reopens with original declaration',()=>knowledgeEvidence(true));
  await check('RF12 native return, Back and Forward retain exact tuples and source context',async()=>{
    const targetContext=history.state?.haeryongReaderContext;
    button('참조한 페이지로 돌아가기')?.click();await wait(()=>url()===c.source_route,'return source route');
@@ -86,4 +107,5 @@ await check('RF12 actual native keyboard click opens old Mulgae M11 despite synt
  positionProof={fresh:coordinates(fresh),region_focus:baseline,saved:coordinates(saved.position),departure};
  return {expected_source:c.expected_source,expected_target:c.expected_target,actual_target:await loaded(c.target,c.target_page),focus:await focus(c.target,c.target_page,c.region),newer_target_not_selected:true,position_proof:positionProof};
 });
-sessionStorage.setItem('rf12-reload',JSON.stringify({rows,source_context:sourceContext,position_proof:positionProof}));location.reload();
+if(c.knowledge_gate)await check('T6 native real source Evidence action',()=>knowledgeEvidence(false));
+sessionStorage.setItem('rf12-reload',JSON.stringify({rows,source_context:sourceContext,position_proof:positionProof,copied_url:knowledgeCopy}));location.reload();

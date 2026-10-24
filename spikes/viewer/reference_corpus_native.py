@@ -7,6 +7,7 @@ import urllib.request
 import urllib.error
 import importlib.util
 import json
+import os
 from pathlib import Path
 import time
 
@@ -14,7 +15,7 @@ import time
 def run(repo,work,state,product,owner,launch,proof):
     spec=importlib.util.spec_from_file_location('reference_support',repo/'tests/manual/reference_support.py')
     support=importlib.util.module_from_spec(spec);spec.loader.exec_module(support)
-    fixture=support.prepare_corpus(product,owner);proof['reference_corpus_fixture']=fixture
+    fixture=support.prepare_corpus(product,owner,knowledge=os.environ.get('HAERYONG_KNOWLEDGE_GATE')=='1');proof['reference_corpus_fixture']=fixture
     source=Path(__file__).with_name('reference_corpus_probe.js')
     probe=work/'probe-reference-corpus.js';probe.write_text(source.read_text().replace('REFERENCE_CONSTANTS',json.dumps(fixture,ensure_ascii=False)))
     quartz=ctypes.CDLL('/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices')
@@ -69,3 +70,10 @@ def run(repo,work,state,product,owner,launch,proof):
     server.shutdown();server.server_close()
     assert result==0
     assert case['ok'],'RF12 native rows failed; all evaluated rows retained'
+    if fixture['knowledge_gate']:
+        path='/api/v1/versions/'+fixture['target']['version_id']+'/source-evidence-verifications?evidence_id=M-S09'
+        before=product.data('GET',path,client=owner)
+        assert any(r['outcome']=='captured' for r in before['items'])
+        product.stop();product.start()
+        assert product.data('GET',path,client=owner)==before
+        proof['native_knowledge_restart']={'history':before,'unchanged_after_restart':True}

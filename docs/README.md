@@ -30,6 +30,8 @@ TASK-004-04 adds canonical scoped backlinks, separate Reader Links sections and 
 
 TASK-004-05 adds pinned Copy link, automatic session-return navigation and the shared Versions view with progressive structural comparison. [Its record](testing/deep-links-versions.md) distinguishes executed browser/native checks, synthetic personal/assessment evidence and verification limits. Personal Review remains unavailable until TASK-005-01.
 
+TASK-004-06 adds the two-project knowledge gate composition over the existing source/search/link/Versions surfaces. [Its record](testing/two-project-knowledge.md) contains the relevance report, agent-only saved-reader worksheet and EPIC-004 evidence index.
+
 ## Start here
 
 | Reader | Recommended path |

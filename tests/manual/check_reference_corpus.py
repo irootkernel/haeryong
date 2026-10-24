@@ -2,8 +2,9 @@
 
 Real imports use public production APIs; the explicitly seeded matrix uses the
 existing SQLite test fixture and production query/auth/HTTP/CLI paths. Every
-predeclared worksheet/matrix row is retained before a failing exit. No provider,
-sibling repository or ambient Git selection is involved.
+predeclared worksheet/matrix row is retained before a failing exit. The default worksheet uses no sibling repository or ambient Git selection.
+The opt-in T6 knowledge gate reads approved fixed sibling objects and uses
+a disposable local copy for one labelled direct change. No provider is invoked.
 """
 import argparse
 import hashlib
@@ -35,16 +36,16 @@ def fingerprints():
     return {str(p.relative_to(REPO)):sha(p.read_bytes()) for p in sorted(set(paths))}
 
 
-def run(receipt):
+def run(receipt, knowledge=False):
     receipt=receipt.resolve();assert receipt.parent.is_dir();os.umask(0o077)
-    work=Path(tempfile.mkdtemp(prefix='reference-corpus-',dir=receipt.parent)).resolve()
+    work=Path(tempfile.mkdtemp(prefix='reference-corpus-',dir='/tmp')).resolve()
     env=os.environ|{'TMPDIR':str(work),'HAERYONG_TEST_STATE_DIR':str(work/'app-state'),'PYTHONDONTWRITEBYTECODE':'1','GOTOOLCHAIN':'local','GOPROXY':'off','GOSUMDB':'off','GOFLAGS':'-mod=readonly'}
     os.environ['HAERYONG_TEST_STATE_DIR']=env['HAERYONG_TEST_STATE_DIR']
     before=fingerprints()
     names=['RF12 list exact old pin','RF12 resolve exact page and region','RF12 HEAD list and resolver','RF12 CLI list and resolver parity','RF12 successor no retarget','RF12 imported file sets and verbatim payloads']
     proof={'scope':__doc__,'complete':False,'rows':[{'id':n,'status':'not-run'} for n in names],'misses':[],
            'driver_sha256':sha(Path(__file__).read_bytes()),'inputs':before,'input_sha256':sha(json.dumps(before,sort_keys=True).encode()),
-           'commands':[['python3','-B','tests/manual/check_reference_corpus.py','--receipt','<private>']],
+           'commands':[['python3','-B','tests/manual/check_reference_corpus.py','--receipt','<private>']+(['--knowledge-gate'] if knowledge else [])],
            'labels':{'worksheet':'real checked-in sample, original bytes','matrix':'seeded manual_references; no production lifecycle/grant workflow'}}
     product=None
     def redact(value):
@@ -63,7 +64,7 @@ def run(receipt):
         proof['binary_sha256']=sha((work/'haeryong').read_bytes())
         h=load('reference_corpus_harness',REPO/'tests/e2e/harness.py');support=load('reference_corpus_support',REPO/'tests/manual/reference_support.py')
         product=h.Product(work/'haeryong',work);product.initialize();product.start();owner=product.owner('RF12 real sample worksheet');secrets.append(owner['token'])
-        fixture=support.prepare_corpus(product,owner);proof['mapping']=fixture
+        fixture=support.prepare_corpus(product,owner,knowledge=knowledge);proof['mapping']=fixture
         source=fixture['source']['version_id'];base='/api/v1/versions/'+source+'/references';params=urllib.parse.urlencode({'reference_id':'prior-compose','page_path':fixture['source_page'],'region_id':'G12'})
         expected=fixture['expected_target'];source_tuple=fixture['expected_source']
         def target(row):
@@ -108,6 +109,8 @@ def run(receipt):
                 row['status']='pass'
             except Exception as error:row['status']='fail';row['miss']=str(error);proof['misses'].append(row['id'])
             save()
+        if knowledge:
+            proof['knowledge']={};support.knowledge_checks(product,owner,fixture,proof['knowledge']);save()
         matrix=work/'matrix.json'
         command=['go','tool','ginkgo','--race','--no-color','--fail-on-empty','--fail-on-pending','--timeout=1000s','--label-filter=manual_references','--output-dir='+str(work),'--json-report=matrix-ginkgo.json','./internal/adapters/sqlite']
         proof['commands'].append([arg.replace(str(work),'<private>') for arg in command]);save()
@@ -133,4 +136,4 @@ def run(receipt):
 
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--receipt',type=Path,required=True);run(parser.parse_args().receipt)
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--receipt',type=Path,required=True);parser.add_argument('--knowledge-gate',action='store_true');args=parser.parse_args();run(args.receipt,args.knowledge_gate)
