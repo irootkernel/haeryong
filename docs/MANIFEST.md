@@ -4,11 +4,11 @@
 
 **Edition prepared:** 2026-10-13
 
-This inventory covers 174 other files: all Markdown documents and Python documentation-check utilities. Paths are relative to docs; sizes and SHA-256 cover exact bytes. MANIFEST.md excludes itself. This is not runtime evidence.
+This inventory covers 175 other files: all Markdown documents and Python documentation-check utilities. Paths are relative to docs; sizes and SHA-256 cover exact bytes. MANIFEST.md excludes itself. This is not runtime evidence.
 
 | File | Bytes | SHA-256 |
 | --- | --- | --- |
-| `README.md` | 20594 | `5ab96d63b2837f606c0fc55bf12a1f497751de8000d1d42c3274363b2ff04411` |
+| `README.md` | 20644 | `da4dde104e5bcbb1eeee75a3df96c546421d9cfb32311850745acef5ae50d9d2` |
 | `REVIEW-GUIDE.md` | 10105 | `8035dd9c431b7e6abc7adde3b2ae7824df2a97df3ef7b3ca7ce020e3cb0094ad` |
 | `adr/ADR-001.md` | 3239 | `02f3818c7843969ca3aa081fb252983d92f886904383d84d331a49eca57f9987` |
 | `adr/ADR-002.md` | 2987 | `2128dae47cc03f55000633c89bc4e4d06419c91a414230a45fd7e45e8bac759b` |
@@ -41,6 +41,7 @@ This inventory covers 174 other files: all Markdown documents and Python documen
 | `contracts/viewer-protocol.md` | 36806 | `18891355317a147ddfacefb12db32f23fc1ef5d84c7d7c2821f23f08d8d72731` |
 | `data-model.md` | 52436 | `89888c8e11bc7a2dab31e26bd0ba7b52875a678956b29cd294a829b484c4f42f` |
 | `decisions.md` | 21105 | `62dadaf348d95aedee1d296bbd16c1e880e92256769e1d0ce3a5b0f7ae457824` |
+| `deferred-feedback/README.md` | 3324 | `b1aa1c957d1357fb48502bb02ca0972e3ac9c5987a8853feffab327118e82f4e` |
 | `design/README.md` | 1227 | `bd2d0adc8f8f465064d9d48389d39a53899620396f397391b9347c68463ba39b` |
 | `design/prototype/00-BRIEF.md` | 9764 | `6084d9a78102593ed75ef67beab587749d3476d60acba03eebd6254316b86f31` |
 | `design/prototype/DESIGN-NOTES.md` | 22750 | `4ec8e546421ea14cef86ac5543cd0f109c7175849f4d9c2de91bc5e7b23c49b4` |
