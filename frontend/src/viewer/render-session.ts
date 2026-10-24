@@ -17,6 +17,7 @@ interface Opening {
   timer: ReturnType<typeof setTimeout> | null;
   abortWait: (() => void) | null;
   retirement: Retirement | null;
+  validation: Promise<void> | null;
 }
 function unavailable(error: unknown): boolean {
   if (!(error instanceof ApiError)) return false;
@@ -144,7 +145,7 @@ export class RenderSessionLease {
       previous.active = false;
       if (previous.view) previous.retirement ??= new Retirement(previous, this.#key, this.#storage, this.#actor);
     }
-    const work: Opening = { active: true, dispatched: false, failed: false, ready: false, key: null, view: null, promise: null, timer: null, abortWait: null, retirement: null };
+    const work: Opening = { active: true, dispatched: false, failed: false, ready: false, key: null, view: null, promise: null, timer: null, abortWait: null, retirement: null, validation: null };
     this.#work = work;
     work.promise = this.#open(work).catch((error) => { work.failed = true; throw error; });
     return work.promise;
@@ -197,11 +198,29 @@ export class RenderSessionLease {
     if (!work.active || work.view !== view) return;
     const interval = Math.max(25, Math.min(60_000, (Date.parse(view.lease_expires_at) - Date.now()) / 3));
     work.timer = setTimeout(() => {
-      try { this.#guard(work); } catch (error) { if (work.active) this.#failure(error); return; }
-      void this.#actor.client.renderSessionRenew(view.version_id, view.session_id).then(() => {
-        if (work.active && this.#work === work) this.#schedule(work, view);
-      }).catch((error) => { if (work.active && this.#work === work) this.#failure(error); });
+      void this.revalidate().catch(() => { /* The captured delivery failure is reported once. */ });
     }, interval);
+  }
+  /** Check the EXISTING delivery after invalidation/reconnect, independently
+   * of whether its document has already become readable again. Never Open. */
+  revalidate(): Promise<void> {
+    const work = this.#work, view = work?.view;
+    if (!work?.active || !work.ready || !view) return Promise.resolve();
+    if (work.validation) return work.validation;
+    work.validation = (async () => {
+      this.#guard(work);
+      await this.#actor.client.renderSessionRenew(view.version_id, view.session_id);
+      this.#guard(work);
+      this.#schedule(work, view);
+    })().catch((error) => {
+      if (work.active && this.#work === work) {
+        work.ready = false; work.failed = true;
+        if (work.timer !== null) { clearTimeout(work.timer); work.timer = null; }
+        this.#failure(error);
+      }
+      throw error;
+    }).finally(() => { work.validation = null; });
+    return work.validation;
   }
   stop(): Promise<void> {
     const work = this.#work;

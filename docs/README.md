@@ -38,6 +38,11 @@ Revisit/Home with three-transport parity at SQLite revision 11. The
 [Notes record](testing/anchored-notes.md) records the executed final-candidate
 checks and limits.
 
+TASK-005-03 adds document Archive/Trash/Restore, revision-bound impact plans and an
+owner Trash list across HTTP/native/desktop and CLI at schema revision 12. The
+[lifecycle record](testing/document-lifecycle.md) records the executed final-candidate
+checks and limits; purge and protected restore retain their later owners.
+
 ## Start here
 
 | Reader | Recommended path |

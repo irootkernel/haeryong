@@ -139,6 +139,8 @@ func authorizeScope(tx app.WriteTx, record domain.Session, r domain.Request) err
 		return domain.ErrDenied
 	}
 	switch parts[2] {
+	case "lifecycle-plans", "trash":
+		return domain.ErrNotFound
 	case "annotations":
 		return domain.ErrDenied
 	case "search":
@@ -302,6 +304,9 @@ func authorizeScope(tx app.WriteTx, record domain.Session, r domain.Request) err
 					return nil
 				}
 			case "documents":
+				if strings.HasSuffix(path, "/lifecycle-plans") {
+					return domain.ErrNotFound
+				}
 				if len(parts) == 5 && parts[4] == "versions" && contains(record.Scope.Actions, "version.read") {
 					for _, id := range record.Scope.VersionIDs {
 						v, e := tx.PublishedVersion(id)

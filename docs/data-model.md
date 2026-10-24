@@ -360,3 +360,26 @@ and context lifetime pins; ordinary edit/reattach/delete does not release histor
 objects. Read streams acquire independent read pins. Navigation/renderer disposal does
 not release accepted note ownership. Later purge/retention/backup implementations must
 account for annotation_history references and pins, including contexts from old anchors.
+
+## Document lifecycle storage (TASK-005-03, revision 12)
+
+Append-only migration 12 adds documents.previous_lifecycle (nullable active/archived),
+trashed_at and nonnegative trash_generation. Trash captures the former state/time and
+advances trash_generation; restore clears current trash metadata but retains that fence.
+All versions inherit document lifecycle. Neither archive nor trash edits immutable
+versions, personal records, incoming canonical edges, object references or lifetime pins.
+Legacy rows with unknown prior state cannot guess their restore destination.
+
+lifecycle_plans stores owner/document/action, open/committed state, captured document/
+config/permission revisions, expiry, selected impact digest and the safe result.
+lifecycle_plan_items stores its ordered metadata snapshot. Expired is a derived read
+state. Current eligibility is reapplied to every projected item and count on GET/replay/
+operation reads. The digest excludes informational reader positions/preferences while
+binding explicit personal decisions/history and incoming-reference impact. Commit atomically
+checks those facts, updates the document/fences, records plan/audit/outbox and completes
+the natural receipt plus optional alias. No owner wait or file-body I/O holds the transaction.
+
+Declaration validation keeps 8→9→10→11→12 reachable and checks new tables/indexes/columns.
+Old binaries refuse revision 12. Failed upgrades roll back and retain the verified
+pre-migration SQLite plus required objects; recovery restores that matched set while
+stopped. No SQL downgrade or protected operator-restore engine is introduced here.

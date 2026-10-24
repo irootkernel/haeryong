@@ -232,4 +232,11 @@ CREATE TABLE annotation_history(annotation_id TEXT NOT NULL REFERENCES annotatio
 CREATE TABLE revisit_flags(owner_id TEXT NOT NULL REFERENCES auth_owner(principal_id),document_id TEXT NOT NULL REFERENCES documents(document_id),flag INTEGER NOT NULL CHECK(flag IN (0,1)),revision INTEGER NOT NULL CHECK(revision>=1),PRIMARY KEY(owner_id,document_id));
 CREATE INDEX revisit_flags_owner_flag ON revisit_flags(owner_id,flag,document_id);
 `,
+	`ALTER TABLE documents ADD COLUMN previous_lifecycle TEXT CHECK(previous_lifecycle IS NULL OR previous_lifecycle IN ('active','archived'));
+ALTER TABLE documents ADD COLUMN trashed_at TEXT;
+ALTER TABLE documents ADD COLUMN trash_generation INTEGER NOT NULL DEFAULT 0 CHECK(trash_generation>=0);
+CREATE TABLE lifecycle_plans(plan_id TEXT PRIMARY KEY,owner_id TEXT NOT NULL REFERENCES auth_owner(principal_id),document_id TEXT NOT NULL REFERENCES documents(document_id),operation TEXT NOT NULL CHECK(operation IN ('archive','trash','restore')),state TEXT NOT NULL CHECK(state IN ('open','committed')),expected_revision INTEGER NOT NULL CHECK(expected_revision>=1),config_revision INTEGER NOT NULL CHECK(config_revision>=1),permissions_revision INTEGER NOT NULL CHECK(permissions_revision>=1),expires_at TEXT NOT NULL,digest TEXT NOT NULL,value BLOB NOT NULL);
+CREATE TABLE lifecycle_plan_items(plan_id TEXT NOT NULL REFERENCES lifecycle_plans(plan_id),sequence INTEGER NOT NULL CHECK(sequence>=1),value BLOB NOT NULL,PRIMARY KEY(plan_id,sequence));
+CREATE INDEX lifecycle_trash ON documents(lifecycle,document_id);
+`,
 }

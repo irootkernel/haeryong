@@ -74,3 +74,9 @@ Images, scripts, SVG, embeds and privileged frames are not installed by note Mar
 Captured JSON/text context is displayed as text. This policy does not restrict ordinary
 JavaScript in imported isolated pages. Representative hostile-input browser checks are
 bounded evidence, not an exhaustive attack corpus.
+
+TASK-005-03 uses current owner impact-plan confirmation for archive/trash/restore.
+A plan is not a credential. Source visibility is rechecked within nested impact
+responses and receipt replay. Trash keeps private personal/object ownership but
+removes normal retrieval and invalidates active delivery/application authority;
+explicit restore does not revive an old renderer or worker generation.

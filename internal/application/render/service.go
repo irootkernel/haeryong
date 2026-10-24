@@ -106,37 +106,39 @@ type handoff struct {
 }
 
 type delivery struct {
-	ID            string
-	cookieName    string
-	cookieValue   string
-	secretHash    string
-	Binding       Binding
-	OwnerSession  string
-	authorityKind string
-	PrincipalID   string
-	Generation    string
-	LeaseExpires  time.Time
-	closed        bool
-	offer         *handoff
+	ID              string
+	cookieName      string
+	cookieValue     string
+	secretHash      string
+	Binding         Binding
+	OwnerSession    string
+	authorityKind   string
+	PrincipalID     string
+	Generation      string
+	TrashGeneration int64
+	LeaseExpires    time.Time
+	closed          bool
+	offer           *handoff
 }
 
 // snapshot is the immutable copy every cross-boundary read uses.
 type snapshot struct {
-	ID            string
-	cookieName    string
-	cookieValue   string
-	secretHash    string
-	binding       Binding
-	ownerSession  string
-	authorityKind string
-	principalID   string
-	generation    string
-	leaseExpires  time.Time
-	closed        bool
+	ID              string
+	cookieName      string
+	cookieValue     string
+	secretHash      string
+	binding         Binding
+	ownerSession    string
+	authorityKind   string
+	principalID     string
+	generation      string
+	trashGeneration int64
+	leaseExpires    time.Time
+	closed          bool
 }
 
 func (d *delivery) copy() snapshot {
-	return snapshot{ID: d.ID, cookieName: d.cookieName, cookieValue: d.cookieValue, secretHash: d.secretHash, binding: d.Binding, ownerSession: d.OwnerSession, authorityKind: d.authorityKind, principalID: d.PrincipalID, generation: d.Generation, leaseExpires: d.LeaseExpires, closed: d.closed}
+	return snapshot{ID: d.ID, cookieName: d.cookieName, cookieValue: d.cookieValue, secretHash: d.secretHash, binding: d.Binding, ownerSession: d.OwnerSession, authorityKind: d.authorityKind, principalID: d.PrincipalID, generation: d.Generation, leaseExpires: d.LeaseExpires, closed: d.closed, trashGeneration: d.TrashGeneration}
 }
 
 // Service is lazily constructed by product wiring on the first render use so
@@ -284,7 +286,11 @@ func (s *Service) Open(ctx context.Context, token, key, versionID string) (domai
 			// The reservation stays recorded and sticky; only the bind failed.
 			return domain.Response{}, err
 		}
-		view, err := s.newDelivery(writer, binding, library.RuntimeGeneration)
+		lifecycle, err := tx.LifecycleDocument(document.ID)
+		if err != nil {
+			return domain.Response{}, err
+		}
+		view, err := s.newDelivery(writer, binding, library.RuntimeGeneration, lifecycle.TrashGeneration)
 		if err != nil {
 			return domain.Response{}, err
 		}
@@ -568,6 +574,13 @@ func (s *Service) authorizeCurrent(ctx context.Context, current snapshot) author
 	err := s.store.Write(ctx, func(tx app.WriteTx) error {
 		err := s.auth.DeliveryAuthorityCurrent(ctx, tx, current.authorityKind, current.ownerSession, current.principalID, current.binding.VersionID)
 		if err == nil {
+			d, e := tx.LifecycleDocument(current.binding.DocumentID)
+			err = e
+			if err == nil && d.TrashGeneration != current.trashGeneration {
+				err = domain.ErrNotFound
+			}
+		}
+		if err == nil {
 			check = authorityOK
 			return nil
 		}
@@ -640,24 +653,25 @@ func (s *Service) ConsumeHandoff(ctx context.Context, versionID, origin, secret 
 	return &DeliveryView{ID: current.ID, VersionID: current.binding.VersionID, Origin: current.binding.Origin, OwnerSession: current.ownerSession, PrincipalID: current.principalID}, nil
 }
 
-func (s *Service) newDelivery(writer domain.Session, binding Binding, generation string) (openView, error) {
+func (s *Service) newDelivery(writer domain.Session, binding Binding, generation string, trashGeneration int64) (openView, error) {
 	id := randomUUID()
 	// The stored hash is over the SAME cookie secret issued at handoff.
 	cookieSecret, secretHash := randomToken()
 	handoffSecret, handoffHash := randomToken()
 	now := s.opts.Now()
 	session := &delivery{
-		ID:            id,
-		cookieName:    "hyr_view_" + binding.VersionID + "_" + id,
-		cookieValue:   id + "." + cookieSecret,
-		secretHash:    secretHash,
-		Binding:       binding,
-		OwnerSession:  writer.ID,
-		authorityKind: writer.Scope.Kind,
-		PrincipalID:   writer.PrincipalID,
-		Generation:    generation,
-		LeaseExpires:  now.Add(s.opts.Lease),
-		offer:         &handoff{secretHash: handoffHash, value: handoffSecret, ExpiresAt: now.Add(s.opts.HandoffTTL)},
+		ID:              id,
+		cookieName:      "hyr_view_" + binding.VersionID + "_" + id,
+		cookieValue:     id + "." + cookieSecret,
+		secretHash:      secretHash,
+		Binding:         binding,
+		OwnerSession:    writer.ID,
+		authorityKind:   writer.Scope.Kind,
+		PrincipalID:     writer.PrincipalID,
+		Generation:      generation,
+		TrashGeneration: trashGeneration,
+		LeaseExpires:    now.Add(s.opts.Lease),
+		offer:           &handoff{secretHash: handoffHash, value: handoffSecret, ExpiresAt: now.Add(s.opts.HandoffTTL)},
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

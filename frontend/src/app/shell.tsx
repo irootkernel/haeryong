@@ -1,3 +1,4 @@
+import {TrashScreen} from "./screens/trash.tsx";
 import { connectionDestination } from "./routes.ts";
 import { VersionsScreen } from "./screens/versions.tsx";
 import { parseRegionIntent } from "./screens/reader-navigation.ts";
@@ -233,7 +234,7 @@ export function App({ controller }: { controller: ShellController }) {
             <HomeScreen controller={controller} />
           ) : screen === "library" ? (
             <LibraryScreen controller={controller} />
-          ) : screen === "versions" ? (
+          ) : screen === "trash" ? (<TrashScreen controller={controller}/>) : screen === "versions" ? (
             <VersionsScreen key={route.path + ":" + history.state?.haeryongReaderContext} controller={controller} documentId={route.path.split("/")[2]!} />
           ) : screen === "reader" && route.path ? (
             <ReaderRoute controller={controller} path={route.path} />

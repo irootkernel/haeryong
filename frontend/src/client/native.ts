@@ -1,7 +1,7 @@
 // Narrow native transport boundary. The desktop companion (TASK-003-05) binds
 // these named operations to a typed Go proxy. The port accepts no arbitrary
 // URLs, filesystem paths or generic method names from imported content.
-import type { AnnotationCreate, AnnotationPatch, AnnotationView, AnnotationStream, RevisitView, ReviewView, ReviewRequest, ReviewCondition, ReviewEvent, DocumentFilter,
+import type { LifecyclePlanRequest,LifecycleCommitRequest,LifecyclePlanView,LifecycleResult,LifecyclePageRequest,TrashRequest,TrashItem, AnnotationCreate, AnnotationPatch, AnnotationView, AnnotationStream, RevisitView, ReviewView, ReviewRequest, ReviewCondition, ReviewEvent, DocumentFilter,
   BacklinksRequest, BacklinkPage, IndexValidation, IndexValidationRequest, IndexRebuild, IndexRebuildRequest,
   VersionReferencesRequest, ResolveReferenceRequest, ReferencePage, ReferenceView,
   SearchRequest, SearchPage,
@@ -136,6 +136,11 @@ export type PersonalPutCall = { kind: PersonalKind; version_id: string; page: st
 
 /** Named operations only; each overload pins an exact payload/result pair. */
 export interface NativePort {
+  call(operation:"lifecyclePlan",payload:{document_id:string;body:LifecyclePlanRequest;operation_id?:string}):Promise<LifecyclePlanView>;
+  call(operation:"lifecyclePlanGet",payload:{plan_id:string;request:LifecyclePageRequest}):Promise<LifecyclePlanView>;
+  call(operation:"lifecyclePlanCommit",payload:{plan_id:string;body:LifecycleCommitRequest;operation_id?:string}):Promise<LifecycleResult>;
+  call(operation:"trashList",payload:{request:TrashRequest}):Promise<ListPage<TrashItem>>;
+
   call(operation:"annotationList",payload:{version_id:string;cursor?:string}):Promise<ListPage<AnnotationView>>;
   call(operation:"annotationGet",payload:{annotation_id:string}):Promise<AnnotationView>;
   call(operation:"annotationHistory",payload:{annotation_id:string;cursor?:string}):Promise<ListPage<AnnotationView>>;
@@ -227,6 +232,7 @@ export interface NativePort {
 }
 
 export const NATIVE_OPERATIONS = [
+  "lifecyclePlan", "lifecyclePlanGet", "lifecyclePlanCommit", "trashList",
   "annotationList", "annotationGet", "annotationHistory", "annotationCreate", "annotationPatch", "annotationDelete", "annotationBodyStream", "annotationContextStream", "revisitGet", "revisitPut",
   "reviewGet", "reviewPut", "reviewHistory",
   "configurationView",
@@ -507,6 +513,10 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
   annotationCreate(versionId:string,body:AnnotationCreate,key:string):Promise<AnnotationView>{return this.#savedWrite(key,()=>this.#port.call("annotationCreate",{version_id:versionId,body,operation_id:key}));}
   annotationPatch(id:string,body:AnnotationPatch,etag:string,key:string):Promise<AnnotationView>{return this.#savedWrite(key,()=>this.#port.call("annotationPatch",{annotation_id:id,body,etag,operation_id:key}));}
   annotationDelete(id:string,etag:string,key:string):Promise<AnnotationView>{return this.#savedWrite(key,()=>this.#port.call("annotationDelete",{annotation_id:id,etag,operation_id:key}));}
+  lifecyclePlan(id:string,body:LifecyclePlanRequest,key?:string):Promise<LifecyclePlanView>{return this.#fresh(this.#port.call("lifecyclePlan",{document_id:id,body,...(key?{operation_id:key}:{})}),this.#era);}
+  lifecyclePlanGet(id:string,request:LifecyclePageRequest={}):Promise<LifecyclePlanView>{return this.#fresh(this.#port.call("lifecyclePlanGet",{plan_id:id,request}),this.#era);}
+  lifecyclePlanCommit(id:string,body:LifecycleCommitRequest,key?:string):Promise<LifecycleResult>{return this.#fresh(this.#port.call("lifecyclePlanCommit",{plan_id:id,body,...(key?{operation_id:key}:{})}),this.#era);}
+  trashList(request:TrashRequest={}):Promise<ListPage<TrashItem>>{return this.#fresh(this.#port.call("trashList",{request}),this.#era);}
   revisitGet(id:string):Promise<RevisitView>{return this.#fresh(this.#port.call("revisitGet",{document_id:id}),this.#era);}
   revisitPut(id:string,flag:boolean,condition:ReviewCondition,key:string):Promise<RevisitView>{return this.#savedWrite(key,()=>this.#port.call("revisitPut",{document_id:id,flag,precondition:"ifMatch" in condition?{if_match:condition.ifMatch}:{create:true},operation_id:key}));}
   #savedWrite<T>(key:string,dispatch:()=>Promise<DecisionResult>):Promise<T>{const era=this.#era;return sourceWrite<T>(key,()=>this.#fresh(dispatch(),era),id=>{if(era!==this.#era)throw new StaleResponseError();return this.operation(id);});}

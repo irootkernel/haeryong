@@ -710,3 +710,48 @@ and applicable individual ETag. Every mutation is K; malformed/missing/stale con
 remain 400/428/412 and replay uses the saved key/conditions before new-work CAS. Revisit
 GET exposes its own individual ETag or explicit absence. GET documents accepts the
 additional owner-only revisit=true|false filter, including in combination with review.
+
+## Document lifecycle (TASK-005-03)
+
+Additive provisional v1 implementation: `features.lifecycle` advertises availability;
+all lifecycle administration requires a current owner. Ordinary document, version,
+personal-record and asset reads continue to hide trash. Workflow credentials cannot
+create/read/commit plans or list Trash. No generated-frame message is a management action.
+
+- POST `/documents/{id}/lifecycle-plans`: closed `{operation,expected_revision}`;
+  operations archive/trash/restore use the document revision. Optional Idempotency-Key
+  uses preview receipt semantics; a keyless request creates only the returned plan.
+  Returns 201 `lifecycle_plan_page`.
+- GET `/lifecycle-plans/{id}?cursor=&limit=` returns 200 `lifecycle_plan_page`.
+  The saved item inventory is immutable. Every page/replay/operation response rechecks
+  incoming-source eligibility and recomputes authorized counts; newly hidden source
+  identities/details never leave via nested items. New references require a new plan.
+- POST `/lifecycle-plans/{id}/commit`: closed
+  `{plan_id,expected_revision,confirmed:true}`, with matching body/path identity.
+  Returns 200 `lifecycle_result`. Plan ID is the natural commit/operation identity;
+  an optional key aliases the same definitive outcome without overwriting another receipt.
+- GET `/trash?project_id=&cursor=&limit=` returns 200 `trash_page`: owner metadata only,
+  with deletion time, previous lifecycle and nullable informational purge eligibility.
+  This does not enable purge. GET/HEAD do not apply domain effects.
+
+Plans last 15 minutes. Strict closed-body/type/confirmation validation precedes
+receipt lookup. Missing, false, null or non-boolean confirmation is always 400
+INVALID_REQUEST, including keyless/keyed committed replays. Missing expected_revision
+is 428 PRECONDITION_REQUIRED. For valid requests: authenticate/current authorization,
+receipt fingerprint/replay, then new-work revision/freshness/transition checks.
+A changed valid expected_revision on an already committed plan is 409 OPERATION_CONFLICT.
+An identical committed replay after expiry returns its original 200 result. First
+commit of an expired plan is 409 STALE_PLAN; new stale document revision is 412
+PRECONDITION_FAILED; changed config/permissions/impact is STALE_PLAN. Invalid transitions
+return 409 INVALID_TRANSITION with authorized details.lifecycle; purge remains 503
+FEATURE_NOT_READY. Unknown/unauthorized identities remain nondisclosing.
+
+Freshness binds document revision/versions, config and permission generations, explicit
+Notes/history/bindings, Review/history, Revisit and eligible incoming references.
+Automatic reading/page positions and reader preferences are as-of-plan information:
+values/revisions/new rows do not invalidate a plan and all current rows remain preserved.
+Archive/Trash never changes Review or removes personal data/object ownership. Restore
+returns the exact same identities to prior active/archived state. Old accepted jobs and
+renderer sessions cannot regain application/delivery authority after trash→restore.
+The safe lifecycle result remains owner-reconcilable while trash; ordinary saved personal
+responses remain masked. No generic exception exposes hidden personal bodies.

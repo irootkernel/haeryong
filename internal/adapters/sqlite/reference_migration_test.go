@@ -95,7 +95,7 @@ func referenceSchema8(w *service.LockedProfile) ([]byte, string) {
 // and virtual query results, rather than treating engine cookies as author data.
 func referencePriorRows(db *sql.DB) map[string]string {
 	GinkgoHelper()
-	names, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT GLOB 'search_words_*' AND name NOT GLOB 'search_grams_*' AND name NOT IN ('reference_materializations','authored_references','authored_edges','review_states','review_events','annotations','annotation_history','revisit_flags') ORDER BY name`)
+	names, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT GLOB 'search_words_*' AND name NOT GLOB 'search_grams_*' AND name NOT IN ('reference_materializations','authored_references','authored_edges','review_states','review_events','annotations','annotation_history','revisit_flags','lifecycle_plans','lifecycle_plan_items') ORDER BY name`)
 	Expect(err).NotTo(HaveOccurred())
 	var tables []string
 	for names.Next() {
@@ -111,7 +111,12 @@ func referencePriorRows(db *sql.DB) map[string]string {
 		if name == "schema_migrations" {
 			where = " WHERE revision<=8"
 		}
-		rows, err := db.Query(`SELECT * FROM "` + name + `"` + where)
+		columns := "*"
+		if name == "documents" {
+			// Compare every original schema7/8 column; revision 12 defaults are checked separately.
+			columns = "document_id,project_id,title,lifecycle,latest_version_id,revision,updated_at"
+		}
+		rows, err := db.Query(`SELECT ` + columns + ` FROM "` + name + `"` + where)
 		Expect(err).NotTo(HaveOccurred())
 		cols, err := rows.Columns()
 		Expect(err).NotTo(HaveOccurred())
@@ -174,7 +179,10 @@ var _ = Describe("RF06 authentic schema8 upgrade", Label("persistence"), func() 
 		ready := openStore(GinkgoT(), w, nil)
 		Expect(referencePriorRows(ready.db)).To(Equal(prior))
 		Expect(ready.validateTables(ctx, SchemaRevision)).To(Succeed())
-		for _, table := range []string{"reference_materializations", "authored_references", "authored_edges"} {
+		var nonDefaultLifecycle int
+		Expect(ready.db.QueryRow(`SELECT count(*) FROM documents WHERE previous_lifecycle IS NOT NULL OR trashed_at IS NOT NULL OR trash_generation<>0`).Scan(&nonDefaultLifecycle)).To(Succeed())
+		Expect(nonDefaultLifecycle).To(BeZero(), "revision 12 adds only the declared empty/default lifecycle state")
+		for _, table := range []string{"reference_materializations", "authored_references", "authored_edges", "lifecycle_plans", "lifecycle_plan_items"} {
 			var n int
 			Expect(ready.db.QueryRow(`SELECT count(*) FROM ` + table).Scan(&n)).To(Succeed())
 			Expect(n).To(BeZero(), "DDL never backfills manifests")

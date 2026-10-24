@@ -307,3 +307,19 @@ body is not a client mutation capability. History is a separate owner-only resou
 Scoped readers and currently hidden targets receive only the existing content-free
 library invalidation. Replay/no-op creates no extra transition notification. Browser
 and native consumers refetch authenticated state rather than infer completion.
+
+## Document lifecycle invalidation (TASK-005-03)
+
+Actual archive/trash/restore commits emit `document.lifecycle_changed` with document
+revision in the same transaction as plan result/audit/receipt. Stored redacted audit
+facts identify actor/session/plan/action/from/to. Notifications never include those
+private bodies. No-op/replay emits no extra transition. Current live/replay visibility
+masks a hidden target as content-free library.invalidated, including mixed batches.
+Clients re-fetch current state, close a denied renderer/delivery and clear protected
+views. Stream reconnect/resync also rechecks; late responses do not remount closed views.
+
+Trash advances durable application/delivery fences. Accepted import/derived jobs are
+cancelled monotonically, and captured lifecycle application revisions remain stale even
+after explicit owner restore. Restore never clears cancellation or resumes old work.
+Current deterministic recovery may explicitly authorize eligible work; production AI
+and maintenance input/application integration remains with TASK-006-06/TASK-008-06.

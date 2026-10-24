@@ -1088,6 +1088,52 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 			s.receipt("renderSessionClose", map[string]any{"version_id": in.VersionID, "session_id": in.SessionID})
 		}
 		return result.value, result.werr
+	case "lifecyclePlan", "lifecyclePlanCommit":
+		var in struct {
+			DocumentID  string          `json:"document_id"`
+			PlanID      string          `json:"plan_id"`
+			Body        json.RawMessage `json:"body"`
+			OperationID *string         `json:"operation_id"`
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		headers := map[string]string{}
+		if in.OperationID != nil {
+			headers["Idempotency-Key"] = *in.OperationID
+		}
+		route := "/api/v1/documents/" + url.PathEscape(in.DocumentID) + "/lifecycle-plans"
+		if operation == "lifecyclePlanCommit" {
+			route = "/api/v1/lifecycle-plans/" + url.PathEscape(in.PlanID) + "/commit"
+		}
+		return plain(s.request("POST", route, nil, headers, in.Body, auth))
+	case "lifecyclePlanGet", "trashList":
+		var in struct {
+			PlanID  string `json:"plan_id"`
+			Request struct {
+				Cursor    string `json:"cursor"`
+				ProjectID string `json:"project_id"`
+				Limit     *int   `json:"limit"`
+			} `json:"request"`
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		values := url.Values{}
+		if in.Request.Cursor != "" {
+			values.Set("cursor", in.Request.Cursor)
+		}
+		if in.Request.ProjectID != "" {
+			values.Set("project_id", in.Request.ProjectID)
+		}
+		if in.Request.Limit != nil {
+			values.Set("limit", strconv.Itoa(*in.Request.Limit))
+		}
+		route := "/api/v1/trash"
+		if operation == "lifecyclePlanGet" {
+			route = "/api/v1/lifecycle-plans/" + url.PathEscape(in.PlanID)
+		}
+		return plain(s.request("GET", route, values, nil, nil, auth))
 	case "annotationList", "annotationGet", "annotationHistory", "annotationCreate", "annotationPatch", "annotationDelete", "annotationBodyStream", "annotationContextStream", "revisitGet", "revisitPut":
 		return s.annotationOperation(operation, payload, auth)
 	case "reviewGet", "reviewHistory":
@@ -2193,7 +2239,7 @@ func (s *ReaderService) eventsPoll(payload json.RawMessage, auth authority) (any
 			for _, item := range items {
 				if event, ok := item.(map[string]any); ok {
 					switch event["type"] {
-					case "search.index_updated", "version.published", "library.invalidated", "resource.invalidated", "resync.required", "policy.changed", "document.archived", "document.trashed", "document.restored", "document.purged":
+					case "search.index_updated", "version.published", "library.invalidated", "resource.invalidated", "resync.required", "policy.changed", "document.lifecycle_changed", "document.archived", "document.trashed", "document.restored", "document.purged":
 						invalidated = true
 					}
 				}

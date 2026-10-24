@@ -16,7 +16,7 @@ export function ReviewControl({ controller, versionId, owner, versionLabel }: { 
   const [cursor, setCursor] = useState<string | null>(null), [historyBusy, setHistoryBusy] = useState(false);
   const operations = useRef<ReviewOperations | null>(null), lifetime = useRef(0);
   const enabled = controller.state.capabilities?.features.review === true;
-  useReviewInvalidation(controller.client, enabled, () => refresh(n => n + 1), () => operations.current?.busy === true);
+  useReviewInvalidation(controller, enabled, () => refresh(n => n + 1), () => operations.current?.busy === true);
 
   const guardFor = () => {
     const authority = controller.captureDispatchAuthority(), generation = lifetime.current;

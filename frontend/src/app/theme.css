@@ -251,3 +251,9 @@ label.choice input { width: 18px; height: 18px; }
 .note-entry { border-top: 1px solid var(--border, #d4d8e0); padding-top: 1rem; min-width: 0; }
 .note-entry p, .note-entry blockquote { overflow-wrap: anywhere; }
 .note-markdown pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Host-only lifecycle impact; every item remains reachable on narrow screens. */
+.lifecycle-control button,.lifecycle-control summary{min-width:44px;min-height:44px;padding:10px 14px;cursor:pointer}
+.lifecycle-dialog{max-width:min(700px,calc(100vw - 24px));max-height:calc(100dvh - 32px);overflow:auto;padding:16px;border:1px solid var(--border);border-radius:8px}
+.lifecycle-dialog li{overflow-wrap:anywhere;margin-block:8px}.lifecycle-dialog dl>div{display:flex;gap:16px}.lifecycle-dialog dd{margin:0}
+@media(max-width:767px){.lifecycle-dialog{width:calc(100vw - 16px);max-height:calc(100dvh - 16px);padding:12px}}

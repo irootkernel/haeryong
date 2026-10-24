@@ -300,3 +300,54 @@ for (const [status, code] of [[401, "SESSION_REVOKED"], [403, "FORBIDDEN"], [409
     assert.equal(opens, 1); blocked = false; assert.equal((await b.start()).session_id, "B"); assert.deepEqual(closed, ["A", "A", "A"]); await b.stop();
   });
 }
+
+test("lifecycle: a readable document cannot revive its refused existing delivery", async () => {
+  const journal = storage(); let opens = 0, renews = 0, revoked = false;
+  const failures: unknown[] = [];
+  const client = {
+    async renderSessionOpen() { opens++; return view("before-trash"); },
+    async renderSessionRenew(_v: string, id: string) {
+      renews++; assert.equal(id, "before-trash");
+      if (revoked) throw new ApiError(404, "NOT_FOUND", false);
+    },
+    async renderSessionClose() {},
+  };
+  const lease = new RenderSessionLease({client, version:"version", owner:crypto.randomUUID(), context:"fast-restore", storage:journal, guard(){}, failure:e=>failures.push(e)});
+  try {
+    await lease.start();
+    // Another session has already completed trash -> restore. Version GET is
+    // readable again, but Renew must still check the original delivery S.
+    revoked = true;
+    await assert.rejects(lease.revalidate(), (e:unknown)=>e instanceof ApiError && e.status===404);
+    await lease.revalidate();
+    assert.equal(failures.length,1); assert.equal(opens,1); assert.equal(renews,2);
+  } finally { await lease.stop(); }
+});
+
+test("lifecycle: reconnect and resync share one existing-delivery probe and never Open", async () => {
+  const journal = storage(), pending = deferred<void>(); let opens=0, renews=0, failures=0;
+  const client = {
+    async renderSessionOpen() { opens++; return view("missed-trash"); },
+    async renderSessionRenew() { if(++renews>1)await pending.promise; }, async renderSessionClose(){},
+  };
+  const lease=new RenderSessionLease({client,version:"version",owner:crypto.randomUUID(),context:"resync",storage:journal,guard(){},failure(){failures++;}});
+  try {
+    await lease.start();
+    const reconnect=lease.revalidate(),resync=lease.revalidate();
+    assert.equal(reconnect,resync);assert.equal(renews,2);
+    const denied=assert.rejects(reconnect,(e:unknown)=>e instanceof ApiError && e.status===410);
+    pending.reject(new ApiError(410,"INVALID_TRANSITION",false,0,{reason:"render_session_stale"}));await denied;
+    await lease.revalidate();assert.equal(failures,1);assert.equal(opens,1);
+  } finally { await lease.stop(); }
+});
+
+test("lifecycle: scheduled renewal refusal is terminal until explicit navigation", {timeout:5000}, async () => {
+  let opens=0,renews=0,failed!:()=>void;
+  const failure=new Promise<void>(resolve=>{failed=resolve;});
+  const client={
+    async renderSessionOpen(){opens++;return {...view("lease-refused"),lease_expires_at:new Date(Date.now()+90).toISOString()};},
+    async renderSessionRenew(){if(++renews>1)throw new ApiError(403,"FORBIDDEN",false);},async renderSessionClose(){},
+  };
+  const lease=new RenderSessionLease({client,version:"version",owner:crypto.randomUUID(),context:"lease",storage:storage(),guard(){},failure:failed});
+  try {await lease.start();await failure;await lease.revalidate();assert.equal(opens,1);assert.equal(renews,2);}finally{await lease.stop();}
+});

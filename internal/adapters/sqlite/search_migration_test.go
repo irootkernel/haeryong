@@ -21,7 +21,7 @@ import (
 // Test-only reverse construction, never a live product downgrade or an old binary.
 // Remove migration 10's dependent personal tables before constructing pre-search
 // schemas, including fixtures that subsequently remove the owner or versions.
-const dropSearchSchema = `DROP TABLE IF EXISTS annotation_history;DROP TABLE IF EXISTS annotations;DROP TABLE IF EXISTS revisit_flags;DROP TABLE IF EXISTS review_states;DROP TABLE IF EXISTS review_events;` + dropReferenceSchema + `DROP TRIGGER search_chunks_insert;DROP TRIGGER search_chunks_update;DROP TRIGGER search_chunks_delete;DROP TABLE search_words;DROP TABLE search_grams;DROP TABLE search_chunks;DROP TABLE search_units;DROP TABLE search_indexes;DROP TABLE derived_work;DROP TABLE page_anchors;`
+const dropSearchSchema = `DROP TABLE IF EXISTS lifecycle_plan_items;DROP TABLE IF EXISTS lifecycle_plans;DROP INDEX IF EXISTS lifecycle_trash;ALTER TABLE documents DROP COLUMN previous_lifecycle;ALTER TABLE documents DROP COLUMN trashed_at;ALTER TABLE documents DROP COLUMN trash_generation;DROP TABLE IF EXISTS annotation_history;DROP TABLE IF EXISTS annotations;DROP TABLE IF EXISTS revisit_flags;DROP TABLE IF EXISTS review_states;DROP TABLE IF EXISTS review_events;` + dropReferenceSchema + `DROP TRIGGER search_chunks_insert;DROP TRIGGER search_chunks_update;DROP TRIGGER search_chunks_delete;DROP TABLE search_words;DROP TABLE search_grams;DROP TABLE search_chunks;DROP TABLE search_units;DROP TABLE search_indexes;DROP TABLE derived_work;DROP TABLE page_anchors;`
 
 func searchSeed(s *Store) (string, error) {
 	h, err := s.Health(ctx)
@@ -133,7 +133,7 @@ func assertSearchTwoProjects(db *sql.DB) {
 func searchPriorRows(db *sql.DB) map[string]string {
 	GinkgoHelper()
 	assertSearchTwoProjects(db)
-	names, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'search_%' AND name NOT IN ('derived_work','page_anchors','reference_materializations','authored_references','authored_edges','review_states','review_events','annotations','annotation_history','revisit_flags') ORDER BY name`)
+	names, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'search_%' AND name NOT IN ('derived_work','page_anchors','reference_materializations','authored_references','authored_edges','review_states','review_events','annotations','annotation_history','revisit_flags','lifecycle_plans','lifecycle_plan_items') ORDER BY name`)
 	Expect(err).NotTo(HaveOccurred())
 	var tables []string
 	for names.Next() {
@@ -149,7 +149,12 @@ func searchPriorRows(db *sql.DB) map[string]string {
 		if name == "schema_migrations" {
 			where = " WHERE revision<=7"
 		}
-		rows, err := db.Query(`SELECT * FROM "` + name + `"` + where + ` ORDER BY rowid`)
+		columns := "*"
+		if name == "documents" {
+			// Compare every original schema7/8 column; revision 12 defaults are checked separately.
+			columns = "document_id,project_id,title,lifecycle,latest_version_id,revision,updated_at"
+		}
+		rows, err := db.Query(`SELECT ` + columns + ` FROM "` + name + `"` + where + ` ORDER BY rowid`)
 		Expect(err).NotTo(HaveOccurred())
 		cols, err := rows.Columns()
 		Expect(err).NotTo(HaveOccurred())
@@ -273,9 +278,12 @@ var _ = Describe("SC10 schema8 recovery and postings", Label("persistence"), fun
 			ready := openStore(t, w, nil)
 			Expect(searchPriorRows(ready.db)).To(Equal(prior))
 			Expect(ready.validateTables(ctx, SchemaRevision)).To(Succeed())
-			for _, table := range []string{"annotation_history", "annotations", "revisit_flags", "review_states", "review_events"} {
+			var nonDefaultLifecycle int
+			Expect(ready.db.QueryRow(`SELECT count(*) FROM documents WHERE previous_lifecycle IS NOT NULL OR trashed_at IS NOT NULL OR trash_generation<>0`).Scan(&nonDefaultLifecycle)).To(Succeed())
+			Expect(nonDefaultLifecycle).To(BeZero(), "revision 12 adds only the declared empty/default lifecycle state")
+			for _, table := range []string{"annotation_history", "annotations", "revisit_flags", "review_states", "review_events", "lifecycle_plans", "lifecycle_plan_items"} {
 				Expect(ready.db.QueryRow(`SELECT count(*) FROM ` + table).Scan(&count)).To(Succeed())
-				Expect(count).To(BeZero(), "migration 10 creates empty personal Review tables")
+				Expect(count).To(BeZero(), "additive migrations create empty personal and lifecycle plan tables")
 			}
 			Expect(ready.db.QueryRow("SELECT count(*) FROM schema_migrations WHERE revision=8").Scan(&count)).To(Succeed())
 			Expect(count).To(Equal(1))

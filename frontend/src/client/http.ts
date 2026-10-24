@@ -1,4 +1,4 @@
-import type { AnnotationCreate, AnnotationPatch, AnnotationView, AnnotationStream, RevisitView, ReviewView, ReviewRequest, ReviewCondition, ReviewEvent, DocumentFilter,
+import type { LifecyclePlanRequest,LifecycleCommitRequest,LifecyclePlanView,LifecycleResult,LifecyclePageRequest,TrashRequest,TrashItem, AnnotationCreate, AnnotationPatch, AnnotationView, AnnotationStream, RevisitView, ReviewView, ReviewRequest, ReviewCondition, ReviewEvent, DocumentFilter,
   BacklinksRequest, BacklinkPage, IndexValidation, IndexValidationRequest, IndexRebuild, IndexRebuildRequest,
   VersionReferencesRequest, ResolveReferenceRequest, ReferencePage, ReferenceView,
   SearchRequest, SearchPage,
@@ -333,6 +333,10 @@ export class HttpHaeryongClient implements HaeryongClient {
   annotationCreate(versionId:string,body:AnnotationCreate,key:string):Promise<AnnotationView>{return this.#noteWrite("POST",`/api/v1/versions/${encodeURIComponent(versionId)}/annotations`,body,key);}
   annotationPatch(id:string,body:AnnotationPatch,etag:string,key:string):Promise<AnnotationView>{return this.#noteWrite("PATCH",`/api/v1/annotations/${encodeURIComponent(id)}`,body,key,{"If-Match":etag});}
   annotationDelete(id:string,etag:string,key:string):Promise<AnnotationView>{return this.#noteWrite("DELETE",`/api/v1/annotations/${encodeURIComponent(id)}`,undefined,key,{"If-Match":etag});}
+  lifecyclePlan(id:string,body:LifecyclePlanRequest,key?:string):Promise<LifecyclePlanView>{return this.#request("POST",`/api/v1/documents/${encodeURIComponent(id)}/lifecycle-plans`,body,key?{"Idempotency-Key":key}:{});}
+  lifecyclePlanGet(id:string,request:LifecyclePageRequest={}):Promise<LifecyclePlanView>{return this.#request("GET",this.#collection(`/api/v1/lifecycle-plans/${encodeURIComponent(id)}`,{cursor:request.cursor,limit:request.limit===undefined?undefined:String(request.limit)}));}
+  lifecyclePlanCommit(id:string,body:LifecycleCommitRequest,key?:string):Promise<LifecycleResult>{return this.#request("POST",`/api/v1/lifecycle-plans/${encodeURIComponent(id)}/commit`,body,key?{"Idempotency-Key":key}:{});}
+  trashList(request:TrashRequest={}):Promise<ListPage<TrashItem>>{return this.#request("GET",this.#collection("/api/v1/trash",{cursor:request.cursor,limit:request.limit===undefined?undefined:String(request.limit),project_id:request.project_id}));}
   revisitGet(id:string):Promise<RevisitView>{return this.#request("GET",`/api/v1/documents/${encodeURIComponent(id)}/revisit`);}
   revisitPut(id:string,flag:boolean,condition:ReviewCondition,key:string):Promise<RevisitView>{return this.#noteWrite("PUT",`/api/v1/documents/${encodeURIComponent(id)}/revisit`,{flag},key,"ifMatch" in condition?{"If-Match":condition.ifMatch}:{"If-None-Match":"*"});}
   #noteWrite<T>(method:string,path:string,body:unknown,key:string,conditions:Record<string,string>={}):Promise<T>{

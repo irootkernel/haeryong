@@ -25,7 +25,7 @@ func isProductCommand(opt options) bool {
 		return true
 	}
 	switch opt.command[0] {
-	case "revisit", "review", "backlinks", "indexes", "references", "search", "import", "package", "uploads", "documents", "files", "operations", "jobs", "config", "projects", "events", "sources", "evidence", "assessments":
+	case "lifecycle", "trash", "revisit", "review", "backlinks", "indexes", "references", "search", "import", "package", "uploads", "documents", "files", "operations", "jobs", "config", "projects", "events", "sources", "evidence", "assessments":
 		return true
 	case "doctor", "status":
 		if opt.flags["credential"] != "" || opt.flags["client-dir"] != "" {
@@ -146,6 +146,8 @@ func productCommand(ctx context.Context, opt options, emit func(any) error) erro
 
 	args := opt.command
 	switch args[0] {
+	case "lifecycle", "trash":
+		return lifecycleCLI(ctx, api, state, opt, emit)
 	case "revisit":
 		return revisitCLI(ctx, api, state, opt, emit)
 	case "review":

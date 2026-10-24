@@ -26,7 +26,7 @@ export function VersionsScreen({ controller, documentId }: { controller: ShellCo
   const [pair, setPair] = useState<[string, string] | null>(null);
   const [sourceStatus, setSourceStatus] = useState("관측 기록 확인 중…");
   const client = controller.client;
-  useReviewInvalidation(client,reviewEnabled,()=>setRefresh(n=>n+1));
+  useReviewInvalidation(controller,reviewEnabled,()=>setRefresh(n=>n+1));
   const lifetime = useRef(0);
   useEffect(() => { lifetime.current++; return () => { lifetime.current++; }; }, []);
   const action = (work: (guard: () => void) => void | Promise<void>) => {

@@ -150,6 +150,8 @@ export class ShellController {
   #boundCredential = "";
   #authority = 0;
   #events: { close(): void } | null = null;
+  #invalidationListeners = new Set<() => void>();
+  #eventInvalidationOff: (() => void) | undefined;
   #eventsRecheckAt = 0;
   #eventsTimer: ReturnType<typeof setTimeout> | null = null;
   #timer: ReturnType<typeof setInterval> | null = null;
@@ -263,6 +265,15 @@ export class ShellController {
   subscribe(listener: (state: ShellState) => void): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
+  }
+
+  subscribeInvalidation(listener: () => void): () => void {
+    this.#invalidationListeners.add(listener);
+    return () => this.#invalidationListeners.delete(listener);
+  }
+
+  #notifyInvalidation(): void {
+    for (const listener of this.#invalidationListeners) listener();
   }
 
   #apply(patch: Partial<ShellState>): void {
@@ -556,11 +567,16 @@ export class ShellController {
     // same-authority rechecks keep this subscription current, while a stop,
     // authority replacement or subscription replacement invalidates it.
     const authority = this.#authority;
+    this.#eventInvalidationOff = subscription.onInvalidation?.(() => {
+      if (this.#events === subscription && authority === this.#authority && this.#state.phase === "verified") this.#notifyInvalidation();
+    });
+    this.#notifyInvalidation();
     void subscription.closed.then(() => {
       if (this.#events !== subscription) return;
       this.#events = null;
       if (this.#state.phase !== "verified") return;
       if (authority !== this.#authority) return;
+      this.#notifyInvalidation();
       // Liveness only: recheck confirmed state with a bounded backoff so a
       // service that closes streams instantly cannot create a busy loop.
       const wait = 2000 - (Date.now() - this.#eventsRecheckAt);
@@ -582,6 +598,7 @@ export class ShellController {
   }
 
   #closeEvents(): void {
+    this.#eventInvalidationOff?.(); this.#eventInvalidationOff = undefined;
     this.#events?.close();
     this.#events = null;
     if (this.#eventsTimer !== null) {

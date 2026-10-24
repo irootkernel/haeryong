@@ -198,3 +198,10 @@ owner authority and read pins. The shared annotationContextStream operation retu
 bytes and metadata across browser/native/Go. It does not call verifyContextFresh or
 require the original render instance/session. No context_ref alone grants access;
 ordinary /contexts recovery and the body-less ready/echo proof keep their existing rules.
+
+TASK-005-03 binds each renderer delivery to the document's durable trash generation.
+A trash→restore cycle cannot reactivate an older handoff, cookie or renew request,
+even when no request observed the intervening trash. The shared host closes a denied
+renderer after content-free invalidation and checks again on stream reconnect/resync.
+Restore permits a fresh authorized renderer session only. Saved Note history/context
+ownership survives disposal; pending owner intent never submits automatically.

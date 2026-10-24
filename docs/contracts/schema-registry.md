@@ -885,3 +885,33 @@ features.annotations and features.revisit signal availability, never authority. 
 or false flags show unavailable. Notes/Revisit invalidations carry redacted audit facts;
 scoped or hidden-target delivery becomes generic library invalidation. Reading, notes,
 Revisit and AI output never start or complete whole-version Review.
+
+## Document lifecycle additions (TASK-005-03)
+
+These are additive provisional v1 shapes selected in `tests/contracts/schema.json`:
+`lifecycle_plan_request`, `lifecycle_commit_request`, `lifecycle_impact_item`,
+`lifecycle_plan_page`, `lifecycle_result`, `trash_item` and `trash_page`.
+Only shared request selections join the embedded configuration schema, with subset
+equality. API/schema versions stay 1.0/v1. The [HTTP lifecycle section](http-api.md#document-lifecycle-task-005-03)
+owns route, error and confirmation/replay precedence. The statement “changed commit
+input conflicts” applies after closed request validation; invalid confirmation remains
+400 before receipt comparison. Valid changed revision is 409; identical expired replay
+keeps its original outcome. The synthetic confirmation fixture records this distinction.
+
+Plan pages contain plan/document/action, open/committed/expired state, from/to lifecycle,
+expected document/config revisions, expiry, current-authorized impact counts, nullable
+committed result, ordered item page and next_cursor. Saved context references have kind context and their original context ID; no bytes are copied.
+Items identify kind/id/version/
+page/region/revision, nullable referring document and unresolved/pinned resolution.
+Counts distinguish incoming declarations from structural edges and distinct source
+documents. They never disclose currently hidden incoming sources. Reader-state rows
+are labelled as-of-plan and excluded from freshness; explicit personal decisions and
+incoming-reference impact changes require a new plan.
+
+Result fields are operation_id (natural plan identity), plan_id, document_id, lifecycle,
+previous_lifecycle, trashed_at, revision and changed. Aliased receipts resolve to that
+same result. Trash rows add title/project/latest identity and nullable purge_eligible_at;
+no file/note body is returned. Archive→active uses restore; trash→previous active/archived
+clears current trash metadata. Already archived/archive and already trash/trash are
+confirmed no-ops. No-op/replay adds no transition or event. `features.lifecycle` is an
+optional availability flag; absence/false disables these controls. Purge has its later owner.

@@ -74,7 +74,7 @@ func parse(args []string) (options, error) {
 			continue
 		}
 		key, value, equals := strings.Cut(arg, "=")
-		if key == "--json" || key == "--no-input" || key == "--new-document" || key == "--resolve-link" || key == "--confirmed" || key == "--unadopted" {
+		if key == "--json" || key == "--no-input" || key == "--new-document" || key == "--resolve-link" || key == "--confirm" || key == "--confirmed" || key == "--unadopted" {
 			if equals {
 				return opt, invalid("boolean flags do not accept a value")
 			}
@@ -88,7 +88,7 @@ func parse(args []string) (options, error) {
 			continue
 		}
 		switch key {
-		case "--flag", "--action", "--if-match", "--if-none-match", "--profile", "--data-dir", "--volume-root", "--port", "--endpoint", "--credential", "--client-dir", "--operation-id", "--project", "--document", "--base-version", "--metadata", "--version", "--path", "--output", "--input", "--state", "--cursor", "--limit", "--directory", "--kind", "--file", "--format", "--expected-config-revision", "--scope", "--name", "--evidence", "--expected-sha256", "--expected-excerpt-file", "--source-id", "--root-path", "--repo-id", "--retention-mode", "--provider-ids", "--plan-id", "--page", "--region", "--coverage-set", "--reference-id", "--query", "--lifecycle", "--versions":
+		case "--expected-revision", "--flag", "--action", "--if-match", "--if-none-match", "--profile", "--data-dir", "--volume-root", "--port", "--endpoint", "--credential", "--client-dir", "--operation-id", "--project", "--document", "--base-version", "--metadata", "--version", "--path", "--output", "--input", "--state", "--cursor", "--limit", "--directory", "--kind", "--file", "--format", "--expected-config-revision", "--scope", "--name", "--evidence", "--expected-sha256", "--expected-excerpt-file", "--source-id", "--root-path", "--repo-id", "--retention-mode", "--provider-ids", "--plan-id", "--page", "--region", "--coverage-set", "--reference-id", "--query", "--lifecycle", "--versions":
 		default:
 			return opt, invalid("unsupported flag: " + key)
 		}

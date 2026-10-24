@@ -70,3 +70,7 @@ This table proposes copy and localization-ready keys; it does not add full multi
 ## Core component contract
 
 `ResultFiles`, `PageLocation`, `TransferProgress`, `ReviewControl`, `FreshnessBanner`, `VersionSelector`, `EvidenceCard`, `RelatedLinkCard`, `AnnotationEditor`, `SourceModeSelector`, `JobProgress`, `CoverageSummary`, `PolicyPlanDialog`, `LifecycleImpactDialog` are host-owned. Each receives typed API state, loading/error/permission status and action callbacks. ResultFiles and TransferProgress distinguish loaded/enumerated/total counts and never imply a truncated list is complete. These shell layout and accessibility rules do not impose widths, DOM schemas or script restrictions on author HTML. None trusts a generated frame's message to authorize a mutation. UI optimistic previews are clearly pending and roll back/reconcile on failure; server acknowledgement alone marks Saved.
+
+LifecycleImpactDialog uses the existing semantic modal Sheet, safe initial focus and
+focus return, with 44 px controls, wrapping identifiers and scrollable impact pages at
+390×844, 844×390, 820×1180 and 1440×900. No form-default Enter triggers deletion.

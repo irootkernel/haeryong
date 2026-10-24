@@ -57,6 +57,11 @@ function operationView(id: string, state = "completed"): OperationView {
 }
 
 class FakeClient implements HaeryongClient, CredentialAware {
+async lifecyclePlan():Promise<never>{throw new Error("not used in controller tests");}
+async lifecyclePlanGet():Promise<never>{throw new Error("not used in controller tests");}
+async lifecyclePlanCommit():Promise<never>{throw new Error("not used in controller tests");}
+async trashList():Promise<never>{throw new Error("not used in controller tests");}
+
   async annotationList():Promise<never>{throw new Error("not used in controller tests");}
   async annotationGet():Promise<never>{throw new Error("not used in controller tests");}
   async annotationHistory():Promise<never>{throw new Error("not used in controller tests");}
@@ -1684,4 +1689,14 @@ test("a replaced authority drops late cleanup reports and every authority transi
   assert.equal(controller.state.cleanupAlerts.length, 0);
   assert.equal(controller.reportRuntimeCleanupFailure({ code: "NATIVE_CLEANUP_FAILED", details: { temp: "/x" } }, fresh), false);
   controller.stop();
+});
+
+test("Lifecycle consumers share the controller event stream and old authority hints are discarded", async () => {
+ const client=new FakeClient();let hint:(()=>void)|undefined,streams=0;
+ client.eventsHandler=()=>{streams++;return {closed:new Promise<void>(()=>{}),onInvalidation(listener){hint=listener;return()=>{};},close(){}};};
+ const store=new MemoryCredentialStore();store.write("token");
+ const controller=new ShellController(client,store);await controller.verify();
+ let a=0,b=0;const offA=controller.subscribeInvalidation(()=>a++),offB=controller.subscribeInvalidation(()=>b++);
+ hint?.();assert.equal(a,1);assert.equal(b,1);assert.equal(streams,1);
+ offA();hint?.();assert.equal(a,1);assert.equal(b,2);offB();controller.stop();hint?.();assert.equal(b,2);
 });

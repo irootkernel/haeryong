@@ -29,6 +29,14 @@ type Store interface {
 // Each callback is a short serialized write transaction. Files are streamed and
 // synced before entry; only atomic publication/directory sync may run inside it.
 type WriteTx interface {
+	LifecycleDocument(string) (domain.LifecycleDocument, error)
+	LifecycleImpact(string) ([]domain.LifecycleItem, error)
+	PutLifecyclePlan(domain.LifecyclePlan, []domain.LifecycleItem) error
+	LifecyclePlan(string) (domain.LifecyclePlan, error)
+	LifecycleItems(string) ([]domain.LifecycleItem, error)
+	CommitLifecycle(domain.LifecyclePlan, domain.LifecycleResult, string) error
+	TrashDocuments(string, string, int) ([]domain.TrashItem, error)
+
 	ReviewTx
 	ReferenceTx
 	SearchReadTx

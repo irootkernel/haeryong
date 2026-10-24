@@ -423,6 +423,9 @@ func (s *Service) Operation(ctx context.Context, token, id string) (domain.Recei
 		if e = authorizeScope(tx, a, out.Original); e != nil {
 			return e
 		}
+		if LifecycleRoute(out.Original.Target) {
+			return lifecycleTarget(tx, out.Original)
+		}
 		return visibleRequest(tx, out.Original)
 	})
 	if err != nil {
@@ -656,6 +659,9 @@ func authorizeAuthenticated(tx app.WriteTx, record domain.Session, r domain.Requ
 	// Only a current owner write may reach the personal service's explicit
 	// lifecycle conflict. Saved responses and receipt reads retain strict
 	// current visibility through visibleRequest.
+	if record.Scope.Kind == "owner" && LifecycleRoute(r.Target) {
+		return lifecycleTarget(tx, r)
+	}
 	if record.Scope.Kind == "owner" && personalWriteTarget(r.Method, r.Target) {
 		return visibleTargetWithoutLifecycleMask(tx, r.Target)
 	}
@@ -677,6 +683,11 @@ func (a *Authority) Filter(ctx context.Context, r domain.Request, response domai
 			if err := authorizeScope(tx, record, r); err != nil {
 				return err
 			}
+		}
+		if LifecycleRoute(r.Target) {
+			var err error
+			response, err = filterLifecycleResponse(tx, r, response)
+			return err
 		}
 		if err := visibleContextTarget(tx, r.Target, true); err != nil {
 			return err
@@ -984,6 +995,9 @@ func (s *Service) DeliveryAuthorityCurrent(ctx context.Context, tx app.WriteTx, 
 // personalWriteTarget identifies owner personal writes that report an exact
 // lifecycle conflict. GET and saved-response filtering keep strict masking.
 func personalWriteTarget(method, target string) bool {
+	if method == "POST" && LifecycleRoute(target) {
+		return true
+	}
 	path := strings.SplitN(target, "?", 2)[0]
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) < 4 || parts[0] != "api" || parts[1] != "v1" || !canonicalID.MatchString(parts[3]) {

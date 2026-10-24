@@ -21,6 +21,19 @@ func validateCommandFlags(opt options) error {
 		verb = args[1]
 	}
 	switch args[0] {
+	case "lifecycle":
+		switch verb {
+		case "plan":
+			add("document action expected-revision operation-id")
+		case "show":
+			add("cursor limit")
+		case "commit":
+			add("expected-revision operation-id confirm")
+		}
+	case "trash":
+		if verb == "list" {
+			add("project cursor limit")
+		}
 	case "revisit":
 		add("document")
 		if verb == "set" {

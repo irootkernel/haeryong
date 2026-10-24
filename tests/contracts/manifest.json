@@ -61,8 +61,8 @@
     },
     {
       "path": "tests/contracts/schema.json",
-      "bytes": 179727,
-      "sha256": "afefd49371cfffaaec8157b497d5d372320e433444137163735980de89344bfa"
+      "bytes": 187391,
+      "sha256": "fddd57fcab07695cf2fb3948aa7914ccb40aee5636a744c7565ca4f47bdba396"
     },
     {
       "path": "tests/contracts/test_contracts.py",
@@ -108,6 +108,16 @@
       "path": "tests/fixtures/annotations/conflict.json",
       "bytes": 2643,
       "sha256": "b7571b574ab3cd53e7cbdc4d1016dc34b80d8736a8fc8c0457f653035d39212f"
+    },
+    {
+      "path": "tests/contracts/test_lifecycle_contracts.py",
+      "bytes": 1405,
+      "sha256": "d4620697605d174612a1fb0606f14e3f73e09fb46278f2efea06faa78c2d3ff1"
+    },
+    {
+      "path": "tests/fixtures/lifecycle/confirmation.json",
+      "bytes": 1398,
+      "sha256": "dd13261ecab735be82b5830c6ceda7786a35b0b5f3e99062299a260a8d3bf437"
     }
   ]
 }

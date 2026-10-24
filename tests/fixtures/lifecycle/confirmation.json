@@ -1,0 +1,64 @@
+{
+  "evidence_kind": "synthetic contract inputs; runtime status assertions live in public E2E/transport tests",
+  "cases": [
+    {
+      "name": "first-false",
+      "confirmed": false,
+      "committed": false,
+      "status": 400,
+      "code": "INVALID_REQUEST"
+    },
+    {
+      "name": "first-missing",
+      "committed": false,
+      "status": 400,
+      "code": "INVALID_REQUEST"
+    },
+    {
+      "name": "first-string",
+      "confirmed": "true",
+      "committed": false,
+      "status": 400,
+      "code": "INVALID_REQUEST"
+    },
+    {
+      "name": "replay-false-keyless",
+      "confirmed": false,
+      "committed": true,
+      "status": 400,
+      "code": "INVALID_REQUEST"
+    },
+    {
+      "name": "replay-false-keyed",
+      "confirmed": false,
+      "committed": true,
+      "keyed": true,
+      "status": 400,
+      "code": "INVALID_REQUEST"
+    },
+    {
+      "name": "changed-valid-revision",
+      "confirmed": true,
+      "committed": true,
+      "revision_delta": 1,
+      "status": 409,
+      "code": "OPERATION_CONFLICT"
+    },
+    {
+      "name": "identical-expired-replay",
+      "confirmed": true,
+      "committed": true,
+      "expired": true,
+      "status": 200,
+      "code": null
+    },
+    {
+      "name": "expired-first",
+      "confirmed": true,
+      "committed": false,
+      "expired": true,
+      "status": 409,
+      "code": "STALE_PLAN"
+    }
+  ]
+}

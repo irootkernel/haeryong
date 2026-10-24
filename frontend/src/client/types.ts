@@ -269,6 +269,15 @@ export type AnnotationCreate = Omit<AnnotationAnchor,"version_id"> & AnnotationC
 export type AnnotationPatch = ({action:"edit"}&AnnotationContent) | {action:"reattach";anchor:AnnotationAnchor;selected_text:string|null;context:unknown|null;context_ref:string|null};
 export interface AnnotationView { annotation_id:string; document_id:string; original_anchor:AnnotationAnchor; anchor:AnnotationAnchor; body:string|null; body_ref:{bytes_sha256:string;byte_size:string;media_type:string;content_url:string}|null; selected_text:string|null; context_ref:string|null;created_at:string;updated_at:string;deleted_at:string|null;revision:number;etag:string;history_url:string;resolution:{status:"resolved"|"unresolved";reason:string|null};action:"create"|"edit"|"reattach"|"delete";actor_session:string;operation_id?:string }
 export interface AnnotationStream extends PackageStream {etag:string;bytes_sha256:string;byte_size:string;media_type:string}
+export type LifecycleAction="archive"|"trash"|"restore";
+export interface LifecyclePlanRequest {operation:LifecycleAction;expected_revision:number}
+export interface LifecycleCommitRequest {plan_id:string;expected_revision:number;confirmed:true}
+export interface LifecycleItem {kind:string;id:string;version_id:string|null;page_path:string|null;region_id:string|null;revision:number;source_document_id:string|null;resolution:string|null}
+export interface LifecycleResult {operation_id:string;plan_id:string;document_id:string;lifecycle:string;previous_lifecycle:string|null;trashed_at:string|null;revision:number;changed:boolean}
+export interface LifecyclePlanView {plan_id:string;document_id:string;operation:LifecycleAction;state:"open"|"committed"|"expired";from_lifecycle:string;to_lifecycle:string;expected_revision:number;config_revision:number;expires_at:string;impact:Record<string,number>;result:LifecycleResult|null;items:LifecycleItem[];next_cursor:string|null}
+export interface TrashItem {document_id:string;project_id:string;title:string;latest_version_id:string|null;revision:number;lifecycle:"trash";previous_lifecycle:"active"|"archived"|null;trashed_at:string|null;purge_eligible_at:string|null}
+export interface LifecyclePageRequest {cursor?:string;limit?:number}
+export interface TrashRequest extends LifecyclePageRequest {project_id?:string}
 export interface RevisitView extends PersonalView {document_id:string;value:{flag:boolean};operation_id?:string}
 
 export type ReviewState = "unreviewed" | "reviewing" | "reviewed";
@@ -860,6 +869,10 @@ export interface HaeryongClient {
   annotationHistory(annotationId:string,cursor?:string):Promise<ListPage<AnnotationView>>;
   annotationBodyStream(annotationId:string,revision:number):Promise<AnnotationStream>;
   annotationContextStream(annotationId:string,revision:number):Promise<AnnotationStream>;
+  lifecyclePlan(documentId:string,body:LifecyclePlanRequest,key?:string):Promise<LifecyclePlanView>;
+  lifecyclePlanGet(id:string,request?:LifecyclePageRequest):Promise<LifecyclePlanView>;
+  lifecyclePlanCommit(id:string,body:LifecycleCommitRequest,key?:string):Promise<LifecycleResult>;
+  trashList(request?:TrashRequest):Promise<ListPage<TrashItem>>;
   revisitGet(documentId:string):Promise<RevisitView>;
   revisitPut(documentId:string,flag:boolean,condition:ReviewCondition,operationId:string):Promise<RevisitView>;
   reviewGet(versionId: string): Promise<ReviewView>;

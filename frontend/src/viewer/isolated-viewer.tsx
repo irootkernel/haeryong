@@ -1,12 +1,14 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ShellController } from "../client/controller.ts";
 import type { ContextClient } from "../client/context-types.ts";
+import { ApiError } from "../client/types.ts";
 import type { PersonalTarget, PersonalOperations } from "../app/screens/personal-operations.ts";
 import { BrowserContextJournal, ContextTransferHost, freshContextVerifier } from "./context-transfer.ts";
 import { featureEnabled } from "../app/screens/library-data.ts";
 import type { ReaderPageContext, ReferenceActivation } from "../app/screens/reader-navigation.ts";
 import { ViewerChannel } from "./channel.ts";
 import { RenderSessionLease } from "./render-session.ts";
+import { useReviewInvalidation } from "../app/screens/review-refresh.ts";
 import { ReaderLocationTracker, type ReaderLocation } from "./reader-location.ts";
 
 export type { ReaderLocation } from "./reader-location.ts";
@@ -20,6 +22,8 @@ export interface ViewerProps {
   onChannelClosed?(): void;
   /** Terminal connection failure, before a page channel may exist. */
   onConnectionFailure?(page: Pick<ReaderPageContext, "versionId" | "context" | "reload">): void;
+  /** An attached delivery was refused, even if its document is readable again. */
+  onDeliveryRevoked?(page: Pick<ReaderPageContext, "versionId" | "context" | "reload">): void;
   onReference?(event: ReferenceActivation): void;
   documentId: string;
   versionId: string;
@@ -66,6 +70,7 @@ export function IsolatedViewer(props: ViewerProps) {
   const referencesEnabled = featureEnabled(props.controller.state.capabilities?.features, "references");
   useLayoutEffect(() => { referenceConfig.current?.(); }, [referencesEnabled]);
   const [failure, setFailure] = useState<string | null>(null);
+  const retireDelivery = useRef<((error: unknown) => void) | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [retry, setRetry] = useState(0);
   const reopening = useRef(false);
@@ -84,10 +89,14 @@ export function IsolatedViewer(props: ViewerProps) {
     return new RenderSessionLease({
       client: props.controller.client, owner: props.owner, version: props.versionId, context: props.context, storage: localStorage,
       guard: () => props.controller.requireVerifiedDispatch(captured),
-      failure: (error) => { setLoaded(false); setFailure(message(error)); },
+      failure: (error) => retireDelivery.current?.(error),
       notice: (notice) => setWaiting(notice.message),
     });
   }, [props.controller, props.owner, props.versionId, props.context, retry]);
+
+  useReviewInvalidation(props.controller, true, () => {
+    void lease.revalidate().catch(() => { /* Lease failure disposes its captured viewer. */ });
+  });
 
   const reopen = async () => {
     if (reopening.current) return;
@@ -96,7 +105,7 @@ export function IsolatedViewer(props: ViewerProps) {
       // A known S may be replayed by the same K. Confirm its old close
       // before a new lease can recover/reuse that receipt.
       await lease.stop();
-      setRetry((value) => value + 1);
+      setFailure(null); setRetry((value) => value + 1);
     } catch (error) { setFailure("이전 페이지 연결의 종료를 확인하지 못했습니다: " + message(error)); }
     finally { reopening.current = false; setClosing(false); }
   };
@@ -268,6 +277,24 @@ export function IsolatedViewer(props: ViewerProps) {
         };
       }).catch(notify);
     };
+    const dispose = () => {
+      if (!active) return;
+      active = false; generation++; referenceGeneration++; pendingReference = null;
+      referenceConfig.current = null;
+      callbacks.current.onChannelClosed?.();
+      window.removeEventListener("message", onMessage);
+      if (poll) clearInterval(poll);
+      channel?.dispose(); channel = null;
+      if (props.focusHandle) props.focusHandle.current = null;
+      void lease.stop().catch(() => { /* Captured delivery still expires if Close is uncertain. */ });
+    };
+    const fail = (error: unknown, revoked: boolean) => {
+      if (!active) return;
+      dispose();
+      setLoaded(false); setFailure(message(error));
+      if (revoked) callbacks.current.onDeliveryRevoked?.({ versionId: props.versionId, context: props.context, reload: props.reload });
+    };
+    retireDelivery.current = error => fail(error, true);
     window.addEventListener("message", onMessage);
     setFailure(null); setLoaded(false); setWaiting(null);
     void lease.start().then((session) => {
@@ -280,24 +307,15 @@ export function IsolatedViewer(props: ViewerProps) {
       handoff.action = session.handoff.url + "?page=" + encodeURIComponent(artifact);
       (handoff.elements.namedItem("secret") as HTMLInputElement).value = session.handoff.secret;
       handoff.submit();
-    }).catch((error) => { if (active) setFailure(message(error)); });
-    return () => {
-      active = false; generation++; referenceGeneration++; pendingReference = null;
-      referenceConfig.current = null;
-      callbacks.current.onChannelClosed?.();
-      window.removeEventListener("message", onMessage);
-      if (poll) clearInterval(poll);
-      channel?.dispose();
-      if (props.focusHandle) props.focusHandle.current = null;
-      void lease.stop().catch(() => { /* Expiring delivery remains owned by its captured session. */ });
-    };
+    }).catch((error) => fail(error, error instanceof ApiError && [401, 403, 404, 409, 410].includes(error.status)));
+    return () => { dispose(); retireDelivery.current = null; };
   }, [props.controller, props.owner, props.context, props.documentId, props.versionId, props.reload, props.personal, initial, retry, lease]);
 
   return <section className="reader-content" aria-label="결과 뷰어">
     {failure && <div className="banner" role="alert"><p>페이지 연결을 확인하지 못했습니다: {failure}</p><button disabled={closing} onClick={() => void reopen()}>{closing ? "이전 연결을 닫는 중…" : "다시 열기"}</button></div>}
     {!failure && !loaded && <p role="status">{waiting ?? "페이지를 여는 중…"}</p>}
     {(failure || !loaded || closing) && <button type="button" onClick={() => location.reload()}>화면 전체 새로고침</button>}
-    <form ref={form} method="POST" target={frameName} hidden><input type="hidden" name="secret" /></form>
-    <iframe key={retry} ref={frame} name={frameName} title="결과 뷰어" className="reader-frame" src="about:blank" sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-top-navigation-by-user-activation" />
+    {failure === null && <><form ref={form} method="POST" target={frameName} hidden><input type="hidden" name="secret" /></form>
+    <iframe key={retry} ref={frame} name={frameName} title="결과 뷰어" className="reader-frame" src="about:blank" sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-top-navigation-by-user-activation" /></>}
   </section>;
 }

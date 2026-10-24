@@ -264,3 +264,22 @@ It uses the shared afterDefinitive outcome classification: transport/decoding lo
 authority denial, unrecorded 5xx and reconciliation demands retain the automatic key
 and original conditions. Only a definitive outcome acknowledged to output releases
 that key. No notes CLI is selected; Notes is a shared Reader action.
+
+## Current document lifecycle commands (TASK-005-03)
+
+Additive provisional commands use the same current owner, exact plan and receipt rules:
+
+```sh
+haeryong lifecycle plan --document DOCUMENT_ID --action trash --expected-revision REVISION --json
+haeryong lifecycle show PLAN_ID --json
+haeryong lifecycle commit PLAN_ID --expected-revision REVISION --confirm --json
+haeryong trash list --json
+```
+
+Action is archive/trash/restore; restore also exits Archive. Plan permits an optional
+--operation-id; show/list support --cursor and --limit, and Trash supports --project.
+Commit confirmation is explicit. Without a separate alias its durable operation ID is
+PLAN_ID; retries reuse it and the original body. Optional --operation-id aliases that
+same result. Unknown outcomes retain the plan identity and require reconciliation,
+never a fresh generated commit key. Invalid/stale plans preserve owner intent.
+Purge, backup and operator restore remain unavailable under their ordered Tasks.

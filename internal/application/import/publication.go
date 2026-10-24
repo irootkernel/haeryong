@@ -552,7 +552,9 @@ func (s *Service) publish(ctx context.Context, j domain.Job) error {
 			if d.LatestVersionID != intent.BaseVersionID {
 				return ErrVersionConflict
 			}
-			intent.DocumentRevision = d.Revision
+			if e := app.CheckLifecycleApplication(tx, intent.DocumentID, intent.DocumentRevision); e != nil {
+				return e
+			}
 		}
 		if old, e := tx.PublishedVersion(v.ID); e == nil {
 			if old.DocumentID != v.DocumentID || old.PayloadSHA != v.PayloadSHA || old.MetadataHash != v.MetadataHash {

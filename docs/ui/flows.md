@@ -107,3 +107,10 @@ original operation; a runtime-generation change never causes automatic new dispa
 Drafts are scoped to owner/library/exact version and retain their captured anchor across
 page/tab changes. A real browser storage failure leaves the text visible with an error.
 Reattachment and deletion each use explicit owner confirmation and their own note CAS.
+
+TASK-005-03's concrete lifecycle flow is More → request impact → inspect all pages →
+explicit plan confirmation → acknowledged/reconciled result. Cancel/Escape does not
+commit; current document/impact changes require refreshed review. Automatic position
+saves do not stale the open dialog. Unknown commits preserve the original plan and
+captured runtime generation; reconnect only reconciles. Trash lists deletion time and
+prior lifecycle; Restore returns to active/archived without moving personal anchors.

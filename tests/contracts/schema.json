@@ -8292,6 +8292,386 @@
           "additionalProperties": false
         }
       ]
+    },
+    "lifecycle_plan_request": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "enum": [
+            "archive",
+            "trash",
+            "restore",
+            "purge"
+          ]
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "operation",
+        "expected_revision"
+      ],
+      "additionalProperties": false
+    },
+    "lifecycle_commit_request": {
+      "type": "object",
+      "properties": {
+        "plan_id": {
+          "$ref": "#/$defs/id"
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "confirmed": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        }
+      },
+      "required": [
+        "plan_id",
+        "expected_revision",
+        "confirmed"
+      ],
+      "additionalProperties": false
+    },
+    "lifecycle_impact_item": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "version",
+            "review",
+            "review_event",
+            "annotation",
+            "annotation_history",
+            "revisit",
+            "reading_position",
+            "page_position",
+            "reader_preference",
+            "incoming",
+            "context"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "version_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "page_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "region_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_document_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resolution": {
+          "enum": [
+            null,
+            "unresolved",
+            "pinned"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "version_id",
+        "page_path",
+        "region_id",
+        "revision",
+        "source_document_id",
+        "resolution"
+      ],
+      "additionalProperties": false
+    },
+    "lifecycle_result": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "plan_id": {
+          "$ref": "#/$defs/id"
+        },
+        "document_id": {
+          "$ref": "#/$defs/id"
+        },
+        "lifecycle": {
+          "enum": [
+            "active",
+            "archived",
+            "trash"
+          ]
+        },
+        "previous_lifecycle": {
+          "enum": [
+            null,
+            "active",
+            "archived"
+          ]
+        },
+        "trashed_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "changed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "operation_id",
+        "plan_id",
+        "document_id",
+        "lifecycle",
+        "previous_lifecycle",
+        "trashed_at",
+        "revision",
+        "changed"
+      ],
+      "additionalProperties": false
+    },
+    "lifecycle_plan_page": {
+      "type": "object",
+      "properties": {
+        "plan_id": {
+          "$ref": "#/$defs/id"
+        },
+        "document_id": {
+          "$ref": "#/$defs/id"
+        },
+        "operation": {
+          "enum": [
+            "archive",
+            "trash",
+            "restore"
+          ]
+        },
+        "state": {
+          "enum": [
+            "open",
+            "committed",
+            "expired"
+          ]
+        },
+        "from_lifecycle": {
+          "enum": [
+            "active",
+            "archived",
+            "trash"
+          ]
+        },
+        "to_lifecycle": {
+          "enum": [
+            "active",
+            "archived",
+            "trash"
+          ]
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "config_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "expires_at": {
+          "type": "string"
+        },
+        "impact": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/lifecycle_result"
+            }
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/lifecycle_impact_item"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "plan_id",
+        "document_id",
+        "operation",
+        "state",
+        "from_lifecycle",
+        "to_lifecycle",
+        "expected_revision",
+        "config_revision",
+        "expires_at",
+        "impact",
+        "result",
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "trash_item": {
+      "type": "object",
+      "properties": {
+        "document_id": {
+          "$ref": "#/$defs/id"
+        },
+        "project_id": {
+          "$ref": "#/$defs/id"
+        },
+        "title": {
+          "type": "string"
+        },
+        "latest_version_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "lifecycle": {
+          "enum": [
+            "trash"
+          ]
+        },
+        "previous_lifecycle": {
+          "enum": [
+            null,
+            "active",
+            "archived"
+          ]
+        },
+        "trashed_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "purge_eligible_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "document_id",
+        "project_id",
+        "title",
+        "latest_version_id",
+        "revision",
+        "lifecycle",
+        "previous_lifecycle",
+        "trashed_at",
+        "purge_eligible_at"
+      ],
+      "additionalProperties": false
+    },
+    "trash_page": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/trash_item"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
     }
   },
   "error_http": {

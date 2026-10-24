@@ -144,3 +144,13 @@ though a committed effect were known not to exist. Revisit populates Home's inde
 cursor-backed list. Home omits raw project/version UUID display when a readable cue is
 unavailable; Review history uses Korean labels and localized time. Continue and Versions
 retain the TASK-005-01 behavior.
+
+TASK-005-03 implements the Reader More menu's Archive/Unarchive and Trash controls,
+plus the owner Trash list and Restore. One host impact dialog shows the exact plan,
+expiry, preserved records and current authorized incoming counts with full pagination.
+Reader positions are labelled as-of-plan information. Cancel/Escape and default Enter
+never commit a destructive action; deliberate confirmation button activation does.
+Expired/conflicting plans retain intent and offer a fresh impact review. Unknown results
+retain the original plan until reconciliation or an explicit same-plan retry. Trash
+closes the current renderer; restore opens a new session only on explicit navigation.
+Retention eligibility is informational; permanent purge is not enabled by this Task.

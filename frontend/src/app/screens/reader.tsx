@@ -1,3 +1,5 @@
+import {LifecycleControl} from "./lifecycle-control.tsx";
+import {useReviewInvalidation} from "./review-refresh.ts";
 import {NotesPanel,type NoteSelection} from "./notes-panel.tsx";
 import {RevisitControl} from "./revisit-control.tsx";
 import { ReviewControl } from "./review-control.tsx";
@@ -87,6 +89,7 @@ function ReaderOwner(props: ReaderProps & { owner: string; epoch: string }) {
 function ReaderContent(props: ReaderProps & { owner: string; epoch: string; personal: PersonalOperations }) {
   const { controller, documentId, versionId, owner, epoch, personal } = props;
   const client = controller.client;
+ const [lifecycleBlocked,setLifecycleBlocked]=useState(false);const visibilityEra=useRef(0);
   useSyncExternalStore(personal.subscribe, personal.revision);
   const [versionDetailState, setVersionDetailState] = useState<{ versionId: string; version: VersionView } | null>(null);
   const [docInfo, setDocInfo] = useState<{ documentId: string; document: DocumentView; projects: ProjectView[] } | null>(null);
@@ -174,7 +177,9 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
   const target = (kind: PersonalTarget["kind"], page: string | null = null): PersonalTarget => ({ version: versionId, kind, page });
 
   useEffect(() => {
+    if (lifecycleBlocked) return;
     let cancelled = false;
+    const era = visibilityEra.current, valid = () => !cancelled && era === visibilityEra.current;
     setDetailIssue(null);
     void (async () => {
       const version = await client.versionDetail(versionId);
@@ -183,7 +188,7 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
       // after an A→B switch inside one document, a failing document/project
       // lookup must never leave A's sequence/hashes displayed (or used as the
       // metadata validator) under B's identity.
-      if (!cancelled) setVersionDetailState({ versionId, version });
+      if (valid()) setVersionDetailState({ versionId, version });
       const document = await client.documentDetail(documentId);
       // Fetch only the project cursor needed to identify this document's
       // project; never preload the complete library or file inventory.
@@ -191,17 +196,17 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
       let cursor: string | undefined;
       do {
         const page = await client.listProjects(cursor);
-        if (cancelled) return;
+        if (!valid()) return;
         projects.push(...page.items);
         if (projects.some((project) => project.project_id === document.project_id)) break;
         cursor = page.next_cursor ?? undefined;
       } while (cursor);
-      if (!cancelled) setDocInfo({ documentId, document, projects });
-    })().catch((error) => { if (!cancelled) setDetailIssue(errorText(error)); });
+      if (valid()) setDocInfo({ documentId, document, projects });
+    })().catch((error) => { if (valid()) setDetailIssue(errorText(error)); });
     return () => { cancelled = true; };
     // A detail retry re-runs exactly this effect; it never touches the
     // viewer, its logical context or the import mount.
-  }, [client, documentId, versionId, detailGeneration]);
+  }, [client, documentId, versionId, detailGeneration, lifecycleBlocked]);
   // Render/use-time guards: only the CURRENT version's detail may feed the
   // header or the metadata expected digest; a stale document info object
   // never re-enables the exact-document import mount.
@@ -219,9 +224,11 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
   // metadata, header, error or panel content on its FIRST commit.
   const setMetaState = (state: MetadataState) => setSuppliedMetaBox({ versionId, state });
   useEffect(() => {
+    if (lifecycleBlocked) return;
     let cancelled = false;
     let active: Awaited<ReturnType<typeof client.versionSuppliedMetadata>> | null = null;
-    const live = () => !cancelled;
+    const era = visibilityEra.current;
+    const live = () => !cancelled && era === visibilityEra.current;
     const expectedSha256 = currentVersion?.supplied_metadata_sha256 ?? null;
     setMetaState({ kind: "loading" });
     void (async () => {
@@ -256,7 +263,7 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
     // A read may be parked before the next chunk/EOF. Release this effect's
     // own handle immediately rather than waiting for a chunk to detect staleness.
     return () => { cancelled = true; active?.stream.cancel(); };
-  }, [client, versionId, currentVersion?.supplied_metadata_sha256, suppliedMetaReload]);
+  }, [client, versionId, currentVersion?.supplied_metadata_sha256, suppliedMetaReload, lifecycleBlocked]);
   // Render-time identity guard: header, error banner and panel all derive
   // from this guarded state, so a stale box renders as honest loading.
   const suppliedMeta: MetadataState = suppliedMetaBox.versionId === versionId ? suppliedMetaBox.state : { kind: "loading" };
@@ -266,13 +273,13 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
     // stamped context before any selection bootstrap runs. This checks the
     // actual current context value (and the viewer mount gate below checks it
     // again), never an effect-order assumption.
-    if (context === null) return;
+    if (lifecycleBlocked || context === null) return;
     // A mirrored child URL keeps its existing browsing context and session.
     if (frameSelection.current?.context === context && frameSelection.current.bootstrap.version_id === versionId && reload === 0) return;
     let cancelled = false;
     setIssue(null); setSelection(null); setRegionSelection(null);
-    const captured = controller.captureDispatchAuthority();
-    const guard = () => { if (cancelled) throw new Error("이전 페이지 선택입니다."); controller.requireVerifiedDispatch(captured); };
+    const captured = controller.captureDispatchAuthority(), visibleEra=visibilityEra.current;
+    const guard = () => { if (cancelled||visibleEra!==visibilityEra.current) throw new Error("이전 페이지 선택입니다."); controller.requireVerifiedDispatch(captured); };
     void (async () => {
       guard();
       const version = await client.versionDetail(versionId);
@@ -304,16 +311,17 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
     return () => { cancelled = true; };
     // Page/query/hash are intentionally read only at a new HOST context.
     // Child observations update the URL without reopening the delivery.
-  }, [client, controller, documentId, versionId, context, personal, reload]);
+  }, [client, controller, documentId, versionId, context, personal, reload, lifecycleBlocked]);
 
   useEffect(() => {
+    if (lifecycleBlocked) return;
     const own = ++filesGeneration.current;
     setFiles({ items: [], cursor: null, busy: true, issue: null });
     void client.versionFiles(versionId).then((page) => {
       if (filesGeneration.current === own) setFiles({ items: page.items, cursor: page.next_cursor, busy: false, issue: null });
     }).catch((error) => { if (filesGeneration.current === own) setFiles({ items: [], cursor: null, busy: false, issue: errorText(error) }); });
     return () => { filesGeneration.current++; };
-  }, [client, versionId]);
+  }, [client, versionId, lifecycleBlocked]);
 
   const more = async () => {
     if (!files.cursor || files.busy) return;
@@ -438,6 +446,31 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
     if (context !== null && (issue !== null || (selection?.context === context && selection.bootstrap.version_id === versionId
       && (!selection.bootstrap.renderer_available || selection.location === null)))) restoreVersionsFocus();
   }, [selection, issue, context, versionId]);
+  const closeProtectedReader = () => {
+    visibilityEra.current++; filesGeneration.current++;
+    frameSelection.current = null; locationRef.current = null; restoreRef.current = null;
+    channelRef.current = null; regionFocus.current = null;
+    references.bind(null); linksNavigation.bind(null); hashFocus.bind(null, null);
+    setSelection(null); setChannelReady(null); setNoteContext(null); setRegionSelection(null);
+    setFiles({items:[],cursor:null,busy:false,issue:null});
+    setDocInfo(null); setVersionDetailState(null); setSuppliedMetaBox({versionId,state:{kind:"absent"}});
+    setNotice(null); setIssue(null); setDetailIssue(null); setDownload(null); setImportOpen(false);
+    setFilesOpen(false); setContextOpen(false); setLifecycleBlocked(true);
+    restoreVersionsFocus();
+  };
+  // A fresh host navigation, never a notification/restore, can open a new delivery.
+  useEffect(() => { setLifecycleBlocked(false); }, [versionId, context]);
+  useReviewInvalidation(controller,true,()=>{
+    const auth=controller.captureDispatchAuthority(), era=visibilityEra.current, route={...referenceRoute.current};
+    void client.versionDetail(versionId).then(()=>{controller.requireVerifiedDispatch(auth);}).catch(e=>{
+      const current=referenceRoute.current;
+      if(era!==visibilityEra.current||route.versionId!==current.versionId||route.context!==current.context||route.reload!==current.reload)return;
+      if(e instanceof ApiError&&[401,403,404,410].includes(e.status)){
+        closeProtectedReader();
+      }
+    });
+  });
+  if(lifecycleBlocked)return <section role="alert"><h1>이 문서를 더 이상 표시할 수 없습니다.</h1><p>문서 상태 또는 접근 권한이 바뀌어 페이지를 닫았습니다.</p><a href="/trash">휴지통 열기</a><a href="/library">서재 열기</a></section>;
   return <div className="reader">
     <header className="reader-header"><div><h1>{currentVersion?.title_snapshot ?? docInfo?.document.title ?? "결과 읽기"}</h1><p className="muted-code">{versionId}</p>
         <VersionHeader version={currentVersion} pagePath={currentPage} metadata={suppliedMeta.kind === "ready" ? suppliedMeta.metadata : null} />
@@ -449,6 +482,7 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
       return { scroll_x: Number(position?.scroll_x) || 0, scroll_y: Number(position?.scroll_y) || 0 };
     }} />{returnContext && <button onClick={() => { controller.requireVerifiedDispatch(controller.captureDispatchAuthority()); returnToReferringPage(referenceOwner); }}>참조한 페이지로 돌아가기</button>}<button onClick={() => void continueReading()}>이어서 읽기</button><button disabled={!selection?.location} onClick={() => void setDefault().catch((error) => setNotice(errorText(error)))}>기본 페이지로 지정</button><button onClick={() => void setDefault(true).catch((error) => setNotice(errorText(error)))}>기본 페이지 설정 해제</button><button id="reader-files-toggle" className="narrow-only" aria-expanded={filesOpen} aria-controls="reader-files-panel" onClick={() => { setContextOpen(false); setFilesOpen((value) => !value); }}>파일 목록</button><button id="reader-context-toggle" aria-expanded={contextOpen} aria-controls="reader-context-panel" onClick={() => { setFilesOpen(false); setContextOpen((value) => !value); }}>근거 패널</button><button disabled={!currentDocInfo} onClick={() => setImportOpen(true)}>새 버전 가져오기</button></div>
     <ReviewControl key={JSON.stringify([referenceOwner,versionId])} controller={controller} versionId={versionId} owner={referenceOwner} versionLabel={currentVersion?`v${currentVersion.sequence}`:undefined} />
+    <LifecycleControl controller={controller} documentId={documentId} lifecycle={currentDocInfo?.document.lifecycle??"active"} onChanged={result=>{if(result.lifecycle==="trash"){closeProtectedReader();}else{setDetailGeneration(n=>n+1);}}}/>
     <RevisitControl key={JSON.stringify([referenceOwner,documentId])} controller={controller} documentId={documentId} />
     {notice && <p role="status">{notice}</p>}
     {entries.map((entry) => <div className="banner" data-tone="warning" key={personalKey(entry.target)}>
@@ -473,6 +507,10 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
         channelRef.current = page; setChannelReady(page); if (routeRegion === null) restoreVersionsFocus();
       }}
       onChannelClosed={() => { channelRef.current = null; setChannelReady(null); }}
+      onDeliveryRevoked={(failed) => {
+        const route = referenceRoute.current;
+        if (live.current && failed.versionId === route.versionId && failed.context === route.context && failed.reload === route.reload && contextOf() === failed.context) closeProtectedReader();
+      }}
       onConnectionFailure={(failed) => {
         const route = referenceRoute.current;
         if (failed.versionId === route.versionId && failed.context === route.context && failed.reload === route.reload

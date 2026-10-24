@@ -88,6 +88,9 @@ func (h *Handler) Handles(r *http.Request) bool {
 	if len(p) == 0 {
 		return false
 	}
+	if lifecycleRoute(p) {
+		return (p[0] == "trash" || p[0] == "lifecycle-plans" && len(p) == 2) && (r.Method == "GET" || r.Method == "HEAD") || (p[0] == "documents" || len(p) == 3 && p[2] == "commit") && r.Method == "POST"
+	}
 	if noteRoute(p) {
 		return noteMethod(r.Method, p)
 	}
@@ -167,6 +170,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := route(r)
+	if lifecycleRoute(p) {
+		h.lifecycle(w, r, token, p)
+		return
+	}
 	if noteRoute(p) {
 		h.notes(w, r, token, p)
 		return
@@ -857,6 +864,9 @@ func failure(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.As(err, &lifecycle) {
 		status, code = 409, "INVALID_TRANSITION"
 		details["lifecycle"] = lifecycle.Lifecycle
+	}
+	if codeStatus, lifeCode := lifecycleFailure(err); codeStatus != 0 {
+		status, code = codeStatus, lifeCode
 	}
 	var renderer *render.Error
 	if errors.As(err, &renderer) {

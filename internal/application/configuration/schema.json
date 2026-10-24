@@ -7424,6 +7424,52 @@
           "additionalProperties": false
         }
       ]
+    },
+    "lifecycle_plan_request": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "enum": [
+            "archive",
+            "trash",
+            "restore",
+            "purge"
+          ]
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "operation",
+        "expected_revision"
+      ],
+      "additionalProperties": false
+    },
+    "lifecycle_commit_request": {
+      "type": "object",
+      "properties": {
+        "plan_id": {
+          "$ref": "#/$defs/id"
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "confirmed": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        }
+      },
+      "required": [
+        "plan_id",
+        "expected_revision",
+        "confirmed"
+      ],
+      "additionalProperties": false
     }
   },
   "error_http": {

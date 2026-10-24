@@ -74,7 +74,7 @@ function HomeSection({controller,kind,title}:{controller:ShellController;kind:Ho
 
 export function HomeScreen({controller}:{controller:ShellController}){
   const state=controller.state;
-  useReviewInvalidation(controller.client,state.capabilities?.features.review===true||state.capabilities?.features.revisit===true,()=>window.dispatchEvent(new Event("haeryong-review-changed")));
+  useReviewInvalidation(controller,state.capabilities?.features.review===true||state.capabilities?.features.revisit===true,()=>window.dispatchEvent(new Event("haeryong-review-changed")));
   return <section className="panel">
     <h1>홈</h1>
     <p className="hint" data-testid="home-session">{state.session?`${state.session.device_label}로 연결됨 · 라이브러리 ${state.capabilities?.library_id??""}`:"연결 정보를 확인하는 중입니다."}</p>
