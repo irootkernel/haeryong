@@ -117,6 +117,29 @@ var _ = Describe("system git reader", Label("integration"), func() {
 		Expect(gitreader.ValidateLocation("유니코드/파일.go")).To(Succeed())
 	})
 
+	DescribeTable("reports a missing HEAD commit as ErrObjectMissing", func(unborn bool) {
+		r := newRepo()
+		if !unborn {
+			head := r.commit(map[string]string{"f.txt": "fixture\n"})
+			Expect(os.Remove(filepath.Join(r.dir, ".git", "objects", head[:2], head[2:]))).To(Succeed())
+		}
+		head, err := reader.ResolveHead(ctx, r.dir)
+		Expect(err).To(MatchError(gitreader.ErrObjectMissing))
+		Expect(head).To(BeEmpty())
+	},
+		Entry("unborn HEAD", true),
+		Entry("missing HEAD object", false),
+	)
+
+	It("keeps HEAD execution failures distinct from missing objects", func() {
+		r := newRepo()
+		unavailable := &gitreader.Reader{Binary: filepath.Join(r.dir, "absent-git")}
+		head, err := unavailable.ResolveHead(ctx, r.dir)
+		Expect(err).To(MatchError(gitreader.ErrGitUnavailable))
+		Expect(err).NotTo(MatchError(gitreader.ErrObjectMissing))
+		Expect(head).To(BeEmpty())
+	})
+
 	It("resolves the branch head once and diffs cited paths only", func() {
 		r := newRepo()
 		base := r.commit(map[string]string{"svc/retry.go": "v1\n", "ui/page.html": "<p>v1</p>\n"})

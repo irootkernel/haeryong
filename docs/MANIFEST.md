@@ -165,7 +165,7 @@ This inventory covers 173 other files: all Markdown documents and Python documen
 | `testing/responsive-cross-client-gate.md` | 16582 | `b54fe0282c0d307a234572e5a62512757a8eb3e948002ec05c13e6f175d55091` |
 | `testing/result-transfer.md` | 11464 | `680ab5bcd81f6314231c1189221050ad410398c42d43ec54925d2dc1bc34d2d7` |
 | `testing/search-relevance-worksheet.md` | 18555 | `b5af52b411872a68bfd12ba345f243b3c1ff9031c355c6d72980289ec1bc1c45` |
-| `testing/source-observation.md` | 18076 | `43d517d2e72c163b1bf91a2d834766b3de2407c84de70818178cab1996fd7088` |
+| `testing/source-observation.md` | 18351 | `e84ef215e15b9f1dd9144a494d2683479e1428b2e65095f59f2be13cd9205627` |
 | `testing/stack-spike.md` | 13832 | `a85449001f2bbc45d384be3527b41d0cac1072597dae44aba48183c1e037b51b` |
 | `testing/storage-foundation.md` | 18134 | `96c41c5586426cadb79daaf116d4abd6f1751fb3d9110ff4b075ec7cd20f5c8e` |
 | `testing/test-strategy.md` | 16531 | `2b2f7ccb86ad82ca17c6c8637da38e24a173d4fde8c34cca4b42ea62d33567ec` |

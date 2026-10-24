@@ -465,6 +465,95 @@ var _ = Describe("observation runs", Label("persistence"), func() {
 		}
 	})
 
+	// IC1: absent current commits are source facts, just like absent checkouts.
+	DescribeTable("records missing HEAD commits with per-source coverage and receipts", func(unborn bool) {
+		f := newObservationFixture(t, "current")
+		if unborn {
+			f.repoB.git(t, "symbolic-ref", "HEAD", "refs/heads/unborn")
+		} else {
+			head := f.repoB.commit(t, map[string]string{"b.txt": "advanced\n"})
+			Expect(os.Remove(filepath.Join(f.repoB.root, ".git", "objects", head[:2], head[2:]))).To(Succeed())
+		}
+		key := "31000000-0000-4000-8000-000000000081"
+		response, e := f.observe(key, "")
+		Expect(e).NotTo(HaveOccurred())
+		Expect(response.Status).To(Equal(201))
+		run := outcome(t, response)
+		missing := sourceRow(run, "git-2")
+		Expect(missing["availability"]).To(Equal("unavailable"))
+		Expect(missing["classification"]).To(Equal("unavailable"))
+		Expect(missing["reason"]).To(Equal("missing_source"))
+		Expect(sourceRow(run, "git-1")["availability"]).To(Equal("available"))
+		state := readObservationState(t, f, key)
+		Expect(state.rows).To(Equal(2))
+		Expect(state.runExists).To(BeTrue())
+		Expect(state.receipt).To(Equal("completed"))
+		Expect(state.intent).To(Equal("completed"))
+		replay, e := f.observe(key, "")
+		Expect(e).NotTo(HaveOccurred())
+		Expect(replay.Status).To(Equal(response.Status))
+		Expect(replay.Body).To(Equal(response.Body))
+		applicable := f.applicable(t, query.AssessmentQuery{})
+		Expect(applicable["status"]).To(Equal("unable_to_verify"))
+		setID := mapString(applicable["coverage"].(map[string]any)["coverage_set_id"])
+		Expect(setID).NotTo(BeEmpty())
+		reasons := map[string]string{}
+		for _, unit := range f.coverage(t, setID, "") {
+			reasons[mapString(unit["page_path"])] = mapString(unit["reason"])
+		}
+		Expect(reasons).To(Equal(map[string]string{"pages/first.html": "", "pages/second.html": "missing_source"}))
+		source := f.sourcesByID(t)["git-2"]
+		Expect(source["last_availability"]).To(Equal("unavailable"))
+		Expect(source["last_observation_reason"]).To(Equal("missing_source"))
+		Expect(source["last_observed_revision"]).To(BeNil())
+		Expect(source["last_observed_at"]).NotTo(BeNil())
+	},
+		Entry("unborn HEAD", true),
+		Entry("missing HEAD object with the declared base still present", false),
+	)
+
+	It("settles an actual HEAD execution failure without recording source facts", func() {
+		f := newObservationFixture(t, "current")
+		f.core.Reader = &gitreader.Reader{Binary: filepath.Join(f.repoA.root, "absent-git")}
+		key := "31000000-0000-4000-8000-000000000082"
+		response, e := f.observe(key, "")
+		Expect(e).NotTo(HaveOccurred())
+		Expect(response.Status).To(Equal(503))
+		Expect(errorCode(t, response)).To(Equal("FILE_ACCESS_ERROR"))
+		Expect(errorReason(t, response)).To(Equal("git_unavailable"))
+		state := readObservationState(t, f, key)
+		Expect(state.rows).To(Equal(0))
+		Expect(state.receipt).To(Equal("failed"))
+		Expect(state.intent).To(Equal("failed"))
+		for _, source := range f.sourcesByID(t) {
+			Expect(source["last_availability"]).To(BeNil())
+		}
+	})
+
+	It("settles signalled git as infrastructure failure without recording a run or source state", func() {
+		f := newObservationFixture(t, "current")
+		binary := filepath.Join(t.TempDir(), "signalled-git")
+		Expect(os.WriteFile(binary, []byte("#!/bin/sh\nkill -KILL \"$$\"\n"), 0o700)).To(Succeed())
+		f.core.Reader = &gitreader.Reader{Binary: binary}
+		key := "31000000-0000-4000-8000-000000000083"
+		response, e := f.observe(key, "")
+		Expect(e).NotTo(HaveOccurred())
+		Expect(response.Status).To(Equal(503))
+		Expect(errorCode(t, response)).To(Equal("FILE_ACCESS_ERROR"))
+		Expect(errorReason(t, response)).To(Equal("git_unavailable"))
+		state := readObservationState(t, f, key)
+		Expect(state.rows).To(Equal(0))
+		Expect(state.runExists).To(BeFalse())
+		Expect(state.receipt).To(Equal("failed"))
+		Expect(state.intent).To(Equal("failed"))
+		for _, source := range f.sourcesByID(t) {
+			Expect(source["last_availability"]).To(BeNil())
+			Expect(source["last_observation_reason"]).To(BeNil())
+			Expect(source["last_observed_revision"]).To(BeNil())
+			Expect(source["last_observed_at"]).To(BeNil())
+		}
+	})
+
 	// r4.2 rule 5(a): a multi-source partial run keeps one set with
 	// per-source entries and per-source unit attribution.
 	It("attributes unit reasons per source on a partial run", func() {

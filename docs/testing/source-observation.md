@@ -30,6 +30,8 @@ verdict. Retained bytes may remain readable when the original checkout is missin
 
 ## Case evidence
 
+An EPIC-004 integration correction records an unborn HEAD or a missing HEAD commit object as `missing_source`. Real temporary Git regressions check the adapter errors, observation status, receipts and per-unit reasons; execution failures remain typed infrastructure errors.
+
 The Supervisor executed the final checks below on one frozen code candidate;
 these final-candidate runs supersede the earlier per-part implementation runs.
 Logs, screenshots and receipts remain private. The check labels C1–C9 are local

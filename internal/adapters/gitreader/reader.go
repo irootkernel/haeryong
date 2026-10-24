@@ -120,19 +120,7 @@ func (r *Reader) ResolveRevision(ctx context.Context, root, revision string) err
 		return ErrObjectMissing
 	}
 	cmd := r.command(ctx, root, "cat-file", "-e", revision+"^{commit}")
-	if err := cmd.Run(); err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
-			// Only a git exit status states a fact about the target;
-			// start/exec failures are infrastructure (C12).
-			return ErrObjectMissing
-		}
-		return fmt.Errorf("%w: git cat-file: %v", ErrGitUnavailable, err)
-	}
-	return nil
+	return commandError(ctx, cmd.Run(), ErrObjectMissing)
 }
 
 // absent reports whether a file-system error states that a path does not
@@ -283,9 +271,9 @@ func (r *Reader) ResolveHead(ctx context.Context, root string) (string, error) {
 	if err := checkRoot(root); err != nil {
 		return "", err
 	}
-	out, err := r.output(ctx, root, "rev-parse", "HEAD")
+	out, err := r.command(ctx, root, "rev-parse", "--verify", "--quiet", "HEAD^{commit}").Output()
 	if err != nil {
-		return "", err
+		return "", commandError(ctx, err, ErrObjectMissing)
 	}
 	revision := strings.TrimSpace(string(out))
 	if !fullRevision.MatchString(revision) {
@@ -331,6 +319,22 @@ func (r *Reader) ChangedPaths(ctx context.Context, root, base, tip string, cited
 // target.
 var ErrGitUnavailable = source.ErrGitUnavailable
 
+// commandError maps only a normal git exit to a target fact. Signal and
+// start failures are infrastructure errors; cancellation keeps its own error.
+func commandError(ctx context.Context, err, targetError error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if err == nil {
+		return nil
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ProcessState.Exited() {
+		return targetError
+	}
+	return fmt.Errorf("%w: git command: %v", ErrGitUnavailable, err)
+}
+
 func (r *Reader) output(ctx context.Context, root string, args ...string) ([]byte, error) {
 	cmd := r.command(ctx, root, args...)
 	var stdout bytes.Buffer
@@ -360,14 +364,7 @@ func (r *Reader) ReadBlob(ctx context.Context, root, revision, evidencePath stri
 		return nil, ErrObjectMissing
 	}
 	if err := r.command(ctx, root, "cat-file", "-e", revision+":"+evidencePath).Run(); err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
-			return nil, ErrObjectMissing
-		}
-		return nil, fmt.Errorf("%w: git cat-file: %v", ErrGitUnavailable, err)
+		return nil, commandError(ctx, err, ErrObjectMissing)
 	}
 	cmd := r.command(ctx, root, "cat-file", "blob", revision+":"+evidencePath)
 	stdout, err := cmd.StdoutPipe()
@@ -375,12 +372,13 @@ func (r *Reader) ReadBlob(ctx context.Context, root, revision, evidencePath stri
 		return nil, err
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("%w: git cat-file: %v", ErrGitUnavailable, err)
+		return nil, commandError(ctx, err, ErrObjectMissing)
 	}
-	return &blobStream{cmd: cmd, pipe: stdout}, nil
+	return &blobStream{ctx: ctx, cmd: cmd, pipe: stdout}, nil
 }
 
 type blobStream struct {
+	ctx    context.Context
 	cmd    *exec.Cmd
 	pipe   io.ReadCloser
 	closed bool
@@ -394,13 +392,8 @@ func (b *blobStream) Close() error {
 	}
 	b.closed = true
 	err := b.pipe.Close()
-	if waitErr := b.cmd.Wait(); waitErr != nil && err == nil {
-		var exit *exec.ExitError
-		if errors.As(waitErr, &exit) {
-			// The stream ended early because the object vanished mid-read.
-			return io.ErrUnexpectedEOF
-		}
-		return fmt.Errorf("%w: git cat-file: %v", ErrGitUnavailable, waitErr)
+	if waitErr := commandError(b.ctx, b.cmd.Wait(), io.ErrUnexpectedEOF); waitErr != nil {
+		return waitErr
 	}
 	return err
 }
