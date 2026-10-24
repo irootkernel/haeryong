@@ -139,6 +139,14 @@ type WriteTx interface {
 	ResourceRow(kind, id string) (domain.Resource, error)
 	PutContext(domain.ContextRecord) error
 	Context(string) (domain.ContextRecord, error)
+	Annotation(string) (domain.Annotation, error)
+	AnnotationRevision(string, int64) (domain.Annotation, error)
+	Annotations(owner, version, after string, limit int) ([]domain.Annotation, error)
+	AnnotationHistory(id string, after int64, limit int) ([]domain.Annotation, error)
+	SaveAnnotation(domain.Annotation) error
+	Revisit(owner, document string) (domain.Revisit, error)
+	SaveRevisit(domain.Revisit, string, string) error
+	QueryRevisitDocuments(owner, project, lifecycle, review, flag, afterUpdated, afterID string, limit int) ([]domain.QueryDocument, error)
 
 	// Source-target capture, verification and staged-check records
 	// (TASK-004-01). Writes are append-only except check-intent state.

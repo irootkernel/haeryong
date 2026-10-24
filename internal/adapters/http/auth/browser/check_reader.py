@@ -4,6 +4,7 @@ import argparse,shutil
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--browser-cli',type=pathlib.Path,required=True)
 parser.add_argument('--receipt',type=pathlib.Path,required=True)
+parser.add_argument('--notes-only',action='store_true',help='Bounded TASK-005-02 Notes/Revisit proof; no external CDN')
 parser.add_argument('--review-only',action='store_true',help='Bounded TASK-005-01 Review/Home/Versions proof; no external CDN')
 parser.add_argument('--screenshot',type=pathlib.Path,help='Optional private rendered Reader screenshot')
 args=parser.parse_args()
@@ -11,11 +12,11 @@ REPO=pathlib.Path(__file__).resolve().parents[5]
 RECEIPT=args.receipt.resolve()
 assert RECEIPT.parent.is_dir(), 'receipt parent must exist'
 volume=pathlib.Path('/Volumes/RootKernel')
-base=pathlib.Path(os.environ['TMPDIR']) if args.review_only and os.environ.get('TMPDIR') else volume/'tmp' if os.path.ismount(volume) and os.access(volume,os.W_OK) else pathlib.Path(tempfile.gettempdir())
+base=pathlib.Path(os.environ['TMPDIR']) if (args.review_only or args.notes_only) and os.environ.get('TMPDIR') else volume/'tmp' if os.path.ismount(volume) and os.access(volume,os.W_OK) else pathlib.Path(tempfile.gettempdir())
 os.umask(0o077);work=pathlib.Path(tempfile.mkdtemp(prefix='h3r-',dir=base))
 env=os.environ|{'TMPDIR':str(work),'HAERYONG_TEST_STATE_DIR':str(work/'app-state'),'PYTHONDONTWRITEBYTECODE':'1'}
 os.environ['HAERYONG_TEST_STATE_DIR']=env['HAERYONG_TEST_STATE_DIR']
-if args.review_only:env['PLAYWRIGHT_DAEMON_SOCKETS_DIR']=str(work.parent/'pw-sockets')
+if args.review_only or args.notes_only:env['PLAYWRIGHT_DAEMON_SOCKETS_DIR']=str(work.parent/'pw-sockets')
 spec=importlib.util.spec_from_file_location('h',REPO/'tests/e2e/harness.py');h=importlib.util.module_from_spec(spec);spec.loader.exec_module(h)
 cli=str(args.browser_cli.resolve(strict=True))
 session=work.name;product=None;opened=False
@@ -30,7 +31,10 @@ def call(args,result=False):
   proof['browser_error']=diagnostic.replace(globals().get('owner',{}).get('token','<no-token>'),'[redacted]')[:1800]
   raise AssertionError('Browser operation failed; see bounded private fixture receipt')
  if result:
-  m=re.search(r'### Result\s*\n',p.stdout);assert m
+  m=re.search(r'### Result\s*\n',p.stdout)
+  if not m:
+   proof['browser_result_error']=(p.stdout+'\n'+p.stderr).replace(globals().get('owner',{}).get('token','<no-token>'),'[redacted]')[-2400:]
+   raise AssertionError('Browser result missing; see bounded private fixture receipt')
   return json.JSONDecoder().raw_decode(p.stdout[m.end():].lstrip())[0]
 def js(code):return call(['run-code',code],True)
 before=fingerprints()
@@ -41,8 +45,8 @@ try:
  source=work/'source';(source/'nested').mkdir(parents=True)
  first="""<!doctype html><meta charset=utf-8><title>Reader first</title><h1 id=heading>첫 페이지</h1><div id=framework></div><button id=increment onclick="this.textContent=String(Number(this.textContent)+1)">0</button><a id=next href="nested/둘째.html?scenario=2#part">next</a><a id=popup target=_blank href="nested/둘째.html?popup=1#part">popup</a><div style="height:2600px"></div><h2 id=part>끝</h2><script type=module>import {value} from './module.js';window.moduleValue=value;import('https://esm.sh/preact@10.27.2').then(({h,render})=>{render(h('strong',{},'External Preact rendered'),document.querySelector('#framework'));window.cdnFramework='pass';}).catch(()=>window.cdnFramework='unavailable');new Worker('./worker.js').onmessage=e=>window.workerValue=e.data;</script>"""
  second="""<!doctype html><meta charset=utf-8><title>Reader second</title><h1>둘째 페이지</h1><a href='../first.html'>first</a><div style='height:2600px'></div><h2 id=part>둘째 끝</h2>"""
- if args.review_only:
-  first="<h1 id='review-fixture'>Review fixture</h1><p>Labelled synthetic AI minor-change assessment, no Review authority.</p><a id='next' href='nested/둘째.html'>next</a><div style='height:2600px'></div>"
+ if args.review_only or args.notes_only:
+  first="<h1 id='review-fixture'>Review fixture</h1><h2 id='retry'>Page-local note anchor</h2><p>Labelled synthetic AI minor-change assessment, no Review authority.</p><a id='next' href='nested/둘째.html'>next</a><div style='height:2600px'></div>"
   second="<h1 id='second-review-page'>Second Review page</h1>"
  (source/'first.html').write_text(first);(source/'nested/둘째.html').write_text(second)
  (source/'module.js').write_text('export const value="module-running";');(source/'worker.js').write_text('postMessage("worker-running")');(source/'attachment.bin').write_bytes(bytes(range(256))*100)
@@ -53,7 +57,26 @@ try:
  call(['open',product.endpoint+'/health/live','--browser','chrome','--profile',str(work/'profile')]);opened=True
  js("async page=>{await page.evaluate(token=>localStorage.setItem('haeryong.owner-session.v1',token),"+json.dumps(owner['token'])+");return true;}")
  route=product.endpoint+f'/documents/{document}/versions/{version}?'+urllib.parse.urlencode({'page':'first.html','page_query':'scenario=1','page_fragment':''})
- if args.review_only:
+ if args.notes_only:
+  proof['notes_driver_sha256']=hashlib.sha256(pathlib.Path(__file__).with_name('check_notes.js').read_bytes()).hexdigest()
+  code=pathlib.Path(__file__).with_name('check_notes.js').read_text()
+  identity={'route':route,'version':version,'origin':product.endpoint,'document':document,'project':published.get('project_id','')}
+  prepared=js(code.replace('INPUT',json.dumps(identity|{'phase':'prepare'})))
+  # The CLI returns control at native confirm dialogs; handle each explicitly.
+  call(['run-code',"async page=>{await page.locator('#note-new').click();await page.locator('#note-body').fill('cancelled unsaved draft');await page.getByRole('button',{name:'취소',exact:true}).click();}"])
+  call(['dialog-accept'])
+  js("async page=>{await page.waitForFunction(()=>!document.querySelector('#note-body'));const notes=await page.evaluate(async()=>{const path='/api/v1/versions/'+location.pathname.split('/')[4]+'/annotations';return (await (await fetch(path,{headers:{Authorization:'Bearer '+localStorage.getItem('haeryong.owner-session.v1')}})).json()).data;});if(notes.items.length!==1||notes.items[0].body!=='deliberately merged'||notes.items[0].revision!==3)throw Error('Cancel changed saved note');return true;}")
+  prepared['cancelPreservesSavedNote']=True
+  call(['run-code',"async page=>{await page.locator('.note-entry').first().getByRole('button',{name:'현재 읽는 위치로 재연결',exact:true}).click();}"])
+  call(['dialog-accept'])
+  js("async page=>{await page.getByRole('alert').filter({hasText:'재연결 위치'}).waitFor();return true;}")
+  call(['run-code',"async page=>{await page.getByLabel('새 노트·재연결 범위').selectOption('page');await page.locator('.note-entry').first().getByRole('button',{name:'현재 읽는 위치로 재연결',exact:true}).click();}"])
+  call(['dialog-accept'])
+  actual=prepared|js(code.replace('INPUT',json.dumps(identity|{'phase':'finish'})))
+  actual|=js(code.replace('INPUT',json.dumps(identity|{'phase':'reattach-conflict'})))
+  proof['cases'].append({'kind':'T-005-02-01..03 X19 C07 B-1 contribution; Notes/Revisit keyboard/touch; synthetic','actual':actual})
+  if args.screenshot:js('async page=>{await page.screenshot({path:'+json.dumps(str(args.screenshot.resolve()))+',fullPage:true});return true;}')
+ elif args.review_only:
   proof['review_driver_sha256']={name:hashlib.sha256(pathlib.Path(__file__).with_name(name).read_bytes()).hexdigest() for name in ['check_review.js','check_review_versions.js']}
   review_code=pathlib.Path(__file__).with_name('check_review.js').read_text()
   actual=js(review_code.replace('INPUT',json.dumps({'route':route,'version':version})))

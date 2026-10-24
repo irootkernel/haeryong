@@ -503,12 +503,12 @@ func (s *Service) Events(ctx context.Context, token, epoch string, after int64) 
 			return e
 		}
 		for i, event := range out {
-			if event.ResourceKind == "review" {
+			if event.ResourceKind == "review" || event.ResourceKind == "annotation" || event.ResourceKind == "revisit" {
 				if record.Scope.Kind != "owner" {
 					out[i] = domain.Event{StreamEpoch: event.StreamEpoch, Sequence: event.Sequence, ResourceKind: "library", Kind: "library.invalidated"}
 					continue
 				}
-				if e := visibleTarget(tx, "/api/v1/versions/"+event.ResourceID); e != nil {
+				if e := visibleTarget(tx, personalEventTarget(event)); e != nil {
 					if !errors.Is(e, domain.ErrNotFound) {
 						return e
 					}
@@ -744,6 +744,12 @@ func visibleTargetMasking(tx app.WriteTx, target string, mask bool) error {
 	}
 	var document string
 	switch parts[2] {
+	case "annotations":
+		n, e := tx.Annotation(parts[3])
+		if e != nil {
+			return e
+		}
+		document = n.DocumentID
 	case "documents":
 		document = parts[3]
 	case "versions":
@@ -802,12 +808,12 @@ func (s *Service) FilterEvent(ctx context.Context, token string, event domain.Ev
 		if event.StreamEpoch != epoch {
 			return domain.ErrPrecondition
 		}
-		if event.ResourceKind == "review" {
+		if event.ResourceKind == "review" || event.ResourceKind == "annotation" || event.ResourceKind == "revisit" {
 			if record.Scope.Kind != "owner" {
 				event = domain.Event{StreamEpoch: event.StreamEpoch, Sequence: event.Sequence, ResourceKind: "library", Kind: "library.invalidated"}
 				return nil
 			}
-			if e := visibleTarget(tx, "/api/v1/versions/"+event.ResourceID); e != nil {
+			if e := visibleTarget(tx, personalEventTarget(event)); e != nil {
 				if !errors.Is(e, domain.ErrNotFound) {
 					return e
 				}
@@ -975,18 +981,30 @@ func (s *Service) DeliveryAuthorityCurrent(ctx context.Context, tx app.WriteTx, 
 	return nil
 }
 
-// personalWriteTarget identifies the three owner-scoped personal-resource
-// PUT routes that report an exact lifecycle transition instead of GET masking.
+// personalWriteTarget identifies owner personal writes that report an exact
+// lifecycle conflict. GET and saved-response filtering keep strict masking.
 func personalWriteTarget(method, target string) bool {
-	if method != "PUT" {
-		return false
-	}
 	path := strings.SplitN(target, "?", 2)[0]
 	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) != 5 || parts[0] != "api" || parts[1] != "v1" || parts[2] != "versions" || !canonicalID.MatchString(parts[3]) {
+	if len(parts) < 4 || parts[0] != "api" || parts[1] != "v1" || !canonicalID.MatchString(parts[3]) {
 		return false
 	}
-	return parts[4] == "review" || parts[4] == "reading-position" || parts[4] == "page-position" || parts[4] == "reader-preference"
+	if len(parts) == 4 && parts[2] == "annotations" {
+		return method == "PATCH" || method == "DELETE"
+	}
+	if len(parts) != 5 {
+		return false
+	}
+	if parts[2] == "documents" {
+		return method == "PUT" && parts[4] == "revisit"
+	}
+	if parts[2] != "versions" {
+		return false
+	}
+	if method == "POST" && parts[4] == "annotations" {
+		return true
+	}
+	return method == "PUT" && (parts[4] == "review" || parts[4] == "reading-position" || parts[4] == "page-position" || parts[4] == "reader-preference")
 }
 
 // Receipt authority follows the saved action target, including replay.
@@ -1132,4 +1150,15 @@ func (s *Service) SearchAuthorityCurrent(tx app.WriteTx, record domain.Session, 
 		return e == nil, e
 	}
 	return false, nil
+}
+
+func personalEventTarget(e domain.Event) string {
+	switch e.ResourceKind {
+	case "annotation":
+		return "/api/v1/annotations/" + e.ResourceID
+	case "revisit":
+		return "/api/v1/documents/" + e.ResourceID
+	default:
+		return "/api/v1/versions/" + e.ResourceID
+	}
 }

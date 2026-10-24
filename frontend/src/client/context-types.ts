@@ -13,6 +13,8 @@ export interface ContextReceipt {
   created_at: string;
 }
 
+export interface SavedAnnotationContextClient extends Pick<HaeryongClient,"annotationContextStream"> {}
+
 // Shared closed transport facet. Only the trusted host chooses this target;
 // a child page receives neither the client nor an authenticated fetch proxy.
 export interface ContextClient extends Pick<HaeryongClient, "putUploadEntry" | "uploadDetail" | "uploadRanges" | "completeUpload"> {

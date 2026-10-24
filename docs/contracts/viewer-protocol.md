@@ -181,3 +181,20 @@ Use the existing spike harness, not a duplicate production application. It prove
 | EPIC-007 / EPIC-010 | Integrated second-device workflows and agreed release-target regressions, including real personal-state behavior, restore invalidation, complete transfers and portability. |
 
 Fake or minimal host resources can test that an artifact cannot invoke management/native operations, but must be labelled fixture resources. Actual restoration, saved notes, source reads and model submission are not G-VIEW prerequisites. Any additional case executed early records only its bounded result. Public hostile-content hosting, same-OS-user containment and exhaustive egress testing remain outside scope; this document claims no executed runtime result.
+
+## Saved note context consumer (TASK-005-02)
+
+The trusted Reader's explicit Save captures its exact version/page/optional region,
+selected text and ready context_ref. The loader may include selected_text alongside a
+region.selected echo; the context still follows the existing mandatory fresh-binding
+proof. The note transaction adopts the sealed bytes before acknowledging Saved.
+A navigation racing with Save cannot rebind that captured request or destroy accepted
+context. Drafts and pending requests remain distinct; channel disposal is not failure
+or abandonment evidence.
+
+Saved current/history context reads use the annotation/revision-scoped
+[stream route](http-api.md#anchored-notes-and-revisit-task-005-02), with current record
+owner authority and read pins. The shared annotationContextStream operation returns
+bytes and metadata across browser/native/Go. It does not call verifyContextFresh or
+require the original render instance/session. No context_ref alone grants access;
+ordinary /contexts recovery and the body-less ready/echo proof keep their existing rules.

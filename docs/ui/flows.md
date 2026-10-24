@@ -80,6 +80,13 @@ Set as preferred default edits the owner preference for the exact directory vers
 
 Device A reads note revision 3. Device B updates it to revision 4. A's Save with If-Match 3 receives 412 and current revision metadata. The local unsaved text remains visible for comparison; the UI offers reload or deliberate merged edit against revision 4. It does not silently overwrite B or invent a successful save. If an acknowledgement was lost, reconnect authenticates and reconciles the existing operation ID first. The service returns an authorized stored outcome before reevaluating that operation's original If-Match, so a successful save is not misreported as a conflict. A genuinely new merged edit uses the current revision and a new operation ID.
 
+If the other editor reattached the note, conflict comparison shows the old and
+current server locations and keeps the old selection/context inspectable. Preparing
+the merged edit explicitly adopts the server anchor and excludes the old context
+and selection, preserving local note text. The next Save uses the new validator
+and sends no context bound to the previous page/version; it does not reattach the
+note back. A same-location merge may retain its original local context.
+
 ## Destructive lifecycle
 
 Request an impact plan, inspect eligible content and references, confirm the exact plan once as the owner, and commit only after the service rechecks lifecycle and revision. There is no separate administrative grant or elevation step. The UI updates after acknowledgement or receipt reconciliation. Lifecycle is document-level: restore returns a trashed document to its prior active or archived state, while purge is terminal for that identity. Restore and purge compete through the same preconditions. Auto purge uses explicitly confirmed policy and execution-time eligibility, not AI classification. Active source reads and backup/export jobs also protect their captured objects from garbage collection.
@@ -91,3 +98,12 @@ Events invalidate visible review, lifecycle, Revisit, overlays, findings, drafts
 ## UI review checklist
 
 At each feature gate, exercise the delivered subset below and name the later owner of unavailable production features; repeat the full set at the applicable integrated gate. Before approving implementation, walk the wide/tablet/phone Reader with a multi-HTML directory, nested/Unicode paths, relative assets and local Back/Forward navigation, a large file listing, an attachment with download fallback, an export round-trip, a real JavaScript interaction, remembered reload/new-tab/restart, one source-unavailable example, one stale note conflict, a revoked session, an outdated-but-Reviewed document, a referenced trashed document, a partial semantic scan, and a retention change that does not enable purge. Confirm that every warning says what is known and what action is available without requiring a graph or CLI for ordinary reading.
+
+
+The TASK-005-02 Notes comparison offers a server reload or preparation of the retained
+local draft against the current note ETag, followed by explicit Save with a new key.
+It never automatically merges a note after 412. Unknown saves first reconcile the
+original operation; a runtime-generation change never causes automatic new dispatch.
+Drafts are scoped to owner/library/exact version and retain their captured anchor across
+page/tab changes. A real browser storage failure leaves the text visible with an error.
+Reattachment and deletion each use explicit owner confirmation and their own note CAS.

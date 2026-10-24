@@ -226,4 +226,10 @@ CREATE INDEX review_events_target ON review_events(owner_id,version_id,sequence)
 CREATE TABLE review_states(owner_id TEXT NOT NULL REFERENCES auth_owner(principal_id),version_id TEXT NOT NULL REFERENCES document_versions(version_id),state TEXT NOT NULL CHECK(state IN ('unreviewed','reviewing','reviewed')),reviewed_at TEXT,revision INTEGER NOT NULL CHECK(revision>=1),event_sequence INTEGER NOT NULL REFERENCES review_events(sequence),PRIMARY KEY(owner_id,version_id),CHECK((state='reviewed' AND reviewed_at IS NOT NULL) OR (state!='reviewed' AND reviewed_at IS NULL)));
 CREATE INDEX review_states_owner_state ON review_states(owner_id,state,event_sequence);
 `,
+	`CREATE TABLE annotations(annotation_id TEXT PRIMARY KEY,owner_id TEXT NOT NULL REFERENCES auth_owner(principal_id),document_id TEXT NOT NULL REFERENCES documents(document_id),original_version_id TEXT NOT NULL REFERENCES document_versions(version_id),version_id TEXT NOT NULL REFERENCES document_versions(version_id),page_path TEXT,region_id TEXT,revision INTEGER NOT NULL CHECK(revision>=1),deleted_at TEXT,value BLOB NOT NULL,CHECK(region_id IS NULL OR page_path IS NOT NULL));
+CREATE INDEX annotations_owner_version ON annotations(owner_id,version_id,annotation_id);
+CREATE TABLE annotation_history(annotation_id TEXT NOT NULL REFERENCES annotations(annotation_id),revision INTEGER NOT NULL CHECK(revision>=1),value BLOB NOT NULL,PRIMARY KEY(annotation_id,revision));
+CREATE TABLE revisit_flags(owner_id TEXT NOT NULL REFERENCES auth_owner(principal_id),document_id TEXT NOT NULL REFERENCES documents(document_id),flag INTEGER NOT NULL CHECK(flag IN (0,1)),revision INTEGER NOT NULL CHECK(revision>=1),PRIMARY KEY(owner_id,document_id));
+CREATE INDEX revisit_flags_owner_flag ON revisit_flags(owner_id,flag,document_id);
+`,
 }

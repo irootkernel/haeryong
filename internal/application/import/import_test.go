@@ -549,6 +549,21 @@ var _ = It("TestTypedDraftAndAnnotationCurrentTargetScope", Label("persistence")
 		GinkgoHelper()
 		{
 			e := f.store.Write(ctx, func(tx app.WriteTx) error {
+				if kind == "annotation" {
+					state, e := tx.AuthState()
+					if e != nil {
+						return e
+					}
+					v := value.(map[string]any)
+					page := v["page_path"].(string)
+					anchor := domain.AnnotationAnchor{VersionID: v["version_id"].(string), PagePath: &page}
+					n := domain.Annotation{ID: id, OwnerID: state.OwnerID, DocumentID: doc, Anchor: anchor, OriginalAnchor: anchor, Revision: revision + 1, Action: "create", ActorSession: "fixture", OperationID: key(t), CreatedAt: "2026-10-24T00:00:00Z", UpdatedAt: "2026-10-24T00:00:00Z"}
+					if v["deleted"] == true {
+						n.DeletedAt = &n.UpdatedAt
+						n.Action = "delete"
+					}
+					return tx.SaveAnnotation(n)
+				}
 				_, e := tx.MutateResource(domain.Resource{Kind: kind, ID: id, Value: encodedTest(value)}, revision, "resource.invalidated")
 				return e
 			})

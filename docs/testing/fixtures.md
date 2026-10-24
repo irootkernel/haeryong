@@ -150,3 +150,12 @@ terminal literal beyond 40 MiB. The E2E freezes actual bytes, hash, markers and
 normalized offsets before importing. No marker appears in metadata or paths.
 The canonical F12 generator and bytes remain unchanged, with a hang-guard transfer limit;
 its repeated body is not the unique-tail completeness oracle.
+
+
+## Anchored note conflict fixture
+
+`tests/fixtures/annotations/conflict.json` is a synthetic revision-3 base,
+revision-4 server and retained local edit for TASK-005-02. The closed-contract tests
+validate its separate anchor/content/validator values. Production concurrency, restart,
+context streaming and browser comparison evidence is indexed in
+[anchored-notes](anchored-notes.md); fixture validity alone is not a product pass.

@@ -142,7 +142,12 @@ func (s *Service) cursorStart(ctx context.Context, token string, tx app.WriteTx,
 		}
 		permissions[id] = state.Project.PermissionsRevision
 	}
-	b := validator([]any{l.RuntimeGeneration, resource, o.Project, o.Lifecycle, o.Directory, o.Kind, o.Review, record.PrincipalID, record.Scope, principalRevision, permissions})
+	binding := []any{l.RuntimeGeneration, resource, o.Project, o.Lifecycle, o.Directory, o.Kind, o.Review, record.PrincipalID, record.Scope, principalRevision, permissions}
+	// Preserve existing cursor identity when the additive personal filter is absent.
+	if o.Revisit != "" {
+		binding = append(binding, "revisit", o.Revisit)
+	}
+	b := validator(binding)
 	c := cursor{Binding: b}
 	if o.Cursor != "" {
 		raw, err := base64.RawURLEncoding.DecodeString(o.Cursor)
@@ -183,6 +188,9 @@ func (s *Service) Projects(ctx context.Context, token string, o Options) (List[P
 }
 func (s *Service) Documents(ctx context.Context, token string, o Options) (List[Document], error) {
 	out := List[Document]{Items: []Document{}}
+	if o.Revisit != "" && o.Revisit != "true" && o.Revisit != "false" {
+		return out, &Error{"invalid_revisit_filter"}
+	}
 	if o.Review != "" && o.Review != "reviewing" && o.Review != "updated_since_review" {
 		return out, &Error{"invalid_review_filter"}
 	}
@@ -200,7 +208,7 @@ func (s *Service) Documents(ctx context.Context, token string, o Options) (List[
 			return err
 		}
 		var rows []domain.QueryDocument
-		if o.Review != "" {
+		if o.Review != "" || o.Revisit != "" {
 			actor, e := s.Auth.AuthenticateWrite(ctx, tx, token)
 			if e != nil {
 				return e
@@ -208,7 +216,11 @@ func (s *Service) Documents(ctx context.Context, token string, o Options) (List[
 			if scope.Kind != "owner" {
 				return domain.ErrDenied
 			}
-			rows, err = tx.QueryReviewDocuments(actor.PrincipalID, o.Project, o.Lifecycle, o.Review, c.After, c.Key, n+1)
+			if o.Revisit != "" {
+				rows, err = tx.QueryRevisitDocuments(actor.PrincipalID, o.Project, o.Lifecycle, o.Review, o.Revisit, c.After, c.Key, n+1)
+			} else {
+				rows, err = tx.QueryReviewDocuments(actor.PrincipalID, o.Project, o.Lifecycle, o.Review, c.After, c.Key, n+1)
+			}
 		} else {
 			rows, err = tx.QueryDocuments(scope, o.Project, o.Lifecycle, c.After, c.Key, n+1)
 		}
@@ -287,7 +299,7 @@ func (s *Service) Capabilities(ctx context.Context, token string) (map[string]an
 		if err != nil {
 			return err
 		}
-		out = map[string]any{"library_id": l.ID, "api_version": "1.0", "runtime_generation": l.RuntimeGeneration, "stream_epoch": l.StreamEpoch, "unfiled_project_id": l.UnfiledProjectID, "features": map[string]bool{"resumable_uploads": true, "atomic_import": true, "cursor_files": true, "streamed_files": true, "byte_ranges": true, "source_verification": true, "html_js_v1": false, "multi_page_loader": false, "renderer": false, "preview": false, "provider": false, "scheduler": false, "search": true, "references": true, "backlinks": true, "review": true}}
+		out = map[string]any{"library_id": l.ID, "api_version": "1.0", "runtime_generation": l.RuntimeGeneration, "stream_epoch": l.StreamEpoch, "unfiled_project_id": l.UnfiledProjectID, "features": map[string]bool{"resumable_uploads": true, "atomic_import": true, "cursor_files": true, "streamed_files": true, "byte_ranges": true, "source_verification": true, "html_js_v1": false, "multi_page_loader": false, "renderer": false, "preview": false, "provider": false, "scheduler": false, "search": true, "references": true, "backlinks": true, "review": true, "annotations": true, "revisit": true}}
 		return nil
 	})
 	return out, err

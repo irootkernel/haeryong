@@ -55,8 +55,9 @@ type readerStream struct {
 	auth   authority
 	// The exact version and the daemon stream epoch captured at open time;
 	// both are reverified on every pull.
-	versionID string
-	epoch     string
+	versionID    string
+	annotationID string
+	epoch        string
 }
 
 type readerSubscription struct {
@@ -621,31 +622,6 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 	if werr != nil {
 		return nil, werr
 	}
-	jsonBody := func(value any) []byte {
-		encoded, _ := json.Marshal(value)
-		return encoded
-	}
-	plain := func(result outcome) (any, *wireError) { return result.value, result.werr }
-	// decision maps the canonical 202 reservation like the browser client.
-	decision := func(result outcome) (any, *wireError) {
-		if result.werr != nil {
-			return nil, result.werr
-		}
-		kind := "committed"
-		if result.status == 202 {
-			kind = "accepted"
-		}
-		return map[string]any{"kind": kind, "body": result.value}, nil
-	}
-	collection := func(params map[string]string) url.Values {
-		query := url.Values{}
-		for key, value := range params {
-			if value != "" {
-				query.Set(key, value)
-			}
-		}
-		return query
-	}
 	itemsOnly := func(result outcome) (any, *wireError) {
 		if result.werr != nil {
 			return nil, result.werr
@@ -803,11 +779,12 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 			Lifecycle string `json:"lifecycle"`
 			Cursor    string `json:"cursor"`
 			Review    string `json:"review"`
+			Revisit   string `json:"revisit"`
 		}
 		if werr := decodePayload(payload, &in); werr != nil {
 			return nil, werr
 		}
-		return plain(s.request("GET", "/api/v1/documents", collection(map[string]string{"project_id": in.ProjectID, "lifecycle": in.Lifecycle, "cursor": in.Cursor, "review": in.Review}), nil, nil, auth))
+		return plain(s.request("GET", "/api/v1/documents", collection(map[string]string{"project_id": in.ProjectID, "lifecycle": in.Lifecycle, "cursor": in.Cursor, "review": in.Review, "revisit": in.Revisit}), nil, nil, auth))
 	case "documentDetail":
 		var in struct {
 			DocumentID string `json:"document_id"`
@@ -1111,6 +1088,8 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 			s.receipt("renderSessionClose", map[string]any{"version_id": in.VersionID, "session_id": in.SessionID})
 		}
 		return result.value, result.werr
+	case "annotationList", "annotationGet", "annotationHistory", "annotationCreate", "annotationPatch", "annotationDelete", "annotationBodyStream", "annotationContextStream", "revisitGet", "revisitPut":
+		return s.annotationOperation(operation, payload, auth)
 	case "reviewGet", "reviewHistory":
 		var in struct {
 			VersionID string `json:"version_id"`
@@ -2056,7 +2035,11 @@ func (s *ReaderService) validatePull(stream *readerStream) *wireError {
 		// A daemon restart/generation change invalidates prefetched bytes.
 		return &wireError{Status: 409, Code: "STREAM_DAEMON_ERA_CHANGED", Retryable: false}
 	}
-	detail := s.request("GET", "/api/v1/versions/"+url.PathEscape(stream.versionID), nil, nil, nil, stream.auth)
+	target := "/api/v1/versions/" + url.PathEscape(stream.versionID)
+	if stream.annotationID != "" {
+		target = "/api/v1/annotations/" + url.PathEscape(stream.annotationID)
+	}
+	detail := s.request("GET", target, nil, nil, nil, stream.auth)
 	if detail.werr != nil {
 		if detail.werr.Status == 404 {
 			return &wireError{Status: 404, Code: "STREAM_TARGET_HIDDEN", Retryable: false, Details: map[string]any{"code": detail.werr.Code}}
@@ -2344,4 +2327,31 @@ func (s *ReaderService) requestRaw(method, path string, query url.Values, header
 		return rawResult{status: response.StatusCode, header: response.Header, werr: networkError()}
 	}
 	return rawResult{status: response.StatusCode, body: data, header: response.Header}
+}
+
+func jsonBody(value any) []byte {
+	encoded, _ := json.Marshal(value)
+	return encoded
+}
+func plain(result outcome) (any, *wireError) { return result.value, result.werr }
+
+// decision maps the canonical 202 reservation like the browser client.
+func decision(result outcome) (any, *wireError) {
+	if result.werr != nil {
+		return nil, result.werr
+	}
+	kind := "committed"
+	if result.status == 202 {
+		kind = "accepted"
+	}
+	return map[string]any{"kind": kind, "body": result.value}, nil
+}
+func collection(params map[string]string) url.Values {
+	query := url.Values{}
+	for key, value := range params {
+		if value != "" {
+			query.Set(key, value)
+		}
+	}
+	return query
 }

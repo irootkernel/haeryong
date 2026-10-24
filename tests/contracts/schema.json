@@ -3235,6 +3235,16 @@
               "type": "null"
             }
           ]
+        },
+        "revisit": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -6744,6 +6754,1544 @@
         "request_id"
       ],
       "additionalProperties": false
+    },
+    "annotation_anchor": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "version_id": {
+              "$ref": "#/$defs/id"
+            },
+            "page_path": {
+              "type": "null"
+            },
+            "region_id": {
+              "type": "null"
+            },
+            "page_query": {
+              "enum": [
+                ""
+              ],
+              "type": "string"
+            },
+            "page_fragment": {
+              "enum": [
+                ""
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "version_id",
+            "page_path",
+            "region_id",
+            "page_query",
+            "page_fragment"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "version_id": {
+              "$ref": "#/$defs/id"
+            },
+            "page_path": {
+              "$ref": "#/$defs/path"
+            },
+            "region_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "page_query": {
+              "type": "string"
+            },
+            "page_fragment": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "version_id",
+            "page_path",
+            "region_id",
+            "page_query",
+            "page_fragment"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "annotation_create": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "page_path": {
+              "type": "null"
+            },
+            "region_id": {
+              "type": "null"
+            },
+            "page_query": {
+              "enum": [
+                ""
+              ],
+              "type": "string"
+            },
+            "page_fragment": {
+              "enum": [
+                ""
+              ],
+              "type": "string"
+            },
+            "selected_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "array"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "context_ref": {
+              "type": "null"
+            },
+            "body": {
+              "type": "string"
+            },
+            "body_ref": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "page_path",
+            "region_id",
+            "page_query",
+            "page_fragment",
+            "selected_text",
+            "context",
+            "context_ref",
+            "body",
+            "body_ref"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "page_path": {
+              "type": "null"
+            },
+            "region_id": {
+              "type": "null"
+            },
+            "page_query": {
+              "enum": [
+                ""
+              ],
+              "type": "string"
+            },
+            "page_fragment": {
+              "enum": [
+                ""
+              ],
+              "type": "string"
+            },
+            "selected_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "array"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "context_ref": {
+              "type": "null"
+            },
+            "body": {
+              "type": "null"
+            },
+            "body_ref": {
+              "type": "object",
+              "properties": {
+                "upload_id": {
+                  "$ref": "#/$defs/id"
+                }
+              },
+              "required": [
+                "upload_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "page_path",
+            "region_id",
+            "page_query",
+            "page_fragment",
+            "selected_text",
+            "context",
+            "context_ref",
+            "body",
+            "body_ref"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "page_path": {
+              "type": "null"
+            },
+            "region_id": {
+              "type": "null"
+            },
+            "page_query": {
+              "enum": [
+                ""
+              ],
+              "type": "string"
+            },
+            "page_fragment": {
+              "enum": [
+                ""
+              ],
+              "type": "string"
+            },
+            "selected_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context": {
+              "type": "null"
+            },
+            "context_ref": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "body": {
+              "type": "string"
+            },
+            "body_ref": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "page_path",
+            "region_id",
+            "page_query",
+            "page_fragment",
+            "selected_text",
+            "context",
+            "context_ref",
+            "body",
+            "body_ref"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "page_path": {
+              "type": "null"
+            },
+            "region_id": {
+              "type": "null"
+            },
+            "page_query": {
+              "enum": [
+                ""
+              ],
+              "type": "string"
+            },
+            "page_fragment": {
+              "enum": [
+                ""
+              ],
+              "type": "string"
+            },
+            "selected_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context": {
+              "type": "null"
+            },
+            "context_ref": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "body": {
+              "type": "null"
+            },
+            "body_ref": {
+              "type": "object",
+              "properties": {
+                "upload_id": {
+                  "$ref": "#/$defs/id"
+                }
+              },
+              "required": [
+                "upload_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "page_path",
+            "region_id",
+            "page_query",
+            "page_fragment",
+            "selected_text",
+            "context",
+            "context_ref",
+            "body",
+            "body_ref"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "page_path": {
+              "$ref": "#/$defs/path"
+            },
+            "region_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "page_query": {
+              "type": "string"
+            },
+            "page_fragment": {
+              "type": "string"
+            },
+            "selected_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "array"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "context_ref": {
+              "type": "null"
+            },
+            "body": {
+              "type": "string"
+            },
+            "body_ref": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "page_path",
+            "region_id",
+            "page_query",
+            "page_fragment",
+            "selected_text",
+            "context",
+            "context_ref",
+            "body",
+            "body_ref"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "page_path": {
+              "$ref": "#/$defs/path"
+            },
+            "region_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "page_query": {
+              "type": "string"
+            },
+            "page_fragment": {
+              "type": "string"
+            },
+            "selected_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "array"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "context_ref": {
+              "type": "null"
+            },
+            "body": {
+              "type": "null"
+            },
+            "body_ref": {
+              "type": "object",
+              "properties": {
+                "upload_id": {
+                  "$ref": "#/$defs/id"
+                }
+              },
+              "required": [
+                "upload_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "page_path",
+            "region_id",
+            "page_query",
+            "page_fragment",
+            "selected_text",
+            "context",
+            "context_ref",
+            "body",
+            "body_ref"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "page_path": {
+              "$ref": "#/$defs/path"
+            },
+            "region_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "page_query": {
+              "type": "string"
+            },
+            "page_fragment": {
+              "type": "string"
+            },
+            "selected_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context": {
+              "type": "null"
+            },
+            "context_ref": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "body": {
+              "type": "string"
+            },
+            "body_ref": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "page_path",
+            "region_id",
+            "page_query",
+            "page_fragment",
+            "selected_text",
+            "context",
+            "context_ref",
+            "body",
+            "body_ref"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "page_path": {
+              "$ref": "#/$defs/path"
+            },
+            "region_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "page_query": {
+              "type": "string"
+            },
+            "page_fragment": {
+              "type": "string"
+            },
+            "selected_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context": {
+              "type": "null"
+            },
+            "context_ref": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "body": {
+              "type": "null"
+            },
+            "body_ref": {
+              "type": "object",
+              "properties": {
+                "upload_id": {
+                  "$ref": "#/$defs/id"
+                }
+              },
+              "required": [
+                "upload_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "page_path",
+            "region_id",
+            "page_query",
+            "page_fragment",
+            "selected_text",
+            "context",
+            "context_ref",
+            "body",
+            "body_ref"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "annotation_patch": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "edit"
+              ],
+              "type": "string"
+            },
+            "selected_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "array"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "context_ref": {
+              "type": "null"
+            },
+            "body": {
+              "type": "string"
+            },
+            "body_ref": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "action",
+            "selected_text",
+            "context",
+            "context_ref",
+            "body",
+            "body_ref"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "edit"
+              ],
+              "type": "string"
+            },
+            "selected_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "array"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "context_ref": {
+              "type": "null"
+            },
+            "body": {
+              "type": "null"
+            },
+            "body_ref": {
+              "type": "object",
+              "properties": {
+                "upload_id": {
+                  "$ref": "#/$defs/id"
+                }
+              },
+              "required": [
+                "upload_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "action",
+            "selected_text",
+            "context",
+            "context_ref",
+            "body",
+            "body_ref"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "edit"
+              ],
+              "type": "string"
+            },
+            "selected_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context": {
+              "type": "null"
+            },
+            "context_ref": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "body": {
+              "type": "string"
+            },
+            "body_ref": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "action",
+            "selected_text",
+            "context",
+            "context_ref",
+            "body",
+            "body_ref"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "edit"
+              ],
+              "type": "string"
+            },
+            "selected_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context": {
+              "type": "null"
+            },
+            "context_ref": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "body": {
+              "type": "null"
+            },
+            "body_ref": {
+              "type": "object",
+              "properties": {
+                "upload_id": {
+                  "$ref": "#/$defs/id"
+                }
+              },
+              "required": [
+                "upload_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "action",
+            "selected_text",
+            "context",
+            "context_ref",
+            "body",
+            "body_ref"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "reattach"
+              ],
+              "type": "string"
+            },
+            "anchor": {
+              "$ref": "#/$defs/annotation_anchor"
+            },
+            "selected_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "array"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "context_ref": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "action",
+            "anchor",
+            "selected_text",
+            "context",
+            "context_ref"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "reattach"
+              ],
+              "type": "string"
+            },
+            "anchor": {
+              "$ref": "#/$defs/annotation_anchor"
+            },
+            "selected_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context": {
+              "type": "null"
+            },
+            "context_ref": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "action",
+            "anchor",
+            "selected_text",
+            "context",
+            "context_ref"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "annotation_body_ref": {
+      "type": "object",
+      "properties": {
+        "bytes_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "byte_size": {
+          "$ref": "#/$defs/decimal"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "content_url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bytes_sha256",
+        "byte_size",
+        "media_type",
+        "content_url"
+      ],
+      "additionalProperties": false
+    },
+    "annotation_view": {
+      "type": "object",
+      "properties": {
+        "annotation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "document_id": {
+          "$ref": "#/$defs/id"
+        },
+        "original_anchor": {
+          "$ref": "#/$defs/annotation_anchor"
+        },
+        "anchor": {
+          "$ref": "#/$defs/annotation_anchor"
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/annotation_body_ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selected_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "context_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "$ref": "#/$defs/time"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/time"
+        },
+        "deleted_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "^\"[^\"\\r\\n]+\"$"
+        },
+        "history_url": {
+          "type": "string"
+        },
+        "resolution": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "resolved",
+                "unresolved"
+              ],
+              "type": "string"
+            },
+            "reason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "create",
+            "edit",
+            "reattach",
+            "delete"
+          ]
+        },
+        "actor_session": {
+          "$ref": "#/$defs/id"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "annotation_id",
+        "document_id",
+        "original_anchor",
+        "anchor",
+        "body",
+        "body_ref",
+        "selected_text",
+        "context_ref",
+        "created_at",
+        "updated_at",
+        "deleted_at",
+        "revision",
+        "etag",
+        "history_url",
+        "resolution",
+        "action",
+        "actor_session"
+      ],
+      "additionalProperties": false
+    },
+    "annotation_history_item": {
+      "type": "object",
+      "properties": {
+        "annotation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "document_id": {
+          "$ref": "#/$defs/id"
+        },
+        "original_anchor": {
+          "$ref": "#/$defs/annotation_anchor"
+        },
+        "anchor": {
+          "$ref": "#/$defs/annotation_anchor"
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/annotation_body_ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selected_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "context_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "$ref": "#/$defs/time"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/time"
+        },
+        "deleted_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "^\"[^\"\\r\\n]+\"$"
+        },
+        "history_url": {
+          "type": "string"
+        },
+        "resolution": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "resolved",
+                "unresolved"
+              ],
+              "type": "string"
+            },
+            "reason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "create",
+            "edit",
+            "reattach",
+            "delete"
+          ]
+        },
+        "actor_session": {
+          "$ref": "#/$defs/id"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "annotation_id",
+        "document_id",
+        "original_anchor",
+        "anchor",
+        "body",
+        "body_ref",
+        "selected_text",
+        "context_ref",
+        "created_at",
+        "updated_at",
+        "deleted_at",
+        "revision",
+        "etag",
+        "history_url",
+        "resolution",
+        "action",
+        "actor_session",
+        "operation_id"
+      ],
+      "additionalProperties": false
+    },
+    "annotation_page": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/annotation_view"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "annotation_history_page": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/annotation_history_item"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "annotation_stream_request": {
+      "type": "object",
+      "properties": {
+        "annotation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "annotation_id",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "annotation_stream_metadata": {
+      "type": "object",
+      "properties": {
+        "etag": {
+          "type": "string",
+          "pattern": "^\"[^\"\\r\\n]+\"$"
+        },
+        "bytes_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "byte_size": {
+          "$ref": "#/$defs/decimal"
+        },
+        "media_type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "etag",
+        "bytes_sha256",
+        "byte_size",
+        "media_type"
+      ],
+      "additionalProperties": false
+    },
+    "revisit_request": {
+      "type": "object",
+      "properties": {
+        "flag": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "flag"
+      ],
+      "additionalProperties": false
+    },
+    "revisit_view": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "document_id": {
+              "$ref": "#/$defs/id"
+            },
+            "page_position_url": {
+              "type": "null"
+            },
+            "operation_id": {
+              "$ref": "#/$defs/id"
+            },
+            "exists": {
+              "type": "boolean",
+              "enum": [
+                false
+              ]
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "flag": {
+                  "type": "boolean",
+                  "enum": [
+                    false
+                  ]
+                }
+              },
+              "required": [
+                "flag"
+              ],
+              "additionalProperties": false
+            },
+            "revision": {
+              "type": "null"
+            },
+            "etag": {
+              "type": "null"
+            },
+            "required_precondition": {
+              "type": "string",
+              "enum": [
+                "if_none_match_star"
+              ]
+            }
+          },
+          "required": [
+            "document_id",
+            "page_position_url",
+            "exists",
+            "value",
+            "revision",
+            "etag",
+            "required_precondition"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "document_id": {
+              "$ref": "#/$defs/id"
+            },
+            "page_position_url": {
+              "type": "null"
+            },
+            "operation_id": {
+              "$ref": "#/$defs/id"
+            },
+            "exists": {
+              "type": "boolean",
+              "enum": [
+                true
+              ]
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "flag": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "flag"
+              ],
+              "additionalProperties": false
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "etag": {
+              "type": "string",
+              "pattern": "^\"[^\"\\r\\n]+\"$"
+            }
+          },
+          "required": [
+            "document_id",
+            "page_position_url",
+            "exists",
+            "value",
+            "revision",
+            "etag"
+          ],
+          "additionalProperties": false
+        }
+      ]
     }
   },
   "error_http": {

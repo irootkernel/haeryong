@@ -1,3 +1,5 @@
+import {NotesPanel,type NoteSelection} from "./notes-panel.tsx";
+import {RevisitControl} from "./revisit-control.tsx";
 import { ReviewControl } from "./review-control.tsx";
 // Trusted shared Reader. Authored documents live only in IsolatedViewer;
 // personal state, import controls and file destinations belong to this host.
@@ -117,7 +119,8 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
   const [suppliedMetaBox, setSuppliedMetaBox] = useState<{ versionId: string; state: MetadataState }>(() => ({ versionId, state: { kind: "loading" } }));
   const [suppliedMetaReload, setSuppliedMetaReload] = useState(0);
   const [regionSelection, setRegionSelection] = useState<{ versionId: string; pagePath: string; context: string | null; reload: number; regionId: string; intentKey: string | null } | null>(null);
-  const [contextTab, setContextTab] = useState<"evidence" | "links">("evidence");
+  const [contextTab, setContextTab] = useState<"evidence" | "notes" | "links">("evidence");
+  const [noteContext,setNoteContext]=useState<(ReaderPageContext & {payload:Record<string,unknown>})|null>(null);
   const [contextOpen, setContextOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
   const [filesFilter, setFilesFilter] = useState("");
@@ -445,7 +448,8 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
       const position = saved?.exists ? (saved.value as PagePositionValue).position : null;
       return { scroll_x: Number(position?.scroll_x) || 0, scroll_y: Number(position?.scroll_y) || 0 };
     }} />{returnContext && <button onClick={() => { controller.requireVerifiedDispatch(controller.captureDispatchAuthority()); returnToReferringPage(referenceOwner); }}>참조한 페이지로 돌아가기</button>}<button onClick={() => void continueReading()}>이어서 읽기</button><button disabled={!selection?.location} onClick={() => void setDefault().catch((error) => setNotice(errorText(error)))}>기본 페이지로 지정</button><button onClick={() => void setDefault(true).catch((error) => setNotice(errorText(error)))}>기본 페이지 설정 해제</button><button id="reader-files-toggle" className="narrow-only" aria-expanded={filesOpen} aria-controls="reader-files-panel" onClick={() => { setContextOpen(false); setFilesOpen((value) => !value); }}>파일 목록</button><button id="reader-context-toggle" aria-expanded={contextOpen} aria-controls="reader-context-panel" onClick={() => { setFilesOpen(false); setContextOpen((value) => !value); }}>근거 패널</button><button disabled={!currentDocInfo} onClick={() => setImportOpen(true)}>새 버전 가져오기</button></div>
-    <ReviewControl key={JSON.stringify([referenceOwner,versionId])} controller={controller} versionId={versionId} owner={referenceOwner} />
+    <ReviewControl key={JSON.stringify([referenceOwner,versionId])} controller={controller} versionId={versionId} owner={referenceOwner} versionLabel={currentVersion?`v${currentVersion.sequence}`:undefined} />
+    <RevisitControl key={JSON.stringify([referenceOwner,documentId])} controller={controller} documentId={documentId} />
     {notice && <p role="status">{notice}</p>}
     {entries.map((entry) => <div className="banner" data-tone="warning" key={personalKey(entry.target)}>
       <p>{entry.target.version.slice(0, 8)} · {{ "reader-preference": "기본 페이지", "reading-position": "마지막 연 페이지", "page-position": "페이지 위치" }[entry.target.kind]}{entry.target.page ? ` · ${entry.target.page}` : ""}: {entry.issue ?? (personal.recoverable(entry.target) ? "이전 화면의 저장 결과가 확인되지 않았습니다. 원래 요청으로 다시 확인하세요." : entry.conflict ? "다른 기기에서 변경된 상태입니다. 유지할 값을 선택하세요." : "저장 결과를 확인하는 중입니다.")}</p>
@@ -474,20 +478,21 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
         if (failed.versionId === route.versionId && failed.context === route.context && failed.reload === route.reload
           && contextOf() === failed.context) restoreVersionsFocus();
       }}
-      onReference={referencesEnabled ? event => { void references.request(event); } : undefined} focusHandle={regionFocus} onLocation={mirror} onNotice={setNotice} onRegion={captureRegion} onRegionFocus={(result) => { if (result.context !== context || result.reload !== reload || !regionFocusMatches(result, channelRef.current, selectedRegionRef.current)) return; if (!acceptRegionFocusResult(result, { versionId, pagePath: currentPage })) return; restoreVersionsFocus(); if (!result.found) setNotice(`선언된 영역 ${result.regionId}에 대응하는 문서 요소를 찾지 못했습니다. 영역 ID는 메타데이터의 논리 식별자이며 읽기에는 영향이 없습니다.`); else if (!result.focused) setNotice(`영역 ${result.regionId}에 초점을 맞추지 못했습니다(오버레이가 열려 있거나 페이지가 초점을 받을 수 없습니다). 본문에서 방향키로 읽은 뒤 영역을 다시 선택하면 초점이 이동하는 경우가 있습니다.`); else setNotice(`영역 ${result.regionId}에 초점을 맞췄습니다.`); }} /> : !issue && !selection ? <p role="status">결과를 확인하는 중…</p> : selection?.location === null ? <p>페이지를 선택하거나 원본 파일을 내려받으세요.</p> : null}
+      onNoteContext={event=>{if(event.versionId===versionId&&event.pagePath===currentPage&&event.context===context&&event.reload===reload&&event.renderGeneration===channelRef.current?.renderGeneration)setNoteContext(event);}} onReference={referencesEnabled ? event => { void references.request(event); } : undefined} focusHandle={regionFocus} onLocation={mirror} onNotice={setNotice} onRegion={captureRegion} onRegionFocus={(result) => { if (result.context !== context || result.reload !== reload || !regionFocusMatches(result, channelRef.current, selectedRegionRef.current)) return; if (!acceptRegionFocusResult(result, { versionId, pagePath: currentPage })) return; restoreVersionsFocus(); if (!result.found) setNotice(`선언된 영역 ${result.regionId}에 대응하는 문서 요소를 찾지 못했습니다. 영역 ID는 메타데이터의 논리 식별자이며 읽기에는 영향이 없습니다.`); else if (!result.focused) setNotice(`영역 ${result.regionId}에 초점을 맞추지 못했습니다(오버레이가 열려 있거나 페이지가 초점을 받을 수 없습니다). 본문에서 방향키로 읽은 뒤 영역을 다시 선택하면 초점이 이동하는 경우가 있습니다.`); else setNotice(`영역 ${result.regionId}에 초점을 맞췄습니다.`); }} /> : !issue && !selection ? <p role="status">결과를 확인하는 중…</p> : selection?.location === null ? <p>페이지를 선택하거나 원본 파일을 내려받으세요.</p> : null}
     <Sheet id="reader-context-panel" openerId="reader-context-toggle" className="reader-context" open={contextVisible} modal={contextModal} label="문맥 및 근거 패널" onClose={() => setContextOpen(false)}>
       {!wideLayout && <button onClick={() => setContextOpen(false)}>문맥 닫기</button>}
       {suppliedMeta.kind === "ready" && currentPage !== null && regionsOfPage(suppliedMeta.metadata, currentPage).length > 0 && <div className="region-outline"><h3>영역 개요(현재 페이지)</h3><ul>{regionsOfPage(suppliedMeta.metadata, currentPage).map((region) => <li key={region.id}><button className="link" data-selected={regionId === region.id ? "true" : undefined} aria-current={regionId === region.id ? "true" : undefined} onClick={() => selectRegion(region)}>{typeof region.label === "string" && region.label !== "" ? region.label : region.id}</button></li>)}</ul><p className="hint">영역을 선택하면 해당 페이지의 문맥이 그 영역에 묶이고, 페이지 요소에 실제 초점을 시도해 결과를 알립니다. 좁은 화면에서는 문맥 패널이 닫힌 뒤 초점이 시도됩니다. 선언된 영역이 문서 요소와 연결되지 않아도 읽기·페이지 문맥은 그대로 유지됩니다.</p></div>}
       <div role="tablist" aria-label="문맥 탭" onKeyDown={event => {
-        const tabs = ["evidence", "links"] as const;
+        const tabs = ["evidence", "notes", "links"] as const;
         let next = tabs.indexOf(contextTab);
-        if (event.key === "ArrowRight" || event.key === "ArrowLeft") next = 1 - next;
-        else if (event.key === "Home") next = 0; else if (event.key === "End") next = 1; else return;
+        if (event.key === "ArrowRight" || event.key === "ArrowLeft") next = (next+(event.key==="ArrowRight"?1:tabs.length-1))%tabs.length;
+        else if (event.key === "Home") next = 0; else if (event.key === "End") next = tabs.length-1; else return;
         event.preventDefault(); const selected = tabs[next]!; setContextTab(selected); document.getElementById(`reader-${selected}-tab`)?.focus();
-      }}>{(["evidence", "links"] as const).map(tab => <button key={tab} id={`reader-${tab}-tab`} role="tab" aria-selected={contextTab === tab} aria-controls={`reader-${tab}-content`} tabIndex={contextTab === tab ? 0 : -1} onClick={() => setContextTab(tab)}>{tab === "evidence" ? "Evidence" : "Links"}</button>)}</div>
+      }}>{(["evidence", "notes", "links"] as const).map(tab => <button key={tab} id={`reader-${tab}-tab`} role="tab" aria-selected={contextTab === tab} aria-controls={`reader-${tab}-content`} tabIndex={contextTab === tab ? 0 : -1} onClick={() => setContextTab(tab)}>{tab === "evidence" ? "Evidence" : tab==="notes"?"Notes":"Links"}</button>)}</div>
       <div role="tabpanel" id="reader-evidence-content" aria-labelledby="reader-evidence-tab" hidden={contextTab !== "evidence"} className="reader-evidence">
       <SourcePanel controller={controller} version={currentVersion} versionId={versionId} pagePath={currentPage} regionId={regionId} contextKey={`${context ?? "initial"}:${reload}`} metadata={suppliedMeta} />
       </div>
+      <div role="tabpanel" id="reader-notes-content" aria-labelledby="reader-notes-tab" hidden={contextTab!=="notes"}><NotesPanel key={JSON.stringify([referenceOwner,versionId])} controller={controller} documentId={documentId} owner={referenceOwner} anchor={{version_id:versionId,page_path:currentPage,region_id:regionId,page_query:props.pageQuery,page_fragment:props.pageFragment}} selection={noteContext&&noteContext.versionId===versionId&&noteContext.pagePath===currentPage&&noteContext.context===context&&noteContext.reload===reload&&noteContext.renderGeneration===channelRef.current?.renderGeneration?{selectedText:typeof noteContext.payload.selected_text==="string"?noteContext.payload.selected_text:null,contextRef:typeof noteContext.payload.context_ref==="string"?noteContext.payload.context_ref:null,context:noteContext.payload.context??noteContext.payload.state??null} satisfies NoteSelection:undefined}/></div>
       {contextVisible && contextTab === "links" && <div role="tabpanel" id="reader-links-content" aria-labelledby="reader-links-tab"><LinksPanel key={`${referenceOwner}:${versionId}:${currentPage}:${regionId}:${context}:${reload}`} controller={controller} versionId={versionId} pagePath={currentPage} regionId={regionId} onNavigate={async (url, active) => {
         const authority = controller.captureDispatchAuthority();
         await linksNavigation.request({

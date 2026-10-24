@@ -682,3 +682,31 @@ updated_since_review and continue_review_version_id, null for scoped readers.
 Owner list filters review=reviewing|updated_since_review apply before cursor paging.
 These are additive provisional selections under API v1, advertised by features.review;
 Revisit, notes and real lifecycle mutations remain with their owning Tasks.
+
+## Anchored notes and Revisit (TASK-005-02)
+
+The [selected additions](schema-registry.md#anchored-notes-and-revisit-additions-task-005-02)
+are additive provisional contracts, implemented behind features.annotations/revisit.
+Owner-only GET/HEAD annotation list/one and Revisit reads, POST annotation create,
+PATCH edit/explicit reattach, DELETE soft deletion and Revisit PUT follow those closed
+shapes. New owner-only read routes are:
+
+| Route | Result |
+| --- | --- |
+| GET/HEAD /annotations/{id}/history | Cursor revision views, including permitted original anchors/content and explicit reattachment/deletion |
+| GET/HEAD /annotations/{id}/body?revision=N | Exact referenced Markdown bytes of that saved revision |
+| GET/HEAD /annotations/{id}/context?revision=N | Exact adopted context bytes, selected from that current/history revision's context_ref |
+
+Stream reads carry Content-Type, Content-Length and the immutable object's strong ETag,
+with attachment disposition and a restrictive document policy. Neither the content ETag
+nor context_ref authorizes a note edit. Current owner/document/history authorization
+is checked before and throughout delivery; pins retain the selected object. No live
+renderer or originating session is needed for saved context recovery. A missing context
+or revision is 404 and never falls back to a different revision. Annotation history
+cursors bind the note, owner and runtime generation; list cursors bind the exact version.
+
+Create returns 201, edit/reattach/delete and Revisit PUT return 200, with operation_id
+and applicable individual ETag. Every mutation is K; malformed/missing/stale controls
+remain 400/428/412 and replay uses the saved key/conditions before new-work CAS. Revisit
+GET exposes its own individual ETag or explicit absence. GET documents accepts the
+additional owner-only revisit=true|false filter, including in combination with review.

@@ -39,6 +39,7 @@ export interface ViewerProps {
    * version/page/host-context identity beside the region id; the host binds
    * the stored selection to that exact identity and never retags it.
    */
+  onNoteContext?(selection: ReaderPageContext & {payload:Record<string,unknown>}):void;
   onRegion?(selection: ReaderPageContext & { regionId: string }): void;
   /**
    * Honest result of a host-initiated region.focus attempt, observed inside
@@ -220,6 +221,7 @@ export function IsolatedViewer(props: ViewerProps) {
           },
           location: observe,
           display(type, payload) {
+            if(type==="state.changed"||type==="region.selected")callbacks.current.onNoteContext?.({...capturedPage,payload});
             // The captured channel identity (this channel's exact page and
             // the mount's version) travels with the region id; the host
             // matches the tuple before assigning a selection, so late or

@@ -51,8 +51,8 @@
     },
     {
       "path": "tests/contracts/contract.py",
-      "bytes": 47062,
-      "sha256": "9be426480704b9cdc23ae8512beafe1b7040826ad0e8bdb5b8a88c323616b36a"
+      "bytes": 47279,
+      "sha256": "58b44da1f10ba04eaa5c84f45bd34ee11b116ce4465f4ad2fa2920b200b49dd2"
     },
     {
       "path": "tests/contracts/run.py",
@@ -61,8 +61,8 @@
     },
     {
       "path": "tests/contracts/schema.json",
-      "bytes": 144625,
-      "sha256": "96cb9ee80cf271de8fd189e2fcd287ffcb1ea44cfde42093a483d128c7a39041"
+      "bytes": 179727,
+      "sha256": "afefd49371cfffaaec8157b497d5d372320e433444137163735980de89344bfa"
     },
     {
       "path": "tests/contracts/test_contracts.py",
@@ -98,6 +98,16 @@
       "path": "tests/contracts/test_review_contracts.py",
       "bytes": 2093,
       "sha256": "288f4259ddf8fd9d8dccd04029527de28361eccd916d794a9f342834052e9e3e"
+    },
+    {
+      "path": "tests/contracts/test_annotation_contracts.py",
+      "bytes": 3778,
+      "sha256": "b566bc11f9a6de84cd0f6a47fb62b9c3aeab35a64c11bedf421f6774ee792745"
+    },
+    {
+      "path": "tests/fixtures/annotations/conflict.json",
+      "bytes": 2643,
+      "sha256": "b7571b574ab3cd53e7cbdc4d1016dc34b80d8736a8fc8c0457f653035d39212f"
     }
   ]
 }

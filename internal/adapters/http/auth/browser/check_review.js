@@ -36,8 +36,8 @@ async page => {
   const saved=await read();if(saved.value.state!=='reviewed'||!saved.value.reviewed_at)throw Error('Explicit touch completion not saved');
   stage="history";
   await page.getByRole('button',{name:'검토 이력',exact:true}).click();
-  await page.getByText('unreviewed → reviewing',{exact:false}).waitFor();
-  await page.getByText('reviewing → reviewed',{exact:false}).waitFor();
+  await page.getByText('미검토 → 검토 중',{exact:false}).waitFor();
+  await page.getByText('검토 중 → 검토 완료',{exact:false}).waitFor();
   return {version,before,saved,keyboardStart:true,touchCompletion:true,frameRejected:true,syntheticAssessmentRejected:true,multiPageReadingDidNotComplete:true,viewport:{width:390,height:844}};
   } catch(error) { throw Error('Review '+stage+': '+error.message+'; control: '+await page.locator('.review-control').innerText().catch(()=>'<unavailable>')); }
 }

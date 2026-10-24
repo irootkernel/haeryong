@@ -139,6 +139,8 @@ func authorizeScope(tx app.WriteTx, record domain.Session, r domain.Request) err
 		return domain.ErrDenied
 	}
 	switch parts[2] {
+	case "annotations":
+		return domain.ErrDenied
 	case "search":
 		if (r.Method == "GET" || r.Method == "HEAD") && len(parts) == 3 && contains(record.Scope.Actions, "version.read") {
 			return nil
@@ -215,7 +217,7 @@ func authorizeScope(tx app.WriteTx, record domain.Session, r domain.Request) err
 		}
 		fallthrough
 	case "documents", "versions":
-		if parts[2] == "versions" && len(parts) >= 5 && parts[4] == "review" {
+		if len(parts) >= 5 && (parts[4] == "review" || parts[4] == "annotations" || parts[4] == "revisit") {
 			return domain.ErrDenied
 		}
 		// Render-session opens follow the render-bootstrap authority family:

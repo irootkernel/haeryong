@@ -243,3 +243,11 @@ label.choice input { width: 18px; height: 18px; }
 .versions-screen pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .versions-texts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1rem; }
 .versions-screen select, .reader-actions input { max-width: 100%; }
+
+/* Saved note controls remain separate, readable rows in the narrow Reader Sheet. */
+.notes-panel, .annotation-editor { display: grid; gap: 1rem; min-width: 0; }
+.notes-panel label { display: flex; flex-direction: column; align-items: flex-start; gap: .5rem; }
+.notes-panel textarea { width: 100%; min-height: 6rem; box-sizing: border-box; }
+.note-entry { border-top: 1px solid var(--border, #d4d8e0); padding-top: 1rem; min-width: 0; }
+.note-entry p, .note-entry blockquote { overflow-wrap: anywhere; }
+.note-markdown pre { white-space: pre-wrap; overflow-wrap: anywhere; }

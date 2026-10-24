@@ -129,6 +129,10 @@ export function createNativePort(wire: NativeWire): NativePort {
       const reified = stream(value);
       return validator ? { body: reified.body, cancel: reified.cancel, validator } : reified;
     }
+    if(operation === "annotationBodyStream" || operation === "annotationContextStream") {
+      if(!record(value)||typeof value.etag!=="string"||!/^"sha256-[0-9a-f]{64}"$/.test(value.etag)||typeof value.byte_size!=="string"||!/^\d+$/.test(value.byte_size)||typeof value.media_type!=="string")throw invalid();
+      return {...stream(value),etag:value.etag,bytes_sha256:value.etag.slice(8,-1),byte_size:value.byte_size,media_type:value.media_type};
+    }
     if (operation === "versionSuppliedMetadata") {
       // The closed metadata open carries the immutable object's strong
       // validator beside the stream handle; both are reified together.

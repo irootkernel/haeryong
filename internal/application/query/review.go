@@ -229,6 +229,11 @@ func (s *Service) reviewedDocument(ctx context.Context, tx app.WriteTx, token st
 		return out, err
 	}
 	if actor.Scope.Kind == "owner" {
+		r, e := currentRevisit(tx, actor.PrincipalID, d.ID)
+		if e != nil {
+			return out, e
+		}
+		out.Revisit = &r.Flag
 		out.ReviewSummary, err = tx.ReviewSummary(actor.PrincipalID, d.ID)
 		if err != nil {
 			return out, err

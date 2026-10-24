@@ -32,6 +32,12 @@ TASK-004-05 adds pinned Copy link, automatic session-return navigation and the s
 
 TASK-004-06 adds the two-project knowledge gate composition over the existing source/search/link/Versions surfaces. [Its record](testing/two-project-knowledge.md) contains the relevance report, agent-only saved-reader worksheet and EPIC-004 evidence index.
 
+TASK-005-02 adds exact anchored Notes, conflict-safe Save and explicit
+reattachment/history, safe Markdown, saved-context recovery and independent
+Revisit/Home with three-transport parity at SQLite revision 11. The
+[Notes record](testing/anchored-notes.md) records the executed final-candidate
+checks and limits.
+
 ## Start here
 
 | Reader | Recommended path |

@@ -262,6 +262,15 @@ export interface ProjectView {
   etag: string;
 }
 
+
+export interface AnnotationAnchor { version_id:string; page_path:string|null; region_id:string|null; page_query:string; page_fragment:string }
+export interface AnnotationContent { body:string|null; body_ref:{upload_id:string}|null; selected_text:string|null; context:unknown|null; context_ref:string|null }
+export type AnnotationCreate = Omit<AnnotationAnchor,"version_id"> & AnnotationContent;
+export type AnnotationPatch = ({action:"edit"}&AnnotationContent) | {action:"reattach";anchor:AnnotationAnchor;selected_text:string|null;context:unknown|null;context_ref:string|null};
+export interface AnnotationView { annotation_id:string; document_id:string; original_anchor:AnnotationAnchor; anchor:AnnotationAnchor; body:string|null; body_ref:{bytes_sha256:string;byte_size:string;media_type:string;content_url:string}|null; selected_text:string|null; context_ref:string|null;created_at:string;updated_at:string;deleted_at:string|null;revision:number;etag:string;history_url:string;resolution:{status:"resolved"|"unresolved";reason:string|null};action:"create"|"edit"|"reattach"|"delete";actor_session:string;operation_id?:string }
+export interface AnnotationStream extends PackageStream {etag:string;bytes_sha256:string;byte_size:string;media_type:string}
+export interface RevisitView extends PersonalView {document_id:string;value:{flag:boolean};operation_id?:string}
+
 export type ReviewState = "unreviewed" | "reviewing" | "reviewed";
 export type ReviewAction = "start" | "complete" | "reopen" | "clear";
 export type ReviewCondition = { ifMatch: string } | { create: true };
@@ -273,7 +282,7 @@ export interface ReviewView {
 }
 export interface ReviewEvent { event_id: string; version_id: string; action: ReviewAction; old_state: ReviewState; new_state: ReviewState; actor_session: string; operation_id: string; created_at: string }
 export type ReviewFilter = "reviewing" | "updated_since_review";
-export interface DocumentFilter { projectId?: string; lifecycle?: string; cursor?: string; review?: ReviewFilter }
+export interface DocumentFilter { projectId?: string; lifecycle?: string; cursor?: string; revisit?: "true"|"false"; review?: ReviewFilter }
 
 export interface DocumentView {
   document_id: string;
@@ -284,6 +293,7 @@ export interface DocumentView {
   revision: number;
   updated_at: string;
   review_state?: ReviewState | null;
+ revisit?: boolean|null;
   reviewed_at?: string | null;
   last_reviewed_version_id?: string | null;
   updated_since_review?: boolean | null;
@@ -458,12 +468,14 @@ export type ImportTargetMode =
   | { kind: "new"; projectId: string }
   | { kind: "existing"; projectId: string; documentId: string; baseVersionId?: string | null };
 
-export interface CreateUploadRequest {
+export interface ResultUploadRequest {
   purpose: "result";
   input_mode: "directory" | "archive" | "file";
   selection_name?: string;
   target: { project_id: string; document_id: string | null };
 }
+
+export type CreateUploadRequest = ResultUploadRequest | {purpose:"body";input_mode:"object";target:({operation_id:string;action:"annotation_create";version_id:string;page_path:string|null}|{operation_id:string;action:"annotation_edit";annotation_id:string})};
 
 /** Binary payload for one streamed entry chunk. */
 export interface EntryChunk {
@@ -839,6 +851,17 @@ export interface HaeryongClient {
   renderSessionOpen(versionId: string, operationId: string): Promise<RenderSessionView>;
   renderSessionRenew(versionId: string, sessionId: string): Promise<void>;
   renderSessionClose(versionId: string, sessionId: string): Promise<void>;
+
+  annotationList(versionId:string,cursor?:string):Promise<ListPage<AnnotationView>>;
+  annotationGet(annotationId:string):Promise<AnnotationView>;
+  annotationCreate(versionId:string,body:AnnotationCreate,operationId:string):Promise<AnnotationView>;
+  annotationPatch(annotationId:string,body:AnnotationPatch,etag:string,operationId:string):Promise<AnnotationView>;
+  annotationDelete(annotationId:string,etag:string,operationId:string):Promise<AnnotationView>;
+  annotationHistory(annotationId:string,cursor?:string):Promise<ListPage<AnnotationView>>;
+  annotationBodyStream(annotationId:string,revision:number):Promise<AnnotationStream>;
+  annotationContextStream(annotationId:string,revision:number):Promise<AnnotationStream>;
+  revisitGet(documentId:string):Promise<RevisitView>;
+  revisitPut(documentId:string,flag:boolean,condition:ReviewCondition,operationId:string):Promise<RevisitView>;
   reviewGet(versionId: string): Promise<ReviewView>;
   reviewPut(versionId: string, body: ReviewRequest, condition: ReviewCondition, operationId: string): Promise<ReviewView>;
   reviewHistory(versionId: string, cursor?: string): Promise<ListPage<ReviewEvent>>;

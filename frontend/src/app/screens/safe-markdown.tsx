@@ -1,0 +1,3 @@
+import {noteInline,noteMarkdown} from "./safe-markdown.ts";
+function inline(text:string){return noteInline(text).map((t,i)=>t.kind==="link"?<a key={i} href={t.href} target="_blank" rel="noopener noreferrer">{t.text}</a>:t.kind==="code"?<code key={i}>{t.text}</code>:t.kind==="strong"?<strong key={i}>{t.text}</strong>:t.kind==="em"?<em key={i}>{t.text}</em>:t.text);}
+export function SafeMarkdown({text}:{text:string}){return <div className="note-markdown">{noteMarkdown(text).map((b,i)=>b.kind==="code"?<pre key={i}><code>{b.text}</code></pre>:b.kind==="list"?<ul key={i}>{b.items.map((t,j)=><li key={j}>{inline(t)}</li>)}</ul>:b.kind==="heading"?<h3 key={i}>{inline(b.text)}</h3>:<p key={i} style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{inline(b.text)}</p>)}</div>;}

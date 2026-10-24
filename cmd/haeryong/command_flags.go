@@ -21,6 +21,14 @@ func validateCommandFlags(opt options) error {
 		verb = args[1]
 	}
 	switch args[0] {
+	case "revisit":
+		add("document")
+		if verb == "set" {
+			add("flag if-match if-none-match operation-id")
+		}
+		if _, _, err := revisitCLIInput(opt); err != nil {
+			return err
+		}
 	case "review":
 		add("version")
 		if verb == "set" {

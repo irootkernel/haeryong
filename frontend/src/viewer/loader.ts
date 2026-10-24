@@ -219,7 +219,7 @@ const integration = {
     const active = generation;
     const ready = await integration.sendContext(value);
     if (active !== generation) throw new Error("Previous page context interrupted");
-    send("region.selected", { context_ref: ready.context_ref, region_id: regionId, ...locationState() });
+    send("region.selected", { context_ref: ready.context_ref, region_id: regionId, ...(typeof value.selected_text === "string" ? { selected_text: value.selected_text } : {}), ...locationState() });
   },
 };
 Object.defineProperty(window, "__haeryong", { value: integration, configurable: true });

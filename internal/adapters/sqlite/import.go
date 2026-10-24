@@ -477,31 +477,8 @@ func (t *writeTx) DraftTarget(id string) (domain.DraftTarget, error) {
 	return out, nil
 }
 func (t *writeTx) AnnotationTarget(id string) (domain.AnnotationTarget, error) {
-	out := domain.AnnotationTarget{ID: id}
-	r, e := resource(t.ctx, t.tx, "annotation", id)
-	if e != nil {
-		return out, e
-	}
-	var v struct {
-		VersionID string  `json:"version_id"`
-		PagePath  *string `json:"page_path"`
-		Deleted   bool    `json:"deleted"`
-	}
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(r.Value, &fields) != nil {
-		return out, domain.ErrNotFound
-	}
-	if _, ok := fields["page_path"]; !ok {
-		return out, domain.ErrNotFound
-	}
-	if json.Unmarshal(r.Value, &v) != nil || v.VersionID == "" {
-		return out, domain.ErrNotFound
-	}
-	out.VersionID = v.VersionID
-	out.PagePath = v.PagePath
-	out.Deleted = v.Deleted
-	out.Revision = r.Revision
-	return out, nil
+	n, err := t.Annotation(id)
+	return domain.AnnotationTarget{ID: id, VersionID: n.Anchor.VersionID, PagePath: n.Anchor.PagePath, Deleted: n.DeletedAt != nil, Revision: n.Revision}, err
 }
 func (t *writeTx) Page(version, path string) (domain.Page, error) {
 	out := domain.Page{VersionID: version, Path: path}

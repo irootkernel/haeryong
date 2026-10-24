@@ -32,7 +32,7 @@ var _ = It("Review revision nine upgrade rollback snapshot and declaration refus
 	Expect(revision).To(Equal(9))
 	Expect(db.Close()).To(Succeed())
 	s := openStore(GinkgoT(), w, nil)
-	Expect(s.validateTables(ctx, 10)).To(Succeed())
+	Expect(s.validateTables(ctx, SchemaRevision)).To(Succeed())
 	var stored string
 	Expect(s.db.QueryRow(`SELECT manifest_sha256 FROM document_versions WHERE version_id=?`, refSource).Scan(&stored)).To(Succeed())
 	Expect(stored).To(Equal(hash))
@@ -48,10 +48,10 @@ var _ = It("Review revision nine upgrade rollback snapshot and declaration refus
 	}
 	Expect(s.Close()).To(Succeed())
 	s = openStore(GinkgoT(), w, nil)
-	Expect(s.validateTables(ctx, 10)).To(Succeed())
+	Expect(s.validateTables(ctx, SchemaRevision)).To(Succeed())
 	_, err = s.db.Exec(`DROP INDEX review_states_owner_state`)
 	Expect(err).NotTo(HaveOccurred())
-	Expect(s.validateTables(ctx, 10)).To(MatchError("missing review schema declaration"))
+	Expect(s.validateTables(ctx, SchemaRevision)).To(MatchError("missing review schema declaration"))
 	Expect(s.Close()).To(Succeed())
 	refused := New(nil)
 	_, _, err = refused.Prepare(ctx, w.Profile)

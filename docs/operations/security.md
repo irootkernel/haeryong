@@ -62,3 +62,15 @@ Use existing audit/outbox records for pairing, session revocation, source select
 Verify the release build exposes only intended native bindings/listeners and does not ship accidental development entrypoints. Check native calls from artifact child frames and after navigation, trusted Markdown/link handling, raw-file response headers and executable-preview origin; safe stored bytes do not establish a safe response origin. Repeat relevant checks when their configuration changes. Do not require a universal hostile-content, WebRTC/DNS or unrestricted external-agent containment matrix for personal use.
 
 Public documentation must describe host/source availability, remembered-session behavior, external dependencies/provider retention and recovery limits plainly. A later public or commercial service reopens its own deployment and authorization design. This specification records no completed application tests.
+
+## Trusted note Markdown policy (TASK-005-02)
+
+Notes, permitted history and conflict previews use the same React text-node renderer.
+The inert subset supports paragraphs, headings, emphasis, lists, fenced code and links.
+Raw HTML and unsupported syntax remain text. Executable link schemes, scheme-relative
+links and backslash ambiguities are rejected after control/encoding inspection; normal
+http/https/mailto and relative links remain available with a separate browsing target.
+Images, scripts, SVG, embeds and privileged frames are not installed by note Markdown.
+Captured JSON/text context is displayed as text. This policy does not restrict ordinary
+JavaScript in imported isolated pages. Representative hostile-input browser checks are
+bounded evidence, not an exhaustive attack corpus.

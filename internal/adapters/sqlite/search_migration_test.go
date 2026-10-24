@@ -21,7 +21,7 @@ import (
 // Test-only reverse construction, never a live product downgrade or an old binary.
 // Remove migration 10's dependent personal tables before constructing pre-search
 // schemas, including fixtures that subsequently remove the owner or versions.
-const dropSearchSchema = `DROP TABLE IF EXISTS review_states;DROP TABLE IF EXISTS review_events;` + dropReferenceSchema + `DROP TRIGGER search_chunks_insert;DROP TRIGGER search_chunks_update;DROP TRIGGER search_chunks_delete;DROP TABLE search_words;DROP TABLE search_grams;DROP TABLE search_chunks;DROP TABLE search_units;DROP TABLE search_indexes;DROP TABLE derived_work;DROP TABLE page_anchors;`
+const dropSearchSchema = `DROP TABLE IF EXISTS annotation_history;DROP TABLE IF EXISTS annotations;DROP TABLE IF EXISTS revisit_flags;DROP TABLE IF EXISTS review_states;DROP TABLE IF EXISTS review_events;` + dropReferenceSchema + `DROP TRIGGER search_chunks_insert;DROP TRIGGER search_chunks_update;DROP TRIGGER search_chunks_delete;DROP TABLE search_words;DROP TABLE search_grams;DROP TABLE search_chunks;DROP TABLE search_units;DROP TABLE search_indexes;DROP TABLE derived_work;DROP TABLE page_anchors;`
 
 func searchSeed(s *Store) (string, error) {
 	h, err := s.Health(ctx)
@@ -133,7 +133,7 @@ func assertSearchTwoProjects(db *sql.DB) {
 func searchPriorRows(db *sql.DB) map[string]string {
 	GinkgoHelper()
 	assertSearchTwoProjects(db)
-	names, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'search_%' AND name NOT IN ('derived_work','page_anchors','reference_materializations','authored_references','authored_edges','review_states','review_events') ORDER BY name`)
+	names, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'search_%' AND name NOT IN ('derived_work','page_anchors','reference_materializations','authored_references','authored_edges','review_states','review_events','annotations','annotation_history','revisit_flags') ORDER BY name`)
 	Expect(err).NotTo(HaveOccurred())
 	var tables []string
 	for names.Next() {
@@ -273,7 +273,7 @@ var _ = Describe("SC10 schema8 recovery and postings", Label("persistence"), fun
 			ready := openStore(t, w, nil)
 			Expect(searchPriorRows(ready.db)).To(Equal(prior))
 			Expect(ready.validateTables(ctx, SchemaRevision)).To(Succeed())
-			for _, table := range []string{"review_states", "review_events"} {
+			for _, table := range []string{"annotation_history", "annotations", "revisit_flags", "review_states", "review_events"} {
 				Expect(ready.db.QueryRow(`SELECT count(*) FROM ` + table).Scan(&count)).To(Succeed())
 				Expect(count).To(BeZero(), "migration 10 creates empty personal Review tables")
 			}

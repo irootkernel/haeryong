@@ -1,7 +1,7 @@
 // Narrow native transport boundary. The desktop companion (TASK-003-05) binds
 // these named operations to a typed Go proxy. The port accepts no arbitrary
 // URLs, filesystem paths or generic method names from imported content.
-import type { ReviewView, ReviewRequest, ReviewCondition, ReviewEvent, DocumentFilter,
+import type { AnnotationCreate, AnnotationPatch, AnnotationView, AnnotationStream, RevisitView, ReviewView, ReviewRequest, ReviewCondition, ReviewEvent, DocumentFilter,
   BacklinksRequest, BacklinkPage, IndexValidation, IndexValidationRequest, IndexRebuild, IndexRebuildRequest,
   VersionReferencesRequest, ResolveReferenceRequest, ReferencePage, ReferenceView,
   SearchRequest, SearchPage,
@@ -101,7 +101,7 @@ export type VersionReferencesCall = { version_id: string; cursor?: string; limit
 export type ResolveReferenceCall = { version_id: string; reference_id: string; page_path?: string; region_id?: string };
 export type SearchCall = SearchRequest;
 export type ListProjectsRequest = { cursor?: string };
-export type ListDocumentsRequest = { project_id?: string; lifecycle?: string; cursor?: string; review?: DocumentFilter["review"] };
+export type ListDocumentsRequest = { project_id?: string; lifecycle?: string; cursor?: string; revisit?:DocumentFilter["revisit"]; review?: DocumentFilter["review"] };
 export type DocumentRequest = { document_id: string };
 export type DocumentVersionsRequest = { document_id: string; cursor?: string };
 export type VersionRequest = { version_id: string };
@@ -136,6 +136,16 @@ export type PersonalPutCall = { kind: PersonalKind; version_id: string; page: st
 
 /** Named operations only; each overload pins an exact payload/result pair. */
 export interface NativePort {
+  call(operation:"annotationList",payload:{version_id:string;cursor?:string}):Promise<ListPage<AnnotationView>>;
+  call(operation:"annotationGet",payload:{annotation_id:string}):Promise<AnnotationView>;
+  call(operation:"annotationHistory",payload:{annotation_id:string;cursor?:string}):Promise<ListPage<AnnotationView>>;
+  call(operation:"annotationCreate",payload:{version_id:string;body:AnnotationCreate;operation_id:string}):Promise<DecisionResult>;
+  call(operation:"annotationPatch",payload:{annotation_id:string;body:AnnotationPatch;etag:string;operation_id:string}):Promise<DecisionResult>;
+  call(operation:"annotationDelete",payload:{annotation_id:string;etag:string;operation_id:string}):Promise<DecisionResult>;
+  call(operation:"annotationBodyStream"|"annotationContextStream",payload:{annotation_id:string;revision:number}):Promise<AnnotationStream>;
+  call(operation:"revisitGet",payload:{document_id:string}):Promise<RevisitView>;
+  call(operation:"revisitPut",payload:{document_id:string;flag:boolean;precondition:{if_match:string}|{create:true};operation_id:string}):Promise<DecisionResult>;
+
   call(operation: "configurationView", payload: ConfigurationViewCall): Promise<ConfigurationView>;
   call(operation: "configurationPlan", payload: ConfigurationPlanCall): Promise<DecisionResult>;
   call(operation: "configurationPlanCommit", payload: ConfigurationPlanCommitCall): Promise<DecisionResult>;
@@ -217,6 +227,7 @@ export interface NativePort {
 }
 
 export const NATIVE_OPERATIONS = [
+  "annotationList", "annotationGet", "annotationHistory", "annotationCreate", "annotationPatch", "annotationDelete", "annotationBodyStream", "annotationContextStream", "revisitGet", "revisitPut",
   "reviewGet", "reviewPut", "reviewHistory",
   "configurationView",
   "configurationPlan",
@@ -489,6 +500,20 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
     return this.#fresh(this.#port.call("renderSessionClose", { version_id: versionId, session_id: sessionId }), this.#era);
   }
 
+
+  annotationList(versionId:string,cursor?:string):Promise<ListPage<AnnotationView>>{return this.#fresh(this.#port.call("annotationList",{version_id:versionId,cursor}),this.#era);}
+  annotationGet(id:string):Promise<AnnotationView>{return this.#fresh(this.#port.call("annotationGet",{annotation_id:id}),this.#era);}
+  annotationHistory(id:string,cursor?:string):Promise<ListPage<AnnotationView>>{return this.#fresh(this.#port.call("annotationHistory",{annotation_id:id,cursor}),this.#era);}
+  annotationCreate(versionId:string,body:AnnotationCreate,key:string):Promise<AnnotationView>{return this.#savedWrite(key,()=>this.#port.call("annotationCreate",{version_id:versionId,body,operation_id:key}));}
+  annotationPatch(id:string,body:AnnotationPatch,etag:string,key:string):Promise<AnnotationView>{return this.#savedWrite(key,()=>this.#port.call("annotationPatch",{annotation_id:id,body,etag,operation_id:key}));}
+  annotationDelete(id:string,etag:string,key:string):Promise<AnnotationView>{return this.#savedWrite(key,()=>this.#port.call("annotationDelete",{annotation_id:id,etag,operation_id:key}));}
+  revisitGet(id:string):Promise<RevisitView>{return this.#fresh(this.#port.call("revisitGet",{document_id:id}),this.#era);}
+  revisitPut(id:string,flag:boolean,condition:ReviewCondition,key:string):Promise<RevisitView>{return this.#savedWrite(key,()=>this.#port.call("revisitPut",{document_id:id,flag,precondition:"ifMatch" in condition?{if_match:condition.ifMatch}:{create:true},operation_id:key}));}
+  #savedWrite<T>(key:string,dispatch:()=>Promise<DecisionResult>):Promise<T>{const era=this.#era;return sourceWrite<T>(key,()=>this.#fresh(dispatch(),era),id=>{if(era!==this.#era)throw new StaleResponseError();return this.operation(id);});}
+  annotationBodyStream(id:string,revision:number):Promise<AnnotationStream>{return this.#savedStream("annotationBodyStream",id,revision);}
+  annotationContextStream(id:string,revision:number):Promise<AnnotationStream>{return this.#savedStream("annotationContextStream",id,revision);}
+  async #savedStream(operation:"annotationBodyStream"|"annotationContextStream",id:string,revision:number):Promise<AnnotationStream>{const era=this.#era;const s=await this.#freshStream(()=>this.#port.call(operation,{annotation_id:id,revision}),era);return {...s,body:eraGuardedStream(s.body,()=>era!==this.#era)};}
+
   reviewGet(versionId: string): Promise<ReviewView> { return this.#fresh(this.#port.call("reviewGet", {version_id: versionId}), this.#era); }
   reviewPut(versionId: string, body: ReviewRequest, condition: ReviewCondition, operationId: string): Promise<ReviewView> {
     const precondition = "ifMatch" in condition ? {if_match: condition.ifMatch} : {create: true as const};
@@ -557,7 +582,7 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
   }
 
   listDocuments(filter: DocumentFilter): Promise<ListPage<DocumentView>> {
-    return this.#fresh(this.#port.call("listDocuments", { project_id: filter.projectId, lifecycle: filter.lifecycle, review: filter.review, cursor: filter.cursor }), this.#era);
+    return this.#fresh(this.#port.call("listDocuments", { project_id: filter.projectId, lifecycle: filter.lifecycle, review: filter.review, ...(filter.revisit!==undefined?{revisit:filter.revisit}:{}), cursor: filter.cursor }), this.#era);
   }
 
   documentDetail(documentId: string): Promise<DocumentView> {

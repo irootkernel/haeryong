@@ -88,6 +88,9 @@ func (h *Handler) Handles(r *http.Request) bool {
 	if len(p) == 0 {
 		return false
 	}
+	if noteRoute(p) {
+		return noteMethod(r.Method, p)
+	}
 	if reviewRoute(p) {
 		return r.Method == "GET" || r.Method == "HEAD" || len(p) == 3 && r.Method == "PUT"
 	}
@@ -164,6 +167,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := route(r)
+	if noteRoute(p) {
+		h.notes(w, r, token, p)
+		return
+	}
 	if reviewRoute(p) {
 		h.review(w, r, token, p)
 		return
@@ -182,7 +189,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	allowed := []string{"cursor", "limit"}
 	if p[0] == "documents" && len(p) == 1 {
-		allowed = append(allowed, "project_id", "lifecycle", "review")
+		allowed = append(allowed, "project_id", "lifecycle", "review", "revisit")
 	}
 	if p[0] == "projects" && len(p) == 3 && p[2] == "sources" {
 		allowed = []string{"cursor", "limit"}
@@ -227,7 +234,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failure(w, r, err)
 		return
 	}
-	o := query.Options{Cursor: values.Get("cursor"), Project: values.Get("project_id"), Lifecycle: values.Get("lifecycle"), Directory: values.Get("directory"), Kind: values.Get("kind"), Review: values.Get("review")}
+	o := query.Options{Cursor: values.Get("cursor"), Project: values.Get("project_id"), Lifecycle: values.Get("lifecycle"), Directory: values.Get("directory"), Kind: values.Get("kind"), Review: values.Get("review"), Revisit: values.Get("revisit")}
 	if values.Has("limit") {
 		o.Limit, err = strconv.Atoi(values.Get("limit"))
 		if err != nil || o.Limit < 1 {
@@ -825,6 +832,11 @@ func failure(w http.ResponseWriter, r *http.Request, err error) {
 		status, code = 503, "FILE_ACCESS_ERROR"
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		status, code = 503, "TRANSFER_INTERRUPTED"
+	}
+	var conflict *query.PersonalConflict
+	if errors.As(err, &conflict) {
+		details["revision"] = conflict.Revision
+		details["etag"] = conflict.ETag
 	}
 	var review *query.ReviewError
 	if errors.As(err, &review) {

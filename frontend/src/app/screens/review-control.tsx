@@ -4,10 +4,12 @@ import type { ReviewAction, ReviewEvent, ReviewView } from "../../client/types.t
 import { ReviewOperations, reviewJournal, reviewLabel } from "./review-operations.ts";
 import { useReviewInvalidation } from "./review-refresh.ts";
 
+const STATE_LABELS={unreviewed:"미검토",reviewing:"검토 중",reviewed:"검토 완료"};
+const localTime=(value:string)=>new Date(value).toLocaleString("ko-KR");
 const ACTION_LABELS = { start: "검토 시작", complete: "검토 완료로 표시", reopen: "검토 다시 열기", clear: "검토 초기화" };
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-export function ReviewControl({ controller, versionId, owner }: { controller: ShellController; versionId: string; owner: string }) {
+export function ReviewControl({ controller, versionId, owner, versionLabel }: { controller: ShellController; versionId: string; owner: string; versionLabel?:string }) {
   const [view, setView] = useState<ReviewView | null>(null);
   const [issue, setIssue] = useState(""), [busy, setBusy] = useState(false), [revision, refresh] = useState(0);
   const [events, setEvents] = useState<ReviewEvent[]>([]), [historyOpen, setHistoryOpen] = useState(false);
@@ -88,7 +90,7 @@ export function ReviewControl({ controller, versionId, owner }: { controller: Sh
   const actions: ReviewAction[] = !current ? [] : current.value.state === "unreviewed" ? ["start", "complete"] : current.value.state === "reviewing" ? ["complete", "clear"] : ["reopen", "clear"];
   return <section aria-label="내 검토" className="review-control" data-version-id={versionId}>
     <h2>내 검토</h2>
-    <p id="review-state">{current ? reviewLabel(current) : "검토 상태 확인 중…"} · {versionId}{current?.value.reviewed_at ? ` · ${current.value.reviewed_at}` : ""}</p>
+    <p id="review-state">{current ? reviewLabel(current) : "검토 상태 확인 중…"}{versionLabel?` · ${versionLabel}`:""}{current?.value.reviewed_at ? ` · ${localTime(current.value.reviewed_at)}` : ""}</p>
     <p className="hint">이 버전의 전체 결과 디렉터리에 대한 개인 검토입니다. 페이지 열기나 AI 평가는 검토를 완료하지 않습니다.</p>
     <div className="form-row">
       {actions.map(action => <button key={action} id={`review-${action}`} style={{ minHeight: 44, minWidth: 44 }} disabled={busy || !!pending || !operations.current} onClick={() => void act(action)}>{ACTION_LABELS[action]}</button>)}
@@ -103,7 +105,7 @@ export function ReviewControl({ controller, versionId, owner }: { controller: Sh
     }}>{generationChanged ? "현재 상태 확인 후 이전 요청 종료" : "현재 상태로 다시 선택"}</button>}
     {issue && <p role="alert">{issue}</p>}
     {historyOpen && <div>
-      <ul>{events.map(event => <li key={event.event_id}>{event.created_at} · {event.old_state} → {event.new_state} · {event.action}</li>)}</ul>
+      <ul>{events.map(event => <li key={event.event_id}>{localTime(event.created_at)} · {STATE_LABELS[event.old_state]} → {STATE_LABELS[event.new_state]} · {ACTION_LABELS[event.action]}</li>)}</ul>
       {events.length === 0 && <p>검토 이력이 없습니다.</p>}
       {cursor && <button disabled={historyBusy} onClick={() => void history(true)}>이력 더 불러오기</button>}
     </div>}

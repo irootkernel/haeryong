@@ -142,3 +142,15 @@ an authored-content quota. The original consumer key survives upload preparation
 202 and uncertain response recovery. Owner recovery may use another principal's
 upload only under current authority and the identical stored action/target;
 scoped principals cannot adopt another principal's hidden upload.
+
+## Annotation body consumption (TASK-005-02)
+
+The annotation_create and annotation_edit body targets above are consumed through
+body_ref={upload_id}. Upload creation/sealing use separate persisted preparation keys;
+the target's operation_id is the final annotation mutation key. Current annotation
+version/page/deleted state comes from the real note repository, not a generic placeholder
+resource. New edits recheck the note's individual If-Match and current anchor. Adoption
+and history retention are atomic with the note and receipt; equivalent sealed handles
+normalize by content digest without masking changed target/action/conditions. Reattach
+keeps the body and adds no body-upload target. The UI automatically stages large note
+bodies; chunk/inline choices are transport details and impose no total-note quota.

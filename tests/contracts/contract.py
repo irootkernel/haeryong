@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 import hashlib
 import io
 import json
+import math
 import re
 import unicodedata
 import uuid
@@ -163,7 +164,10 @@ def validate(name, value, code='INVALID_REQUEST'):
                 fail(code, at, 'union mismatch')
         types = {'object': dict, 'array': list, 'string': str, 'integer': int,
                  'boolean': bool, 'null': type(None)}
-        if 'type' in rule and type(data) is not types[rule['type']]:
+        if rule.get('type') == 'number':
+            if type(data) not in (int, float) or (type(data) is float and not math.isfinite(data)):
+                fail(code, at, 'expected finite JSON number')
+        elif 'type' in rule and type(data) is not types[rule['type']]:
             fail(code, at, 'expected ' + rule['type'])
         if 'enum' in rule and not any(type(data) is type(v) and data == v for v in rule['enum']):
             fail('INVALID_ENUM' if code == 'INVALID_REQUEST' else code, at, 'unknown value')

@@ -1,4 +1,4 @@
-import type { ReviewView, ReviewRequest, ReviewCondition, ReviewEvent, DocumentFilter,
+import type { AnnotationCreate, AnnotationPatch, AnnotationView, AnnotationStream, RevisitView, ReviewView, ReviewRequest, ReviewCondition, ReviewEvent, DocumentFilter,
   BacklinksRequest, BacklinkPage, IndexValidation, IndexValidationRequest, IndexRebuild, IndexRebuildRequest,
   VersionReferencesRequest, ResolveReferenceRequest, ReferencePage, ReferenceView,
   SearchRequest, SearchPage,
@@ -243,7 +243,7 @@ export class HttpHaeryongClient implements HaeryongClient {
   }
 
   listDocuments(filter: DocumentFilter): Promise<ListPage<DocumentView>> {
-    return this.#request("GET", this.#collection("/api/v1/documents", { project_id: filter.projectId, lifecycle: filter.lifecycle, review: filter.review, cursor: filter.cursor }));
+    return this.#request("GET", this.#collection("/api/v1/documents", { project_id: filter.projectId, lifecycle: filter.lifecycle, review: filter.review, revisit:filter.revisit, cursor: filter.cursor }));
   }
 
   documentDetail(documentId: string): Promise<DocumentView> {
@@ -324,6 +324,32 @@ export class HttpHaeryongClient implements HaeryongClient {
 
   async renderSessionClose(versionId: string, sessionId: string): Promise<void> {
     await this.#request("POST", `/api/v1/versions/${encodeURIComponent(versionId)}/render-sessions/${encodeURIComponent(sessionId)}/close`, {});
+  }
+
+
+  annotationList(versionId:string,cursor?:string):Promise<ListPage<AnnotationView>> {return this.#request("GET",this.#collection(`/api/v1/versions/${encodeURIComponent(versionId)}/annotations`,{cursor}));}
+  annotationGet(id:string):Promise<AnnotationView>{return this.#request("GET",`/api/v1/annotations/${encodeURIComponent(id)}`);}
+  annotationHistory(id:string,cursor?:string):Promise<ListPage<AnnotationView>> {return this.#request("GET",this.#collection(`/api/v1/annotations/${encodeURIComponent(id)}/history`,{cursor}));}
+  annotationCreate(versionId:string,body:AnnotationCreate,key:string):Promise<AnnotationView>{return this.#noteWrite("POST",`/api/v1/versions/${encodeURIComponent(versionId)}/annotations`,body,key);}
+  annotationPatch(id:string,body:AnnotationPatch,etag:string,key:string):Promise<AnnotationView>{return this.#noteWrite("PATCH",`/api/v1/annotations/${encodeURIComponent(id)}`,body,key,{"If-Match":etag});}
+  annotationDelete(id:string,etag:string,key:string):Promise<AnnotationView>{return this.#noteWrite("DELETE",`/api/v1/annotations/${encodeURIComponent(id)}`,undefined,key,{"If-Match":etag});}
+  revisitGet(id:string):Promise<RevisitView>{return this.#request("GET",`/api/v1/documents/${encodeURIComponent(id)}/revisit`);}
+  revisitPut(id:string,flag:boolean,condition:ReviewCondition,key:string):Promise<RevisitView>{return this.#noteWrite("PUT",`/api/v1/documents/${encodeURIComponent(id)}/revisit`,{flag},key,"ifMatch" in condition?{"If-Match":condition.ifMatch}:{"If-None-Match":"*"});}
+  #noteWrite<T>(method:string,path:string,body:unknown,key:string,conditions:Record<string,string>={}):Promise<T>{
+    const era=this.#era;
+    return sourceWrite<T>(key,async()=>{const r=await this.#exchange(method,path,body,{"Idempotency-Key":key,...conditions});return {kind:r.status===202?"accepted":"committed",body:r.data};},id=>{if(era!==this.#era)throw new StaleResponseError();return this.operation(id);});
+  }
+  annotationBodyStream(id:string,revision:number):Promise<AnnotationStream>{return this.#annotationStream(id,revision,"body");}
+  annotationContextStream(id:string,revision:number):Promise<AnnotationStream>{return this.#annotationStream(id,revision,"context");}
+  async #annotationStream(id:string,revision:number,kind:"body"|"context"):Promise<AnnotationStream>{
+    const controller=new AbortController(),era=this.#era;
+    const headers=new Headers();if(this.#credential)headers.set("Authorization","Bearer "+this.#credential);
+    const r=await fetch(`/api/v1/annotations/${encodeURIComponent(id)}/${kind}?${new URLSearchParams({revision:String(revision)})}`,{headers,credentials:"omit",redirect:"error",signal:controller.signal});
+    if(era!==this.#era){void r.body?.cancel();throw new StaleResponseError();}
+    if(!r.ok||!r.body)throw await this.#apiError(r,era,false);
+    const etag=r.headers.get("ETag")??"",size=r.headers.get("Content-Length")??"",media=r.headers.get("Content-Type")??"";
+    if(!/^"sha256-[0-9a-f]{64}"$/.test(etag)||!/^\d+$/.test(size)||!media){controller.abort();throw new Error("Invalid saved-note stream metadata");}
+    return {body:eraGuardedStream(r.body,()=>era!==this.#era),cancel:()=>controller.abort(),etag,bytes_sha256:etag.slice(8,-1),byte_size:size,media_type:media};
   }
 
   reviewGet(versionId: string): Promise<ReviewView> { return this.#request("GET", `/api/v1/versions/${encodeURIComponent(versionId)}/review`); }

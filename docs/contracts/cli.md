@@ -39,6 +39,7 @@ Exit classes are 0 success, 2 invalid input/package, 3 authentication/permission
 | haeryong page-position show/set --version ID --page PATH | Save page_query, page_fragment and position for the exact page under its own individual/create precondition; do not move the last-opened pointer |
 | haeryong review show/history --version ID | Owner state/create precondition or cursor transition history |
 | haeryong review set --version ID --action complete --if-match ETAG | Owner start/complete/reopen/clear; CLI maps action to the registry's state; agent grants are rejected |
+| haeryong revisit show --document ID | Owner document flag with individual/create precondition |
 | haeryong revisit set --document ID --flag true --if-match ETAG | Independent document-level flag |
 | haeryong topics list/set | Inspect assignments or set an owner pin/accepted-or-rejected decision with the individual validator |
 | haeryong generate --project ID --request-file PATH | Scoped request to create an explanation/draft with stable operation identity |
@@ -117,7 +118,7 @@ IDs are placeholders; ./explanation may contain several HTML pages and arbitrary
 
 ## Current headless commands (TASK-002-05)
 
-The current executable implements `auth connect [new]`, `auth sessions list/revoke`, `projects list`, `package validate PATH`, `import PATH`, `documents show ID [--version ID]`, `files list/get/download`, `uploads list/show/resume/abandon`, `operations show`, `jobs list/show/cancel`, `events`, `config show/plan/apply/export/import`, `review show/history/set`, and authenticated `doctor`/`status`. Other catalog families remain FEATURE_NOT_READY; a current workflow credential issuer, native viewer, provider and scheduler are not implemented. Explicit protected local pairing approval remains separate from `auth connect`; connect never approves itself. Selected custom credential files determine the remembered endpoint before local discovery; an explicit endpoint still must match that selected credential.
+The current executable implements `auth connect [new]`, `auth sessions list/revoke`, `projects list`, `package validate PATH`, `import PATH`, `documents show ID [--version ID]`, `files list/get/download`, `uploads list/show/resume/abandon`, `operations show`, `jobs list/show/cancel`, `events`, `config show/plan/apply/export/import`, `review show/history/set`, `revisit show/set`, and authenticated `doctor`/`status`. Other catalog families remain FEATURE_NOT_READY; a current workflow credential issuer, native viewer, provider and scheduler are not implemented. Explicit protected local pairing approval remains separate from `auth connect`; connect never approves itself. Selected custom credential files determine the remembered endpoint before local discovery; an explicit endpoint still must match that selected credential.
 
 `--credential PATH` selects a protected credential bound to the exact endpoint origin, profile and library; no raw bearer flag is accepted. `--client-dir PATH` selects protected journals/snapshots independently of daemon profile files. Journals precede dispatch and retain original I/U/S, exact target, pre-transfer base and local capture identity. The optional metadata transfer has its own persisted create/completion keys and targets final I. Retried create, payload/metadata completion and final dispatch reconcile those original identities before rereading local input. Pending K responses poll the original operation; reconciling returns exit6; definitive failed receipts preserve their original error/exit. A completed202 receipt remains job creation, with a separately reported job outcome. A response guard denial after a committed configuration change retains the pending journal until its original outcome can be read with current authority.
 
@@ -254,3 +255,12 @@ operation_id. Exit classes remain 2 invalid, 3 denied/session, 4 conflict/precon
 5 unavailable and 6 uncertain reconciliation. Owner credentials are required; no
 workflow grant permits personal completion. Schema revision 10 requires a capable
 binary, not an attempt to downgrade the live database.
+
+
+TASK-005-02 Revisit uses exactly `show --document ID` or
+`set --document ID --flag true|false`, with one `--if-match ETAG` or
+`--if-none-match '*'` for set and an optional final `--operation-id`.
+It uses the shared afterDefinitive outcome classification: transport/decoding loss,
+authority denial, unrecorded 5xx and reconciliation demands retain the automatic key
+and original conditions. Only a definitive outcome acknowledged to output releases
+that key. No notes CLI is selected; Notes is a shared Reader action.

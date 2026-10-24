@@ -339,3 +339,24 @@ its matching objects, following the storage recovery procedure. There is no SQL 
 migration or promise that an older binary can open revision 10. Protected application
 restore remains TASK-005-05; Review does not implement it early. Execution and limits
 are recorded in [version-review](testing/version-review.md).
+
+## Anchored note storage (TASK-005-02)
+
+Append-only SQLite revision 11 adds annotations, annotation_history and revisit_flags.
+Annotations index owner/version/ID and keep relational owner/document/original-version/
+current-version identity, page/region, revision, soft-deletion marker and the typed
+revision snapshot. History is keyed by annotation_id/revision and retains original
+and prior anchor/body/context. Revisit is keyed by owner/document and records explicit
+false independently from absence. Startup validates all declared tables/indexes while
+retaining reachable search, reference and Review declaration checks. Older binaries
+refuse revision 11. Failed migration rolls back; recovery uses the verified pre-migration
+SQLite/object set. Protected restore remains TASK-005-05.
+
+A note mutation adopts referenced body/context objects and their history ownership,
+updates current state, appends history and audit-bearing outbox facts, and completes
+the operation receipt atomically. Large byte preparation occurs outside the short
+transaction under exact-attempt preparation pins. Saved history owns immutable references
+and context lifetime pins; ordinary edit/reattach/delete does not release historical
+objects. Read streams acquire independent read pins. Navigation/renderer disposal does
+not release accepted note ownership. Later purge/retention/backup implementations must
+account for annotation_history references and pins, including contexts from old anchors.

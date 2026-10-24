@@ -57,6 +57,17 @@ function operationView(id: string, state = "completed"): OperationView {
 }
 
 class FakeClient implements HaeryongClient, CredentialAware {
+  async annotationList():Promise<never>{throw new Error("not used in controller tests");}
+  async annotationGet():Promise<never>{throw new Error("not used in controller tests");}
+  async annotationHistory():Promise<never>{throw new Error("not used in controller tests");}
+  async annotationCreate():Promise<never>{throw new Error("not used in controller tests");}
+  async annotationPatch():Promise<never>{throw new Error("not used in controller tests");}
+  async annotationDelete():Promise<never>{throw new Error("not used in controller tests");}
+  async annotationBodyStream():Promise<never>{throw new Error("not used in controller tests");}
+  async annotationContextStream():Promise<never>{throw new Error("not used in controller tests");}
+  async revisitGet():Promise<never>{throw new Error("not used in controller tests");}
+  async revisitPut():Promise<never>{throw new Error("not used in controller tests");}
+
   async configurationView(): Promise<never> { throw new Error("not provided by fixture"); }
   async configurationPlan(): Promise<never> { throw new Error("not provided by fixture"); }
   async configurationPlanCommit(): Promise<never> { throw new Error("not provided by fixture"); }

@@ -809,3 +809,79 @@ counts describe loaded rows, not an inferred total. Revisit remains TASK-005-02.
 `features.review` gates consumers; missing/false is unavailable, never unreviewed.
 Review invalidations carry no trusted state and become generic invalidations for
 scoped readers or targets no longer visible. Consumers refetch authenticated state.
+
+## Anchored notes and Revisit additions (TASK-005-02)
+
+These are **additive provisional** selections in schema/API 1.0/v1. The executable
+closed definitions are annotation_anchor, annotation_create, annotation_patch,
+annotation_view, annotation_page, annotation_history_item/annotation_history_page,
+annotation_stream_request/annotation_stream_metadata and revisit_request/revisit_view.
+The embedded schema, selected fixture schema and manifest digests change together.
+The synthetic conflict fixture is `tests/fixtures/annotations/conflict.json`.
+
+An anchor has exactly version_id, page_path, region_id, page_query and page_fragment.
+Whole-version anchors have null page/region and empty query/fragment. A region requires
+its exact resolved HTML page; identifiers are page-local. Query/fragment are raw
+navigation values, encoded once in a link. Original_anchor is immutable; anchor is
+changed only by action=reattach. Selected_text and the saved context_ref preserve
+fallback context when optional region metadata or an element is unavailable.
+Resolution has status=resolved|unresolved and nullable reason. Unproved regions remain
+unresolved. A newer version or repeated slug/path/region never retargets an old note.
+
+POST creates a note under the route's exact version, with the four remaining anchor
+keys, selected_text, context, context_ref, body and body_ref. Exactly one body string
+or body_ref={upload_id} is non-null. Context is inline JSON/text or a context_ref,
+with explicit null absence; the alternatives cannot both be non-null. PATCH is a
+closed union: action=edit replaces content without anchor fields; action=reattach
+provides the complete same-document destination anchor and replacement fallback/context
+but no body. Reattachment requires a reliable exact destination; an unprovable region
+is rejected, allowing an explicit page/whole-version fallback. Both mutations retain
+old body/anchor/context revisions. DELETE is keyed, body-less, individually conditional
+soft deletion. Its tombstone exposes anchors/revision but null body/body_ref/context_ref/
+selected_text; nondeleted lists exclude it. Permitted history remains owner-readable.
+
+Note views include annotation_id/document_id, original/current anchor, body/body_ref,
+selected_text/context_ref, created_at/updated_at/deleted_at, revision/etag, history_url,
+resolution, action and actor_session. Mutations and history rows also carry operation_id.
+Lists/history use items and next_cursor; an empty list has [] and null. Unknown note
+IDs are 404, not fabricated absent notes. Every list item has its individual strong
+ETag; collection validators never authorize edits. POST is a keyed collection create,
+not a conditional upsert. PATCH/DELETE require one quoted If-Match; Revisit uses the
+existing individual If-Match or If-None-Match:* pattern. Malformed controls are 400,
+missing controls/key 428, stale controls 412 with safe current revision/etag, changed
+same-key intent 409. Authorized receipt replay precedes new-work CAS. Inline and sealed
+body/context alternatives fingerprint exact content and semantic binding rather than
+handle identity. A body binds its operation and annotation-create/edit target; inline
+body uses the same inferred binding. Context binds version, nullable page, nullable
+render instance and originating session. Inline context uses the binding it will have
+when stored (render instance null), captured as an immutable receipt default. Its saved
+context_ref and equivalent handles normalize to the same bytes/media/binding identity.
+Replay retains that original default after another session or later reattachment;
+a genuinely changed binding or bytes conflicts before receipt replay. No mutation acknowledges
+success before durable commit.
+
+Referenced bodies use an annotation/revision-bound content_url with bytes_sha256,
+decimal byte_size and media_type. GET /annotations/{id}/body?revision=N streams that
+saved Markdown object. The additive saved-context route is
+GET /annotations/{id}/context?revision=N: N is a required positive current or permitted
+history revision, and the server resolves its adopted context_ref. There is no arbitrary
+URL/context-handle selector. It returns exact JSON/text bytes, Content-Type, Content-Length
+and a strong sha256 ETag. Current owner/note/document authority, read pins and delivery
+rechecks apply. Renderer disposal and originating-session revocation do not revoke another
+currently authorized owner session's saved-record access. Null context, unknown revision
+or a deleted current context is 404; permitted pre-deletion history remains readable.
+The closed browser/native/desktop annotationContextStream operation takes only
+annotation_id/revision and returns the cancellable stream plus etag, bytes_sha256,
+byte_size and media_type. It is distinct from the body-less fresh-frame proof.
+
+Revisit is independent document state. An absent GET is exactly
+`{document_id,exists:false,value:{flag:false},revision:null,etag:null,page_position_url:null,required_precondition:"if_none_match_star"}`.
+An explicit first false write creates an existing revision. Stored responses have a
+real revision/etag and no required_precondition. PUT takes only flag:boolean; its result
+adds operation_id. Optional additive query_document.revisit is false for an owner's
+absent state and null for scoped readers. The owner-only revisit=true|false list filter
+composes with project/lifecycle/Review filters before pagination and binds cursors.
+features.annotations and features.revisit signal availability, never authority. Missing
+or false flags show unavailable. Notes/Revisit invalidations carry redacted audit facts;
+scoped or hidden-target delivery becomes generic library invalidation. Reading, notes,
+Revisit and AI output never start or complete whole-version Review.
