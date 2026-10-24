@@ -32,6 +32,20 @@ flowchart TD
 
 Local page navigation stays in the selected directory version. An authored link to another result opens its exact target version/page and preserves the return path. Page open, cross-page navigation and diagram clicks never imply review completion. Explicit Mark as reviewed can complete an Unreviewed or Reviewing version; Reopen/Clear updates current personal state and retains history. Navigating to a new version leaves the historical record intact and the new version Unreviewed. Revisit applies independently to the document. A missing source or unknown source basis is visible and does not block reading the saved explanation. From Evidence, Check source evidence performs the later authorized exact-source verification once TASK-004-01 is available; original evidence remains immutable and check outcome/history is a separate overlay. This action does not require AI or make verification an import condition. Notes/questions capture the selected page, optional region and actual scenario. Large context transfers automatically without author field/byte caps; an owner Ask/Save action remains explicit.
 
+## Pinned links and exact version comparison
+
+Reader Copy link includes its selected page, opaque artifact query/fragment and optional
+page-local region under the approved current base. A local-only link is labelled. A
+credential loss automatically captures that logical route for Connect; verification
+returns once per entry, including a later reconnect in the same running app. Reload,
+Back/Forward and S05 round trips preserve exact selection without moving personal state.
+Versions offers exact manual pairs, progressive structural differences and Import new
+version with this document/base captured before upload. Later cursor failures retain
+visible earlier results and retry the same cursor; incomplete scope cannot say complete.
+Open latest is separate and resolves once when activated. Review remains unavailable
+until its owning feature; source observation and supplied semantic assessment coverage
+cannot stand in for personal completion.
+
 ## Maintenance proposal lifecycle
 
 ```mermaid

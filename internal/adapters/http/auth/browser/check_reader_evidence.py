@@ -326,7 +326,7 @@ try:
            {'kind':'region','page_path':'first.html','region_id':'r2','outcome':'assessed','reason':None,'discrepancy':True,'assessment_id':'asm-1','target_set_id':'t1'},
            {'kind':'region','page_path':'first.html','region_id':'r3','outcome':'partial','reason':'일부만 확인','discrepancy':None,'assessment_id':'asm-1','target_set_id':'t1'}]
  units_u2=[{'kind':'region','page_path':'first.html','region_id':'r4','outcome':'blocked','reason':'읽기 거부','discrepancy':None,'assessment_id':'asm-1','target_set_id':'t1'}]
- applicable_t1={'source_intent':'historical','target_set_id':'t1','captured_at':'2026-10-19T00:00:00Z','scope':{'kind':'page','page_path':'first.html','region_id':None},'status':'aligned_within_scope','coverage':{'coverage_set_id':'c1','unit_kind':'region','eligible':4,'assessed':4,'complete':True,'units_url':f'/api/v1/versions/{ev_version}/assessments/coverage?coverage_set_id=c1'},'assessed_at':'2026-10-19T01:00:00Z','reassessment_required':False}
+ applicable_t1={'source_intent':'historical','target_set_id':'t1','captured_at':'2026-10-19T00:00:00Z','scope':{'kind':'page','page_path':'first.html','region_id':None},'status':'aligned_within_scope','coverage':{'coverage_set_id':'c1','unit_kind':'region','eligible':4,'assessed':4,'complete':True,'units_url':f'/api/v1/versions/{ev_version}/assessments/coverage?coverage_set_id=c1&attempt_run_id=11111111-2222-4333-8444-555555555555'},'assessed_at':'2026-10-19T01:00:00Z','reassessment_required':False}
  applicable_t2={'source_intent':'historical','target_set_id':'t2','captured_at':'2026-10-19T00:00:00Z','scope':{'kind':'page','page_path':'nested/second.html','region_id':None},'status':'aligned_within_scope','coverage':{'coverage_set_id':'c2','unit_kind':'region','eligible':1,'assessed':1,'complete':True,'units_url':f'/api/v1/versions/{ev_version}/assessments/coverage?coverage_set_id=c2'},'assessed_at':'2026-10-19T01:00:00Z','reassessment_required':False}
  seeded_verifications={'items':[{'verification_id':'ver-1','outcome':'matched','checked_at':'2026-10-19T02:00:00Z','verified_at':'2026-10-19T02:00:00Z','reason':None}],'next_cursor':'vh2'}
  seeded_verifications_v2=[{'verification_id':'ver-2','outcome':'captured','checked_at':'2026-10-19T03:00:00Z','verified_at':'2026-10-19T03:00:00Z','reason':None}]
@@ -431,8 +431,12 @@ try:
    if path.startswith(f'/api/v1/versions/{ev_version}/assessments/coverage'):
     if (query.get('coverage_set_id') or [''])[0]=='c2':
      self._envelope({'items':[{'kind':'region','page_path':'nested/second.html','region_id':'overview','outcome':'assessed','reason':None,'discrepancy':None,'assessment_id':'asm-2','target_set_id':'t2'}],'next_cursor':None});return True
+    assert query.get('attempt_run_id')==['11111111-2222-4333-8444-555555555555'],'T5 attempt locator lost'
+    proxy_log.append(('coverage_attempt',cursor,query['attempt_run_id'][0]))
     if cursor=='u2':
      proxy_state['coverage_u2_seen']+=1;proxy_log.append(('coverage','u2'))
+     if not proxy_state.get('t5_coverage_failed'):
+      proxy_state['t5_coverage_failed']=True;self._envelope(None,status=500);return True
      self._envelope({'items':units_u2,'next_cursor':None});return True
     proxy_log.append(('coverage','first'))
     self._envelope({'items':units_u1,'next_cursor':'u2'});return True
@@ -545,6 +549,10 @@ try:
    await t.getByRole('button',{name:'실패한 지점부터 다시 불러오기',exact:true}).tap();
    await t.getByText('asm-2',{exact:false}).first().waitFor({timeout:10000});
    facts.retryCompletedHistory=true;
+   // T5 failed coverage page resumes with the same target/set/attempt locator.
+   await t.getByRole('button',{name:'커버리지 다시 불러오기',exact:true}).waitFor({timeout:10000});
+   await t.getByRole('button',{name:'커버리지 다시 불러오기',exact:true}).tap();
+   await t.getByText('평가됨 2/4',{exact:false}).first().waitFor({timeout:10000});
    // Seeded applicable overlay vs unit-derived counts/status and the conflict.
    await t.getByText('기록된 배지',{exact:false}).first().waitFor({timeout:10000});
    const badgeText=await panel.textContent();
@@ -755,10 +763,12 @@ try:
   require('seeded_console_only_explained_faults',not explained,explained)
   # Driver-side fixture assertions: the retry reused the EXACT failed cursor
   # and every started coverage enumeration crossed its second cursor page to
-  # completion (each full enumeration passes u2 exactly once).
+  # completion (plus the one labelled T5 failed u2 attempt).
   coverage_starts=proxy_log.count(('coverage','first'))
   require('fixture_exact_failed_cursor_retry',('assessments','p2-fail') in proxy_log and ('assessments','p2-retry') in proxy_log and ('verifications','vh2-fail') in proxy_log and ('verifications','vh2-retry') in proxy_log)
-  require('fixture_multicursor_coverage_complete',coverage_starts>=1 and proxy_state['coverage_u2_seen']==coverage_starts,proxy_log)
+  require('fixture_multicursor_coverage_complete',coverage_starts>=1 and proxy_state['coverage_u2_seen']==coverage_starts+int(proxy_state.get('t5_coverage_failed',False)),proxy_log)
+  attributed=[row for row in proxy_log if row[0]=='coverage_attempt']
+  require('T5_attempt_first_next_retry', bool(attributed) and all(row[2]=='11111111-2222-4333-8444-555555555555' for row in attributed) and any(attributed[i][1]==attributed[i+1][1]=='u2' for i in range(len(attributed)-1)),attributed)
   require('fixture_proxy_no_handler_failures',not proxy_errors,proxy_errors[:6])
 
   # TASK-003-04 R9 first-commit identity oracle: the harness page mounts the

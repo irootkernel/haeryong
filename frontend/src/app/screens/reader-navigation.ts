@@ -1,11 +1,11 @@
 import { ApiError } from "../../client/types.ts";
 import type { HaeryongClient, ReferenceView } from "../../client/types.ts";
-import { parseRoute, safeReturn } from "../routes.ts";
+import { parseRoute, safeReturn, regionFromHash } from "../routes.ts";
 
 export interface RegionIntent { regionId: string }
 export function parseRegionIntent(hash: string): RegionIntent | null {
-  const values = new URLSearchParams(hash.replace(/^#/, "")).getAll("region");
-  return values.length === 1 && values[0] !== "" ? { regionId: values[0]! } : null;
+  const regionId = regionFromHash(hash);
+  return regionId === null ? null : { regionId };
 }
 export interface ReaderPageContext {
   versionId: string; pagePath: string; context: string; reload: number; renderGeneration: string;
@@ -75,6 +75,11 @@ export function returnToReferringPage(owner: string): boolean {
 
 /** One opt-in activation, scoped to the captured page and capability lifetime. */
 export class ReaderReferences {
+  #binding: string | null = null;
+  bind(binding: string | null): void {
+    if (binding !== this.#binding) this.#generation++;
+    this.#binding = binding;
+  }
   #enabled = false;
   #generation = 0;
   private options: {

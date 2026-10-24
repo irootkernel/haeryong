@@ -36,3 +36,11 @@ export function evidenceExcerpt(excerpt: EvidenceItemView["excerpt"]): string | 
     catch { return `Base64: ${excerpt.data_base64}`; }
   } catch { return "보관된 내용을 표시할 수 없습니다."; }
 }
+
+/** Last recorded library observation; null reason on an available source is
+ * not the missing-observation state and never a semantic/personal verdict. */
+export function sourceObservationLabel(source: { available?: boolean; reason?: string | null; last_observed_at?: string | null } | undefined): string {
+  if (!source) return "관측 기록을 제공하지 않습니다.";
+  const reason = source.reason ? coverageReason(source.reason) : source.available ? "마지막 관측에서 제한 없음" : "사유 미제공";
+  return `${source.available ? "사용 가능" : "사용 불가"} · ${reason} · 관측 ${source.last_observed_at ?? "없음"}`;
+}

@@ -181,6 +181,19 @@ A finding's Create draft action uses POST /generations with finding_id, expected
 
 POST /jobs/{id}/resume carries {decision:reconcile_only|continue|retry,expected_attempt_generation}. Reconcile_only observes existing work without a new dispatch; continue resumes only an uncancelled attempt with a confirmed safe continuation; retry requires the explicit retry decision and current scope/budget. Cancel intent is monotonic: a cancel-marked job cannot dispatch or apply through resume, including via paused to queued. Further requested work uses a new linked job. See the job contract for unknown/orphan accounting.
 
+### Versions client composition (TASK-004-05)
+
+The shared S05 screen reuses document/version reads, two exact path-ordered file
+inventories, verified supplied metadata, file streams and assessment coverage. It
+merges finite cursor pages in unsigned UTF-8 path order, exposes unfinished/error scope
+and retries the failed cursor. Completion requires both inventories to end. File kind,
+digest and symlink target changes remain structural observations; metadata/region
+comparison retains exact page-local identities. Unavailable metadata is not an empty
+successful comparison. Text previews read blocks on demand and verify complete bytes;
+unsupported content retains original-file download. No diff or Review API is added.
+The [route registry](schema-registry.md#deep-link-and-versions-consumption-task-004-05)
+owns additive S05 selection queries, copied-link base resolution and login return.
+
 ## Imported evidence verification
 
 POST /versions/{id}/source-evidence-verifications?evidence_id={evidence_id} accepts JSON {} or optional {expected_bytes_sha256,expected_excerpt,expected_excerpt_ref}, plus the required operation key. It checks the immutable authored evidence's exact source identity and bounded location under current version/source authority. It never resolves that evidence to a newer branch revision, dispatches AI or changes capture_status. Expectations are optional: the digest covers the exact bounded captured bytes, and an expected_excerpt must equal those entire bytes encoded as UTF-8, without trimming or Unicode/line-ending normalization. All supplied expectations must match. Binary expectations can use a digest without text. expected_excerpt and expected_excerpt_ref are mutually exclusive; expected_excerpt_ref uses the existing purpose=body immutable body_ref transfer bound to this exact evidence/check operation. Both forms compare the same exact UTF-8 bytes and normalize identically for retry identity.

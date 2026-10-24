@@ -235,3 +235,11 @@ label.choice input { width: 18px; height: 18px; }
   .library-search-form label, .library-search-form input, .library-search-form select { width: 100%; min-width: 0; }
   .library-search-form button, .library-search-results button, .library-search-results .action-link { min-height: 44px; }
 }
+
+/* S05 keeps exact paths readable on narrow hosts; table scrolling is local. */
+.versions-screen { overflow-wrap: anywhere; min-width: 0; }
+.versions-screen table { display: block; overflow-x: auto; max-width: 100%; }
+.versions-screen td, .versions-screen th { padding: .6rem; text-align: left; vertical-align: top; min-width: 10rem; }
+.versions-screen pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.versions-texts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1rem; }
+.versions-screen select, .reader-actions input { max-width: 100%; }

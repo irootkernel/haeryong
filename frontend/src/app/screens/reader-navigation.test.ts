@@ -197,3 +197,16 @@ test("M4a-2 return restores saved A after ordinary target child navigation and h
     env.hist.forward(); assert.equal(location.pathname + location.search + location.hash, source);
   } finally { env.close(); }
 });
+test("T5 a same-frame route/region binding change and return cannot revive a pending authored reference", async () => {
+  const env = environment();
+  try {
+    const f = setup(); f.enable({ references: true }); f.flow.bind('original page/query/region');
+    let release!: (value: ReferenceView) => void;
+    f.resolver(() => new Promise(resolve => { release = resolve; }));
+    const pending = f.flow.request(activation());
+    await Promise.resolve(); await Promise.resolve();
+    f.flow.bind('another region'); f.flow.bind('original page/query/region');
+    release(view()); await pending;
+    assert.deepEqual(f.navigations, []); assert.deepEqual(f.notices, []);
+  } finally { env.close(); }
+});

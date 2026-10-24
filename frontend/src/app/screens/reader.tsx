@@ -18,6 +18,8 @@ import { SourcePanel } from "./source-panel.tsx";
 import { acceptRegionFocusResult, acceptRegionSelection, parseSuppliedMetadata, readStream, regionRequestStale, regionSelectionMatches, regionsOfPage, verifyMetadataBytes, type MetadataState } from "./evidence-view.ts";
 import { featureEnabled } from "./library-data.ts";
 import { ReaderReferences, readerChannelReady, HostRegionFocus, regionFocusMatches, pushReference, referringPage, returnToReferringPage, type ReaderPageContext, type RegionIntent } from "./reader-navigation.ts";
+import { restoreVersionsFocus } from "./deep-links.ts";
+import { ReaderVersionActions } from "./reader-version-actions.tsx";
 import { navigate } from "../router.tsx";
 
 interface ReaderProps {
@@ -422,14 +424,26 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
     hashFocus.flush(channelReady, id => selectRegion({ id }));
   }, [routeRegion, versionId, currentPage, context, reload, channelReady]);
   const returnContext = referringPage(history.state?.haeryongReferenceReturn, referenceOwner);
-  linksNavigation.bind(contextVisible && contextTab === "links"
-    ? JSON.stringify([epoch, documentId, versionId, currentPage, regionId, context, reload, props.pageQuery, props.pageFragment]) : null);
+  const navigationContext = JSON.stringify([epoch, documentId, versionId, currentPage, regionId, context, reload, props.pageQuery, props.pageFragment]);
+  useEffect(() => { references.bind(navigationContext); return () => references.bind(null); }, [references, navigationContext]);
+  const linksContext = contextVisible && contextTab === "links" ? navigationContext : null;
+  useEffect(() => { linksNavigation.bind(linksContext); return () => linksNavigation.bind(null); }, [linksNavigation, linksContext]);
+  useEffect(() => {
+    // A settled frameless Reader cannot produce channel/region readiness.
+    // It still owns the S05 opener and must consume the return-focus intent.
+    if (context !== null && (issue !== null || (selection?.context === context && selection.bootstrap.version_id === versionId
+      && (!selection.bootstrap.renderer_available || selection.location === null)))) restoreVersionsFocus();
+  }, [selection, issue, context, versionId]);
   return <div className="reader">
     <header className="reader-header"><div><h1>{currentVersion?.title_snapshot ?? docInfo?.document.title ?? "결과 읽기"}</h1><p className="muted-code">{versionId}</p>
         <VersionHeader version={currentVersion} pagePath={currentPage} metadata={suppliedMeta.kind === "ready" ? suppliedMeta.metadata : null} />
         {suppliedMeta.kind === "error" && <div className="banner" data-tone="warning" role="alert"><p>공급 메타데이터를 확인하지 못했습니다: {suppliedMeta.problem} — 결과 읽기에는 영향이 없습니다.</p><button onClick={() => setSuppliedMetaReload((value) => value + 1)}>메타데이터 다시 불러오기</button></div>}
       </div></header>
-    <div className="form-row reader-actions">{returnContext && <button onClick={() => { controller.requireVerifiedDispatch(controller.captureDispatchAuthority()); returnToReferringPage(referenceOwner); }}>참조한 페이지로 돌아가기</button>}<button onClick={() => void continueReading()}>이어서 읽기</button><button disabled={!selection?.location} onClick={() => void setDefault().catch((error) => setNotice(errorText(error)))}>기본 페이지로 지정</button><button onClick={() => void setDefault(true).catch((error) => setNotice(errorText(error)))}>기본 페이지 설정 해제</button><button id="reader-files-toggle" className="narrow-only" aria-expanded={filesOpen} aria-controls="reader-files-panel" onClick={() => { setContextOpen(false); setFilesOpen((value) => !value); }}>파일 목록</button><button id="reader-context-toggle" aria-expanded={contextOpen} aria-controls="reader-context-panel" onClick={() => { setFilesOpen(false); setContextOpen((value) => !value); }}>근거 패널</button><button disabled={!currentDocInfo} onClick={() => setImportOpen(true)}>새 버전 가져오기</button></div>
+    <div className="form-row reader-actions"><ReaderVersionActions key={JSON.stringify([epoch, versionId, currentPage, props.pageQuery, props.pageFragment, regionId, context])} controller={controller} documentId={documentId} versionId={versionId} page={currentPage} query={props.pageQuery} fragment={props.pageFragment} region={regionId} owner={referenceOwner} readPosition={async () => {
+      const saved = currentPage ? await personal.read(target("page-position", currentPage)) : null;
+      const position = saved?.exists ? (saved.value as PagePositionValue).position : null;
+      return { scroll_x: Number(position?.scroll_x) || 0, scroll_y: Number(position?.scroll_y) || 0 };
+    }} />{returnContext && <button onClick={() => { controller.requireVerifiedDispatch(controller.captureDispatchAuthority()); returnToReferringPage(referenceOwner); }}>참조한 페이지로 돌아가기</button>}<button onClick={() => void continueReading()}>이어서 읽기</button><button disabled={!selection?.location} onClick={() => void setDefault().catch((error) => setNotice(errorText(error)))}>기본 페이지로 지정</button><button onClick={() => void setDefault(true).catch((error) => setNotice(errorText(error)))}>기본 페이지 설정 해제</button><button id="reader-files-toggle" className="narrow-only" aria-expanded={filesOpen} aria-controls="reader-files-panel" onClick={() => { setContextOpen(false); setFilesOpen((value) => !value); }}>파일 목록</button><button id="reader-context-toggle" aria-expanded={contextOpen} aria-controls="reader-context-panel" onClick={() => { setFilesOpen(false); setContextOpen((value) => !value); }}>근거 패널</button><button disabled={!currentDocInfo} onClick={() => setImportOpen(true)}>새 버전 가져오기</button></div>
     {notice && <p role="status">{notice}</p>}
     {entries.map((entry) => <div className="banner" data-tone="warning" key={personalKey(entry.target)}>
       <p>{entry.target.version.slice(0, 8)} · {{ "reader-preference": "기본 페이지", "reading-position": "마지막 연 페이지", "page-position": "페이지 위치" }[entry.target.kind]}{entry.target.page ? ` · ${entry.target.page}` : ""}: {entry.issue ?? (personal.recoverable(entry.target) ? "이전 화면의 저장 결과가 확인되지 않았습니다. 원래 요청으로 다시 확인하세요." : entry.conflict ? "다른 기기에서 변경된 상태입니다. 유지할 값을 선택하세요." : "저장 결과를 확인하는 중입니다.")}</p>
@@ -450,10 +464,15 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
       onChannelReady={(page) => {
         const route = referenceRoute.current;
         if (!readerChannelReady(page, { versionId: route.versionId, context: route.context ?? "", reload: route.reload })) return;
-        channelRef.current = page; setChannelReady(page);
+        channelRef.current = page; setChannelReady(page); if (routeRegion === null) restoreVersionsFocus();
       }}
       onChannelClosed={() => { channelRef.current = null; setChannelReady(null); }}
-      onReference={referencesEnabled ? event => { void references.request(event); } : undefined} focusHandle={regionFocus} onLocation={mirror} onNotice={setNotice} onRegion={captureRegion} onRegionFocus={(result) => { if (result.context !== context || result.reload !== reload || !regionFocusMatches(result, channelRef.current, selectedRegionRef.current)) return; if (!acceptRegionFocusResult(result, { versionId, pagePath: currentPage })) return; if (!result.found) setNotice(`선언된 영역 ${result.regionId}에 대응하는 문서 요소를 찾지 못했습니다. 영역 ID는 메타데이터의 논리 식별자이며 읽기에는 영향이 없습니다.`); else if (!result.focused) setNotice(`영역 ${result.regionId}에 초점을 맞추지 못했습니다(오버레이가 열려 있거나 페이지가 초점을 받을 수 없습니다). 본문에서 방향키로 읽은 뒤 영역을 다시 선택하면 초점이 이동하는 경우가 있습니다.`); else setNotice(`영역 ${result.regionId}에 초점을 맞췄습니다.`); }} /> : !issue && !selection ? <p role="status">결과를 확인하는 중…</p> : selection?.location === null ? <p>페이지를 선택하거나 원본 파일을 내려받으세요.</p> : null}
+      onConnectionFailure={(failed) => {
+        const route = referenceRoute.current;
+        if (failed.versionId === route.versionId && failed.context === route.context && failed.reload === route.reload
+          && contextOf() === failed.context) restoreVersionsFocus();
+      }}
+      onReference={referencesEnabled ? event => { void references.request(event); } : undefined} focusHandle={regionFocus} onLocation={mirror} onNotice={setNotice} onRegion={captureRegion} onRegionFocus={(result) => { if (result.context !== context || result.reload !== reload || !regionFocusMatches(result, channelRef.current, selectedRegionRef.current)) return; if (!acceptRegionFocusResult(result, { versionId, pagePath: currentPage })) return; restoreVersionsFocus(); if (!result.found) setNotice(`선언된 영역 ${result.regionId}에 대응하는 문서 요소를 찾지 못했습니다. 영역 ID는 메타데이터의 논리 식별자이며 읽기에는 영향이 없습니다.`); else if (!result.focused) setNotice(`영역 ${result.regionId}에 초점을 맞추지 못했습니다(오버레이가 열려 있거나 페이지가 초점을 받을 수 없습니다). 본문에서 방향키로 읽은 뒤 영역을 다시 선택하면 초점이 이동하는 경우가 있습니다.`); else setNotice(`영역 ${result.regionId}에 초점을 맞췄습니다.`); }} /> : !issue && !selection ? <p role="status">결과를 확인하는 중…</p> : selection?.location === null ? <p>페이지를 선택하거나 원본 파일을 내려받으세요.</p> : null}
     <Sheet id="reader-context-panel" openerId="reader-context-toggle" className="reader-context" open={contextVisible} modal={contextModal} label="문맥 및 근거 패널" onClose={() => setContextOpen(false)}>
       {!wideLayout && <button onClick={() => setContextOpen(false)}>문맥 닫기</button>}
       {suppliedMeta.kind === "ready" && currentPage !== null && regionsOfPage(suppliedMeta.metadata, currentPage).length > 0 && <div className="region-outline"><h3>영역 개요(현재 페이지)</h3><ul>{regionsOfPage(suppliedMeta.metadata, currentPage).map((region) => <li key={region.id}><button className="link" data-selected={regionId === region.id ? "true" : undefined} aria-current={regionId === region.id ? "true" : undefined} onClick={() => selectRegion(region)}>{typeof region.label === "string" && region.label !== "" ? region.label : region.id}</button></li>)}</ul><p className="hint">영역을 선택하면 해당 페이지의 문맥이 그 영역에 묶이고, 페이지 요소에 실제 초점을 시도해 결과를 알립니다. 좁은 화면에서는 문맥 패널이 닫힌 뒤 초점이 시도됩니다. 선언된 영역이 문서 요소와 연결되지 않아도 읽기·페이지 문맥은 그대로 유지됩니다.</p></div>}

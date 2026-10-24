@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { evidenceAvailability, evidenceExcerpt, coverageReason } from "./source-presentation.ts";
+import { evidenceAvailability, evidenceExcerpt, coverageReason, sourceObservationLabel } from "./source-presentation.ts";
 import { coverageUnitsParams } from "./evidence-view.ts";
 
 test("not-read is neutral; missing source F07, denied F10, retained missing and corrupt stay explicit", () => {
@@ -33,4 +33,12 @@ test("retained evidence excerpts preserve UTF-8 and binary bytes without renderi
   assert.equal(evidenceExcerpt({ bytes_sha256: "digest", data_base64: btoa("<script>literal</script>\r\n") }), "<script>literal</script>\r\n");
   assert.equal(evidenceExcerpt({ bytes_sha256: "digest", data_base64: "/w==" }), "Base64: /w==");
   assert.equal(evidenceExcerpt({ bytes_sha256: "digest" }), null);
+});
+
+test("T5 an available recorded source with null reason is distinct from no observation", () => {
+  const text = sourceObservationLabel({ available: true, reason: null, last_observed_at: "2026-10-24T00:00:00Z" });
+  assert.match(text, /사용 가능/); assert.match(text, /2026-10-24T00:00:00Z/);
+  assert.doesNotMatch(text, /not_observed|관측 기록 없음/);
+  assert.match(sourceObservationLabel({ available: false, reason: "not_observed", last_observed_at: null }), /관측 기록 없음/);
+  assert.match(sourceObservationLabel(undefined), /제공하지 않습니다/);
 });

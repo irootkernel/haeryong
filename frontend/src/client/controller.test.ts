@@ -1466,6 +1466,28 @@ function nativeScenarioController(port: NativeScenarioPort): ShellController {
   return new ShellController(new NativeHaeryongClient(port as unknown as NativePort), new MemoryCredentialStore());
 }
 
+test("native startup stays checking until the actual remembered-session attachment settles", async () => {
+  const port = new NativeScenarioPort();
+  port.credentialState = "live";
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const call = port.call.bind(port);
+  port.call = async (operation, payload) => {
+    if (operation === "attachSession") await held;
+    return call(operation, payload);
+  };
+  const controller = nativeScenarioController(port);
+  assert.equal(controller.state.phase, "checking");
+  assert.equal(controller.state.notice, NOTICE.checking);
+  const attaching = controller.attachNativeSession();
+  assert.equal(controller.state.phase, "checking");
+  assert.throws(() => controller.requireVerifiedDispatch(), DispatchBlockedError);
+  release();
+  await attaching;
+  assert.equal(controller.state.phase, "verified");
+  controller.stop();
+});
+
 test("a native no-credential foreground recheck keeps a still-owned held poll alive", async () => {
   const port = new NativeScenarioPort();
   const controller = nativeScenarioController(port);

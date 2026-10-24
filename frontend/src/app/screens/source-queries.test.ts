@@ -468,3 +468,19 @@ test("normal completion and definitive failure survive a verification selection 
     assert.equal(intents.verifications.size, 0);
   }
 });
+
+test("T5 newer applicable capture survives late older history; blocked/not_checked fixed units remain addressable", async () => {
+  const newer = { ...applicableWith('/api/v1/versions/v1/assessments/coverage?coverage_set_id=c1'), target_set_id: 'new-target', captured_at: '2026-10-20T00:00:00Z', assessed_at: '2026-10-20T01:00:00Z', coverage: { ...applicableWith(null).coverage, coverage_set_id: 'c1', unit_kind: 'page', eligible: 2, assessed: 0, complete: false, units_url: '/api/v1/versions/v1/assessments/coverage?coverage_set_id=c1' } };
+  const queries = new SourceQueries(fakeClient({
+    assessments: async cursor => ({ items: [{ assessment_id: cursor ? 'old-result' : 'new-result', version_id: 'v1', scope: { kind: 'version', page_path: null, region_id: null }, target_set_id: cursor ? 'old-target' : 'new-target' }], next_cursor: cursor ? null : 'older-history', applicable: cursor ? { ...applicableWith(null), assessed_at: '2026-10-21T00:00:00Z' } : newer }),
+    coverage: async () => ({ items: ['blocked', 'not_checked'].map((outcome, i) => ({ kind: 'page', page_path: i ? 'regionless.html' : 'a.html', region_id: null, outcome, reason: 'missing_source', assessment_id: null, target_set_id: 'new-target' })), next_cursor: null }),
+  }), 'v1', null, null, 't5', new SourceWriteIntents());
+  await queries.loadAssessments(); await tick();
+  const view = queries.snapshot();
+  assert.equal(view.assessments.applicable?.target_set_id, 'new-target');
+  assert.equal(view.assessments.applicable?.captured_at, '2026-10-20T00:00:00Z');
+  assert.equal(view.assessments.applicable?.assessed_at, '2026-10-20T01:00:00Z');
+  assert.deepEqual(view.coverage.units.items.map(u => u.outcome), ['blocked', 'not_checked']);
+  assert.equal(view.coverage.units.items[1]!.page_path, 'regionless.html');
+  assert.equal(queries.scope(), undefined);
+});

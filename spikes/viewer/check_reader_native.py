@@ -7,16 +7,20 @@ args=parser.parse_args()
 STAGES=set(args.stages.split(','))
 ALL_STAGES={'selfcheck','app','seed','restart','crash','evidence','search','references'}
 assert sys.platform=='darwin','this check requires the existing native macOS Wails harness'
-assert STAGES and STAGES<=ALL_STAGES|{'corpus','reference-corpus'},STAGES
+assert STAGES and STAGES<=ALL_STAGES|{'corpus','reference-corpus','versions'},STAGES
 assert not ('restart' in STAGES and 'seed' not in STAGES),'restart requires the seed stage'
-assert not (STAGES&{'seed','restart','crash','evidence','search','references','corpus','reference-corpus'} and 'app' not in STAGES),'these stages require app setup'
+assert not (STAGES&{'seed','restart','crash','search','corpus','reference-corpus'} and 'app' not in STAGES),'these stages require the app smoke context'
+# Versions/evidence/references launch the same compiled App themselves and
+# consume only the common daemon/session setup. The unrelated app smoke opens
+# a CDN-dependent page; T5's no-network selection must not open that page.
+assert not (STAGES&{'evidence','references'} and not STAGES&{'app','versions'}),'these stages require app or versions setup'
 REPO=pathlib.Path(__file__).resolve().parents[2]
 RECEIPT=args.receipt.resolve()
 assert RECEIPT.parent.is_dir(),'receipt parent must exist'
 volume=pathlib.Path('/Volumes/RootKernel')
 scratch=volume/'tmp' if os.path.ismount(volume) and os.access(volume,os.W_OK) else pathlib.Path(tempfile.gettempdir())
 os.umask(0o077)
-work=pathlib.Path(tempfile.mkdtemp(prefix='h3n-',dir=RECEIPT.parent))
+work=pathlib.Path(tempfile.mkdtemp(prefix='h3n-',dir='/tmp')).resolve()
 print(json.dumps({'runtime':str(work)}),flush=True)
 env=os.environ|{'TMPDIR':str(work),'HAERYONG_TEST_STATE_DIR':str(work/'app-state'),'PYTHONDONTWRITEBYTECODE':'1'}
 os.environ['HAERYONG_TEST_STATE_DIR']=env['HAERYONG_TEST_STATE_DIR']
@@ -602,9 +606,10 @@ for(let i=0;i<6;i++){try{await fetch('wails://denied/'+i);}catch(e){}}
                          {'kind':'region','page_path':'first.html','region_id':'r2','outcome':'assessed','reason':None,'discrepancy':True,'assessment_id':'asm-1','target_set_id':'t1'},
                          {'kind':'region','page_path':'first.html','region_id':'r3','outcome':'partial','reason':'일부만 확인','discrepancy':None,'assessment_id':'asm-1','target_set_id':'t1'}]
             units_page2=[{'kind':'region','page_path':'first.html','region_id':'r4','outcome':'blocked','reason':'읽기 거부','discrepancy':None,'assessment_id':'asm-1','target_set_id':'t1'}]
-            applicable={'source_intent':'historical','target_set_id':'t1','captured_at':'2026-10-19T00:00:00Z','scope':{'kind':'page','page_path':'first.html','region_id':None},'status':'aligned_within_scope','coverage':{'coverage_set_id':'c1','unit_kind':'region','eligible':4,'assessed':4,'complete':True,'units_url':f'/api/v1/versions/{ev_version}/assessments/coverage?coverage_set_id=c1'},'assessed_at':'2026-10-19T01:00:00Z','reassessment_required':False}
+            applicable={'source_intent':'historical','target_set_id':'t1','captured_at':'2026-10-19T00:00:00Z','scope':{'kind':'page','page_path':'first.html','region_id':None},'status':'aligned_within_scope','coverage':{'coverage_set_id':'c1','unit_kind':'region','eligible':4,'assessed':4,'complete':True,'units_url':f'/api/v1/versions/{ev_version}/assessments/coverage?coverage_set_id=c1&attempt_run_id=11111111-2222-4333-8444-555555555555'},'assessed_at':'2026-10-19T01:00:00Z','reassessment_required':False}
             seeded_assessments={'items':[{'assessment_id':'asm-1','version_id':ev_version,'scope':{'kind':'page','page_path':'first.html','region_id':None},'target_set_id':'t1','state':'published'}],'next_cursor':None,'applicable':applicable}
             seeded_verifications={'items':[{'verification_id':'ver-1','outcome':'matched','checked_at':'2026-10-19T02:00:00Z','verified_at':'2026-10-19T02:00:00Z','reason':None},{'verification_id':'ver-2','outcome':'captured','checked_at':'2026-10-19T03:00:00Z','verified_at':'2026-10-19T03:00:00Z','reason':None}],'next_cursor':None}
+            coverage_attempts=[]
             class Seeded(BaseHTTPRequestHandler):
                 def log_message(self,*a): pass
                 def _serve_seeded(self):
@@ -616,7 +621,11 @@ for(let i=0;i<6;i++){try{await fetch('wails://denied/'+i);}catch(e){}}
                         body=json.dumps({'data':value},ensure_ascii=False).encode()
                         self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
                     if path.startswith(f'/api/v1/versions/{ev_version}/assessments/coverage'):
-                        cursor=urllib.parse.parse_qs(urllib.parse.urlsplit(path).query).get('cursor',[''])[0]
+                        params=urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
+                        assert params.get('attempt_run_id')==['11111111-2222-4333-8444-555555555555'],'native attempt locator lost'
+                        cursor=params.get('cursor',[''])[0];coverage_attempts.append(cursor)
+                        if cursor=='u2' and coverage_attempts.count('u2')==1:
+                            body=json.dumps({'error':{'code':'SERVICE_RECOVERING','retryable':True,'details':{}}}).encode();self.send_response(503);self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return True
                         envelope({'items':units_page1,'next_cursor':'u2'} if cursor!='u2' else {'items':units_page2,'next_cursor':None});return True
                     if path.startswith(f'/api/v1/versions/{ev_version}/assessments'):
                         envelope(seeded_assessments);return True
@@ -668,6 +677,8 @@ for(let i=0;i<6;i++){try{await fetch('wails://denied/'+i);}catch(e){}}
           await wait(open,15000);
           const badge=await wait(()=>{const block=[...document.querySelectorAll('.assessment-block')].map(e=>e.textContent).join('');return block.includes('기록된 배지')&&block.includes('범위 내 정렬')?true:null;},20000);
           log("seeded.overlay-badge-shown",!!badge,{});
+          const coverageRetry=await wait(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='커버리지 다시 불러오기'),20000);
+          log("T5.native-coverage-retry",!!coverageRetry,{});coverageRetry?.click();
           const derived=await wait(()=>{const block=[...document.querySelectorAll('.assessment-block')].map(e=>e.textContent).join('');return block.includes('평가됨 2/4')&&block.includes('대비 구식')?true:null;},20000);
           log("seeded.derived-counts-status",!!derived,{});
           const conflict=await wait(()=>text().includes('기록된 배지가 단위 파생 결과와 충돌합니다'),20000);
@@ -708,14 +719,22 @@ for(let i=0;i<6;i++){try{await fetch('wails://denied/'+i);}catch(e){}}
                 assert 'renderSessionOpen' in seeded_events,('seeded run never opened a real render session through the fixture proxy',seeded_events)
                 seeded_close_rows=next((r['rows'] for r in seeded_receipts if r['event']=='windowClose'),None)
                 assert seeded_close_rows and all(row.get('status')==204 for row in seeded_close_rows),('seeded run normal close rows are not explicit 204 closes',seeded_close_rows)
+                assert coverage_attempts[:3]==['','u2','u2'],coverage_attempts
+                proof['T5_native_attempt_locator']={'first_next_retry':coverage_attempts,'attempt_run_id':'11111111-2222-4333-8444-555555555555','evidence':'labelled supplied assessment/failed coverage page'}
                 proof['cases'].append({'kind':'TASK-003-04 labelled seeded fixture backend (real App+closed facade, presentation only; transparent for all non-seeded methods with real render opens/204 closes): overlay badge vs unit-derived conflict, 2/4 fixed distinct-region denominator with discrepancy/blocked/partial reasons, posthoc/captured labels, authored capture_status never upgraded','probe_rows':[r['name'] for r in seeded_rows],'seeded_backend':f'http://127.0.0.1:{seeded_port_number}','render_close_rows':seeded_close_rows})
             finally:
                 seeded_server.shutdown();seeded_server.server_close()
 
+    reference_fixture=None
+    if 'versions' in STAGES:
+        spec=importlib.util.spec_from_file_location('reference_native',REPO/'spikes/viewer/reference_native.py')
+        support=importlib.util.module_from_spec(spec);spec.loader.exec_module(support)
+        reference_fixture=support.run_versions(REPO,work,state,product,owner,launch,proof)
+
     if 'references' in STAGES:
         ref_spec=importlib.util.spec_from_file_location('reference_native',REPO/'spikes/viewer/reference_native.py')
         ref_support=importlib.util.module_from_spec(ref_spec);ref_spec.loader.exec_module(ref_support)
-        ref_support.run(REPO,work,state,product,owner,launch,proof)
+        ref_support.run(REPO,work,state,product,owner,launch,proof,fixture=reference_fixture)
 
     if 'reference-corpus' in STAGES:
         spec=importlib.util.spec_from_file_location('reference_corpus_native',REPO/'spikes/viewer/reference_corpus_native.py')

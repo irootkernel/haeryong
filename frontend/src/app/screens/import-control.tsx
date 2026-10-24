@@ -707,6 +707,7 @@ export function ImportControl({ controller, projects, documents, preselected, on
             <label>
               프로젝트
               <select value={projectId} onChange={(event) => { setProjectId(event.target.value); setDocumentId(""); setBase({ kind: "unselected" }); baseRequestRef.current += 1; }} disabled={mode === "existing" && preselected ? true : undefined}>
+                {preselected && !projects.some(project => project.project_id === preselected.projectId) && <option value={preselected.projectId}>이 문서의 프로젝트 · {preselected.projectId}</option>}
                 {projects.map((project) => (
                   <option key={project.project_id} value={project.project_id}>
                     {project.name}

@@ -1,8 +1,10 @@
+import { connectionDestination } from "./routes.ts";
+import { VersionsScreen } from "./screens/versions.tsx";
 import { parseRegionIntent } from "./screens/reader-navigation.ts";
 // Trusted application shell: navigation, service indicator, route screens and
 // the connection-state banner. Screens without an implementing owner render a
 // truthful not-implemented placeholder; capability absence is never faked.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { NOTICE, ShellController } from "../client/controller.ts";
 import type { ShellState } from "../client/controller.ts";
 import { ConnectScreen } from "./connect.tsx";
@@ -11,7 +13,7 @@ import { LibraryScreen } from "./screens/library.tsx";
 import { ProjectsScreen, SourcesScreen, SourceSettings } from "./screens/sources.tsx";
 import { StorageScreen } from "./screens/storage.tsx";
 import { ReaderScreen } from "./screens/reader.tsx";
-import { navigate, safeReturn, useShellRoute } from "./router.tsx";
+import { navigate, useShellRoute } from "./router.tsx";
 import type { ScreenId } from "./router.tsx";
 import "./theme.css";
 
@@ -146,25 +148,16 @@ function ReaderRoute({ controller, path }: { controller: ShellController; path: 
 
 export function App({ controller }: { controller: ShellController }) {
   const [state, setState] = useState<ShellState>(controller.state);
-  const { route } = useShellRoute();
-  const appliedReturn = useRef(false);
+  const { route, url } = useShellRoute();
 
   useEffect(() => controller.subscribe(setState), [controller]);
   useEffect(() => {
-    // A /connect?return= entry validates the return route against the registry
-    // exactly once when the session becomes verified.
-    if (state.phase === "verified" && !appliedReturn.current) {
-      appliedReturn.current = true;
-      const target = new URLSearchParams(location.search).get("return");
-      if (target !== null) {
-        const destination = safeReturn(target);
-        if (destination !== location.pathname + location.search + location.hash) {
-          history.replaceState({}, "", destination);
-          window.dispatchEvent(new PopStateEvent("popstate"));
-        }
-      }
+    const destination = connectionDestination(state.phase, url);
+    if (destination !== null) {
+      history.replaceState({ ...history.state, haeryongReaderContext: crypto.randomUUID() }, "", destination);
+      window.dispatchEvent(new PopStateEvent("popstate"));
     }
-  }, [state.phase]);
+  }, [state.phase, url]);
   useEffect(() => {
     controller.start();
     return () => controller.stop();
@@ -240,6 +233,8 @@ export function App({ controller }: { controller: ShellController }) {
             <HomeScreen controller={controller} />
           ) : screen === "library" ? (
             <LibraryScreen controller={controller} />
+          ) : screen === "versions" ? (
+            <VersionsScreen key={route.path + ":" + history.state?.haeryongReaderContext} controller={controller} documentId={route.path.split("/")[2]!} />
           ) : screen === "reader" && route.path ? (
             <ReaderRoute controller={controller} path={route.path} />
           ) : screen === "projects" || screen === "project" || (screen === "settings" && route.section === "projects" && !new URLSearchParams(location.search).has("project")) ? (

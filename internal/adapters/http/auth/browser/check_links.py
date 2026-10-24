@@ -17,6 +17,7 @@ parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--browser-cli',type=Path,required=True)
 parser.add_argument('--receipt',type=Path,required=True)
 parser.add_argument('--corpus',action='store_true',help='M11 opt-in real-sample reference click/selection/focus/return')
+parser.add_argument('--versions',action='store_true',help='T5 deep links and actual S05 comparison/import')
 args=parser.parse_args()
 REPO=Path(__file__).resolve().parents[5]
 receipt=args.receipt.resolve();assert receipt.parent.is_dir()
@@ -29,8 +30,8 @@ def load(name,path):
     spec=importlib.util.spec_from_file_location(name,path);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
 h=load('h',REPO/'tests/e2e/harness.py')
 support=load('reference_support',REPO/'tests/manual/reference_support.py')
-proof={'scope':__doc__,'complete':False,'runtime':str(work),'cases':[],'command':['python3','-B',str(Path(__file__).relative_to(REPO)),'--browser-cli',str(args.browser_cli),'--receipt','<private>']+(['--corpus'] if args.corpus else [])}
-product=None;opened=False
+proof={'scope':__doc__,'complete':False,'runtime':str(work),'cases':[],'command':['python3','-B',str(Path(__file__).relative_to(REPO)),'--browser-cli',str(args.browser_cli),'--receipt','<private>']+(['--corpus'] if args.corpus else [])+(['--versions'] if args.versions else [])}
+product=None;opened=False;competing_server=None
 def fingerprints():
     paths=[p for folder in ['cmd','internal'] for p in (REPO/folder).rglob('*.go') if not p.name.endswith('_test.go')]
     paths += [p for p in (REPO/'frontend/src').rglob('*') if p.is_file()]
@@ -51,7 +52,29 @@ try:
     subprocess.run(['go','build','-tags','haeryong_test_state','-o',str(work/'haeryong'),'./cmd/haeryong'],cwd=REPO,env=env,capture_output=True,check=True,timeout=180)
     assert fingerprints()==before,'inputs changed during build'
     product=h.Product(work/'haeryong',work);product.initialize();product.start();owner=product.owner('Reference browser proof')
-    fixture=support.prepare(product,owner,args.corpus);proof['fixture']=fixture
+    fixture=support.prepare(product,owner,args.corpus)
+    if args.versions:
+        fixture['versions']=support.prepare_versions(product,owner)
+        (work/'third.html').write_text('<h1>UI imported third version</h1>')
+        # A nonce-scoped, loopback test hook runs one REAL competing CLI
+        # publication while the UI's first POST is held. No product API added.
+        import threading,uuid
+        from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
+        hook='/compete-'+uuid.uuid4().hex
+        class CompetingWriter(BaseHTTPRequestHandler):
+            def log_message(self,*args):pass
+            def do_GET(self):
+                if self.path!=hook:
+                    self.send_response(404);self.end_headers();return
+                if 'competing_import' not in proof:
+                    identity,_=support.publish(product,owner,'versions-competing-writer',{'winner.html':'<h1>Concurrent published version</h1>'},extra=['--document',fixture['versions']['old']['document_id']])
+                    proof['competing_import']=identity
+                body=json.dumps(proof['competing_import']).encode()
+                self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
+        competing_server=ThreadingHTTPServer(('127.0.0.1',0),CompetingWriter)
+        threading.Thread(target=competing_server.serve_forever,daemon=True).start()
+        fixture['competing_url']=f'http://127.0.0.1:{competing_server.server_port}'+hook
+    proof['fixture']=fixture
     capabilities=product.data('GET','/api/v1/capabilities',client=owner)
     assert capabilities['features']['backlinks'] is True,'full-delivery flag is not enabled'
     proof['production_capability']=True
@@ -69,6 +92,7 @@ finally:
     if opened:
         try:call(['close'])
         except Exception:pass
+    if competing_server:competing_server.shutdown();competing_server.server_close()
     if product:product.close()
     proof['daemon_closed']=product is None or product.process is None
     receipt.write_text(json.dumps(proof,ensure_ascii=False,indent=2)+'\n');receipt.chmod(0o600)

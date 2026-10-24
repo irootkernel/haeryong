@@ -16,10 +16,10 @@ import urllib.parse
 import urllib.request
 
 
-def run(repo, work, state, product, owner, launch, proof):
+def run(repo, work, state, product, owner, launch, proof, fixture=None):
     spec=importlib.util.spec_from_file_location('reference_support',repo/'tests/manual/reference_support.py')
     support=importlib.util.module_from_spec(spec);spec.loader.exec_module(support)
-    fixture=support.prepare(product,owner)
+    if fixture is None:fixture=support.prepare(product,owner)
     proof['reference_fixture']=fixture
     script_path=Path(__file__).with_name('reference_probe.js')
     source_hash=hashlib.sha256(script_path.read_bytes()).hexdigest()
@@ -131,3 +131,41 @@ def run(repo, work, state, product, owner, launch, proof):
             control['release'].set();server.shutdown();server.server_close()
     assert hashlib.sha256(script_path.read_bytes()).hexdigest()==source_hash,'reference probe changed during observations'
     assert all(c.get('ok',True) for c in proof['cases']),'native RF row failed; all capability modes retained before stopping'
+
+
+def run_versions(repo, work, state, product, owner, launch, proof):
+    """T5 stage inside the existing native driver; no additional app/driver."""
+    spec=importlib.util.spec_from_file_location('reference_support',repo/'tests/manual/reference_support.py')
+    support=importlib.util.module_from_spec(spec);spec.loader.exec_module(support)
+    fixture=support.prepare_versions(product,owner)
+    links=support.prepare(product,owner)
+    c={'public_origin':product.endpoint,'links':links,'versions':fixture,'source':fixture['old'],'source_page':fixture['special'],'region':fixture['region']}
+    script=Path(__file__).with_name('reference_probe.js')
+    probe=work/'probe-versions.js';probe.write_text(script.read_text().replace('REFERENCE_CONSTANTS',json.dumps(c,ensure_ascii=False)))
+    quartz=ctypes.CDLL('/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices')
+    quartz.CGEventCreateKeyboardEvent.argtypes=[ctypes.c_void_p,ctypes.c_ushort,ctypes.c_bool]
+    quartz.CGEventCreateKeyboardEvent.restype=ctypes.c_void_p
+    quartz.CGEventPostToPid.argtypes=[ctypes.c_int,ctypes.c_void_p];quartz.CFRelease.argtypes=[ctypes.c_void_p]
+    process=launch(['--reader','--reader-port','9271','--reader-path',fixture['encoded_route'],'--reader-probe',str(probe)],'120s')
+    deadline=time.monotonic()+140;sent=set();rows=None
+    while time.monotonic()<deadline:
+        path=state/f'native-reader-selfcheck-{process.pid}.json'
+        if path.exists():
+            try: current=json.loads(path.read_text())['rows']
+            except (ValueError,KeyError): current=[]
+            for row in current:
+                if row['name'].startswith('V keyboard ') and row['name'] not in sent:
+                    for down in (True,False):
+                        event=quartz.CGEventCreateKeyboardEvent(None,36,down)
+                        assert event,'keyboard allocation failed';quartz.CGEventPostToPid(process.pid,event);quartz.CFRelease(event)
+                    sent.add(row['name'])
+            if any(row['name']=='page.done' and row['status']=='pass' for row in current):rows=current;break
+        if process.poll() is not None:break
+        time.sleep(.2)
+    case={'kind':'T5 actual native ReaderMode Versions and deep links','rows':rows,'native_inputs':sorted(sent),'ok':rows is not None and all(row['status']=='pass' for row in rows)}
+    proof['cases'].append(case)
+    proof['T5_blocked_items']=[row['detail'] for row in (rows or []) if isinstance(row.get('detail'),dict) and row['detail'].get('outcome')=='blocked']
+    assert rows is not None,'T5 native window/probe did not finish; no weaker evidence substituted'
+    assert process.wait(timeout=150)==0
+    assert case['ok'],'T5 native interaction failed; see retained rows'
+    return links

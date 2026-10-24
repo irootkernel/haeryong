@@ -64,6 +64,21 @@ List immutable versions with creation source basis, personal review and new-vers
 
 Cross-version notes remain at their original version and page path. A reliable mapping can be offered with explicit reattach action. Missing anchors show unresolved; selecting a similarly named region does not silently move the note.
 
+TASK-004-05 delivers S05's exact selectors and structural comparison while personal
+Review is unavailable. The default pair is the Reader-selected version versus latest;
+for direct history entry use the target's immediate predecessor versus latest (or the
+single version twice). Freeze that pair; a refreshed latest notice is a separate choice.
+TASK-005-01 adds the last-personally-Reviewed default when its API exists. No seeded
+last-Reviewed consumer is built in advance. File batches, metadata/page-region changes,
+on-demand side-by-side text blocks, original downloads and exact page links expose
+unfinished or unavailable scope until enumeration ends. A missing old page stays
+missing. Import new version mounts the shared locked document control with its captured
+pre-transfer base. Copy link, Versions entry, pair selectors and Open latest support
+keyboard and narrow touch; returning restores the selected Reader context and opener
+focus after the actual frame/region readiness. The existing Evidence/Links Sheet
+keyboard contracts continue unchanged. Source observation, semantic assessment and
+personal Review are separate sections; supplied assessment proofs are labelled synthetic.
+
 ## S06 Maintenance and findings
 
 Overview has Manual scan, active jobs and historical runs. Scan dialog selects allowed projects, depth, scope and budget; it displays what automatic actions are enabled. Capture is explicit. Progress separates inventory enumeration, structural checks, semantic assessments and proposals. A partially assessed run never shows a single misleading 100% current score.

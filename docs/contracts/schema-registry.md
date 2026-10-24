@@ -265,6 +265,38 @@ The page parameter is the percent-encoded exact page_path. page_query is the sep
 
 Settings sections are general, connection, sessions, projects, ai, maintenance, storage, retention, backup and about. Validate logical path IDs, registered sections, known shell filter/query keys and the decoded page's containment in the selected version. Artifact query/fragment values are data for that page, not shell routes or host management commands. Reject external/protocol-relative URLs, credentials, malformed shell control characters and paths outside this registry as login returns, while preserving representable percent-encoded filename characters. Ordinary browser URLs may contain the trusted loopback transport address when remote exposure is disabled; label copied URLs local-only then. Canonical identity is logical document/version plus exact page/region where used, never the hostname or port.
 
+### Deep-link and Versions consumption (TASK-004-05)
+
+Copy link constructs only logical document/version/page/query/fragment/region identity.
+Resolve its transport base from authenticated enabled `network.external_base_url`,
+otherwise the client's trusted service origin (the attached daemon origin in Wails).
+Label disabled-remote links local-only. No credential, renderer handoff, attachment or
+reference-return state enters that URL. Clipboard denial leaves selectable text.
+A host fragment is absent or one nonempty `region`; unknown/duplicate fields and
+malformed escaping are invalid login returns. Decode values once, preserving literal
+percent/plus/Unicode filename and artifact navigation data. A region is nonempty
+Unicode, including percent-encoded control data; literal raw shell controls remain
+invalid. Automatic Connect entry
+captures the validated route after definitive credential loss; each verified return
+replaces that Connect entry with a fresh Reader context. Checking/offline is not logout.
+Stamped history entries retain their context; hash-only unstamped navigation retains
+the live frame. Reference-return state remains owner/runtime-bound history data.
+
+S05 alone additionally accepts optional UUID `from_version`/`to_version`. Both must
+belong to the route document before comparison titles, inventories or metadata appear.
+Absent `to_version` freezes latest on entry; absent `from_version` uses that target's
+immediate sequence predecessor, or itself when none exists. Reader passes its exact
+selected version as `from_version`. With no published versions there is no pair.
+Resolved defaults replace the current entry's URL with both exact IDs; they add no
+history entry. Same-authority degraded/verified changes retain the mounted S05 state.
+An invalid/foreign explicit choice is unavailable, never a default fallback. Import
+publication refreshes history/latest notice without replacing a chosen pair. Open
+latest is an explicit fresh lookup and drops the previous version's region selection.
+Review is unavailable here; no last-Reviewed consumer or default is implemented before
+TASK-005-01. These are additive shell-query/consumer rules, not new API operations,
+DTOs, configuration fields or a schema migration. Existing coverage consumption keeps
+`attempt_run_id` on its first, next and retried cursor requests unchanged.
+
 ## Implemented local-control identity (TASK-002-01)
 
 This protected OS-user protocol is separate from the proposed `/api/v1` owner/workflow API and grants no browser or content authority. `api` is exactly `local-control-v1`. Authenticated identity and protected discovery share `library_id`, `profile_id`, `instance_id` (canonical lowercase UUIDs), `api`, `endpoint` (exact loopback HTTP origin), `control_ready` (boolean) and `storage` (`ready` boolean and `state` string). TASK-002-01 originally used `pending_task_002_02` with `ready=false`. [TASK-002-02](../testing/storage-foundation.md) now publishes `ready=true`, `state=ready` only after durable profile/DB bootstrap, identity/health and referenced-object checks. Explicit initialization itself remains profile format 2/storage_state pending with no DB. This readiness does not assert owner/browser sessions or product API availability.

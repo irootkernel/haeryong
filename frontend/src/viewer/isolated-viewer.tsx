@@ -18,6 +18,8 @@ export interface ViewerProps {
   initialRegion?: string;
   onChannelReady?(page: ReaderPageContext): void;
   onChannelClosed?(): void;
+  /** Terminal connection failure, before a page channel may exist. */
+  onConnectionFailure?(page: Pick<ReaderPageContext, "versionId" | "context" | "reload">): void;
   onReference?(event: ReferenceActivation): void;
   documentId: string;
   versionId: string;
@@ -69,6 +71,12 @@ export function IsolatedViewer(props: ViewerProps) {
   const [closing, setClosing] = useState(false);
   const [waiting, setWaiting] = useState<string | null>(null);
   const [frameName] = useState(() => "haeryong-reader-" + crypto.randomUUID());
+
+  useEffect(() => {
+    // Report every committed failure state, including lease/open and local
+    // handoff failures, with this viewer's captured navigation identity.
+    if (failure !== null) callbacks.current.onConnectionFailure?.({ versionId: props.versionId, context: props.context, reload: props.reload });
+  }, [failure, props.versionId, props.context, props.reload]);
 
   const lease = useMemo(() => {
     const captured = props.controller.captureDispatchAuthority();

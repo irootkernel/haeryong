@@ -41,6 +41,63 @@ const focus=async(identity,path,region,found=true)=>{
  return {host:heading,ack,native_focus_limit:found&&!ack.payload.focused};
 };
 const target=async()=>{await loaded(c.target,c.target_page);return focus(c.target,c.target_page,c.region);};
+if(c.versions) {
+ const v=c.versions;
+ const key=async(name,element)=>{element.focus();if(document.activeElement!==element)throw Error('host keyboard focus unavailable: '+name);record('V keyboard '+name,true,{focused:element.id});await report();};
+ await check('T5 native copied pinned tuple and S05 keyboard round trip',async()=>{
+   await wait(()=>document.querySelector('#reader-copy-link'),'native Reader Copy control');
+   await loaded(c.source,c.source_page);await focus(c.source,c.source_page,c.region);
+   const sheet=document.querySelector('#reader-context-panel');
+   if(sheet instanceof HTMLDialogElement&&sheet.matches(':modal')){button('문맥 닫기').click();await wait(()=>!sheet.matches(':modal'),'context Sheet close before host keyboard');}
+   await key('copy',document.querySelector('#reader-copy-link'));
+   const field=await wait(()=>document.querySelector('input[aria-label="복사할 링크"]'),'copied link');
+   const parsed=new URL(field.value),query=parsed.searchParams;
+   if(parsed.origin!==c.public_origin||query.get('page')!==v.special||query.get('page_query')!==v.query||query.get('page_fragment')!==v.fragment||new URLSearchParams(parsed.hash.slice(1)).get('region')!==v.region||!document.body.textContent.includes('local-only'))throw Error('native copy tuple/base');
+   await key('versions',document.querySelector('#reader-versions'));
+   await wait(()=>document.querySelector('#versions-from'),'actual S05');
+   if(document.querySelector('#versions-from').value!==v.old.version_id||document.querySelector('#versions-to').value!==v.new.version_id)throw Error('native pair default');
+   await wait(()=>document.querySelector('table[aria-label="파일 차이"] tbody tr'),'real comparison rows');
+   button('새 버전 가져오기').click();
+   await wait(()=>document.querySelector('[data-testid="base-preview"]')?.textContent.includes(v.new.version_id),'pre-transfer base');
+   const control=document.querySelector('[data-testid="import-control"]');
+   if(control.dataset.preselected!=='true')throw Error('native ImportControl preselection');
+   record('T5 native S05 actual ImportControl exact document/base',true,{document:v.old.document_id,base:v.new.version_id});
+   button('시스템 선택기로 선택').click();
+   await wait(()=>document.body.textContent.includes('NATIVE_PICKER_UNAVAILABLE'),'actual ReaderMode picker limitation');
+   record('T5 native picker attempt',true,{outcome:'blocked',code:'NATIVE_PICKER_UNAVAILABLE',scope:'ReaderMode has no PickerPresenter; no OS chooser or transfer proof claimed'});
+   await key('return',document.querySelector('#versions-return'));
+   await loaded(c.source,c.source_page);
+   await wait(()=>document.activeElement?.id==='reader-versions','S05 return opener focus');
+   const current=new URL(location.href);
+   if(current.searchParams.get('page')!==v.special||current.searchParams.get('page_query')!==v.query||current.searchParams.get('page_fragment')!==v.fragment||current.hash!==parsed.hash)throw Error('native round-trip tuple');
+   await key('latest',document.querySelector('#reader-open-latest'));
+   await wait(()=>location.pathname.endsWith('/'+v.new.version_id),'explicit latest');
+   if(location.hash)throw Error('latest inherited old region');
+   return {copy:true,actual_comparison:true,keyboard:true,round_trip:true,latest:true,full_qualification:false};
+ });
+ await check('T5 native no-HTML Versions keeps whole-version context',async()=>{
+   const id=v.no_html;
+   history.pushState({haeryongReaderContext:crypto.randomUUID()},'',`/documents/${id.document_id}/versions`);dispatchEvent(new PopStateEvent('popstate'));
+   await wait(()=>document.querySelector('table[aria-label="파일 차이"]')?.textContent.includes('readme.txt'),'no-HTML real inventory');
+   await wait(()=>document.querySelector('.source-panel h2')?.textContent.includes('페이지 없음'),'whole-version SourcePanel');
+   return {no_html:true,scope:'version',real_import:true};
+ });
+ await check('T5 native Links backlink exact source and explicit return',async()=>{
+   const link=c.links;
+   history.pushState({haeryongReaderContext:crypto.randomUUID()},'',link.target_route);dispatchEvent(new PopStateEvent('popstate'));
+   await loaded(link.target,link.target_page);
+   const toggle=document.querySelector('#reader-context-toggle');if(toggle.getAttribute('aria-expanded')!=='true')toggle.click();
+   await wait(()=>document.querySelector('#reader-links-tab'),'Links tab');document.querySelector('#reader-links-tab').click();
+   const backlink=await wait(()=>[...document.querySelectorAll('[aria-label="Backlinks"] button')].find(b=>b.textContent==='exact'),'real native backlink');backlink.click();
+   await loaded(link.source,link.source_page);
+   const sheet=document.querySelector('#reader-context-panel');if(sheet instanceof HTMLDialogElement&&sheet.matches(':modal')){button('문맥 닫기').click();await wait(()=>!sheet.matches(':modal'),'source context close');}
+   const back=await wait(()=>button('참조한 페이지로 돌아가기'),'native explicit referring return');back.click();
+   await loaded(link.target,link.target_page);
+   if(url()!==link.target_route)throw Error('native backlink return lost pinned tuple');
+   return {real_backlink:true,exact_source:true,explicit_return:true};
+ });
+ done=true;await report();
+} else {
 await wait(()=>window.__haeryongNativeTransport==='HAEYONG_NATIVE_TRANSPORT_BOUND'&&document.querySelector('.service-state[data-state="verified"]'),'real native verified shell');
 const reload=JSON.parse(sessionStorage.getItem('reference-reload')||'null');
 if(reload){
@@ -172,3 +229,5 @@ if(c.mode==='true'){
  location.reload();return;
 }
 done=true;await report();
+
+}

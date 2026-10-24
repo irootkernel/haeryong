@@ -155,3 +155,16 @@ def prepare_corpus(product, owner):
       'source_region':'G12','tree_hashes':hashes,'explicit_files':CORPUS_FILES,'synthetic':False,
       'expected_source':{'project_id':projects['gaori'],'document_id':s['document_id'],'version_id':s['version_id'],'page_path':'gaori/lifecycle.html','region_id':'G12'},
       'expected_target':{'project_id':projects['mulgae'],'document_id':t['document_id'],'version_id':t['version_id'],'page_path':'recovery/compose.html','region_id':'M11'}}
+
+
+def prepare_versions(product, owner):
+    """T5 bounded synthetic immutable inventories, shared by existing drivers."""
+    files={f'files/{i:03}.txt':f'old {i}\n' for i in range(105)}
+    files[SPECIAL]=page('Versions old', '<h1>Versions old</h1><p id="'+html.escape(REGION,quote=True)+'">old region</p>')
+    old,_=publish(product,owner,'versions-old',files,{'document':{'title':'Versions old metadata'},'regions':[{'page_path':SPECIAL,'id':REGION,'label':'old region label'}]},['--new-document'])
+    files={path:body for path,body in files.items() if path!=SPECIAL}
+    files['new.html']=page('Versions new','<h1>Versions new</h1><p id="same">new page region</p>')
+    files['files/000.txt']='changed text\n'
+    new,_=publish(product,owner,'versions-new',files,{'document':{'title':'Versions new metadata'},'regions':[{'page_path':'new.html','id':'same','label':'new region label'}]},['--document',old['document_id']])
+    no_html,_=publish(product,owner,'versions-no-html',{'readme.txt':'No HTML; actual version scope\n'},extra=['--new-document'])
+    return {'no_html':no_html,'old':old,'new':new,'encoded_route':route(old,SPECIAL,REGION,QUERY,FRAGMENT),'special':SPECIAL,'region':REGION,'query':QUERY,'fragment':FRAGMENT,'synthetic':True}

@@ -133,3 +133,31 @@ def test_references_RF02_RF06_public_import_restart_and_stable_derived_identity(
     status, error, _ = product.request("GET", route + "/resolve?reference_id=unknown", client=owner)
     assert status == 404 and error["error"]["details"] == {}
     product.cli(["references", "resolve", "--version", version, "--reference-id", "unknown"], client=owner, code=3)
+
+
+def test_T5_seeded_personal_rows_survive_successor_import_and_exact_old_navigation(product, owner, tmp_path):
+    """Synthetic personal rows prove non-migration only; EPIC-005 owns workflows."""
+    import sqlite3
+    from contextlib import closing
+    tree = tmp_path / "t5-personal"
+    tree.mkdir()
+    (tree / "old.html").write_text('<p id="same">old page</p>')
+    (tree / "sibling.html").write_text('<p id="same">sibling page</p>')
+    _, _, old = product.import_tree(owner, tree)
+    db = product.data_dir / "storage" / "library.sqlite"
+    rows = [("annotation", str(uuid.uuid4()), 1, json.dumps({"version_id": old["version_id"], "page_path": page, "region_id": "same", "body": "labelled synthetic note"}))
+            for page in ("old.html", "sibling.html")]
+    rows.append(("review", str(uuid.uuid4()), 1, json.dumps({"version_id": old["version_id"], "state": "reviewed", "evidence": "seeded, not a Review workflow"})))
+    with closing(sqlite3.connect(db)) as conn, conn:
+        conn.executemany("INSERT INTO resource_revisions(resource_kind,resource_id,revision,value) VALUES(?,?,?,?)", rows)
+    (tree / "old.html").unlink()
+    (tree / "new.html").write_text('<p id="same">new page with same region</p>')
+    _, _, new = product.import_tree(owner, tree, extra=("--document", old["document_id"]))
+    for version, page in ((old["version_id"], "old.html"), (new["version_id"], "new.html")):
+        product.data("GET", f"/api/v1/versions/{version}/render-bootstrap?" + urllib.parse.urlencode({"page_path": page}), client=owner)
+        assert product.request("GET", f"/api/v1/versions/{version}/file?" + urllib.parse.urlencode({"path": page}), client=owner, raw=True)[0] == 200
+    assert product.request("GET", f"/api/v1/versions/{new['version_id']}/file?path=old.html", client=owner, raw=True)[0] == 404
+    with closing(sqlite3.connect(db)) as conn:
+        actual = [conn.execute("SELECT resource_kind,resource_id,revision,value FROM resource_revisions WHERE resource_kind=? AND resource_id=?", row[:2]).fetchone() for row in rows]
+        assert actual == rows
+        assert conn.execute("SELECT count(*) FROM resource_revisions WHERE resource_kind IN ('annotation','review') AND json_extract(value,'$.version_id')=?", (new["version_id"],)).fetchone()[0] == 0

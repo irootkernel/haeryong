@@ -193,13 +193,16 @@ export class ShellController {
     this.#client = client;
     this.#store = store;
     this.#recheckIntervalMs = options.recheckIntervalMs ?? 4000;
+    // Native startup must await the Go-held session before declaring an
+    // authentication loss. Otherwise a reload becomes a new Connect entry.
+    const checkingNativeSession = typeof client.attachSession === "function";
     this.#state = {
-      phase: "unauthenticated",
+      phase: checkingNativeSession ? "checking" : "unauthenticated",
       session: null,
       capabilities: null,
       memoryOnly: false,
       storageAvailable: store.storageAvailable,
-      notice: NOTICE.unauthenticated,
+      notice: checkingNativeSession ? NOTICE.checking : NOTICE.unauthenticated,
       cleanupAlerts: [],
       pendingDecision: null,
       pendingRevokes: [],
