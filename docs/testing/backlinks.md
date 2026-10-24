@@ -121,9 +121,7 @@ On the final candidate:
   desktop race and vet run passed.
 - The focused race-enabled BL/RF persistence specs, RF unit specs and the
   references/backlinks HTTP/CLI E2E tests passed on the final source.
-- Chrome's six Links scenarios passed on a candidate with the same frontend,
-  generated assets and backlink paths; the later change only rechecks returned
-  reference rows, which the persistence regression covers.
+- Chrome's six Links scenarios passed on the final candidate.
 
 Earlier failed attempts (fixture construction, an unused import, a contract route
 pattern, the parser byte pin, Chrome readiness and an F3 turn boundary) remain

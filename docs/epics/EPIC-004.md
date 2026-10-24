@@ -2,7 +2,7 @@
 id: "EPIC-004"
 type: "epic"
 title: "Connected wiki and search"
-status: "in_progress"
+status: "done"
 depends_on: ["EPIC-003"]
 completion_requires: ["TASK-004-01","TASK-004-02","TASK-004-03","TASK-004-04","TASK-004-05","TASK-004-06"]
 ---
@@ -43,3 +43,13 @@ C03, C05, C06, C08, M01, M02, M04, M08, M15, M16, M19. See [traceability](../tes
 ## Handoff
 
 Complete source registry/minimal reader, imported-evidence checking/history and search/link contracts, Korean/code relevance worksheet, exact cross-project corpus and independent source-observation state. Managed-AI source integration remains EPIC-006; a broker is one implementation option. Use the [Epic gate template](../templates/epic-gate.md) as an index to actual artifacts and identify the exact next task.
+
+## Accepted closeout
+
+The [connected wiki and search gate](../testing/epic-004-connected-wiki-gate.md)
+indexes the six verified member commits, the integration correction, the
+assembled behavior, the independent assembled review and the measured limits.
+The Coordinator's delegated Task acceptance is separate from Master's actual
+overall Epic acceptance for this closeout. The exit decision is `pass`; no
+required failure or not-run check is waived. TASK-005-01 is the next ordered
+implementation and is not activated here.

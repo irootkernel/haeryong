@@ -4,7 +4,7 @@
 
 **Edition prepared:** 2026-10-13
 
-This inventory covers 173 other files: all Markdown documents and Python documentation-check utilities. Paths are relative to docs; sizes and SHA-256 cover exact bytes. MANIFEST.md excludes itself. This is not runtime evidence.
+This inventory covers 174 other files: all Markdown documents and Python documentation-check utilities. Paths are relative to docs; sizes and SHA-256 cover exact bytes. MANIFEST.md excludes itself. This is not runtime evidence.
 
 | File | Bytes | SHA-256 |
 | --- | --- | --- |
@@ -50,7 +50,7 @@ This inventory covers 173 other files: all Markdown documents and Python documen
 | `epics/EPIC-001.md` | 9746 | `1aa1d353df3206f87dc7183ed7b7ea276bdf934bfd036f5036a6a55ec758bb62` |
 | `epics/EPIC-002.md` | 4249 | `e56e88d789577c192c37a1ab94f866d881f153f71660f59ea8b4de6619ed958d` |
 | `epics/EPIC-003.md` | 4055 | `24095db09d259b86bb9409e1867a4e6b351e5625520bb923c5670c564736d38a` |
-| `epics/EPIC-004.md` | 3212 | `92a20561c2a518ac5212fb931f272ab11f465089ae2e2d566d304e40126bb55f` |
+| `epics/EPIC-004.md` | 3731 | `899e3e1bd418e683f6b7919b222cd4b06603f5838a11534e6ee78afb4a2b4ed7` |
 | `epics/EPIC-005.md` | 3208 | `d7a3f48cf743d7aa7e89efe11baafcb706eebeaab6609a8a5df5c2bbfe28fbf0` |
 | `epics/EPIC-006.md` | 3093 | `2ea3049f1b1162794fa0e3c4e9b64af78470bb44ca43365f42386681b94d997e` |
 | `epics/EPIC-007.md` | 3108 | `89733d99336302ea5b0d13d6754cd24992f6d86dd2ddfe6f1f549a82081fab03` |
@@ -69,7 +69,7 @@ This inventory covers 173 other files: all Markdown documents and Python documen
 | `operations/security.md` | 12906 | `76a3c9b6fe37de4049e0e7ee263ec1ea9b05e8c481963a888c45dd874486d3b5` |
 | `references.md` | 12625 | `d410369697b93fcf53c70ce4c0b797671c7e783e4f10eb96309e121fb809a705` |
 | `requirements.md` | 18205 | `adfbdd29d0a05fb8e227b4cb04aba2be5675b826fcd6eb8bcb3b2ff7d990af8c` |
-| `roadmap.md` | 13407 | `77bcb2e21b3813a1ac8e511b7edc3afa080b41b1dd77eb10a33f79cb3ebd3f49` |
+| `roadmap.md` | 13425 | `671f41e12523d9d2821563312a3689400bef20f066a36c17431b73ae7bc3c924` |
 | `source-map.md` | 9900 | `4448ffb707363c7a221730b1e4dee9b58cf3946f51af38f232d8d39af39480fa` |
 | `sources/haeryong-concept-proposal-v4.md` | 85010 | `8f26fea2833cd3cc3312c1afadea74e042d1d895b079bfa1bdff9cc02cf563e5` |
 | `tasks/EPIC-001/TASK-001-01.md` | 10659 | `1e3d041efe651f83db9c31441fb0316e141ac6da7f6eb03d8bd5e17e22be0647` |
@@ -142,7 +142,7 @@ This inventory covers 173 other files: all Markdown documents and Python documen
 | `testing/atomic-import.md` | 16640 | `8e964102b5bdb05cf1705261edb4c60572a3c9c844d5c5088f4f1170ebfb6cee` |
 | `testing/auth-ingress-spike.md` | 19029 | `461d5a9a3ca74752a909093683e90f12b4508516c1533c818c7fea5b6432d4dc` |
 | `testing/authenticated-sessions.md` | 16318 | `b48df82318717628d446d7bcd7cd48c28fad4e4f0e4b60fbfaad9e88b93bba4e` |
-| `testing/backlinks.md` | 11088 | `c392b9a3a6e7353bb561319141993b885bdfaba971925c43049ab9e142d065a2` |
+| `testing/backlinks.md` | 10935 | `5e9484b08bfb330ab86a54de8239328c3650e4d5e89030907db081381ee5b91b` |
 | `testing/bundle-validation.md` | 9654 | `4788e2b5d3791b1a36b0f0c3b82a1e9538c1efaa38339129c1678355eca1af2f` |
 | `testing/contract-cases.md` | 20706 | `a35d5d88cd4295a88a5c578a3c2c6dad32684ea374cb53eb733932b1e3c32b8d` |
 | `testing/contract-freeze.md` | 20707 | `8de4e1701a044078341ca7285cc54481a2f3218cb0bed7017b6ae601c608385b` |
@@ -151,6 +151,7 @@ This inventory covers 173 other files: all Markdown documents and Python documen
 | `testing/desktop-companion.md` | 31640 | `33c8aabd958308474a97d7249e52977e78a1cec84bab65e98ece85ee7773db65` |
 | `testing/epic-002-foundation-gate.md` | 4875 | `cdcbc0aa872cb81e6858db2c2e3937f15008aec72872a2441e7657bb349cdfab` |
 | `testing/epic-003-reader-gate.md` | 6725 | `581e35add82127c3f809e94d92b0193a7f171de54b773cf2e81afa40fb8b7c78` |
+| `testing/epic-004-connected-wiki-gate.md` | 6130 | `b864c6deab78d0d7ee124a90d10b3d73b72f57f3bf0c5d07177b533355f6e75c` |
 | `testing/evidence-presentation.md` | 18554 | `83d514c7fba43c1a1a48291eea12ec9558d896cd9442d78ff3ec0bf729b48aec` |
 | `testing/fixtures.md` | 27175 | `546091e8ac4d5aac01a7318cbf72a8e48b8ac9286d1312c676bd28771a84e567` |
 | `testing/foundation-recovery.md` | 11781 | `3d33044d2ddb46a14e57a99776e0efedce1aad55be54df2b288bbb18e3427eef` |
