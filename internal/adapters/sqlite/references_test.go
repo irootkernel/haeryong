@@ -305,7 +305,7 @@ var _ = Describe("RF06 reference persistence", Label("persistence"), func() {
 	It("admits exactly the complete reference tables/indexes and uses the incoming target index (RV-TARGETINDEX)", func() {
 		_, w := profile(GinkgoT())
 		s := openStore(GinkgoT(), w, nil)
-		Expect(s.validateTables(ctx, 9)).To(Succeed())
+		Expect(s.validateTables(ctx, SchemaRevision)).To(Succeed())
 		var id, parent, unused int
 		var detail string
 		Expect(s.db.QueryRow(`EXPLAIN QUERY PLAN SELECT from_version_id,metadata_reference_id FROM authored_references WHERE target_version_id=? AND (from_version_id,metadata_reference_id)>(?,?) ORDER BY from_version_id,metadata_reference_id LIMIT 64`, refTarget, "", "").Scan(&id, &parent, &unused, &detail)).To(Succeed())
@@ -313,13 +313,13 @@ var _ = Describe("RF06 reference persistence", Label("persistence"), func() {
 		for _, tamper := range []string{`DROP TABLE authored_edges`, `DROP TABLE authored_edges;CREATE TABLE authored_edges(edge_id TEXT)`, `DROP INDEX authored_references_target`, `DROP INDEX authored_edges_target`, `DROP INDEX authored_references_target;CREATE INDEX authored_references_target ON authored_references(from_version_id,target_version_id,metadata_reference_id)`} {
 			_, err := s.db.Exec(tamper)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(s.validateTables(ctx, 9)).NotTo(Succeed(), tamper)
+			Expect(s.validateTables(ctx, SchemaRevision)).NotTo(Succeed(), tamper)
 			_, err = s.db.Exec(`DROP TABLE IF EXISTS authored_edges;DROP TABLE authored_references;DROP TABLE reference_materializations;` + migrations[8])
 			Expect(err).NotTo(HaveOccurred())
 		}
 		_, err := s.db.Exec(`CREATE TABLE unknown_reference_table(x)`)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(s.validateTables(ctx, 9)).NotTo(Succeed())
+		Expect(s.validateTables(ctx, SchemaRevision)).NotTo(Succeed())
 		Expect(s.Close()).To(Succeed())
 		failed := New(nil)
 		_, _, err = failed.Prepare(ctx, w.Profile)

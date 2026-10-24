@@ -88,6 +88,9 @@ func (h *Handler) Handles(r *http.Request) bool {
 	if len(p) == 0 {
 		return false
 	}
+	if reviewRoute(p) {
+		return r.Method == "GET" || r.Method == "HEAD" || len(p) == 3 && r.Method == "PUT"
+	}
 	if r.Method == http.MethodPost {
 		if len(p) == 4 && p[0] == "versions" && p[2] == "indexes" && p[3] == "rebuild" {
 			return true
@@ -161,6 +164,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := route(r)
+	if reviewRoute(p) {
+		h.review(w, r, token, p)
+		return
+	}
 	if connectedRoute(p) {
 		h.connected(w, r, token, p)
 		return
@@ -175,7 +182,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	allowed := []string{"cursor", "limit"}
 	if p[0] == "documents" && len(p) == 1 {
-		allowed = append(allowed, "project_id", "lifecycle")
+		allowed = append(allowed, "project_id", "lifecycle", "review")
 	}
 	if p[0] == "projects" && len(p) == 3 && p[2] == "sources" {
 		allowed = []string{"cursor", "limit"}
@@ -220,7 +227,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failure(w, r, err)
 		return
 	}
-	o := query.Options{Cursor: values.Get("cursor"), Project: values.Get("project_id"), Lifecycle: values.Get("lifecycle"), Directory: values.Get("directory"), Kind: values.Get("kind")}
+	o := query.Options{Cursor: values.Get("cursor"), Project: values.Get("project_id"), Lifecycle: values.Get("lifecycle"), Directory: values.Get("directory"), Kind: values.Get("kind"), Review: values.Get("review")}
 	if values.Has("limit") {
 		o.Limit, err = strconv.Atoi(values.Get("limit"))
 		if err != nil || o.Limit < 1 {
@@ -492,25 +499,9 @@ func (h *Handler) personalPut(w http.ResponseWriter, r *http.Request, token, ver
 		failure(w, r, err)
 		return
 	}
-	etag := ""
-	create := false
-	match := r.Header.Values("If-Match")
-	none := r.Header.Values("If-None-Match")
-	switch {
-	case len(match) == 1 && len(none) == 0:
-		if match[0] == "" {
-			failure(w, r, sec.ErrInvalid)
-			return
-		}
-		etag = match[0]
-	case len(match) == 0 && len(none) == 1 && none[0] == "*":
-		create = true
-	default:
-		if len(match) == 0 && len(none) == 0 {
-			failure(w, r, missingPrecondition("If-Match"))
-			return
-		}
-		failure(w, r, sec.ErrInvalid)
+	etag, create, err := personalConditions(r)
+	if err != nil {
+		failure(w, r, err)
 		return
 	}
 	body, err := io.ReadAll(r.Body)
@@ -818,6 +809,8 @@ func failure(w http.ResponseWriter, r *http.Request, err error) {
 				details[key] = value
 			}
 		}
+	case errors.Is(err, domain.ErrReconciliation):
+		status, code = 409, "OPERATION_RECONCILIATION_REQUIRED"
 	case errors.Is(err, domain.ErrConflict):
 		status, code = 409, "OPERATION_CONFLICT"
 	case errors.Is(err, domain.ErrPrecondition):
@@ -832,6 +825,21 @@ func failure(w http.ResponseWriter, r *http.Request, err error) {
 		status, code = 503, "FILE_ACCESS_ERROR"
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		status, code = 503, "TRANSFER_INTERRUPTED"
+	}
+	var review *query.ReviewError
+	if errors.As(err, &review) {
+		code = review.Code
+		status = 400
+		if code == "INVALID_TRANSITION" {
+			status = 409
+		}
+		if code == "PRECONDITION_FAILED" {
+			status = 412
+			if review.Current != nil {
+				details["revision"] = review.Current.Revision
+				details["etag"] = review.Current.ETag
+			}
+		}
 	}
 	var lifecycle *query.Transition
 	if errors.As(err, &lifecycle) {

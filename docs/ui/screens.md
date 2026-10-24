@@ -64,12 +64,13 @@ List immutable versions with creation source basis, personal review and new-vers
 
 Cross-version notes remain at their original version and page path. A reliable mapping can be offered with explicit reattach action. Missing anchors show unresolved; selecting a similarly named region does not silently move the note.
 
-TASK-004-05 delivers S05's exact selectors and structural comparison while personal
-Review is unavailable. The default pair is the Reader-selected version versus latest;
-for direct history entry use the target's immediate predecessor versus latest (or the
-single version twice). Freeze that pair; a refreshed latest notice is a separate choice.
-TASK-005-01 adds the last-personally-Reviewed default when its API exists. No seeded
-last-Reviewed consumer is built in advance. File batches, metadata/page-region changes,
+TASK-004-05 delivers S05's exact selectors and structural comparison. TASK-005-01
+adds capability-gated personal Review: each version's actual state/time is read by its
+exact version ID. Explicit pair choices win; otherwise use latest as target and the
+last still-personally-Reviewed version as source, falling back to its predecessor or
+the single version twice. Freeze the pair; a refreshed latest notice remains a
+separate choice. Missing/false Review capability retains an honest unavailable state.
+File batches, metadata/page-region changes,
 on-demand side-by-side text blocks, original downloads and exact page links expose
 unfinished or unavailable scope until enumeration ends. A missing old page stays
 missing. Import new version mounts the shared locked document control with its captured

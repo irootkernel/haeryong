@@ -37,6 +37,7 @@ Exit classes are 0 success, 2 invalid input/package, 3 authentication/permission
 | haeryong reader preference show/set --version ID | Inspect/set owner/version default_page or clear it with null; independent/create precondition, no published metadata rewrite |
 | haeryong reading-position show/set --version ID | Last-opened pointer only: page_path, page_query, page_fragment and opened; individual/create precondition |
 | haeryong page-position show/set --version ID --page PATH | Save page_query, page_fragment and position for the exact page under its own individual/create precondition; do not move the last-opened pointer |
+| haeryong review show/history --version ID | Owner state/create precondition or cursor transition history |
 | haeryong review set --version ID --action complete --if-match ETAG | Owner start/complete/reopen/clear; CLI maps action to the registry's state; agent grants are rejected |
 | haeryong revisit set --document ID --flag true --if-match ETAG | Independent document-level flag |
 | haeryong topics list/set | Inspect assignments or set an owner pin/accepted-or-rejected decision with the individual validator |
@@ -116,7 +117,7 @@ IDs are placeholders; ./explanation may contain several HTML pages and arbitrary
 
 ## Current headless commands (TASK-002-05)
 
-The current executable implements `auth connect [new]`, `auth sessions list/revoke`, `projects list`, `package validate PATH`, `import PATH`, `documents show ID [--version ID]`, `files list/get/download`, `uploads list/show/resume/abandon`, `operations show`, `jobs list/show/cancel`, `events`, `config show/plan/apply/export/import`, and authenticated `doctor`/`status`. Other catalog families remain FEATURE_NOT_READY; a current workflow credential issuer, native viewer, provider and scheduler are not implemented. Explicit protected local pairing approval remains separate from `auth connect`; connect never approves itself. Selected custom credential files determine the remembered endpoint before local discovery; an explicit endpoint still must match that selected credential.
+The current executable implements `auth connect [new]`, `auth sessions list/revoke`, `projects list`, `package validate PATH`, `import PATH`, `documents show ID [--version ID]`, `files list/get/download`, `uploads list/show/resume/abandon`, `operations show`, `jobs list/show/cancel`, `events`, `config show/plan/apply/export/import`, `review show/history/set`, and authenticated `doctor`/`status`. Other catalog families remain FEATURE_NOT_READY; a current workflow credential issuer, native viewer, provider and scheduler are not implemented. Explicit protected local pairing approval remains separate from `auth connect`; connect never approves itself. Selected custom credential files determine the remembered endpoint before local discovery; an explicit endpoint still must match that selected credential.
 
 `--credential PATH` selects a protected credential bound to the exact endpoint origin, profile and library; no raw bearer flag is accepted. `--client-dir PATH` selects protected journals/snapshots independently of daemon profile files. Journals precede dispatch and retain original I/U/S, exact target, pre-transfer base and local capture identity. The optional metadata transfer has its own persisted create/completion keys and targets final I. Retried create, payload/metadata completion and final dispatch reconcile those original identities before rereading local input. Pending K responses poll the original operation; reconciling returns exit6; definitive failed receipts preserve their original error/exit. A completed202 receipt remains job creation, with a separately reported job outcome. A response guard denial after a committed configuration change retains the pending journal until its original outcome can be read with current authority.
 
@@ -231,3 +232,25 @@ is effective at atomic REINDEX boundaries, not a mid-statement abort. Missing or
 altered reverse-index DDL remains startup-refused: no offline repair CLI is added;
 supported recovery awaits EPIC-005 verified restore. The physical repair scope is
 an intact-definition reverse index's contents, as specified in the HTTP contract.
+
+
+## Explicit personal Review (TASK-005-01)
+
+`review show --version ID` returns the exact-version Review resource, including
+explicit absent defaults/create precondition. `review history --version ID
+[--cursor CURSOR --limit N]` returns a history page. `review set --version ID
+--action start|complete|reopen|clear (--if-match ETAG | --if-none-match '*')
+[--operation-id UUID]` maps action to the corresponding state; it accepts no
+separate state override or page/region target. Controls and operation IDs are
+validated before dispatch. This additive provisional family is implemented;
+other future catalog families remain unavailable.
+
+The protected journal persists the original target, action/state body and semantic
+precondition before dispatch. Response loss reuses that same operation and original
+condition even after its ETag became stale; changed input cannot claim its result.
+Missing receipts after a runtime-generation change require explicit reconciliation.
+JSON mutation output contains operation_id/result, and each PUT result also carries
+operation_id. Exit classes remain 2 invalid, 3 denied/session, 4 conflict/precondition,
+5 unavailable and 6 uncertain reconciliation. Owner credentials are required; no
+workflow grant permits personal completion. Schema revision 10 requires a capable
+binary, not an attempt to downgrade the live database.

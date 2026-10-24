@@ -239,6 +239,9 @@ class FakeClient implements HaeryongClient, CredentialAware {
   renderSessionClose(): Promise<void> {
     return Promise.resolve();
   }
+  reviewGet(): Promise<never> { throw new Error("not used in controller tests"); }
+  reviewPut(): Promise<never> { throw new Error("not used in controller tests"); }
+  reviewHistory(): Promise<never> { throw new Error("not used in controller tests"); }
   personalGet(): Promise<never> {
     throw new Error("not used in controller tests");
   }

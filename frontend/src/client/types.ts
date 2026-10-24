@@ -262,6 +262,19 @@ export interface ProjectView {
   etag: string;
 }
 
+export type ReviewState = "unreviewed" | "reviewing" | "reviewed";
+export type ReviewAction = "start" | "complete" | "reopen" | "clear";
+export type ReviewCondition = { ifMatch: string } | { create: true };
+export interface ReviewRequest { action: ReviewAction; state: ReviewState }
+export interface ReviewView {
+  operation_id?: string;
+  version_id: string; exists: boolean; value: { state: ReviewState; reviewed_at: string | null };
+  revision: number | null; etag: string | null; page_position_url: null; required_precondition?: "if_none_match_star";
+}
+export interface ReviewEvent { event_id: string; version_id: string; action: ReviewAction; old_state: ReviewState; new_state: ReviewState; actor_session: string; operation_id: string; created_at: string }
+export type ReviewFilter = "reviewing" | "updated_since_review";
+export interface DocumentFilter { projectId?: string; lifecycle?: string; cursor?: string; review?: ReviewFilter }
+
 export interface DocumentView {
   document_id: string;
   project_id: string;
@@ -270,6 +283,11 @@ export interface DocumentView {
   latest_version_id: string | null;
   revision: number;
   updated_at: string;
+  review_state?: ReviewState | null;
+  reviewed_at?: string | null;
+  last_reviewed_version_id?: string | null;
+  updated_since_review?: boolean | null;
+  continue_review_version_id?: string | null;
   versions_url: string;
   etag: string;
 }
@@ -806,7 +824,7 @@ export interface HaeryongClient {
   // Library reads
   search(request: SearchRequest): Promise<SearchPage>;
   listProjects(cursor?: string): Promise<ListPage<ProjectView>>;
-  listDocuments(filter: { projectId?: string; lifecycle?: string; cursor?: string }): Promise<ListPage<DocumentView>>;
+  listDocuments(filter: DocumentFilter): Promise<ListPage<DocumentView>>;
   documentDetail(documentId: string): Promise<DocumentView>;
   documentVersions(documentId: string, cursor?: string): Promise<ListPage<VersionView>>;
   versionDetail(versionId: string): Promise<VersionView>;
@@ -821,6 +839,9 @@ export interface HaeryongClient {
   renderSessionOpen(versionId: string, operationId: string): Promise<RenderSessionView>;
   renderSessionRenew(versionId: string, sessionId: string): Promise<void>;
   renderSessionClose(versionId: string, sessionId: string): Promise<void>;
+  reviewGet(versionId: string): Promise<ReviewView>;
+  reviewPut(versionId: string, body: ReviewRequest, condition: ReviewCondition, operationId: string): Promise<ReviewView>;
+  reviewHistory(versionId: string, cursor?: string): Promise<ListPage<ReviewEvent>>;
   personalGet(kind: PersonalKind, versionId: string, page?: string): Promise<PersonalView>;
   personalPut(kind: PersonalKind, versionId: string, page: string | null, body: unknown, precondition: { ifMatch: string } | { create: true }, operationId: string): Promise<PersonalView>;
   // Upload discovery and transfer

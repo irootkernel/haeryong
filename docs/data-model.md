@@ -28,8 +28,8 @@ A document's display sequence (v1, v2) is assigned at publication under a transa
 | coverage_sets / required_units | coverage_set_id, version_id, target_set_id, scope_json, unit_kind, captured_at; coverage_set_id, kind, page_path nullable, region_id nullable | One immutable non-overlapping required tuple set per captured scope/target. Version scope requires all discovered HTML pages or one whole-version unit when no HTML; page scope defaults to one page, region scope to the exact region. Required exclusions cannot remove units. |
 | assessment_units | coverage_set_id, assessment_id, target_set_id, kind, page_path nullable, region_id nullable, outcome, discrepancy, reason nullable | Link each exact required tuple to its assessment and target. outcome is assessed/partial/blocked/not_checked; skipped/excluded units retain a reason. Persist enough records to select the latest applicable contribution for every tuple and derive eligible/assessed/complete, never counts alone. The registry permits reuse across coverage sets only for matching version/target/unit scope; retain the originating assessment and coverage-set IDs so a later page-only check can update one whole-version summary unit without summing overlaps. |
 | findings | finding_id, job_id, kind, origin, version_id, page_path nullable, region_id nullable, target_set_id, evidence_json, evidence_fingerprint, proposal, status, approval_required, reason, config_revision, revision | Canonical statuses follow registry; evidence uses the same typed citation union as assessments, preserving observed input and later verification separately. Preserve rejection history and exact applicability, with optional applied overlay/draft/job reference. Equal region names on other pages are different targets. |
-| review_states | owner_id, version_id, state, reviewed_at nullable, revision | Composite PK; applies to the complete exact directory snapshot, not merely the currently opened page. Only owner action mutates. Reopen/clear clears current reviewed_at, not historical events. |
-| review_events | event_id, owner_id, version_id, action, old_state, new_state, actor_session, operation_id, created_at | State-change history is preserved except explicit target purge; receipt replay/no-op adds no duplicate transition. |
+| review_states | owner_id, version_id, state, reviewed_at nullable, revision, event_sequence | Composite PK; applies to the complete exact directory snapshot, not merely the currently opened page. Only owner action mutates. Reopen/clear clears current reviewed_at, not historical events. |
+| review_events | sequence, event_id, owner_id, version_id, action, old_state, new_state, actor_session, operation_id, created_at | State-change history is preserved except explicit target purge; receipt replay/no-op adds no duplicate transition. |
 | reading_positions | owner_id, version_id, page_path nullable, page_query/page_fragment, first_opened_at, last_opened_at, revision | PK (owner_id, version_id), one mutable last-opened pointer/observation. It does not own per-page progress or reuse a page-position ETag. Opening never changes Review. |
 | page_positions | owner_id, version_id, page_path, page_query/page_fragment, position, updated_at, revision | PK (owner_id, version_id, page_path), independent per-page ETag. Position writes do not move the last-opened pointer; no page count cap. |
 | reader_preferences | owner_id, version_id, default_page nullable, revision | PK (owner_id, version_id), mutable reader preference; non-null names an existing HTML page. null clears it without modifying immutable version.default_page or payload. |
@@ -310,3 +310,32 @@ rolls back the transaction; restart fences/resumes nonterminal work. Missing/cha
 DDL is not repaired online or by a new offline surface; strict startup rejection
 and the EPIC-005 verified-restore dependency remain. A corrupt/missing historical
 canonical identity/hash cannot be fabricated from a currently purged target.
+
+
+## Implemented personal Review storage (TASK-005-01)
+
+Append-only migration 10 adds review_states and review_events; migrations 1–9 keep
+their original checksum-locked bytes. Current state has composite owner/version PK,
+FKs to the owner and immutable published version, revision>=1 and a CHECK coupling
+reviewed state with non-null reviewed_at. event_sequence references the latest
+transition; committed sequence orders summaries even when timestamps tie. Each
+history event has an opaque UUID, owner/version, explicit action/delta, actor session,
+operation ID and UTC time. Indexes bound per-version history and owner/state lookups.
+Exact new table/index declarations join validateTables startup validation after the
+existing search/reference checks; missing/changed DDL refuses startup.
+
+ReviewPut uses the existing serialized receipt transaction. State and review history
+are saved with an events row containing redacted owner/session/operation/action/delta
+audit facts and a content-free invalidation; receipt completion shares that commit.
+No-op and replay preserve state/time/history; the receipt still confirms their result.
+Document summaries select current completion/continuation by committed event order
+inside the same transaction as list eligibility/filtering. Page/reader state is never
+consulted or mutated. Publication leaves new Review absent and old records intact.
+
+Upgrade uses the existing verified pre-migration SQLite plus required-object snapshot.
+Fault-before-commit keeps revision 9 intact; normal restart accepts revision 10. Recover
+by stopping the writer and returning to the verified pre-migration recovery set with
+its matching objects, following the storage recovery procedure. There is no SQL down-
+migration or promise that an older binary can open revision 10. Protected application
+restore remains TASK-005-05; Review does not implement it early. Execution and limits
+are recorded in [version-review](testing/version-review.md).

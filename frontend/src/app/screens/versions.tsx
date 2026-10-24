@@ -1,3 +1,7 @@
+import {useReviewInvalidation} from "./review-refresh.ts";
+import type { ReviewView } from "../../client/types.ts";
+import { exactReview } from "./review-summary.ts";
+import { reviewLabel } from "./review-operations.ts";
 import { useEffect, useRef, useState } from "react";
 import type { ShellController } from "../../client/controller.ts";
 import type { DocumentView, FileEntryView, VersionView } from "../../client/types.ts";
@@ -13,6 +17,8 @@ import { ComparisonReads, defaultPair, FileComparison, loadComparisonMetadata, m
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 export function VersionsScreen({ controller, documentId }: { controller: ShellController; documentId: string }) {
+  const [reviews,setReviews]=useState<Record<string,ReviewView>>({});
+  const reviewEnabled=controller.state.capabilities?.features.review===true;
   const [doc, setDoc] = useState<DocumentView | null>(null), [versions, setVersions] = useState<VersionView[]>([]);
   const [loaded, setLoaded] = useState(false), [issue, setIssue] = useState<string | null>(null), [refresh, setRefresh] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
@@ -20,6 +26,7 @@ export function VersionsScreen({ controller, documentId }: { controller: ShellCo
   const [pair, setPair] = useState<[string, string] | null>(null);
   const [sourceStatus, setSourceStatus] = useState("관측 기록 확인 중…");
   const client = controller.client;
+  useReviewInvalidation(client,reviewEnabled,()=>setRefresh(n=>n+1));
   const lifetime = useRef(0);
   useEffect(() => { lifetime.current++; return () => { lifetime.current++; }; }, []);
   const action = (work: (guard: () => void) => void | Promise<void>) => {
@@ -47,7 +54,7 @@ export function VersionsScreen({ controller, documentId }: { controller: ShellCo
         all.push(...page.items); setVersions([...all]); cursor = page.next_cursor ?? undefined;
       } while (cursor);
       const query = new URLSearchParams(location.search);
-      const selected = defaultPair(all, query.get("from_version"), query.get("to_version"), detail.latest_version_id);
+      const selected = defaultPair(all, query.get("from_version"), query.get("to_version"), detail.latest_version_id, reviewEnabled ? detail.last_reviewed_version_id ?? null : null);
       if (!active) return;
       if (selected && (!query.has("from_version") || !query.has("to_version"))) {
         query.set("from_version", selected[0]); query.set("to_version", selected[1]);
@@ -57,9 +64,14 @@ export function VersionsScreen({ controller, documentId }: { controller: ShellCo
         window.dispatchEvent(new PopStateEvent("popstate"));
       }
       setPair(current => current ?? selected); setLoaded(true);
+      if(reviewEnabled) for(const v of all){
+        const review=await client.reviewGet(v.version_id);if(!active)return;
+        if(review.version_id!==v.version_id)throw Error("검토 버전이 일치하지 않습니다.");
+        setReviews(old=>({...old,[v.version_id]:review}));
+      }
     })().catch(error => { if (active) setIssue(message(error)); });
     return () => { active = false; };
-  }, [client, documentId, refresh]);
+  }, [client, documentId, refresh, reviewEnabled]);
   useEffect(() => {
     let active = true;
     void client.serviceStatus().then(value => {
@@ -81,13 +93,13 @@ export function VersionsScreen({ controller, documentId }: { controller: ShellCo
       <button id="versions-open-latest" onClick={() => action(async guard => { const current = await client.documentDetail(documentId); guard(); if (current.latest_version_id) navigate(pinnedReaderURL(documentId, current.latest_version_id)); })}>최신 버전 열기</button>
       <button disabled={!doc} onClick={() => setImportOpen(value => !value)}>새 버전 가져오기</button>
     </div>
-    <p>개인 Review: 아직 제공되지 않습니다. 정확한 버전을 직접 선택할 수 있습니다.</p>
+    <p>{reviewEnabled ? "개인 Review는 아래 각 버전의 실제 상태입니다. 마지막 검토 완료 버전은 기본 비교 선택에 사용됩니다." : "개인 Review: 아직 제공되지 않습니다. 정확한 버전을 직접 선택할 수 있습니다."}</p>
     <section aria-label="원본 가용성 및 변경 관측"><h2>원본 가용성 및 변경 관측</h2><p>{sourceStatus}</p><p>서재의 마지막 관측 기록입니다. 의미 평가나 개인 Review 완료를 뜻하지 않습니다. 이 화면은 새 소스 검사를 시작하지 않습니다.</p></section>
     {actionIssue && <p role="alert">{actionIssue}</p>}
     {issue && <div role="alert"><p>비교를 사용할 수 없습니다: {issue}</p><button onClick={() => action(() => setRefresh(n => n + 1))}>버전 이력 다시 불러오기</button></div>}
     {!loaded && !issue && <p role="status">버전 이력 확인 중… {versions.length}건(미완료)</p>}
     <h2>정확한 버전 이력</h2>
-    <ul>{versions.map(version => <li key={version.version_id}><a href={pinnedReaderURL(documentId, version.version_id)} onClick={event => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigate(event.currentTarget.getAttribute("href")!); }}>{version.sequence} · {version.title_snapshot} · {version.version_id}</a> · 출처 {version.source_basis}{version.version_id === doc?.latest_version_id ? " · 최신 버전" : ""}</li>)}</ul>
+    <ul>{versions.map(version => <li key={version.version_id}><a href={pinnedReaderURL(documentId, version.version_id)} onClick={event => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigate(event.currentTarget.getAttribute("href")!); }}>{version.sequence} · {version.title_snapshot} · {version.version_id}</a> · 출처 {version.source_basis}{reviewEnabled ? <span data-review-version={version.version_id}> · 내 검토: {exactReview(reviews,version.version_id) ? reviewLabel(exactReview(reviews,version.version_id)!) : "확인 중"}{exactReview(reviews,version.version_id)?.value.reviewed_at ? ` · ${exactReview(reviews,version.version_id)!.value.reviewed_at}` : ""}</span> : null}{version.version_id === doc?.latest_version_id ? " · 최신 버전" : ""}</li>)}</ul>
     {loaded && !pair && <p>발행된 버전이 없습니다.</p>}
     {loaded && pair && <>
       <div className="form-row">{["이전 비교 버전", "대상 비교 버전"].map((label, i) => <label className="field" key={label}>{label}<select id={i === 0 ? "versions-from" : "versions-to"} value={pair[i]} onChange={event => { const value = event.target.value; action(() => change(i, value)); }}>{versions.map(v => <option key={v.version_id} value={v.version_id}>{v.sequence} · {v.title_snapshot} · {v.version_id}</option>)}</select></label>)}</div>

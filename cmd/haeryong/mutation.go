@@ -10,6 +10,7 @@ import (
 	"haeryong.local/haeryong/internal/application/service"
 	"haeryong.local/haeryong/internal/application/transfer"
 	"haeryong.local/haeryong/internal/domain"
+	"maps"
 	"regexp"
 )
 
@@ -18,6 +19,10 @@ var operationID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 // mutation records the exact caller intent before a K/O/natural commit send.
 // A missing receipt retains its identity and semantic input on retry.
 func mutation(ctx context.Context, api *client.Client, state *clientstate.Store, id, method, target string, body any) (domain.Response, string, error) {
+	return mutationConditions(ctx, api, state, id, method, target, body, nil)
+}
+
+func mutationConditions(ctx context.Context, api *client.Client, state *clientstate.Store, id, method, target string, body any, conditions map[string]string) (domain.Response, string, error) {
 	identity, e := api.Identity(ctx)
 	if e != nil {
 		return domain.Response{}, id, e
@@ -46,7 +51,7 @@ func mutation(ctx context.Context, api *client.Client, state *clientstate.Store,
 	}
 	journal, e := state.Load(id)
 	if e == nil {
-		if journal.Identity.LibraryID != identity.LibraryID || journal.Identity.PrincipalID != identity.PrincipalID || journal.Method != method || journal.Target != target || !bytes.Equal(journal.FinalBody, input) {
+		if journal.Identity.LibraryID != identity.LibraryID || journal.Identity.PrincipalID != identity.PrincipalID || journal.Method != method || journal.Target != target || !bytes.Equal(journal.FinalBody, input) || !maps.Equal(journal.Preconditions, conditions) {
 			return domain.Response{}, id, transfer.ErrIntent
 		}
 		result, e := transfer.AwaitOperation(ctx, api, id)
@@ -69,15 +74,17 @@ func mutation(ctx context.Context, api *client.Client, state *clientstate.Store,
 			return domain.Response{}, id, transfer.ErrReconcile
 		}
 	} else if errors.Is(e, domain.ErrNotFound) {
-		journal = transfer.Journal{OperationID: id, Purpose: "mutation", Identity: identity, Method: method, Target: target, FinalBody: input, Phase: "dispatch"}
+		journal = transfer.Journal{OperationID: id, Purpose: "mutation", Identity: identity, Method: method, Target: target, FinalBody: input, Preconditions: maps.Clone(conditions), Phase: "dispatch"}
 		if e = state.Save(journal); e != nil {
 			return domain.Response{}, id, e
 		}
 	} else {
 		return domain.Response{}, id, e
 	}
-	result, e := api.JSON(ctx, method, target, id, json.RawMessage(journal.FinalBody), nil)
+	result, e := api.JSONHeaders(ctx, method, target, id, json.RawMessage(journal.FinalBody), nil, journal.Preconditions)
 	if e != nil {
+		// Only a terminal receipt supplies a failed response. A direct API
+		// error is not a recorded outcome and must not replace the journal.
 		if result.Status >= 400 {
 			journal.Response = &result
 			journal.Phase = "failed"

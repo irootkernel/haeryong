@@ -103,13 +103,13 @@ export async function loadComparisonMetadata(client: HaeryongClient, version: Ve
       ? { kind: "absent" } : { kind: "error", problem: error instanceof Error ? error.message : String(error) }, raw: null };
   }
 }
-export function defaultPair(versions: VersionView[], from: string | null, to: string | null, latest: string | null): [string, string] | null {
+export function defaultPair(versions: VersionView[], from: string | null, to: string | null, latest: string | null, lastReviewed: string | null = null): [string, string] | null {
   if (!latest) return null;
   const target = to ?? latest;
   const selected = versions.find(v => v.version_id === target);
   if (!selected) throw Error("대상 버전을 사용할 수 없습니다.");
   const preceding = versions.filter(v => v.sequence < selected.sequence).reduce<VersionView | null>((best, v) => best === null || v.sequence > best.sequence ? v : best, null);
-  const source = from ?? preceding?.version_id ?? target;
+  const source = from ?? (lastReviewed && versions.some(v => v.version_id === lastReviewed) ? lastReviewed : null) ?? preceding?.version_id ?? target;
   if (!versions.some(v => v.version_id === source)) throw Error("비교 버전을 사용할 수 없습니다.");
   return [source, target];
 }

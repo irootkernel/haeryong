@@ -2,7 +2,7 @@
 id: "EPIC-005"
 type: "epic"
 title: "Personal review, annotations and lifecycle"
-status: "planned"
+status: "in_progress"
 depends_on: ["EPIC-004"]
 completion_requires: ["TASK-005-01","TASK-005-02","TASK-005-03","TASK-005-04","TASK-005-05","TASK-005-06"]
 ---

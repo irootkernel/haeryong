@@ -118,7 +118,7 @@ var _ = Describe("BL C06 intact-definition reverse index", Label("persistence"),
 		s := openStore(GinkgoT(), w, nil)
 		_, err := s.db.Exec(`DROP INDEX authored_edges_target; CREATE INDEX authored_edges_target ON authored_edges(target_version_id,target_region_id,target_page_path,from_version_id,metadata_reference_id)`)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(s.validateTables(ctx, 9)).NotTo(Succeed())
+		Expect(s.validateTables(ctx, SchemaRevision)).NotTo(Succeed())
 		Expect(s.Close()).To(Succeed())
 		failed := New(nil)
 		_, _, err = failed.Prepare(ctx, w.Profile)

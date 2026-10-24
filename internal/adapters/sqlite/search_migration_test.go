@@ -19,7 +19,9 @@ import (
 )
 
 // Test-only reverse construction, never a live product downgrade or an old binary.
-const dropSearchSchema = dropReferenceSchema + `DROP TRIGGER search_chunks_insert;DROP TRIGGER search_chunks_update;DROP TRIGGER search_chunks_delete;DROP TABLE search_words;DROP TABLE search_grams;DROP TABLE search_chunks;DROP TABLE search_units;DROP TABLE search_indexes;DROP TABLE derived_work;DROP TABLE page_anchors;`
+// Remove migration 10's dependent personal tables before constructing pre-search
+// schemas, including fixtures that subsequently remove the owner or versions.
+const dropSearchSchema = `DROP TABLE IF EXISTS review_states;DROP TABLE IF EXISTS review_events;` + dropReferenceSchema + `DROP TRIGGER search_chunks_insert;DROP TRIGGER search_chunks_update;DROP TRIGGER search_chunks_delete;DROP TABLE search_words;DROP TABLE search_grams;DROP TABLE search_chunks;DROP TABLE search_units;DROP TABLE search_indexes;DROP TABLE derived_work;DROP TABLE page_anchors;`
 
 func searchSeed(s *Store) (string, error) {
 	h, err := s.Health(ctx)
@@ -124,12 +126,14 @@ func assertSearchTwoProjects(db *sql.DB) {
 }
 
 // Capture all prior-schema row values, not just row counts. The only permitted
-// changes are migration8 history and the library schema revision; identities,
+// changes are later migration history and the library schema revision; identities,
 // sessions, receipts, evidence, coverage, source7 and pins compare byte-for-byte.
+// Later additive tables have no schema7 rows; their declarations are checked by
+// startup and newly created Review tables are asserted empty after the upgrade.
 func searchPriorRows(db *sql.DB) map[string]string {
 	GinkgoHelper()
 	assertSearchTwoProjects(db)
-	names, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'search_%' AND name NOT IN ('derived_work','page_anchors','reference_materializations','authored_references','authored_edges') ORDER BY name`)
+	names, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'search_%' AND name NOT IN ('derived_work','page_anchors','reference_materializations','authored_references','authored_edges','review_states','review_events') ORDER BY name`)
 	Expect(err).NotTo(HaveOccurred())
 	var tables []string
 	for names.Next() {
@@ -269,6 +273,10 @@ var _ = Describe("SC10 schema8 recovery and postings", Label("persistence"), fun
 			ready := openStore(t, w, nil)
 			Expect(searchPriorRows(ready.db)).To(Equal(prior))
 			Expect(ready.validateTables(ctx, SchemaRevision)).To(Succeed())
+			for _, table := range []string{"review_states", "review_events"} {
+				Expect(ready.db.QueryRow(`SELECT count(*) FROM ` + table).Scan(&count)).To(Succeed())
+				Expect(count).To(BeZero(), "migration 10 creates empty personal Review tables")
+			}
 			Expect(ready.db.QueryRow("SELECT count(*) FROM schema_migrations WHERE revision=8").Scan(&count)).To(Succeed())
 			Expect(count).To(Equal(1))
 			snapshots, err = filepath.Glob(filepath.Join(w.Profile.DataDir, "storage", "pre-migration-*.sqlite"))

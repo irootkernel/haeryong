@@ -503,6 +503,20 @@ func (s *Service) Events(ctx context.Context, token, epoch string, after int64) 
 			return e
 		}
 		for i, event := range out {
+			if event.ResourceKind == "review" {
+				if record.Scope.Kind != "owner" {
+					out[i] = domain.Event{StreamEpoch: event.StreamEpoch, Sequence: event.Sequence, ResourceKind: "library", Kind: "library.invalidated"}
+					continue
+				}
+				if e := visibleTarget(tx, "/api/v1/versions/"+event.ResourceID); e != nil {
+					if !errors.Is(e, domain.ErrNotFound) {
+						return e
+					}
+					event = domain.Event{StreamEpoch: event.StreamEpoch, Sequence: event.Sequence, ResourceKind: "library", Kind: "library.invalidated"}
+				}
+				out[i] = event
+				continue
+			}
 			if event.Kind == "search.index_updated" || event.Kind == "references.updated" {
 				var err error
 				out[i], err = visibleIndexEvent(tx, record, event)
@@ -788,6 +802,19 @@ func (s *Service) FilterEvent(ctx context.Context, token string, event domain.Ev
 		if event.StreamEpoch != epoch {
 			return domain.ErrPrecondition
 		}
+		if event.ResourceKind == "review" {
+			if record.Scope.Kind != "owner" {
+				event = domain.Event{StreamEpoch: event.StreamEpoch, Sequence: event.Sequence, ResourceKind: "library", Kind: "library.invalidated"}
+				return nil
+			}
+			if e := visibleTarget(tx, "/api/v1/versions/"+event.ResourceID); e != nil {
+				if !errors.Is(e, domain.ErrNotFound) {
+					return e
+				}
+				event = domain.Event{StreamEpoch: event.StreamEpoch, Sequence: event.Sequence, ResourceKind: "library", Kind: "library.invalidated"}
+			}
+			return nil
+		}
 		if event.Kind == "search.index_updated" || event.Kind == "references.updated" {
 			var err error
 			event, err = visibleIndexEvent(tx, record, event)
@@ -959,7 +986,7 @@ func personalWriteTarget(method, target string) bool {
 	if len(parts) != 5 || parts[0] != "api" || parts[1] != "v1" || parts[2] != "versions" || !canonicalID.MatchString(parts[3]) {
 		return false
 	}
-	return parts[4] == "reading-position" || parts[4] == "page-position" || parts[4] == "reader-preference"
+	return parts[4] == "review" || parts[4] == "reading-position" || parts[4] == "page-position" || parts[4] == "reader-preference"
 }
 
 // Receipt authority follows the saved action target, including replay.

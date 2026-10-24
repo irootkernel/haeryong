@@ -802,11 +802,12 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 			ProjectID string `json:"project_id"`
 			Lifecycle string `json:"lifecycle"`
 			Cursor    string `json:"cursor"`
+			Review    string `json:"review"`
 		}
 		if werr := decodePayload(payload, &in); werr != nil {
 			return nil, werr
 		}
-		return plain(s.request("GET", "/api/v1/documents", collection(map[string]string{"project_id": in.ProjectID, "lifecycle": in.Lifecycle, "cursor": in.Cursor}), nil, nil, auth))
+		return plain(s.request("GET", "/api/v1/documents", collection(map[string]string{"project_id": in.ProjectID, "lifecycle": in.Lifecycle, "cursor": in.Cursor, "review": in.Review}), nil, nil, auth))
 	case "documentDetail":
 		var in struct {
 			DocumentID string `json:"document_id"`
@@ -1110,6 +1111,45 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 			s.receipt("renderSessionClose", map[string]any{"version_id": in.VersionID, "session_id": in.SessionID})
 		}
 		return result.value, result.werr
+	case "reviewGet", "reviewHistory":
+		var in struct {
+			VersionID string `json:"version_id"`
+			Cursor    string `json:"cursor"`
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		path := "/api/v1/versions/" + url.PathEscape(in.VersionID) + "/review"
+		query := url.Values{}
+		if operation == "reviewHistory" {
+			path += "/history"
+			if in.Cursor != "" {
+				query.Set("cursor", in.Cursor)
+			}
+		}
+		return plain(s.request("GET", path, query, nil, nil, auth))
+	case "reviewPut":
+		var in struct {
+			VersionID    string          `json:"version_id"`
+			Body         json.RawMessage `json:"body"`
+			OperationID  string          `json:"operation_id"`
+			Precondition struct {
+				IfMatch *string `json:"if_match"`
+				Create  *bool   `json:"create"`
+			} `json:"precondition"`
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		headers := map[string]string{"Idempotency-Key": in.OperationID}
+		if in.Precondition.IfMatch != nil && in.Precondition.Create == nil {
+			headers["If-Match"] = *in.Precondition.IfMatch
+		} else if in.Precondition.IfMatch == nil && in.Precondition.Create != nil && *in.Precondition.Create {
+			headers["If-None-Match"] = "*"
+		} else {
+			return nil, &wireError{Status: 400, Code: "NATIVE_PAYLOAD_INVALID"}
+		}
+		return decision(s.request("PUT", "/api/v1/versions/"+url.PathEscape(in.VersionID)+"/review", nil, headers, in.Body, auth))
 	case "personalGet":
 		var in struct {
 			Kind      string  `json:"kind"`

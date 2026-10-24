@@ -67,3 +67,10 @@ The following map identifies concrete contracts and first UI owners. It does not
 Before later Epics ship, hide unavailable feature actions or show a clearly disabled explanation. Never display a working-looking Ask, Schedule or Approve button backed only by a fake success. A capabilities response controls availability; public demo fixture screens are explicitly labelled development-only and contain no private data.
 
 The [Task06 current and future action map](../testing/contract-ui-actions.md) distinguishes enabled disposable fixture controls and their actual handlers from all19 provisional product actions above. Fixture routes do not establish production `/api/v1` wiring or approve R5.
+
+
+TASK-005-01 implements the Review portion of Home/Reader/Versions behind
+features.review. Home uses owner-filtered document summaries and exact continued or
+latest-version links; Revisit remains TASK-005-02. Explicit comparison pair IDs win;
+when source is omitted, use the owner's most recent still-Reviewed version, falling
+back to the target's predecessor. Each history row reads its exact version's Review.

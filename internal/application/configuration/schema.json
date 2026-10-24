@@ -3181,6 +3181,60 @@
         "etag": {
           "type": "string",
           "pattern": "^\"[^\"\\r\\n]+\"$"
+        },
+        "review_state": {
+          "anyOf": [
+            {
+              "enum": [
+                "unreviewed",
+                "reviewing",
+                "reviewed"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reviewed_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_reviewed_version_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updated_since_review": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "continue_review_version_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -5481,6 +5535,345 @@
       },
       "required": [
         "reason"
+      ],
+      "additionalProperties": false
+    },
+    "review_request": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "start"
+              ]
+            },
+            "state": {
+              "enum": [
+                "reviewing"
+              ]
+            }
+          },
+          "required": [
+            "action",
+            "state"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "complete"
+              ]
+            },
+            "state": {
+              "enum": [
+                "reviewed"
+              ]
+            }
+          },
+          "required": [
+            "action",
+            "state"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "reopen"
+              ]
+            },
+            "state": {
+              "enum": [
+                "reviewing"
+              ]
+            }
+          },
+          "required": [
+            "action",
+            "state"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "clear"
+              ]
+            },
+            "state": {
+              "enum": [
+                "unreviewed"
+              ]
+            }
+          },
+          "required": [
+            "action",
+            "state"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "review_value": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "enum": [
+                "unreviewed",
+                "reviewing"
+              ]
+            },
+            "reviewed_at": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "state",
+            "reviewed_at"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "enum": [
+                "reviewed"
+              ]
+            },
+            "reviewed_at": {
+              "$ref": "#/$defs/time"
+            }
+          },
+          "required": [
+            "state",
+            "reviewed_at"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "review_view": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "version_id": {
+              "$ref": "#/$defs/id"
+            },
+            "exists": {
+              "enum": [
+                false
+              ],
+              "type": "boolean"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unreviewed"
+                  ]
+                },
+                "reviewed_at": {
+                  "type": "null"
+                }
+              },
+              "required": [
+                "state",
+                "reviewed_at"
+              ],
+              "additionalProperties": false
+            },
+            "revision": {
+              "type": "null"
+            },
+            "etag": {
+              "type": "null"
+            },
+            "page_position_url": {
+              "type": "null"
+            },
+            "required_precondition": {
+              "enum": [
+                "if_none_match_star"
+              ]
+            },
+            "operation_id": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "version_id",
+            "exists",
+            "value",
+            "revision",
+            "etag",
+            "page_position_url",
+            "required_precondition"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "version_id": {
+              "$ref": "#/$defs/id"
+            },
+            "exists": {
+              "enum": [
+                true
+              ],
+              "type": "boolean"
+            },
+            "value": {
+              "$ref": "#/$defs/review_value"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "etag": {
+              "type": "string",
+              "pattern": "^\"[^\"\\r\\n]+\"$"
+            },
+            "page_position_url": {
+              "type": "null"
+            },
+            "operation_id": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "version_id",
+            "exists",
+            "value",
+            "revision",
+            "etag",
+            "page_position_url"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "review_event": {
+      "type": "object",
+      "properties": {
+        "event_id": {
+          "$ref": "#/$defs/id"
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "action": {
+          "enum": [
+            "start",
+            "complete",
+            "reopen",
+            "clear"
+          ]
+        },
+        "old_state": {
+          "enum": [
+            "unreviewed",
+            "reviewing",
+            "reviewed"
+          ]
+        },
+        "new_state": {
+          "enum": [
+            "unreviewed",
+            "reviewing",
+            "reviewed"
+          ]
+        },
+        "actor_session": {
+          "$ref": "#/$defs/id"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "created_at": {
+          "$ref": "#/$defs/time"
+        }
+      },
+      "required": [
+        "event_id",
+        "version_id",
+        "action",
+        "old_state",
+        "new_state",
+        "actor_session",
+        "operation_id",
+        "created_at"
+      ],
+      "additionalProperties": false
+    },
+    "review_history_page": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/review_event"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "review_response": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/review_view"
+        },
+        "request_id": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "data",
+        "request_id"
+      ],
+      "additionalProperties": false
+    },
+    "review_history_response": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/review_history_page"
+        },
+        "request_id": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "data",
+        "request_id"
       ],
       "additionalProperties": false
     }

@@ -21,6 +21,17 @@ func validateCommandFlags(opt options) error {
 		verb = args[1]
 	}
 	switch args[0] {
+	case "review":
+		add("version")
+		if verb == "set" {
+			add("action if-match if-none-match operation-id")
+		}
+		if verb == "history" {
+			add("cursor limit")
+		}
+		if _, _, err := reviewCLIInput(opt); err != nil {
+			return err
+		}
 	case "backlinks":
 		if verb == "list" {
 			add("version cursor limit page region")

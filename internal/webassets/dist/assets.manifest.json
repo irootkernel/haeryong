@@ -1,11 +1,11 @@
 {
   "files": {
-    "assets/index-Bq-rWWi5.js": "67583626b18be7484f0c44b065b17f9d4294444a257fbc5cbc84f116da2ef204",
+    "assets/index-DFCIfPKL.js": "fcfb0e462c667aca6a09ca44f07a898ad3637d5d98fd377fbe66804af5000e64",
     "assets/index-qUwhTNUV.css": "53e1e5998859a505b50e048c37b42616387ab307de7b77707fc17b05e13cc8a5",
-    "index.html": "e47685d89d383f61cf60ffcca924fa0af8dfb665b32ceceead01bcacbb5975f0",
+    "index.html": "6daa9fcd1236500d6eaba692840c4e60ba10a7510763a1b0deda7ebf3671ba1f",
     "renderer/loader.js": "83ee1899df67818e6dc16ea7d8d511ce6f0ef246c4412ac8f91b52968ddfc9ce"
   },
-  "input_files": 100,
-  "inputs_digest": "0155ed176deecee4b6190d8982ab09e280a6b5ee79742173a01b8621e689bffa",
+  "input_files": 107,
+  "inputs_digest": "392220f313fd3c7a7a59a5c010491a6c44c3a135e7a427262511f713fa782e48",
   "kind": "haeryong-webassets/v1"
 }

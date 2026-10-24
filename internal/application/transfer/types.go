@@ -79,19 +79,20 @@ type Preparation struct {
 	JobID       string            `json:"job_id,omitempty"`
 }
 type Journal struct {
-	Method        string           `json:"method,omitempty"`
-	Target        string           `json:"target,omitempty"`
-	OperationID   string           `json:"operation_id"`
-	Purpose       string           `json:"purpose"`
-	Identity      Identity         `json:"service"`
-	Selection     Selection        `json:"selection"`
-	BaseVersionID *string          `json:"base_version_id"`
-	VersionID     string           `json:"version_id,omitempty"`
-	Result        Preparation      `json:"result"`
-	Metadata      *Preparation     `json:"metadata,omitempty"`
-	Phase         string           `json:"dispatch_phase"`
-	FinalBody     json.RawMessage  `json:"final_request,omitempty"`
-	Response      *domain.Response `json:"response,omitempty"`
+	Preconditions map[string]string `json:"preconditions,omitempty"`
+	Method        string            `json:"method,omitempty"`
+	Target        string            `json:"target,omitempty"`
+	OperationID   string            `json:"operation_id"`
+	Purpose       string            `json:"purpose"`
+	Identity      Identity          `json:"service"`
+	Selection     Selection         `json:"selection"`
+	BaseVersionID *string           `json:"base_version_id"`
+	VersionID     string            `json:"version_id,omitempty"`
+	Result        Preparation       `json:"result"`
+	Metadata      *Preparation      `json:"metadata,omitempty"`
+	Phase         string            `json:"dispatch_phase"`
+	FinalBody     json.RawMessage   `json:"final_request,omitempty"`
+	Response      *domain.Response  `json:"response,omitempty"`
 }
 type State interface {
 	UsePending(context.Context, Identity, Input, string) (string, error)

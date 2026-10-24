@@ -1,4 +1,4 @@
-import type {
+import type { ReviewView, ReviewRequest, ReviewCondition, ReviewEvent, DocumentFilter,
   BacklinksRequest, BacklinkPage, IndexValidation, IndexValidationRequest, IndexRebuild, IndexRebuildRequest,
   VersionReferencesRequest, ResolveReferenceRequest, ReferencePage, ReferenceView,
   SearchRequest, SearchPage,
@@ -242,8 +242,8 @@ export class HttpHaeryongClient implements HaeryongClient {
     return this.#request("GET", this.#collection("/api/v1/projects", { cursor }));
   }
 
-  listDocuments(filter: { projectId?: string; lifecycle?: string; cursor?: string }): Promise<ListPage<DocumentView>> {
-    return this.#request("GET", this.#collection("/api/v1/documents", { project_id: filter.projectId, lifecycle: filter.lifecycle, cursor: filter.cursor }));
+  listDocuments(filter: DocumentFilter): Promise<ListPage<DocumentView>> {
+    return this.#request("GET", this.#collection("/api/v1/documents", { project_id: filter.projectId, lifecycle: filter.lifecycle, review: filter.review, cursor: filter.cursor }));
   }
 
   documentDetail(documentId: string): Promise<DocumentView> {
@@ -325,6 +325,18 @@ export class HttpHaeryongClient implements HaeryongClient {
   async renderSessionClose(versionId: string, sessionId: string): Promise<void> {
     await this.#request("POST", `/api/v1/versions/${encodeURIComponent(versionId)}/render-sessions/${encodeURIComponent(sessionId)}/close`, {});
   }
+
+  reviewGet(versionId: string): Promise<ReviewView> { return this.#request("GET", `/api/v1/versions/${encodeURIComponent(versionId)}/review`); }
+  reviewPut(versionId: string, body: ReviewRequest, condition: ReviewCondition, operationId: string): Promise<ReviewView> {
+    const headers: Record<string,string> = {"Idempotency-Key": operationId};
+    if ("ifMatch" in condition) headers["If-Match"] = condition.ifMatch; else headers["If-None-Match"] = "*";
+    const era=this.#era;
+    return sourceWrite<ReviewView>(operationId,async()=>{
+      const result=await this.#exchange("PUT", `/api/v1/versions/${encodeURIComponent(versionId)}/review`, body, headers);
+      return {kind:result.status===202?"accepted":"committed",body:result.data};
+    },id=>{if(era!==this.#era)throw new StaleResponseError();return this.operation(id);});
+  }
+  reviewHistory(versionId: string, cursor?: string): Promise<ListPage<ReviewEvent>> { return this.#request("GET", this.#collection(`/api/v1/versions/${encodeURIComponent(versionId)}/review/history`, {cursor})); }
 
   personalGet(kind: PersonalKind, versionId: string, page?: string): Promise<PersonalView> {
     const prefix = `/api/v1/versions/${encodeURIComponent(versionId)}/${kind}`;

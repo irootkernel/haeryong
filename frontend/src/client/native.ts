@@ -1,7 +1,7 @@
 // Narrow native transport boundary. The desktop companion (TASK-003-05) binds
 // these named operations to a typed Go proxy. The port accepts no arbitrary
 // URLs, filesystem paths or generic method names from imported content.
-import type {
+import type { ReviewView, ReviewRequest, ReviewCondition, ReviewEvent, DocumentFilter,
   BacklinksRequest, BacklinkPage, IndexValidation, IndexValidationRequest, IndexRebuild, IndexRebuildRequest,
   VersionReferencesRequest, ResolveReferenceRequest, ReferencePage, ReferenceView,
   SearchRequest, SearchPage,
@@ -101,7 +101,7 @@ export type VersionReferencesCall = { version_id: string; cursor?: string; limit
 export type ResolveReferenceCall = { version_id: string; reference_id: string; page_path?: string; region_id?: string };
 export type SearchCall = SearchRequest;
 export type ListProjectsRequest = { cursor?: string };
-export type ListDocumentsRequest = { project_id?: string; lifecycle?: string; cursor?: string };
+export type ListDocumentsRequest = { project_id?: string; lifecycle?: string; cursor?: string; review?: DocumentFilter["review"] };
 export type DocumentRequest = { document_id: string };
 export type DocumentVersionsRequest = { document_id: string; cursor?: string };
 export type VersionRequest = { version_id: string };
@@ -209,11 +209,15 @@ export interface NativePort {
   call(operation: "renderSessionOpen", payload: RenderSessionOpenCall): Promise<RenderSessionView>;
   call(operation: "renderSessionRenew", payload: RenderSessionRouteCall): Promise<void>;
   call(operation: "renderSessionClose", payload: RenderSessionRouteCall): Promise<void>;
+  call(operation: "reviewGet", payload: {version_id: string}): Promise<ReviewView>;
+  call(operation: "reviewPut", payload: {version_id: string; body: ReviewRequest; precondition: {if_match: string} | {create: true}; operation_id: string}): Promise<DecisionResult>;
+  call(operation: "reviewHistory", payload: {version_id: string; cursor?: string}): Promise<ListPage<ReviewEvent>>;
   call(operation: "personalGet", payload: PersonalGetRequest): Promise<PersonalView>;
   call(operation: "personalPut", payload: PersonalPutCall): Promise<PersonalView>;
 }
 
 export const NATIVE_OPERATIONS = [
+  "reviewGet", "reviewPut", "reviewHistory",
   "configurationView",
   "configurationPlan",
   "configurationPlanCommit",
@@ -485,6 +489,14 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
     return this.#fresh(this.#port.call("renderSessionClose", { version_id: versionId, session_id: sessionId }), this.#era);
   }
 
+  reviewGet(versionId: string): Promise<ReviewView> { return this.#fresh(this.#port.call("reviewGet", {version_id: versionId}), this.#era); }
+  reviewPut(versionId: string, body: ReviewRequest, condition: ReviewCondition, operationId: string): Promise<ReviewView> {
+    const precondition = "ifMatch" in condition ? {if_match: condition.ifMatch} : {create: true as const};
+    const era=this.#era;
+    return sourceWrite<ReviewView>(operationId,()=>this.#fresh(this.#port.call("reviewPut", {version_id: versionId, body, precondition, operation_id: operationId}),era),id=>{if(era!==this.#era)throw new StaleResponseError();return this.operation(id);});
+  }
+  reviewHistory(versionId: string, cursor?: string): Promise<ListPage<ReviewEvent>> { return this.#fresh(this.#port.call("reviewHistory", {version_id: versionId, cursor}), this.#era); }
+
   personalGet(kind: PersonalKind, versionId: string, page?: string): Promise<PersonalView> {
     return this.#fresh(this.#port.call("personalGet", { kind, version_id: versionId, page }), this.#era);
   }
@@ -544,8 +556,8 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
     return this.#fresh(this.#port.call("listProjects", { cursor }), this.#era);
   }
 
-  listDocuments(filter: { projectId?: string; lifecycle?: string; cursor?: string }): Promise<ListPage<DocumentView>> {
-    return this.#fresh(this.#port.call("listDocuments", { project_id: filter.projectId, lifecycle: filter.lifecycle, cursor: filter.cursor }), this.#era);
+  listDocuments(filter: DocumentFilter): Promise<ListPage<DocumentView>> {
+    return this.#fresh(this.#port.call("listDocuments", { project_id: filter.projectId, lifecycle: filter.lifecycle, review: filter.review, cursor: filter.cursor }), this.#era);
   }
 
   documentDetail(documentId: string): Promise<DocumentView> {

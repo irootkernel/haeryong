@@ -296,3 +296,14 @@ emit no target-derived source revisions, per-incoming-row events or hidden count
 Existing owner-only job visibility and event masking apply. No backlink event or
 live-update promise is introduced; Links refetches on scope/open/explicit refresh.
 backlink_index_repair policy/findings remain with EPIC-008/009 and no AI is called.
+
+
+### Personal Review invalidation (TASK-005-01)
+
+An actual Review transition appends `resource.invalidated` for resource type review,
+id equal to the exact version ID and the personal resource revision. Its retained
+outbox body supplies redacted audit actor/session/operation and state deltas; that
+body is not a client mutation capability. History is a separate owner-only resource.
+Scoped readers and currently hidden targets receive only the existing content-free
+library invalidation. Replay/no-op creates no extra transition notification. Browser
+and native consumers refetch authenticated state rather than infer completion.

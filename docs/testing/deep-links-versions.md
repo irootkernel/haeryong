@@ -27,8 +27,9 @@ or target predecessor/latest for direct history; a single version compares to it
 Resolved defaults replace the current URL's pair without adding a history entry.
 Same-authority degraded/verified transitions retain the screen and open ImportControl;
 reload and Back/Forward reuse the pinned pair rather than a later publication.
-Explicit foreign versions are unavailable without their title/files. Review is honestly
-unavailable; no speculative last-Reviewed consumer/default or seeded default is added.
+Explicit foreign versions are unavailable without their title/files. At the TASK-004-05
+checkpoint Review was unavailable; [TASK-005-01](version-review.md) now owns real
+Review/history and the last-Reviewed default. This historical record adds no seeded default.
 The required seeded personal rows test only preservation/non-migration before EPIC-005.
 
 Two cursor pages merge in UTF-8 byte order with bounded input/output batches. Visible

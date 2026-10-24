@@ -215,6 +215,9 @@ func authorizeScope(tx app.WriteTx, record domain.Session, r domain.Request) err
 		}
 		fallthrough
 	case "documents", "versions":
+		if parts[2] == "versions" && len(parts) >= 5 && parts[4] == "review" {
+			return domain.ErrDenied
+		}
 		// Render-session opens follow the render-bootstrap authority family:
 		// the scoped version.read action with the exact version/project
 		// anchors. Renewal and close of a known session are controlled by the

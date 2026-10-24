@@ -221,4 +221,9 @@ CREATE INDEX authored_edges_target
  ON authored_edges(target_version_id,target_page_path,target_region_id,
                   from_version_id,metadata_reference_id);
 `,
+	`CREATE TABLE review_events(sequence INTEGER PRIMARY KEY AUTOINCREMENT,event_id TEXT NOT NULL UNIQUE,owner_id TEXT NOT NULL REFERENCES auth_owner(principal_id),version_id TEXT NOT NULL REFERENCES document_versions(version_id),action TEXT NOT NULL CHECK(action IN ('start','complete','reopen','clear')),old_state TEXT NOT NULL CHECK(old_state IN ('unreviewed','reviewing','reviewed')),new_state TEXT NOT NULL CHECK(new_state IN ('unreviewed','reviewing','reviewed')),actor_session TEXT NOT NULL,operation_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(owner_id,operation_id));
+CREATE INDEX review_events_target ON review_events(owner_id,version_id,sequence);
+CREATE TABLE review_states(owner_id TEXT NOT NULL REFERENCES auth_owner(principal_id),version_id TEXT NOT NULL REFERENCES document_versions(version_id),state TEXT NOT NULL CHECK(state IN ('unreviewed','reviewing','reviewed')),reviewed_at TEXT,revision INTEGER NOT NULL CHECK(revision>=1),event_sequence INTEGER NOT NULL REFERENCES review_events(sequence),PRIMARY KEY(owner_id,version_id),CHECK((state='reviewed' AND reviewed_at IS NOT NULL) OR (state!='reviewed' AND reviewed_at IS NULL)));
+CREATE INDEX review_states_owner_state ON review_states(owner_id,state,event_sequence);
+`,
 }

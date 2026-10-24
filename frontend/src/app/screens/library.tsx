@@ -247,7 +247,7 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
               {accumulation.documents.map((document) => (
                 <li key={document.document_id} data-testid="library-document" data-document={document.document_id}>
                   <div>
-                    <strong>{document.title}</strong>
+                    <strong>{document.title}</strong>{featureEnabled(features,"review") && document.review_state && <span> · 내 검토: {{unreviewed:"미검토",reviewing:"검토 중",reviewed:"검토 완료"}[document.review_state]}{document.updated_since_review ? " · 검토한 이후 업데이트됨" : ""}</span>}
                     <span className="hint"> · 갱신 {document.updated_at}</span>
                   </div>
                   <div className="form-row">

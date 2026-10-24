@@ -285,6 +285,7 @@ the live frame. Reference-return state remains owner/runtime-bound history data.
 S05 alone additionally accepts optional UUID `from_version`/`to_version`. Both must
 belong to the route document before comparison titles, inventories or metadata appear.
 Absent `to_version` freezes latest on entry; absent `from_version` uses that target's
+last still-personally-Reviewed version when features.review is enabled, otherwise the
 immediate sequence predecessor, or itself when none exists. Reader passes its exact
 selected version as `from_version`. With no published versions there is no pair.
 Resolved defaults replace the current entry's URL with both exact IDs; they add no
@@ -292,9 +293,9 @@ history entry. Same-authority degraded/verified changes retain the mounted S05 s
 An invalid/foreign explicit choice is unavailable, never a default fallback. Import
 publication refreshes history/latest notice without replacing a chosen pair. Open
 latest is an explicit fresh lookup and drops the previous version's region selection.
-Review is unavailable here; no last-Reviewed consumer or default is implemented before
-TASK-005-01. These are additive shell-query/consumer rules, not new API operations,
-DTOs, configuration fields or a schema migration. Existing coverage consumption keeps
+TASK-005-01 adds the last-Reviewed default and exact per-version Review reads behind
+features.review. The original TASK-004-05 selection rules were additive shell consumers;
+the Review wire/data additions are defined below. Existing coverage consumption keeps
 `attempt_run_id` on its first, next and retried cursor requests unchanged.
 
 ## Implemented local-control identity (TASK-002-01)
@@ -754,3 +755,57 @@ and rebuildVersionIndexes. The [HTTP contract](http-api.md#backlinks-and-determi
 owns filtering, cursor, error, cancellation and supported recovery boundaries.
 No job.kind/workflow.scope enum or database migration changes. The existing
 backlink_index_repair configuration/finding names retain EPIC-008/009 ownership.
+
+
+## Explicit version Review additions (TASK-005-01)
+
+Additive provisional v1 shapes are `review_request`, `review_value`, `review_view`,
+`review_response`, `review_event`, `review_history_page` and
+`review_history_response` in the machine contract. The embedded configuration schema
+mirrors the affected selected definitions; the author-metadata subset is unchanged.
+Review enums and existing reader resources retain their meanings. API/schema versions
+remain v1/1.0; the physical SQLite migration advances to revision 10.
+
+Review is owner-only and keyed by the stable owner principal and exact published
+version, covering the complete directory. GET/HEAD and PUT use `/versions/{id}/review`.
+The closed view has version_id, exists, value {state,reviewed_at}, revision, etag,
+and page_position_url:null. Absent is exactly exists:false, value
+{state:unreviewed,reviewed_at:null}, revision:null, etag:null and
+required_precondition:if_none_match_star. Existing values omit required_precondition
+and carry actual validators. Only reviewed has a non-null reviewed_at. PUT responses
+also carry operation_id, including no-ops and receipt replay; GET does not invent one.
+Clear on absent stays absent; clearing stored state preserves an existing default row.
+
+PUT requires closed {action,state}, the canonical Idempotency-Key and exactly one
+If-Match or If-None-Match:*. Missing controls are 428, malformed controls 400, stale
+new writes 412 with safe current revision/etag, changed receipt identity 409
+OPERATION_CONFLICT. Unknown enums are INVALID_ENUM, mismatched action/state is
+INVALID_REQUEST and undefined transitions are INVALID_TRANSITION. Current authority
+precedes fingerprint/replay; matching committed replay precedes the original now-stale
+precondition. No-op checks its condition but preserves state revision/time/history.
+History, state, redacted audit/outbox and receipt commit atomically. Current visibility
+also filters saved receipt responses; a restored uncertain result is never a new key.
+
+Owner GET/HEAD `/versions/{id}/review/history?cursor=&limit=` returns items and
+next_cursor, ordered by committed internal event sequence. Closed events contain
+UUID event_id/version_id/actor_session/operation_id, action, old_state, new_state and
+UTC created_at. Cursor binds owner/version/filter/runtime generation; timestamps do
+not order ties. Reopen/clear preserve prior events until explicit target purge.
+
+`query_document` gains optional additive review_state/reviewed_at for latest,
+last_reviewed_version_id, updated_since_review and continue_review_version_id. Modern
+owner responses populate them; scoped responses carry explicit nulls for every personal
+field. No latest means null state/time, and no valid completion means updated=false.
+Last reviewed selects the most recent completion still in reviewed state by commit
+order, not the highest publication sequence. Updated compares its sequence to latest.
+Continue selects the most recently started/reopened version still reviewing, including
+an older version. No reading, source freshness or AI observation contributes.
+
+Owner-only `GET /documents?review=reviewing|updated_since_review` composes existing
+project/lifecycle/cursor controls. Review and visibility predicates precede paging,
+with the new filter in the cursor binding and summary ETags derived from the same
+transaction snapshot. Home links the exact continued version or updated latest;
+counts describe loaded rows, not an inferred total. Revisit remains TASK-005-02.
+`features.review` gates consumers; missing/false is unavailable, never unreviewed.
+Review invalidations carry no trusted state and become generic invalidations for
+scoped readers or targets no longer visible. Consumers refetch authenticated state.

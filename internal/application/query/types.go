@@ -12,8 +12,8 @@ type Bytes interface {
 	Read(context.Context, domain.Object, domain.Pin, func(io.ReadSeeker) error) error
 }
 type Options struct {
-	Cursor, Project, Lifecycle, Directory, Kind string
-	Limit                                       int
+	Cursor, Project, Lifecycle, Directory, Kind, Review string
+	Limit                                               int
 }
 type List[T any] struct {
 	Items      []T     `json:"items"`
@@ -29,6 +29,7 @@ type Project struct {
 	ETag                string `json:"etag"`
 }
 type Document struct {
+	domain.ReviewSummary
 	ID              string  `json:"document_id"`
 	ProjectID       string  `json:"project_id"`
 	Title           string  `json:"title"`

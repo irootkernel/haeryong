@@ -73,7 +73,8 @@ In the last column, `K` means a required Idempotency-Key; `N` means a named natu
 | GET /versions/{id}/related | scoped authenticated | Separate overlays with rationale, origin, current decision and individual validators | - |
 | GET /topic-assignments | owner, exact document/version/page/region filters | Existing assignments including owner pin/rejection state and each ETag | - |
 | PUT /topic-assignments/{id} | owner + individual If-Match | Set pinned/accepted-or-rejected decision; record rejection fingerprint and prevent silent AI override | K |
-| GET /versions/{id}/review | owner | State, exists, revision/etag or explicit create precondition | - |
+| GET/HEAD /versions/{id}/review | owner | State, exists, revision/etag or explicit create precondition | - |
+| GET/HEAD /versions/{id}/review/history | owner | Cursor history of exact-version explicit transitions; no page completion telemetry | - |
 | PUT /versions/{id}/review | owner + individual precondition | Body {action, state}; explicit start/complete/reopen/clear for exact version, with history | K |
 | GET /documents/{id}/revisit | owner | Independent document flag and individual/create precondition | - |
 | PUT /documents/{id}/revisit | owner + individual/create precondition | Body {flag}; independent of review | K |
@@ -190,7 +191,8 @@ and retries the failed cursor. Completion requires both inventories to end. File
 digest and symlink target changes remain structural observations; metadata/region
 comparison retains exact page-local identities. Unavailable metadata is not an empty
 successful comparison. Text previews read blocks on demand and verify complete bytes;
-unsupported content retains original-file download. No diff or Review API is added.
+unsupported content retains original-file download. TASK-004-05 added no diff or
+Review API; TASK-005-01 now supplies Review/history and the last-Reviewed default.
 The [route registry](schema-registry.md#deep-link-and-versions-consumption-task-004-05)
 owns additive S05 selection queries, copied-link base resolution and login return.
 
@@ -661,3 +663,22 @@ supported repair for that startup-blocking damage before EPIC-005's verified res
 preserve the library and do not bypass validation or claim an existing snapshot is
 a general restore guarantee. Conflicting authoritative hashes/identities or lost
 historical edge evidence are not repaired by inventing provenance.
+
+
+## Implemented explicit Review (TASK-005-01)
+
+Review GET/HEAD, PUT and cursor history use the closed
+[Review registry](schema-registry.md#explicit-version-review-additions-task-005-01)
+shapes. GET returns the exact absent/default or existing resource; PUT returns 200
+with the confirmed view and operation_id, and an individual ETag when existing.
+Both use the ordinary data/request_id envelope and no-store owner authority. The
+shared receipt order and 412/428/409 mappings above apply, including no-op writes.
+Workflow credentials cannot read/write personal Review. Authorized trash/purged new
+writes report INVALID_TRANSITION with lifecycle; current hidden targets/receipt
+reads remain nondisclosing. No renderer message is a Review mutation.
+
+Document list/detail add latest review_state/reviewed_at, last_reviewed_version_id,
+updated_since_review and continue_review_version_id, null for scoped readers.
+Owner list filters review=reviewing|updated_since_review apply before cursor paging.
+These are additive provisional selections under API v1, advertised by features.review;
+Revisit, notes and real lifecycle mutations remain with their owning Tasks.

@@ -155,6 +155,11 @@ func (c *Client) Call(ctx context.Context, method, path, key string, body io.Rea
 	return response, nil
 }
 func (c *Client) JSON(ctx context.Context, method, path, key string, value, out any) (domain.Response, error) {
+	return c.JSONHeaders(ctx, method, path, key, value, out, nil)
+}
+
+// JSONHeaders adds semantic controls without changing the original JSON call contract.
+func (c *Client) JSONHeaders(ctx context.Context, method, path, key string, value, out any, headers map[string]string) (domain.Response, error) {
 	var input io.Reader
 	if value != nil {
 		b, e := json.Marshal(value)
@@ -163,7 +168,11 @@ func (c *Client) JSON(ctx context.Context, method, path, key string, value, out 
 		}
 		input = bytes.NewReader(b)
 	}
-	r, e := c.Call(ctx, method, path, key, input, map[string]string{"Content-Type": "application/json"})
+	controls := map[string]string{"Content-Type": "application/json"}
+	for k, v := range headers {
+		controls[k] = v
+	}
+	r, e := c.Call(ctx, method, path, key, input, controls)
 	if e != nil {
 		return domain.Response{}, e
 	}

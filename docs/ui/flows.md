@@ -42,9 +42,14 @@ Back/Forward and S05 round trips preserve exact selection without moving persona
 Versions offers exact manual pairs, progressive structural differences and Import new
 version with this document/base captured before upload. Later cursor failures retain
 visible earlier results and retry the same cursor; incomplete scope cannot say complete.
-Open latest is separate and resolves once when activated. Review remains unavailable
-until its owning feature; source observation and supplied semantic assessment coverage
-cannot stand in for personal completion.
+Open latest is separate and resolves once when activated. TASK-005-01 adds explicit
+whole-directory Review and its history. With `features.review`, an omitted comparison
+source defaults to the last still-Reviewed version; explicit selected IDs keep priority.
+Each version displays its own Review read, never the latest document summary as an
+older version's state. Source observation and supplied semantic assessment coverage
+cannot stand in for personal completion. A 412 retains the attempted action while the
+owner reads current state and explicitly chooses again; unknown outcomes retain the
+original operation and precondition.
 
 ## Maintenance proposal lifecycle
 

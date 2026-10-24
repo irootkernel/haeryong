@@ -95,7 +95,7 @@ func referenceSchema8(w *service.LockedProfile) ([]byte, string) {
 // and virtual query results, rather than treating engine cookies as author data.
 func referencePriorRows(db *sql.DB) map[string]string {
 	GinkgoHelper()
-	names, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT GLOB 'search_words_*' AND name NOT GLOB 'search_grams_*' AND name NOT IN ('reference_materializations','authored_references','authored_edges') ORDER BY name`)
+	names, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT GLOB 'search_words_*' AND name NOT GLOB 'search_grams_*' AND name NOT IN ('reference_materializations','authored_references','authored_edges','review_states','review_events') ORDER BY name`)
 	Expect(err).NotTo(HaveOccurred())
 	var tables []string
 	for names.Next() {
@@ -173,7 +173,7 @@ var _ = Describe("RF06 authentic schema8 upgrade", Label("persistence"), func() 
 		}
 		ready := openStore(GinkgoT(), w, nil)
 		Expect(referencePriorRows(ready.db)).To(Equal(prior))
-		Expect(ready.validateTables(ctx, 9)).To(Succeed())
+		Expect(ready.validateTables(ctx, SchemaRevision)).To(Succeed())
 		for _, table := range []string{"reference_materializations", "authored_references", "authored_edges"} {
 			var n int
 			Expect(ready.db.QueryRow(`SELECT count(*) FROM ` + table).Scan(&n)).To(Succeed())

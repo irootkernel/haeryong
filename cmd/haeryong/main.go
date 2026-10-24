@@ -88,7 +88,7 @@ func parse(args []string) (options, error) {
 			continue
 		}
 		switch key {
-		case "--profile", "--data-dir", "--volume-root", "--port", "--endpoint", "--credential", "--client-dir", "--operation-id", "--project", "--document", "--base-version", "--metadata", "--version", "--path", "--output", "--input", "--state", "--cursor", "--limit", "--directory", "--kind", "--file", "--format", "--expected-config-revision", "--scope", "--name", "--evidence", "--expected-sha256", "--expected-excerpt-file", "--source-id", "--root-path", "--repo-id", "--retention-mode", "--provider-ids", "--plan-id", "--page", "--region", "--coverage-set", "--reference-id", "--query", "--lifecycle", "--versions":
+		case "--action", "--if-match", "--if-none-match", "--profile", "--data-dir", "--volume-root", "--port", "--endpoint", "--credential", "--client-dir", "--operation-id", "--project", "--document", "--base-version", "--metadata", "--version", "--path", "--output", "--input", "--state", "--cursor", "--limit", "--directory", "--kind", "--file", "--format", "--expected-config-revision", "--scope", "--name", "--evidence", "--expected-sha256", "--expected-excerpt-file", "--source-id", "--root-path", "--repo-id", "--retention-mode", "--provider-ids", "--plan-id", "--page", "--region", "--coverage-set", "--reference-id", "--query", "--lifecycle", "--versions":
 		default:
 			return opt, invalid("unsupported flag: " + key)
 		}
@@ -304,6 +304,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	var data any
 	if errors.As(err, &recorded) {
 		data = map[string]any{"operation_id": recorded.operation, "original_status": recorded.status}
+	}
+	var pending interface{ PendingOperationID() string }
+	if errors.As(err, &pending) {
+		data = map[string]any{"operation_id": pending.PendingOperationID(), "original_status": nil}
 	}
 	var emitted error
 	if opt.json {
