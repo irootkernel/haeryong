@@ -21,6 +21,7 @@ type Dispatcher struct {
 	Store   app.Store
 	Imports Processor
 	Derived Maintenance
+	Purge   *Purger
 }
 
 func (d Dispatcher) Run(ctx context.Context) error {
@@ -53,7 +54,9 @@ func (d Dispatcher) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return nil
 			}
-			if j.Kind == "derived_index" {
+			if j.Kind == "lifecycle" && d.Purge != nil {
+				_ = d.Purge.Process(ctx, j.ID)
+			} else if j.Kind == "derived_index" {
 				if d.Derived != nil {
 					_ = d.Derived.Process(ctx, j.ID)
 				}

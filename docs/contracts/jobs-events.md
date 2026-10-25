@@ -323,3 +323,28 @@ cancelled monotonically, and captured lifecycle application revisions remain sta
 after explicit owner restore. Restore never clears cancellation or resumes old work.
 Current deterministic recovery may explicitly authorize eligible work; production AI
 and maintenance input/application integration remains with TASK-006-06/TASK-008-06.
+
+## Purge lifecycle job (TASK-005-04)
+
+The existing lifecycle kind now executes owner-confirmed manual purge. Acceptance
+atomically records the terminal decision, intent/checkpoint, job and original 202
+receipt. As an explicit exception to generic cancellation, an accepted purge job
+returns INVALID_TRANSITION on cancel without recording cancellation. There is no
+undo, automatic un-purge, external dispatch or general job-resume API.
+
+The serial daemon resumes queued/interrupted work and automatically continues
+paused purge work with a due persisted retry. Recoverable I/O failures use paused
+io_retry; protected candidates use paused protected; mismatched original authority
+uses paused guard_blocked. Each continuation checks current owner/library/runtime,
+exact committed intent/target, document fence, revision and worker generation.
+Retry scheduling backs off from one second to at most sixty seconds, rebased after
+restart/clock rollback; clock passage never authorizes deletion. A guard-blocked
+turn only rechecks and never adopts changed authority. Pins are never age-reclaimed.
+
+Job results expose purge_plan_id, stage, reason, next_retry_at, remaining and
+metadata_removed. Metadata removal can finish while the job stays paused for
+independent/shared ownership, possibly indefinitely. Completed requires all metadata
+phases, retained-set checkpoints settled and all candidates collected or safely already absent. Failed/completed/
+cancelled remain immutable and are never reselected as work. The original acceptance
+receipt stays completed/202 throughout. Existing job.updated and lifecycle_changed
+outbox events retain current visibility masking, including library.invalidated.

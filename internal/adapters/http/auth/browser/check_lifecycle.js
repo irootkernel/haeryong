@@ -23,7 +23,7 @@ async page=>{
   const expected=await target.evaluate(item=>({removed:new Date(item.trashed_at).toLocaleString(),eligible:new Date(item.purge_eligible_at).toLocaleString(),state:item.previous_lifecycle==='archived'?'보관':'활성'}),item);
   const row=target.getByRole('listitem').filter({has:target.getByRole('heading',{name:item.title,exact:true})}).first();
   await row.getByText('삭제: '+expected.removed+' · 복원 위치: '+expected.state,{exact:true}).waitFor();
-  await row.getByText('영구 삭제 가능 시점: '+expected.eligible+'. 영구 삭제 기능은 아직 제공되지 않습니다.',{exact:true}).waitFor();
+  await row.getByText('영구 삭제 가능 시점: '+expected.eligible+'. 표시한 시점과 무관하게 수동 영구 삭제는 영향 확인 후 선택할 수 있습니다.',{exact:true}).waitFor();
  };
  const choose=async(name)=>{await openMenu();await page.getByRole('button',{name,exact:true}).click();await page.locator('[data-lifecycle-confirm]').waitFor();await assertImpact(page,name);};
  const confirm=async()=>{const button=page.locator('[data-lifecycle-confirm]');await button.focus();await page.keyboard.press('Enter');await dialog().waitFor({state:'hidden'});};
@@ -146,6 +146,51 @@ async page=>{
   touch={hasTouch:true,width:390,moreDialogCancel:true,explicitConfirm:true,trashRestore:true,trustedTouchStarts:beforeTrashPage.starts+restoreTouches};
  } finally {await touchContext.close();}
  step='final explicit Reader';await page.goto(input.route);await page.frameLocator('iframe').locator('#review-fixture').waitFor();
- return {archiveTrashRestore:true,restorePreviousArchived:true,keyboardConfirmation:true,delayedPositionSaveKeepsPlan:true,changedNoteRefreshKeepsIntent:true,oldDeliveryCannotRevive:true,noEnterDefault:true,cancel:true,fourViewports:true,touchTarget44:true,twoSessionRendererClosure:true,sameContextSiblingReader:true,noAutomaticRendererRevival:true,fastTrashRestoreDisposesReadableDelivery:true,missedEventResyncDisposesDelivery:true,refusedRenewalDisposesFrameAndHost:true,touch,operationEffects:true,incomingReferenceEffects:true,unresolvedIncomingEffect:true,localizedTrashMetadata:true,...boundary};
+ step='guarded mobile purge';
+ // Reuse the real imported target/referrer, then exercise the new destructive
+ // action with trusted phone taps and safe keyboard focus before acceptance.
+ const live=await api('GET',documentPath),trashPlan=await api('POST',documentPath+'/lifecycle-plans',{operation:'trash',expected_revision:live.revision});
+ await api('POST','/api/v1/lifecycle-plans/'+trashPlan.plan_id+'/commit',{plan_id:trashPlan.plan_id,expected_revision:trashPlan.expected_revision,confirmed:true});
+ const purgeContext=await page.context().browser().newContext({hasTouch:true,viewport:{width:390,height:844}});
+ let purge;
+ try {
+  await purgeContext.addInitScript(({token,origin})=>{if(window===top&&location.origin===origin)localStorage.setItem('haeryong.owner-session.v1',token);},{token:input.peer_token,origin:input.origin});
+  const phone=await purgeContext.newPage();await phone.goto(input.origin+'/trash');
+  const choosePurge=async()=>{const menu=phone.locator('.lifecycle-control details').first();if(await menu.getAttribute('open')===null)await menu.locator('summary').tap();await phone.getByRole('button',{name:'영구 삭제',exact:true}).tap();await phone.locator('[data-purge-backup]').waitFor();while(await phone.getByRole('button',{name:'영향 목록 더 보기',exact:true}).count())await phone.getByRole('button',{name:'영향 목록 더 보기',exact:true}).tap();};
+  await choosePurge();
+  const box=phone.getByRole('dialog',{name:'수명주기 영향 확인'});
+  if(!(await box.innerText()).includes('복원과 취소가 불가능')||!(await box.locator('[data-purge-backup]').innerText()).includes('상태를 제공할 수 없습니다'))throw Error('purge confirmation effects/backup absent');
+  await phone.keyboard.press('Enter');await box.waitFor({state:'hidden'});
+  if(!(await api('GET','/api/v1/trash')).items.some(row=>row.document_id===input.document))throw Error('opening Enter purged target');
+  await choosePurge();await box.getByRole('button',{name:'닫기',exact:true}).tap();
+  await choosePurge();const confirm=phone.locator('[data-lifecycle-confirm]');const target=await confirm.boundingBox();if(!target||target.height<44)throw Error('purge confirmation target too small');
+  let lostResult,acceptances=0,receiptReads=0,delivered;
+  const accepted=new Promise(resolve=>{delivered=resolve;});
+  await phone.route('**/api/v1/lifecycle-plans/*/commit',async route=>{const response=await route.fetch();if(response.status()!==202)throw Error('lost response fixture did not accept purge');lostResult=(await response.json()).data;acceptances++;await route.abort('failed');delivered();});
+  phone.on('request',request=>{if(lostResult&&request.method()==='GET'&&request.url().endsWith('/api/v1/operations/'+lostResult.plan_id))receiptReads++;});
+  await confirm.focus();await phone.keyboard.press('Enter');await accepted;
+  const journal=await phone.evaluate(()=>Object.keys(localStorage).filter(key=>key.startsWith('haeryong.lifecycle.v1:')).map(key=>JSON.parse(localStorage.getItem(key))));
+  if(!journal.some(row=>row.body.plan_id===lostResult.plan_id))throw Error('lost acceptance cleared original journal');
+  await phone.reload();await phone.getByRole('heading',{name:'휴지통',exact:true}).waitFor();
+  await phone.getByRole('status').filter({hasText:'영구 삭제'}).first().waitFor();
+  const recovered=await phone.evaluate(({plan,job})=>({pending:Object.keys(localStorage).filter(key=>key.startsWith('haeryong.lifecycle.v1:')).some(key=>JSON.parse(localStorage.getItem(key)).body.plan_id===plan),job:Object.keys(localStorage).filter(key=>key.startsWith('haeryong.purge-jobs.v1:')).some(key=>JSON.parse(localStorage.getItem(key)).includes(job))}),{plan:lostResult.plan_id,job:lostResult.job_id});
+  const receipt=await api('GET','/api/v1/operations/'+lostResult.plan_id);
+  if(acceptances!==1||receiptReads<1||recovered.pending||!recovered.job||receipt.result_metadata.job_id!==lostResult.job_id)throw Error('reload did not recover original plan and job without another acceptance');
+  // A remembered job can disappear after a restore/visibility change. A real
+  // 404 must neither hide the live purge nor stop its next poll.
+  const missing=await phone.evaluate(async job=>{const bucket=Object.keys(localStorage).find(key=>key.startsWith('haeryong.purge-jobs.v1:'));if(!bucket)throw Error('job bucket absent');const id=crypto.randomUUID();await navigator.locks.request(bucket,()=>{const ids=JSON.parse(localStorage.getItem(bucket));if(!ids.includes(job))throw Error('original job absent');localStorage.setItem(bucket,JSON.stringify([...ids,id]));});return {bucket,id};},lostResult.job_id);
+  await phone.reload();
+  const liveRow=phone.locator(`[data-purge-job="${lostResult.job_id}"]`),missingRow=phone.locator(`[data-purge-job="${missing.id}"]`);
+  await liveRow.waitFor();await missingRow.getByText('영구 삭제 작업: 이 계정 또는 서비스에서 더 이상 조회할 수 없습니다.',{exact:true}).waitFor();
+  if(await liveRow.locator('[data-purge-dismiss]').count())throw Error('pending/paused job became dismissible');
+  const livePoll=await phone.waitForResponse(response=>response.request().method()==='GET'&&response.url().endsWith('/api/v1/jobs/'+lostResult.job_id));if(!livePoll.ok())throw Error('another failed lookup stopped live polling');
+  await missingRow.getByRole('button',{name:'작업 기록 닫기',exact:true}).tap();await missingRow.waitFor({state:'hidden'});
+  const saved=await phone.evaluate(key=>JSON.parse(localStorage.getItem(key)),missing.bucket);if(saved.includes(missing.id)||!saved.includes(lostResult.job_id))throw Error('dismiss removed live job or retained missing job');
+  await phone.reload();await liveRow.waitFor();if(await missingRow.count())throw Error('dismissed job returned after reload');
+  if((await api('GET','/api/v1/trash')).items.some(row=>row.document_id===input.document))throw Error('purge did not commit');
+  await page.waitForFunction(()=>!document.querySelector('iframe')&&!document.querySelector('#reader-context-panel')&&!document.querySelector('.reader-header'));
+  purge={hasTouch:true,width:390,height:844,explicitKeyboardConfirmation:true,safeEnterDefault:true,tapCancel:true,tapImpact:true,backupUnavailable:true,progressVisible:true,lostAcceptanceReload:true,samePlanAndJob:true,acceptances,receiptReads,missingLookupIsolated:true,livePollingContinues:true,missingDismissed:true,pendingRememberedAfterReload:true};
+ } finally {await purgeContext.close();}
+ return {purge,archiveTrashRestore:true,restorePreviousArchived:true,keyboardConfirmation:true,delayedPositionSaveKeepsPlan:true,changedNoteRefreshKeepsIntent:true,oldDeliveryCannotRevive:true,noEnterDefault:true,cancel:true,fourViewports:true,touchTarget44:true,twoSessionRendererClosure:true,sameContextSiblingReader:true,noAutomaticRendererRevival:true,fastTrashRestoreDisposesReadableDelivery:true,missedEventResyncDisposesDelivery:true,refusedRenewalDisposesFrameAndHost:true,touch,operationEffects:true,incomingReferenceEffects:true,unresolvedIncomingEffect:true,localizedTrashMetadata:true,...boundary};
  }catch(cause){if(input.screenshot)await page.screenshot({path:input.screenshot,fullPage:true});throw Error(step+": "+cause.message+"; host="+(await page.locator('body').innerText()).slice(-1200));}
 }

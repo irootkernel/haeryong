@@ -110,7 +110,7 @@ func personalWriteDocument(tx app.WriteTx, id string) (domain.Document, error) {
 		return d, err
 	}
 	if d.Lifecycle == "trash" || d.Lifecycle == "purged" {
-		return d, &Transition{d.Lifecycle}
+		return d, &Transition{Lifecycle: d.Lifecycle}
 	}
 	return d, nil
 }

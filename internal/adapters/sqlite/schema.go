@@ -239,4 +239,17 @@ CREATE TABLE lifecycle_plans(plan_id TEXT PRIMARY KEY,owner_id TEXT NOT NULL REF
 CREATE TABLE lifecycle_plan_items(plan_id TEXT NOT NULL REFERENCES lifecycle_plans(plan_id),sequence INTEGER NOT NULL CHECK(sequence>=1),value BLOB NOT NULL,PRIMARY KEY(plan_id,sequence));
 CREATE INDEX lifecycle_trash ON documents(lifecycle,document_id);
 `,
+	`ALTER TABLE lifecycle_plan_items RENAME TO purge_saved_items;
+ALTER TABLE lifecycle_plans RENAME TO purge_saved_plans;
+CREATE TABLE lifecycle_plans(plan_id TEXT PRIMARY KEY,owner_id TEXT NOT NULL REFERENCES auth_owner(principal_id),document_id TEXT NOT NULL REFERENCES documents(document_id),operation TEXT NOT NULL CHECK(operation IN ('archive','trash','restore','purge')),state TEXT NOT NULL CHECK(state IN ('open','committed')),expected_revision INTEGER NOT NULL CHECK(expected_revision>=1),config_revision INTEGER NOT NULL CHECK(config_revision>=1),permissions_revision INTEGER NOT NULL CHECK(permissions_revision>=1),expires_at TEXT NOT NULL,digest TEXT NOT NULL,value BLOB NOT NULL);
+CREATE TABLE lifecycle_plan_items(plan_id TEXT NOT NULL REFERENCES lifecycle_plans(plan_id),sequence INTEGER NOT NULL CHECK(sequence>=1),value BLOB NOT NULL,PRIMARY KEY(plan_id,sequence));
+INSERT INTO lifecycle_plans SELECT * FROM purge_saved_plans;
+INSERT INTO lifecycle_plan_items SELECT * FROM purge_saved_items;
+DROP TABLE purge_saved_items;
+DROP TABLE purge_saved_plans;
+CREATE TABLE purged_versions(version_id TEXT PRIMARY KEY,document_id TEXT NOT NULL REFERENCES documents(document_id),deleted_at TEXT NOT NULL);
+CREATE INDEX purged_versions_document ON purged_versions(document_id,version_id);
+CREATE TABLE purge_intents(job_id TEXT PRIMARY KEY REFERENCES jobs(job_id),plan_id TEXT NOT NULL UNIQUE REFERENCES lifecycle_plans(plan_id),document_id TEXT NOT NULL UNIQUE REFERENCES documents(document_id),value BLOB NOT NULL CHECK(json_valid(value)));
+CREATE TABLE purge_candidates(job_id TEXT NOT NULL REFERENCES purge_intents(job_id),content_hash TEXT NOT NULL,byte_size INTEGER NOT NULL CHECK(byte_size>=0),PRIMARY KEY(job_id,content_hash));
+`,
 }

@@ -663,6 +663,23 @@ func authorizeAuthenticated(tx app.WriteTx, record domain.Session, r domain.Requ
 		return lifecycleTarget(tx, r)
 	}
 	if record.Scope.Kind == "owner" && personalWriteTarget(r.Method, r.Target) {
+		parts := strings.Split(strings.Trim(strings.SplitN(r.Target, "?", 2)[0], "/"), "/")
+		if len(parts) >= 4 && parts[2] == "versions" {
+			gone, err := tx.TombstonedVersion(parts[3])
+			if err != nil {
+				return err
+			}
+			if gone {
+				// Saved personal outcomes remain masked; a new owner write reports the
+				// known terminal lifecycle even after private version rows are removed.
+				if _, err = tx.Receipt(r.Key); err == nil {
+					return domain.ErrNotFound
+				} else if !errors.Is(err, domain.ErrNotFound) {
+					return err
+				}
+				return &domain.LifecycleTransition{Lifecycle: "purged"}
+			}
+		}
 		return visibleTargetWithoutLifecycleMask(tx, r.Target)
 	}
 	return visibleRequest(tx, r)
@@ -1110,6 +1127,19 @@ func visibleRequest(tx app.WriteTx, r domain.Request) error {
 func visibleUploadTarget(tx app.WriteTx, raw []byte) error { return app.AuthorizeTarget(tx, raw) }
 
 func visibleJob(tx app.WriteTx, j domain.Job) error {
+	if j.Kind == "lifecycle" {
+		i, err := tx.PurgeIntent(j.ID)
+		if err != nil {
+			return err
+		}
+		d, err := tx.Document(i.DocumentID)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Scope(d.ProjectID)
+		return err
+	}
+
 	var scope struct {
 		Target json.RawMessage `json:"target"`
 	}

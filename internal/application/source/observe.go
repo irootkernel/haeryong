@@ -101,6 +101,7 @@ func (p *observationPlan) sourcePlanByID(id string) (sourcePlan, bool) {
 
 // observationReservation carries the staged protocol's durable identity.
 type observationReservation struct {
+	session        domain.Session
 	intentID       string
 	operation      string
 	runID          string
@@ -242,6 +243,7 @@ func (s *Service) reserveObservation(ctx context.Context, token, versionID, key 
 		}
 		now := s.now()
 		res = observationReservation{
+			session:        actor,
 			intentID:       mustID(),
 			operation:      key,
 			runID:          mustID(),
@@ -628,6 +630,17 @@ func (s *Service) persistObservationTarget(ctx context.Context, res observationR
 	err := s.Store.Write(ctx, func(tx app.WriteTx) error {
 		if err := s.fault("before_observation_target_persist"); err != nil {
 			return err
+		}
+		// The reservation cannot authorize a new capture after lifecycle changed.
+		if _, err := Check(tx, res.session, res.versionID); err != nil {
+			return err
+		}
+		intent, err := tx.CheckIntent(res.intentID)
+		if err != nil {
+			return err
+		}
+		if intent.State != "open" {
+			return domain.ErrTransition
 		}
 		captured := ""
 		if anyResolved {

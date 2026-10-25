@@ -914,4 +914,22 @@ same result. Trash rows add title/project/latest identity and nullable purge_eli
 no file/note body is returned. Archive→active uses restore; trash→previous active/archived
 clears current trash metadata. Already archived/archive and already trash/trash are
 confirmed no-ops. No-op/replay adds no transition or event. `features.lifecycle` is an
-optional availability flag; absence/false disables these controls. Purge has its later owner.
+optional availability flag; absence/false disables these controls. TASK-005-04 adds purge under the section below.
+
+## Manual purge additions (TASK-005-04)
+
+Additive provisional v1 widens implemented lifecycle plan operation/to-state and
+result to purge/purged. Only purge results add job_id/job_url and use 202; existing
+200 lifecycle results remain unchanged. `lifecycle_plan_page.backup` selects the
+closed `purge_backup` unavailable shape, with null last_complete_at and the honest
+full_backup_engine_not_implemented reason. Shared requests stay in the embedded
+subset; response-only definitions remain in the selected machine schema.
+
+Purge impact binds every saved annotation revision/body/context, source records,
+references and reader-resource changes. Its existing pagination/visibility rules
+remain. The optional features.purge flag signals availability, never authority.
+A document's purged lifecycle and minimal permanently reserved version IDs are
+terminal. The original 202 response/plan/aliases stay stable while the independent
+lifecycle job reports cleanup. Explicit target purge minimizes private plan and
+receipt copies while preserving operation identity, original fingerprints and
+uncertain outcomes; it does not authorize redispatch or expose hidden personal data.

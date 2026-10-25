@@ -11,10 +11,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"haeryong.local/haeryong/internal/adapters/content/staging"
 	importer "haeryong.local/haeryong/internal/application/import"
 	"haeryong.local/haeryong/internal/application/query"
 	"haeryong.local/haeryong/internal/application/search"
 	app "haeryong.local/haeryong/internal/application/storage"
+	"haeryong.local/haeryong/internal/application/work"
 	"haeryong.local/haeryong/internal/domain"
 )
 
@@ -168,4 +170,179 @@ var _ = It("Lifecycle in progress derived worker cannot apply after real trash r
 	Expect(f.pinCount(`SELECT count(*) FROM derived_work WHERE version_id=? AND work_kind='search'`, version)).To(Equal(1))
 	Expect(worker.Process(ctx, index.JobID)).To(Succeed())
 	Expect(f.pinCount(`SELECT count(*) FROM search_chunks WHERE part='body'`)).To(Equal(bodyRows))
+})
+
+func lifecycleRacePurge(f *fixture, document, jobID string) domain.Job {
+	GinkgoHelper()
+	before, err := f.store.Job(ctx, jobID)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(before.State).To(Equal("running"))
+	var old, restored domain.LifecycleDocument
+	Expect(f.store.Write(ctx, func(tx app.WriteTx) error { var e error; old, e = tx.LifecycleDocument(document); return e })).To(Succeed())
+	lifecycleRaceChange(f, document, "trash")
+	fenced, err := f.store.Job(ctx, jobID)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(fenced.CancelRequested).To(BeTrue())
+	Expect(fenced.State).To(Equal("cancelling"))
+	Expect(fenced.AttemptGeneration).To(Equal(before.AttemptGeneration + 1))
+	lifecycleRaceChange(f, document, "purge")
+	after, err := f.store.Job(ctx, jobID)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(after.CancelRequested).To(BeTrue())
+	Expect(after.AttemptGeneration).To(Equal(fenced.AttemptGeneration))
+	Expect(after.State).To(Equal("cancelling"))
+	Expect(f.store.Write(ctx, func(tx app.WriteTx) error { var e error; restored, e = tx.LifecycleDocument(document); return e })).To(Succeed())
+	Expect(restored.Lifecycle).To(Equal("purged"))
+	Expect(restored.Revision).To(Equal(old.Revision + 2))
+	Expect(restored.TrashGeneration).To(Equal(old.TrashGeneration + 2))
+	return fenced
+}
+
+var _ = It("Purge accepted import cannot publish after real trash purge wins its final publication race", Label("persistence"), func() {
+	f := newFixture(GinkgoT())
+	document, original := f.imported(GinkgoT(), f.sealed(GinkgoT(), nil, "<h1>original lifecycle target</h1>"), "")
+	upload := f.sealed(GinkgoT(), &document, "<h1>late replacement must never publish</h1>")
+	replacement := key(GinkgoT())
+	r, err := f.core.Import(ctx, f.token, key(GinkgoT()), importer.ImportRequest{UploadID: upload, DocumentPresent: true, DocumentID: &document, BaseVersionID: &original, VersionID: replacement})
+	Expect(err).NotTo(HaveOccurred())
+	Expect(r.Status).To(Equal(202))
+	id := decoded(GinkgoT(), r)["job_id"]
+	bytes := &lifecycleRaceBytes{Bytes: f.store, holdPut: true, entered: make(chan struct{}), release: make(chan struct{})}
+	f.core.Bytes = bytes
+	done := make(chan error, 1)
+	exited := make(chan struct{})
+	go func() { defer GinkgoRecover(); defer close(exited); done <- f.core.Process(ctx, id) }()
+	var release sync.Once
+	DeferCleanup(func() {
+		release.Do(func() { close(bytes.release) })
+		Eventually(exited, 10*time.Second).Should(BeClosed())
+	})
+	lifecycleAwaitBarrier(bytes.entered)
+	fenced := lifecycleRacePurge(f, document, id)
+	release.Do(func() { close(bytes.release) })
+	var result error
+	Eventually(done, 10*time.Second).Should(Receive(&result))
+	Expect(errors.Is(result, domain.ErrStaleWorker)).To(BeTrue(), "the earlier accepted attempt must hit its real publication fence")
+	job, err := f.store.Job(ctx, id)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(job.State).To(Equal("cancelled"))
+	Expect(job.AttemptGeneration).To(Equal(fenced.AttemptGeneration))
+	_, err = f.store.Version(ctx, replacement)
+	Expect(err).To(MatchError(domain.ErrNotFound))
+	d, err := f.store.Document(ctx, document)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(d.LatestVersionID).To(BeEmpty())
+	Expect(f.pinCount(`SELECT count(*) FROM document_versions WHERE document_id=?`, document)).To(Equal(1))
+	Expect(f.core.Process(ctx, id)).To(Succeed())
+	_, err = f.store.Version(ctx, replacement)
+	Expect(err).To(MatchError(domain.ErrNotFound))
+})
+
+var _ = It("Purge in progress derived worker cannot apply after real trash purge fences its attempt", Label("persistence"), func() {
+	f := newFixture(GinkgoT())
+	document, version := f.imported(GinkgoT(), f.sealed(GinkgoT(), nil, "<h1>lifecyclebodyneverapply</h1>"), "")
+	var index domain.SearchIndex
+	Expect(f.store.Write(ctx, func(tx app.WriteTx) error { var e error; index, e = tx.SearchIndex(version); return e })).To(Succeed())
+	bytes := &lifecycleRaceBytes{Bytes: f.store, entered: make(chan struct{}), release: make(chan struct{})}
+	worker := search.NewWorker(f.store, bytes)
+	done := make(chan error, 1)
+	exited := make(chan struct{})
+	go func() {
+		defer GinkgoRecover()
+		defer close(exited)
+		for i := 0; i < 100; i++ {
+			if err := worker.Process(ctx, index.JobID); err != nil {
+				done <- err
+				return
+			}
+		}
+		done <- errors.New("worker never reached its read barrier")
+	}()
+	var release sync.Once
+	DeferCleanup(func() {
+		release.Do(func() { close(bytes.release) })
+		Eventually(exited, 10*time.Second).Should(BeClosed())
+	})
+	lifecycleAwaitBarrier(bytes.entered)
+	fenced := lifecycleRacePurge(f, document, index.JobID)
+	bodyRows := f.pinCount(`SELECT count(*) FROM search_chunks WHERE part='body'`)
+	Expect(bodyRows).To(BeZero())
+	release.Do(func() { close(bytes.release) })
+	var result error
+	Eventually(done, 10*time.Second).Should(Receive(&result))
+	Expect(errors.Is(result, domain.ErrStaleWorker)).To(BeTrue(), "resumed production worker must reject the old attempt before applying body rows")
+	job, err := f.store.Job(ctx, index.JobID)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(job.State).To(Equal("cancelled"))
+	Expect(job.AttemptGeneration).To(Equal(fenced.AttemptGeneration))
+	Expect(f.pinCount(`SELECT count(*) FROM search_chunks WHERE part='body'`)).To(Equal(bodyRows))
+	Expect(f.pinCount(`SELECT count(*) FROM derived_work WHERE version_id=? AND work_kind='search'`, version)).To(Equal(1))
+	Expect(worker.Process(ctx, index.JobID)).To(Succeed())
+	Expect(f.pinCount(`SELECT count(*) FROM search_chunks WHERE part='body'`)).To(Equal(bodyRows))
+})
+
+var _ = It("Purge PR1-F2 accepted real import cannot reuse an ID purged before final publication", Label("persistence"), func() {
+	f := newFixture(GinkgoT())
+	originalDoc, originalVersion := f.imported(GinkgoT(), f.sealed(GinkgoT(), nil, "<h1>original</h1>"), "")
+	heldUpload := f.sealed(GinkgoT(), &originalDoc, "<h1>held candidate</h1>")
+	otherUpload := f.sealed(GinkgoT(), nil, "<h1>other candidate</h1>")
+	sharedID := key(GinkgoT())
+	accepted, err := f.core.Import(ctx, f.token, key(GinkgoT()), importer.ImportRequest{UploadID: heldUpload, DocumentPresent: true, DocumentID: &originalDoc, BaseVersionID: &originalVersion, VersionID: sharedID})
+	Expect(err).NotTo(HaveOccurred())
+	heldJob := decoded(GinkgoT(), accepted)["job_id"]
+	barrier := &lifecycleRaceBytes{Bytes: f.store, holdPut: true, entered: make(chan struct{}), release: make(chan struct{})}
+	f.core.Bytes = barrier
+	done := make(chan error, 1)
+	exited := make(chan struct{})
+	go func() { defer GinkgoRecover(); defer close(exited); done <- f.core.Process(ctx, heldJob) }()
+	var release sync.Once
+	DeferCleanup(func() {
+		release.Do(func() { close(barrier.release) })
+		Eventually(exited, 10*time.Second).Should(BeClosed())
+	})
+	lifecycleAwaitBarrier(barrier.entered)
+	normal := importer.New(f.store, f.auth, f.store, staging.New())
+	accepted, err = normal.Import(ctx, f.token, key(GinkgoT()), importer.ImportRequest{UploadID: otherUpload, DocumentPresent: true, VersionID: sharedID})
+	Expect(err).NotTo(HaveOccurred())
+	otherJob := decoded(GinkgoT(), accepted)["job_id"]
+	Expect(normal.Process(ctx, otherJob)).To(Succeed())
+	j, err := f.store.Job(ctx, otherJob)
+	Expect(err).NotTo(HaveOccurred())
+	var published struct {
+		Document string `json:"document_id"`
+	}
+	Expect(json.Unmarshal(j.Result, &published)).To(Succeed())
+	lifecycleRaceChange(f, published.Document, "trash")
+	lifecycleRaceChange(f, published.Document, "purge")
+	var purgeJob string
+	Expect(f.store.Write(ctx, func(tx app.WriteTx) error {
+		jobs, e := tx.Jobs()
+		for _, j := range jobs {
+			if j.Kind == "lifecycle" {
+				purgeJob = j.ID
+			}
+		}
+		return e
+	})).To(Succeed())
+	Expect(purgeJob).NotTo(BeEmpty())
+	purger := &work.Purger{Store: f.store, Bytes: f.store}
+	for turn := 0; turn < 100; turn++ {
+		j, err := f.store.Job(ctx, purgeJob)
+		Expect(err).NotTo(HaveOccurred())
+		if j.State == "completed" || j.State == "paused" {
+			break
+		}
+		Expect(purger.Process(ctx, purgeJob)).To(Succeed())
+	}
+	_, err = f.store.Version(ctx, sharedID)
+	Expect(err).To(MatchError(domain.ErrNotFound))
+	release.Do(func() { close(barrier.release) })
+	var result error
+	Eventually(done, 10*time.Second).Should(Receive(&result))
+	Expect(result).To(MatchError(importer.ErrImmutableConflict))
+	_, err = f.store.Version(ctx, sharedID)
+	Expect(err).To(MatchError(domain.ErrNotFound))
+	d, err := f.store.Document(ctx, originalDoc)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(d.LatestVersionID).To(Equal(originalVersion))
 })

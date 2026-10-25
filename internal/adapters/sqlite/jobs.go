@@ -86,6 +86,13 @@ func (t *writeTx) CancelJob(id string) (domain.Job, error) {
 	if err != nil {
 		return j, err
 	}
+	if j.Kind == "lifecycle" {
+		if _, err := t.PurgeIntent(id); err == nil {
+			return j, domain.ErrTransition
+		} else if !errors.Is(err, domain.ErrNotFound) {
+			return j, err
+		}
+	}
 	if terminal(j.State) || j.CancelRequested {
 		return j, nil
 	}

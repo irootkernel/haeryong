@@ -128,3 +128,11 @@ trust a supplied resolution flag. Ordinary relative/external hrefs remain payloa
 bytes with no canonical-library registration requirement. The shared decoder
 retains original JSON and exact path spelling; later materialization/resolution
 never rewrites the imported declaration or substitutes the latest version.
+
+### Permanently reserved purged version identities
+
+TASK-005-04 retains minimal version-ID tombstones permanently. Import acceptance
+and the final publication transaction reject a tombstoned version ID with
+IMMUTABLE_VERSION_CONFLICT, even for identical bytes or a different/new document.
+Removing private version rows does not free page identity or version-scoped
+credentials for reuse. Receipt replay remains replay only and never republishes.

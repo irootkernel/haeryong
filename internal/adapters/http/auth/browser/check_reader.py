@@ -4,7 +4,7 @@ import argparse,shutil
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--browser-cli',type=pathlib.Path,required=True)
 parser.add_argument('--receipt',type=pathlib.Path,required=True)
-parser.add_argument('--lifecycle-only',action='store_true',help='Bounded TASK-005-03 real lifecycle/renderer proof; no external CDN')
+parser.add_argument('--lifecycle-only',action='store_true',help='Bounded TASK-005-03/04 lifecycle/purge proof; no external CDN')
 parser.add_argument('--notes-only',action='store_true',help='Bounded TASK-005-02 Notes/Revisit proof; no external CDN')
 parser.add_argument('--review-only',action='store_true',help='Bounded TASK-005-01 Review/Home/Versions proof; no external CDN')
 parser.add_argument('--screenshot',type=pathlib.Path,help='Optional private rendered Reader screenshot')
@@ -74,7 +74,7 @@ try:
   code=pathlib.Path(__file__).with_name('check_lifecycle.js').read_text()
   proof['lifecycle_driver_sha256']=hashlib.sha256(code.encode()).hexdigest()
   actual=js(code.replace('INPUT',json.dumps({'route':route,'version':version,'origin':product.endpoint,'document':document,'peer_token':product.owner('Lifecycle peer owner')['token'],'screenshot':str(args.screenshot.resolve()) if args.screenshot else None})))
-  proof['cases'].append({'kind':'TASK-005-03 real lifecycle actions / synthetic data / viewport mouse keyboard; explicit hasTouch tap case', 'actual':actual})
+  proof['cases'].append({'kind':'TASK-005-03/04 real lifecycle and guarded purge / synthetic data / viewport mouse keyboard; explicit hasTouch tap case', 'actual':actual})
   if args.screenshot:js('async page=>{await page.screenshot({path:'+json.dumps(str(args.screenshot.resolve()))+',fullPage:true});return true;}')
  elif args.notes_only:
   proof['notes_driver_sha256']=hashlib.sha256(pathlib.Path(__file__).with_name('check_notes.js').read_bytes()).hexdigest()

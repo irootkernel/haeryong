@@ -26,7 +26,7 @@ import (
 	driverSQLite "modernc.org/sqlite"
 )
 
-const SchemaRevision = 12
+const SchemaRevision = 13
 
 type Boundary string
 
@@ -610,7 +610,12 @@ func (s *Store) validateTables(ctx context.Context, revision int) error {
 		}
 	}
 	if revision >= 12 {
-		return s.validateLifecycleDeclarations(ctx)
+		if err := s.validateLifecycleDeclarations(ctx); err != nil {
+			return err
+		}
+	}
+	if revision >= 13 {
+		return s.validatePurgeDeclarations(ctx)
 	}
 	return nil
 }

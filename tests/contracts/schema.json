@@ -8440,7 +8440,8 @@
           "enum": [
             "active",
             "archived",
-            "trash"
+            "trash",
+            "purged"
           ]
         },
         "previous_lifecycle": {
@@ -8451,9 +8452,13 @@
           ]
         },
         "trashed_at": {
-          "type": [
-            "string",
-            "null"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "revision": {
@@ -8462,6 +8467,12 @@
         },
         "changed": {
           "type": "boolean"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "job_url": {
+          "type": "string"
         }
       },
       "required": [
@@ -8489,7 +8500,8 @@
           "enum": [
             "archive",
             "trash",
-            "restore"
+            "restore",
+            "purge"
           ]
         },
         "state": {
@@ -8510,7 +8522,8 @@
           "enum": [
             "active",
             "archived",
-            "trash"
+            "trash",
+            "purged"
           ]
         },
         "expected_revision": {
@@ -8556,6 +8569,9 @@
               "type": "null"
             }
           ]
+        },
+        "backup": {
+          "$ref": "#/$defs/purge_backup"
         }
       },
       "required": [
@@ -8670,6 +8686,74 @@
       "required": [
         "items",
         "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "purge_backup": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "unavailable"
+          ]
+        },
+        "last_complete_at": {
+          "type": "null"
+        },
+        "reason": {
+          "enum": [
+            "full_backup_engine_not_implemented"
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "last_complete_at",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "purge_job_progress": {
+      "type": "object",
+      "properties": {
+        "purge_plan_id": {
+          "$ref": "#/$defs/id"
+        },
+        "stage": {
+          "enum": [
+            "validate",
+            "derived",
+            "personal",
+            "source",
+            "versions",
+            "gc",
+            "complete"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "",
+            "io_retry",
+            "protected",
+            "guard_blocked"
+          ]
+        },
+        "next_retry_at": {
+          "type": "string"
+        },
+        "remaining": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "metadata_removed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "purge_plan_id",
+        "stage",
+        "remaining",
+        "metadata_removed"
       ],
       "additionalProperties": false
     }

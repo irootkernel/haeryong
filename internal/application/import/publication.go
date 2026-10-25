@@ -314,6 +314,11 @@ func (s *Service) Import(ctx context.Context, token, key string, input ImportReq
 				return domain.Response{}, ErrVersionConflict
 			}
 		}
+		if gone, err := tx.TombstonedVersion(n.VersionID); err != nil {
+			return domain.Response{}, err
+		} else if gone {
+			return domain.Response{}, ErrImmutableConflict
+		}
 		if input.VersionID != "" {
 			old, err := tx.PublishedVersion(input.VersionID)
 			if err == nil {
@@ -555,6 +560,11 @@ func (s *Service) publish(ctx context.Context, j domain.Job) error {
 			if e := app.CheckLifecycleApplication(tx, intent.DocumentID, intent.DocumentRevision); e != nil {
 				return e
 			}
+		}
+		if gone, e := tx.TombstonedVersion(v.ID); e != nil {
+			return e
+		} else if gone {
+			return ErrImmutableConflict
 		}
 		if old, e := tx.PublishedVersion(v.ID); e == nil {
 			if old.DocumentID != v.DocumentID || old.PayloadSHA != v.PayloadSHA || old.MetadataHash != v.MetadataHash {

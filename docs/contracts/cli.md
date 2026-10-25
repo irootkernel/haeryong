@@ -283,3 +283,13 @@ PLAN_ID; retries reuse it and the original body. Optional --operation-id aliases
 same result. Unknown outcomes retain the plan identity and require reconciliation,
 never a fresh generated commit key. Invalid/stale plans preserve owner intent.
 Purge, backup and operator restore remain unavailable under their ordered Tasks.
+
+## Manual purge (TASK-005-04)
+
+`haeryong lifecycle plan --document ID --action purge --expected-revision N --json`
+uses the same show/commit --confirm flow and ordinary current owner session.
+Purge commit returns acceptance/job identity; `haeryong jobs show JOB_ID --json`
+reports independent cleanup, paused retention and automatic retry. No resume
+command is added. Reuse the exact plan/body after a lost response; never create a
+new destructive request to recover the old result. Acceptance is irreversible,
+including when I/O cleanup is paused; cancellation returns INVALID_TRANSITION.

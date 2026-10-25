@@ -44,6 +44,9 @@ func (s *Store) Receipt(ctx context.Context, key domain.OperationKey) (domain.Re
 func (t *writeTx) ReserveOperation(request domain.Request, normalize func() ([]byte, error)) (domain.Receipt, bool, error) {
 	r, err := receipt(t.ctx, t.tx, request.Key)
 	if err == nil {
+		if purged, err := app.CheckPurgedReceipt(request, r); purged || err != nil {
+			return r, true, err
+		}
 		fingerprint, err := app.Fingerprint(request, r.Normalization)
 		if err != nil {
 			return r, true, err
@@ -448,11 +451,11 @@ func (t *writeTx) ReserveGC(hash, token string) (domain.GCReservation, error) {
 	if object.State != "ready" {
 		return r, domain.ErrDeleting
 	}
-	var pins, refs int
-	if err := t.tx.QueryRowContext(t.ctx, "SELECT (SELECT count(*) FROM object_pins WHERE content_hash=?),(SELECT count(*) FROM object_references WHERE content_hash=?)", hash, hash).Scan(&pins, &refs); err != nil {
+	var pins, refs, owners int
+	if err := t.tx.QueryRowContext(t.ctx, `SELECT (SELECT count(*) FROM object_pins WHERE content_hash=?),(SELECT count(*) FROM object_references WHERE content_hash=?),(SELECT count(*) FROM version_entries WHERE content_hash=?)+(SELECT count(*) FROM contexts WHERE content_hash=?)+(SELECT count(*) FROM metadata_indexes WHERE metadata_hash=?)+(SELECT count(*) FROM document_versions WHERE manifest_sha256=? OR supplied_metadata_hash=?)`, hash, hash, hash, hash, hash, hash, hash).Scan(&pins, &refs, &owners); err != nil {
 		return r, err
 	}
-	if pins+refs != 0 {
+	if pins+refs+owners != 0 {
 		return r, domain.ErrPinned
 	}
 	return r, t.exec("UPDATE content_objects SET state='deleting',gc_token=? WHERE content_hash=?", token, hash)

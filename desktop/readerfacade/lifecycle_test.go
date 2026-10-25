@@ -60,3 +60,33 @@ func TestLifecycleTransportParityConfirmationAndOptionalKey(t *testing.T) {
 		t.Fatal(calls)
 	}
 }
+
+func TestPurgeAcceptedIdentityAndProtectedProgress(t *testing.T) {
+	s, _, _ := newReaderFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+		switch r.URL.Path {
+		case "/api/v1/documents/doc/lifecycle-plans":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body["operation"] != "purge" {
+				t.Fatal("purge action lost")
+			}
+			dataReply(w, 201, map[string]any{"plan_id": "plan", "backup": map[string]any{"state": "unavailable", "last_complete_at": nil, "reason": "full_backup_engine_not_implemented"}})
+		case "/api/v1/lifecycle-plans/plan/commit":
+			dataReply(w, 202, map[string]any{"plan_id": "plan", "job_id": "job", "job_url": "/api/v1/jobs/job", "lifecycle": "purged"})
+		case "/api/v1/jobs/job":
+			dataReply(w, 200, map[string]any{"job_id": "job", "state": "paused", "result": map[string]any{"reason": "protected", "remaining": 2}})
+		default:
+			return false
+		}
+		return true
+	})
+	invokeOK(t, s, "lifecyclePlan", `{"document_id":"doc","body":{"operation":"purge","expected_revision":3}}`)
+	result := invokeOK(t, s, "lifecyclePlanCommit", `{"plan_id":"plan","body":{"plan_id":"plan","expected_revision":3,"confirmed":true}}`)
+	raw, _ := json.Marshal(result)
+	if !strings.Contains(string(raw), `"job_id":"job"`) {
+		t.Fatal("202 job identity lost")
+	}
+	invokeOK(t, s, "jobGet", `{"job_id":"job"}`)
+}

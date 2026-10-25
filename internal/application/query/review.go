@@ -148,7 +148,7 @@ func (s *Service) ReviewPut(ctx context.Context, token, key, version, etag strin
 			return domain.Response{}, err
 		}
 		if d.Lifecycle == "trash" || d.Lifecycle == "purged" {
-			return domain.Response{}, &Transition{d.Lifecycle}
+			return domain.Response{}, &Transition{Lifecycle: d.Lifecycle}
 		}
 		r, err := reviewCurrent(tx, writer.PrincipalID, version)
 		if err != nil {

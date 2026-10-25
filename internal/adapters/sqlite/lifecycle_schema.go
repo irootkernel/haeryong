@@ -14,7 +14,15 @@ func (s *Store) validateLifecycleDeclarations(ctx context.Context) error {
 		if err := s.db.QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE type=? AND name=?`, strings.ToLower(match[1]), match[2]).Scan(&actual); err != nil {
 			return errors.New("missing lifecycle schema declaration")
 		}
-		if normalize(actual) != normalize(match[0]) {
+		expected := match[0]
+		var revision int
+		if err := s.db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&revision); err != nil {
+			return err
+		}
+		if revision >= 13 && match[2] == "lifecycle_plans" {
+			expected = strings.Replace(expected, "('archive','trash','restore')", "('archive','trash','restore','purge')", 1)
+		}
+		if normalize(actual) != normalize(expected) {
 			return errors.New("changed lifecycle schema declaration")
 		}
 	}

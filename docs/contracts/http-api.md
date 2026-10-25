@@ -740,13 +740,12 @@ INVALID_REQUEST, including keyless/keyed committed replays. Missing expected_rev
 is 428 PRECONDITION_REQUIRED. For valid requests: authenticate/current authorization,
 receipt fingerprint/replay, then new-work revision/freshness/transition checks.
 A changed valid expected_revision on an already committed plan is 409 OPERATION_CONFLICT.
-An identical committed replay after expiry returns its original 200 result. First
+An identical committed replay after expiry returns its original result (200 for preserving actions; 202 for purge). First
 commit of an expired plan is 409 STALE_PLAN; new stale document revision is 412
 PRECONDITION_FAILED; changed config/permissions/impact is STALE_PLAN. Invalid transitions
-return 409 INVALID_TRANSITION with authorized details.lifecycle; purge remains 503
-FEATURE_NOT_READY. Unknown/unauthorized identities remain nondisclosing.
+return 409 INVALID_TRANSITION with authorized details.lifecycle. TASK-005-04 implements purge as described below. Unknown/unauthorized identities remain nondisclosing.
 
-Freshness binds document revision/versions, config and permission generations, explicit
+For archive/trash/restore, freshness binds document revision/versions, config and permission generations, explicit
 Notes/history/bindings, Review/history, Revisit and eligible incoming references.
 Automatic reading/page positions and reader preferences are as-of-plan information:
 values/revisions/new rows do not invalidate a plan and all current rows remain preserved.
@@ -755,3 +754,27 @@ returns the exact same identities to prior active/archived state. Old accepted j
 renderer sessions cannot regain application/delivery authority after trash→restore.
 The safe lifecycle result remains owner-reconcilable while trash; ordinary saved personal
 responses remain masked. No generic exception exposes hidden personal bodies.
+
+## Guarded manual purge (TASK-005-04)
+
+Additive provisional v1: the existing lifecycle plan endpoints now implement
+`operation:purge` for trash only. Their owner, exact confirmation, natural plan ID,
+optional alias, current-authority and replay/error precedence remain unchanged.
+Purge alone returns a completed **202** acceptance receipt with the existing
+lifecycle result plus `job_id` and `job_url`. This response never changes to a
+completion receipt. The atomic decision makes restore and cancellation impossible;
+restore-first instead stales the purge plan without any deletion.
+
+Purge plans additionally include `backup:{state:"unavailable",last_complete_at:null,
+reason:"full_backup_engine_not_implemented"}`. This is honest unavailable status,
+not proof that no independent copy exists; TASK-005-05 owns real backup status.
+The owner need not create a new backup before confirming. The impact separates
+versions, notes/history, Review history, distinct referring documents and edges.
+Unlike preserving lifecycle actions, purge freshness includes current reader rows.
+
+`features.purge` gates the action independently of lifecycle. Ordinary owner job
+GET/list and existing CLI jobs show reveal only safe purge progress, including
+paused reason, retry time, remaining objects and metadata-removal status. No new
+resume route is implemented. Current/scoped data reads stay hidden; incoming
+historical references retain the D4 minimal IDs/410 result. A purged version ID is
+permanently reserved at import acceptance and final publication.

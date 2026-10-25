@@ -159,6 +159,9 @@ func Replay(ctx context.Context, store Store, authority Authority, request domai
 			return err
 		}
 		found = true
+		if _, err := CheckPurgedReceipt(request, receipt); err != nil {
+			return err
+		}
 		fingerprint, err := Fingerprint(request, receipt.Normalization)
 		if err != nil {
 			return err
@@ -181,4 +184,24 @@ func Replay(ctx context.Context, store Store, authority Authority, request domai
 	}
 	response, err = authority.Filter(ctx, request, response)
 	return response, true, err
+}
+
+// CheckPurgedReceipt preserves comparison without retaining a purged private
+// request. Even an equivalent call cannot redispatch or disclose the old result.
+func CheckPurgedReceipt(request domain.Request, receipt domain.Receipt) (bool, error) {
+	var redacted struct {
+		Document string `json:"purged_document_id"`
+		Request  string `json:"request_sha256"`
+	}
+	if json.Unmarshal(receipt.Normalization, &redacted) != nil || redacted.Document == "" {
+		return false, nil
+	}
+	digest, err := Fingerprint(request, nil)
+	if err != nil {
+		return true, err
+	}
+	if digest != redacted.Request {
+		return true, domain.ErrConflict
+	}
+	return true, domain.ErrNotFound
 }

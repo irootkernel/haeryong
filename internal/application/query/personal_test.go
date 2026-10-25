@@ -79,7 +79,7 @@ func key(t GinkgoTInterface) string {
 	return id
 }
 
-func (f *fixture) publishVersion(t GinkgoTInterface, files map[string]string, alias, target string) {
+func (f *fixture) publishVersion(t GinkgoTInterface, files map[string]string, alias, target string, metadata ...string) {
 	GinkgoHelper()
 	doc := (*string)(nil)
 	targetJSON, _ := json.Marshal(map[string]any{"project_id": f.project, "document_id": doc})
@@ -108,7 +108,11 @@ func (f *fixture) publishVersion(t GinkgoTInterface, files map[string]string, al
 	_ = json.Unmarshal(r.Body, &envelope)
 	Expect(f.core.Process(ctx, envelope.JobID) != nil).To(BeFalse())
 	version := key(t)
-	importResponse, e := f.core.Import(ctx, f.token, key(t), importer.ImportRequest{UploadID: created.ID, DocumentPresent: true, VersionID: version})
+	input := importer.ImportRequest{UploadID: created.ID, DocumentPresent: true, VersionID: version}
+	if len(metadata) > 0 {
+		input.Metadata = strings.NewReader(metadata[0])
+	}
+	importResponse, e := f.core.Import(ctx, f.token, key(t), input)
 	Expect(e != nil).To(BeFalse())
 	var imported struct {
 		JobID string `json:"job_id"`

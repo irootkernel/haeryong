@@ -48,9 +48,7 @@ func (k PersonalKind) resource() string {
 }
 
 // Transition reports an authorized lifecycle conflict for a personal write.
-type Transition struct{ Lifecycle string }
-
-func (e *Transition) Error() string { return "lifecycle blocks write: " + e.Lifecycle }
+type Transition = domain.LifecycleTransition
 
 // PersonalView is the selected wire shape for all three resource families.
 // Absent state returns the family's default value with explicit null
@@ -444,7 +442,7 @@ func (s *Service) PersonalPut(ctx context.Context, token, key, version string, k
 			return domain.Response{}, err
 		}
 		if document.Lifecycle == "trash" || document.Lifecycle == "purged" {
-			return domain.Response{}, &Transition{document.Lifecycle}
+			return domain.Response{}, &Transition{Lifecycle: document.Lifecycle}
 		}
 		// Canonicalize every stored page reference to the resolved stored
 		// entry so aliases cannot fork per-page resources.

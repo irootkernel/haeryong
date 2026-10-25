@@ -154,3 +154,19 @@ Expired/conflicting plans retain intent and offer a fresh impact review. Unknown
 retain the original plan until reconciliation or an explicit same-plan retry. Trash
 closes the current renderer; restore opens a new session only on explicit navigation.
 Retention eligibility is informational; permanent purge is not enabled by this Task.
+
+### S08 delivered manual purge
+
+TASK-005-04 enables owner purge in Trash behind features.purge. The safe-close-first
+impact sheet lists version/note/history/referring-document/edge counts, unavailable
+backup status and retained-copy limits; one explicit confirmation accepts terminal
+purge. Enter on initial focus never deletes. All impact pages remain reviewable.
+Restore conflicts/stale plans preserve intent and require fresh impact confirmation.
+The Trash view retains job identity across reload and shows automatic I/O retry,
+protected-byte waits and metadata-removal progress without claiming physical erasure.
+
+The owner may dismiss a completed or failed purge result after reading it. An
+unavailable job is shown separately with its own dismissal action; one lookup
+failure does not hide or stop polling other jobs. Pending and paused work remains
+remembered and visible. A transient lookup error retains its record and retries.
+Dismissing a local result record does not cancel or repeat the server operation.

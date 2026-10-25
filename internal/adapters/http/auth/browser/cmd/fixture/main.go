@@ -189,7 +189,7 @@ func run() error {
 	workerCtx, stopWorker := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	workerDone := make(chan error, 1)
 	go func() {
-		workerDone <- (work.Dispatcher{Store: store, Imports: imports, Derived: search.NewWorker(store, store)}).Run(workerCtx)
+		workerDone <- (work.Dispatcher{Purge: &work.Purger{Store: store, Bytes: store}, Store: store, Imports: imports, Derived: search.NewWorker(store, store)}).Run(workerCtx)
 	}()
 	defer func() {
 		stopWorker()

@@ -85,3 +85,18 @@ Unadopted page-context and transfer staging follow the [upload lifecycle](../con
 ## Required evidence
 
 Use two projects with multiple directory versions and HTML pages, shared assets, nested/Unicode paths, unknown attachments, saved page/context objects, review stamps, a rejected suggestion, a trashed referenced target, retained/reference-only source and uncertain/orphan provider attempts. Include a directory and file beyond the removed historical limits; verify streamed backup/export/restore, exact path/byte fidelity, resumed transfer and honest disk exhaustion without partial-success claims. Back up to private local files while adding/purging content; test interrupted flush/finalization, checksum mismatch and missing objects. Restore to a separate test profile and verify data, old-session rejection, one successful reconnect followed by remembered restart, policy reconciliation, truthful missing-source status and no blind external redispatch. Exercise migration failure, recovery-set retention, space-failure recovery, pending-upload discovery after restart, background/lease interruption without lost staging, explicit abandonment racing with Save/Ask and clock-anomaly handling. Verify status distinguishes no backup, a prior complete set plus a failed/incomplete replacement, checksum verification and an actual trial restore; the status itself does not count as restore evidence. Test encrypted-copy corruption and missing-key behavior only when that optional format is implemented. These are planned evidence requirements, not tests performed by this bundle.
+
+## Manual purge cleanup and the backup handoff
+
+TASK-005-04 implements owner-confirmed irreversible purge and resumable local GC.
+Its backup line is explicitly unavailable until TASK-005-05 supplies real status.
+No new backup or delay is required; independent copies and protected objects may
+remain. Recoverable cleanup errors and retained candidates leave the lifecycle job
+paused with automatic bounded retry; job inspection distinguishes removed metadata
+from protected bytes. No cancelled/failed/completed job is restarted as new work.
+
+TASK-005-05 must snapshot the minimal permanent version reservations, terminal
+intent/checkpoint/candidates (including retained_sets), receipt aliases/redaction comparison facts and fences
+coherently. Changed restore runtime/owner authority blocks old cleanup until the
+protected restore flow explicitly reconciles it. DF-02 crash read pins remain
+protected pending their owning Task; DF-03 synchronous read-drain behavior is unchanged.

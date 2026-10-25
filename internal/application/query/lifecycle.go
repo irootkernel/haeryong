@@ -42,16 +42,18 @@ func LifecycleNext(current, previous, operation string) (string, error) {
 			return previous, nil
 		}
 	case "purge":
-		return "", ErrLifecycleNotReady
+		if current == "trash" {
+			return "purged", nil
+		}
 	default:
 		return "", &Error{"invalid_operation"}
 	}
-	return "", &Transition{current}
+	return "", &Transition{Lifecycle: current}
 }
-func lifecycleDigest(items []domain.LifecycleItem) string {
+func lifecycleDigest(items []domain.LifecycleItem, purge ...bool) string {
 	selected := []domain.LifecycleItem{}
 	for _, i := range items {
-		if i.Kind != "reading_position" && i.Kind != "page_position" && i.Kind != "reader_preference" {
+		if len(purge) > 0 && purge[0] || i.Kind != "reading_position" && i.Kind != "page_position" && i.Kind != "reader_preference" {
 			selected = append(selected, i)
 		}
 	}
@@ -194,6 +196,9 @@ func (s *Service) LifecyclePlanCreate(ctx context.Context, token, key, document 
 			return domain.Response{}, e
 		}
 		items, e := tx.LifecycleImpact(document)
+		if op == "purge" && e == nil {
+			items, e = tx.PurgeImpact(document)
+		}
 		if e != nil {
 			return domain.Response{}, e
 		}
@@ -205,7 +210,10 @@ func (s *Service) LifecyclePlanCreate(ctx context.Context, token, key, document 
 		if e != nil {
 			return domain.Response{}, e
 		}
-		p := domain.LifecyclePlan{ID: id, OwnerID: actor.PrincipalID, DocumentID: document, Operation: op, State: "open", From: d.Lifecycle, To: next, ExpectedRevision: rev, ConfigRevision: config.Revision, PermissionsRevision: scope.Project.PermissionsRevision, ExpiresAt: s.lifecycleNow().Add(15 * time.Minute).Format(time.RFC3339Nano), Digest: lifecycleDigest(items)}
+		p := domain.LifecyclePlan{ID: id, OwnerID: actor.PrincipalID, DocumentID: document, Operation: op, State: "open", From: d.Lifecycle, To: next, ExpectedRevision: rev, ConfigRevision: config.Revision, PermissionsRevision: scope.Project.PermissionsRevision, ExpiresAt: s.lifecycleNow().Add(15 * time.Minute).Format(time.RFC3339Nano), Digest: lifecycleDigest(items, op == "purge")}
+		if op == "purge" {
+			p.Backup = &domain.PurgeBackup{State: "unavailable", Reason: "full_backup_engine_not_implemented"}
+		}
 		if e = tx.PutLifecyclePlan(p, items); e != nil {
 			return domain.Response{}, e
 		}
@@ -319,6 +327,9 @@ func (s *Service) LifecycleCommit(ctx context.Context, token, id, alias string, 
 				return ErrStaleLifecyclePlan
 			}
 			items, e := tx.LifecycleImpact(p.DocumentID)
+			if p.Operation == "purge" && e == nil {
+				items, e = tx.PurgeImpact(p.DocumentID)
+			}
 			if e != nil {
 				return e
 			}
@@ -326,7 +337,7 @@ func (s *Service) LifecycleCommit(ctx context.Context, token, id, alias string, 
 			if e != nil {
 				return e
 			}
-			if lifecycleDigest(items) != p.Digest {
+			if lifecycleDigest(items, p.Operation == "purge") != p.Digest {
 				return ErrStaleLifecyclePlan
 			}
 			next, e := LifecycleNext(d.Lifecycle, valueString(d.PreviousLifecycle), p.Operation)
@@ -349,10 +360,24 @@ func (s *Service) LifecycleCommit(ctx context.Context, token, id, alias string, 
 					result.TrashedAt = nil
 				}
 			}
+			if next == "purged" {
+				result.JobID, e = service.NewID()
+				if e != nil {
+					return e
+				}
+				result.JobURL = "/api/v1/jobs/" + result.JobID
+				if e = tx.StartPurge(p, result); e != nil {
+					return e
+				}
+			}
 			if e = tx.CommitLifecycle(p, result, a.ID); e != nil {
 				return e
 			}
-			out = domain.Response{Status: 200, Body: encodeJSON(result)}
+			status := 200
+			if next == "purged" {
+				status = 202
+			}
+			out = domain.Response{Status: status, Body: encodeJSON(result)}
 			if e = tx.CompleteOperation(r.Key, out); e != nil {
 				return e
 			}

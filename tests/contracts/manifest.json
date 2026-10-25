@@ -61,8 +61,8 @@
     },
     {
       "path": "tests/contracts/schema.json",
-      "bytes": 187391,
-      "sha256": "fddd57fcab07695cf2fb3948aa7914ccb40aee5636a744c7565ca4f47bdba396"
+      "bytes": 189107,
+      "sha256": "2864a280a73e455ff05da0b851d3a3c1b2b41cb1033169942e46d124c568c022"
     },
     {
       "path": "tests/contracts/test_contracts.py",
@@ -111,13 +111,18 @@
     },
     {
       "path": "tests/contracts/test_lifecycle_contracts.py",
-      "bytes": 1405,
-      "sha256": "d4620697605d174612a1fb0606f14e3f73e09fb46278f2efea06faa78c2d3ff1"
+      "bytes": 2283,
+      "sha256": "b2f6ba0d8758c3f633477cd9ac0c37c41f257f684382012f8d77fd424115e20f"
     },
     {
       "path": "tests/fixtures/lifecycle/confirmation.json",
       "bytes": 1398,
       "sha256": "dd13261ecab735be82b5830c6ceda7786a35b0b5f3e99062299a260a8d3bf437"
+    },
+    {
+      "path": "tests/fixtures/lifecycle/purge.json",
+      "bytes": 746,
+      "sha256": "1008145a2f0c17d3f02a99c0f059be5c72a13e005f90406f879c8b78de8e3c72"
     }
   ]
 }

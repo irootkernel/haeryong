@@ -17,7 +17,8 @@ import (
 
 // Run keeps existing callers on the same serial dispatcher as production.
 func (s *Service) Run(ctx context.Context) error {
-	return (work.Dispatcher{Store: s.Store, Imports: s, Derived: work.NewMaintenance(s.Store, s.Bytes)}).Run(ctx)
+	collector, _ := s.Bytes.(work.Collector)
+	return (work.Dispatcher{Purge: &work.Purger{Store: s.Store, Bytes: collector}, Store: s.Store, Imports: s, Derived: work.NewMaintenance(s.Store, s.Bytes)}).Run(ctx)
 }
 func (s *Service) Process(ctx context.Context, id string) error {
 	var j domain.Job

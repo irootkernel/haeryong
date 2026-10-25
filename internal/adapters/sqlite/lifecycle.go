@@ -93,7 +93,12 @@ func (t *writeTx) CommitLifecycle(p domain.LifecyclePlan, r domain.LifecycleResu
 		if err := t.exec(`UPDATE documents SET lifecycle=?,previous_lifecycle=?,trashed_at=?,revision=revision+1,trash_generation=trash_generation+? WHERE document_id=? AND revision=?`, r.Lifecycle, r.PreviousLifecycle, r.TrashedAt, r.Lifecycle == "trash", p.DocumentID, p.ExpectedRevision); err != nil {
 			return err
 		}
-		if r.Lifecycle == "trash" {
+		if r.Lifecycle == "purged" {
+			if err := t.exec(`UPDATE documents SET title='',latest_version_id=NULL,trash_generation=trash_generation+1 WHERE document_id=?`, p.DocumentID); err != nil {
+				return err
+			}
+		}
+		if r.Lifecycle == "trash" || r.Lifecycle == "purged" {
 			// Fence accepted publication and deterministic work before releasing the writer gate.
 			rows, err := t.tx.QueryContext(t.ctx, `SELECT job_id FROM derived_work WHERE version_id IN (SELECT version_id FROM document_versions WHERE document_id=?) UNION SELECT job_id FROM import_intents WHERE json_extract(value,'$.DocumentID')=?`, p.DocumentID, p.DocumentID)
 			if err != nil {

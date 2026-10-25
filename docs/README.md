@@ -41,7 +41,12 @@ checks and limits.
 TASK-005-03 adds document Archive/Trash/Restore, revision-bound impact plans and an
 owner Trash list across HTTP/native/desktop and CLI at schema revision 12. The
 [lifecycle record](testing/document-lifecycle.md) records the executed final-candidate
-checks and limits; purge and protected restore retain their later owners.
+checks and limits; protected restore retains its later owner.
+
+TASK-005-04 adds guarded manual purge, permanent minimal version reservations and
+resumable pin-safe content GC at schema revision 13. The shared owner confirmation,
+CLI and three transports retain exact plan/202 identity. The [purge record](testing/manual-purge.md)
+records the executed final-candidate checks and limits.
 
 ## Start here
 

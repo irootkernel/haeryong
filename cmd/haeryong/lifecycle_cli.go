@@ -33,7 +33,7 @@ func lifecycleCLI(ctx context.Context, api *client.Client, state *clientstate.St
 		}
 		action := opt.flags["action"]
 		if action != "archive" && action != "trash" && action != "restore" && action != "purge" {
-			return invalid("--action archive|trash|restore required")
+			return invalid("--action archive|trash|restore|purge required")
 		}
 		path = "/api/v1/documents/" + opt.flags["document"] + "/lifecycle-plans"
 		method = "POST"

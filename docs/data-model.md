@@ -383,3 +383,39 @@ Declaration validation keeps 8→9→10→11→12 reachable and checks new table
 Old binaries refuse revision 12. Failed upgrades roll back and retain the verified
 pre-migration SQLite plus required objects; recovery restores that matched set while
 stopped. No SQL downgrade or protected operator-restore engine is introduced here.
+
+## Implemented guarded purge storage (TASK-005-04)
+
+Append-only revision 13 rebuilds lifecycle_plans and its child to admit purge,
+without changing migrations 1–12. purged_versions permanently reserves globally
+unique version IDs, retaining document/deletion identity. purge_intents binds one
+job/plan/document to owner/library/runtime, terminal document revision, bounded
+phase/checkpoint (including retained_sets awaiting other live owners) and retry timing. purge_candidates persists candidate hash/size
+before ownership is released. All declaration checks 8 through 13 remain reachable;
+failed upgrades retain the verified prior DB/object recovery set.
+
+Acceptance clears documents.title/latest pointer and commits the terminal lifecycle
+fence, tombstone inventory, job and completed 202 receipt atomically. Child-first
+cleanup covers every annotation_history revision's body/context ownership, derived
+FTS/outgoing reference rows, owner records and target-only source history before
+version deletion. Incoming edges from retained explanations remain historical
+witnesses. Shared content sets, resumable uploads, active/unknown work and every
+independent pin remain owners. Collection uses serialized reservation/deleting,
+unlink/directory-sync and token-checked finalization; source roots are never targets.
+
+Ordinary note deletion still preserves history. Explicit document purge minimizes
+private copies in old receipts/plans while keeping original fingerprints, identity,
+state and comparison digests. Equivalent redacted requests cannot redispatch;
+changed request identity still conflicts. This is owner-confirmed retention,
+not forensic erasure of independent copies, WAL, FTS/free pages or hardware history.
+
+Reader-resource deletion uses the same exact owner/version boundary as impact
+preview; a UUID appearing in another page's path establishes no ownership.
+Abandoned uploads are no longer retaining owners. Terminal target metadata indexes
+are removed before set eligibility is checked, and retained sets are revisited after
+their last live version/upload/import/index owner releases them. Verification excerpt
+references are recorded as candidates and released by exact verification identity
+before those records disappear; independent pins/references remain authoritative.
+Purge waits for open target check intents to settle before removing their ownership
+or source rows. Observation intermediate saves apply the shared lifecycle check,
+so reserved work cannot create a new target set/run after terminal purge.
