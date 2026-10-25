@@ -27,7 +27,7 @@ def test_lifecycle_closed_shapes_and_confirmation_fixture():
 def test_purge_closed_202_and_honest_backup():
     result=dict(operation_id=ID,plan_id=ID,document_id=ID,lifecycle='purged',previous_lifecycle=None,trashed_at=None,revision=3,changed=True,job_id=ID,job_url='/api/v1/jobs/'+ID)
     c.validate('lifecycle_result',result)
-    backup=dict(state='unavailable',last_complete_at=None,reason='full_backup_engine_not_implemented')
+    backup={'state': 'not_created', 'set_id': None, 'last_complete_at': None, 'reason': None, 'last_attempt': None, 'last_trial_restore': {'state': 'not_run', 'completed_at': None}}
     c.validate('purge_backup',backup)
     with pytest.raises(c.ContractError):c.validate('purge_backup',backup|dict(last_complete_at='invented'))
     with pytest.raises(c.ContractError):c.validate('lifecycle_result',result|dict(title='must not retain'))

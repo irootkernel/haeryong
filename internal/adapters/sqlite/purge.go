@@ -100,6 +100,11 @@ func (t *writeTx) savePurge(i domain.PurgeIntent) error {
 	return t.exec(`UPDATE purge_intents SET value=? WHERE job_id=?`, jsonBytes(i), i.JobID)
 }
 func (t *writeTx) purgeGuard(i domain.PurgeIntent) error {
+	if hold, e := t.RecoveryHold(); e != nil {
+		return e
+	} else if hold != nil && hold.State != "reviewed" {
+		return domain.ErrPrecondition
+	}
 	a, err := t.AuthState()
 	if err != nil {
 		return err

@@ -1,3 +1,4 @@
+import { BackupScreen } from "./screens/backup.tsx";
 import {TrashScreen} from "./screens/trash.tsx";
 import { connectionDestination } from "./routes.ts";
 import { VersionsScreen } from "./screens/versions.tsx";
@@ -244,7 +245,8 @@ export function App({ controller }: { controller: ShellController }) {
             <SourcesScreen key={route.path.split("/")[2]} controller={controller} projectId={route.path.split("/")[2]!} />
           ) : screen === "settings" && route.section === "projects" ? (
             <SourceSettings key={new URLSearchParams(location.search).get("project")} controller={controller} projectId={new URLSearchParams(location.search).get("project")!} />
-          ) : screen === "settings" && route.section === "storage" ? (
+          ) : screen === "settings" && route.section === "backup" ? (<BackupScreen controller={controller} />
+) : screen === "settings" && route.section === "storage" ? (
             <StorageScreen controller={controller} />
           ) : (
             <PlaceholderScreen screen={screen} />

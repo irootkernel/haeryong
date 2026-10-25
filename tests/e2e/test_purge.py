@@ -37,7 +37,7 @@ def test_purge_minimal_history_shared_bytes_source_identity_and_restart(product,
     _,_,s=product.import_tree(owner,source,extra=('--new-document','--metadata',str(metadata)));reference_ready(product,owner,s['version_id'])
     snapshot={str(p.relative_to(target)):p.read_bytes() for p in target.rglob('*') if p.is_file()}
     transition(product,owner,t['document_id'],'trash');p=purge_plan(product,owner,t['document_id'])
-    assert p['backup']==dict(state='unavailable',last_complete_at=None,reason='full_backup_engine_not_implemented')
+    assert p['backup']=={'state': 'not_created', 'set_id': None, 'last_complete_at': None, 'reason': None, 'last_attempt': None, 'last_trial_restore': {'state': 'not_run', 'completed_at': None}}
     assert p['impact']['version']==1 and p['impact']['annotation']==1 and p['impact']['review_event']==1
     assert p['impact']['referring_documents']==1 and p['impact']['incoming_edges']==1
     alias=key();r=commit(product,owner,p,alias);assert r['lifecycle']=='purged' and r['job_id']

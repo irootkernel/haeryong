@@ -257,3 +257,35 @@ var _ = It("TestSelectedDirectoryOpeningSwapRejectsDifferentInitialIdentity", La
 	}
 
 })
+
+var _ = It("Copies pending command actions survive reload and finishing one never clears another", Label("integration"), func() {
+	root := filepath.Join(GinkgoT().TempDir(), "caller")
+	store, e := New(root)
+	Expect(e).NotTo(HaveOccurred())
+	identity := transfer.Identity{LibraryID: "library", PrincipalID: "owner"}
+	backup := CommandIntent{Method: "POST", Target: "/local/v1/copy-requests", CopyAction: "backup.create"}
+	export := backup
+	export.CopyAction = "export.plan"
+	a := "11111111-1111-4111-8111-111111111111"
+	b := "22222222-2222-4222-8222-222222222222"
+	c := "33333333-3333-4333-8333-333333333333"
+	id, e := store.UseCommandPending(context.Background(), identity, backup, a)
+	Expect(e).NotTo(HaveOccurred())
+	Expect(id).To(Equal(a))
+	id, e = store.UseCommandPending(context.Background(), identity, export, b)
+	Expect(e).NotTo(HaveOccurred())
+	Expect(id).To(Equal(b))
+	reopened, e := New(root)
+	Expect(e).NotTo(HaveOccurred())
+	Expect(reopened.FinishCommandPending(context.Background(), identity, backup, a)).To(Succeed())
+	id, e = reopened.UseCommandPending(context.Background(), identity, export, c)
+	Expect(e).NotTo(HaveOccurred())
+	Expect(id).To(Equal(b))
+	id, e = reopened.UseCommandPending(context.Background(), identity, backup, c)
+	Expect(e).NotTo(HaveOccurred())
+	Expect(id).To(Equal(c))
+	wrong := backup
+	wrong.Target = "/local/v1/arbitrary"
+	_, e = reopened.UseCommandPending(context.Background(), identity, wrong, a)
+	Expect(e).To(HaveOccurred())
+})

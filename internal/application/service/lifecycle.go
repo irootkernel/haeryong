@@ -59,6 +59,9 @@ func (r Runner) Run(ctx context.Context, onReady func(Identity)) (result error) 
 		return err
 	}
 	defer func() { result = errors.Join(result, writer.Close()) }()
+	if err := writer.CheckRecoverySwitch(); err != nil {
+		return err
+	}
 	if r.Storage == nil || r.Endpoint == nil {
 		return errors.New("storage and endpoint required")
 	}

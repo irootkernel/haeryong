@@ -41,8 +41,8 @@
     },
     {
       "path": "tests/contracts/cases.json",
-      "bytes": 24860,
-      "sha256": "ba6c1a3a91a940eba74ff864a9226a1ff705538050f2fff98530b02161b310c8"
+      "bytes": 25361,
+      "sha256": "a15c99bdca1b389ca858d3ee04057863171d40df63b748a2fc3631962a7120af"
     },
     {
       "path": "tests/contracts/config-default.json",
@@ -51,8 +51,8 @@
     },
     {
       "path": "tests/contracts/contract.py",
-      "bytes": 47279,
-      "sha256": "58b44da1f10ba04eaa5c84f45bd34ee11b116ce4465f4ad2fa2920b200b49dd2"
+      "bytes": 47429,
+      "sha256": "af910293b303aa6fad864dccf17fe0cbe5202af2521e24f1ab735c26c40eae38"
     },
     {
       "path": "tests/contracts/run.py",
@@ -61,8 +61,8 @@
     },
     {
       "path": "tests/contracts/schema.json",
-      "bytes": 189107,
-      "sha256": "2864a280a73e455ff05da0b851d3a3c1b2b41cb1033169942e46d124c568c022"
+      "bytes": 211714,
+      "sha256": "87499ac5a5a38cad74027399efeb930d76cdf89dc26ac8344fa12ba99d76b219"
     },
     {
       "path": "tests/contracts/test_contracts.py",
@@ -76,8 +76,8 @@
     },
     {
       "path": "tests/contracts/test_search_contracts.py",
-      "bytes": 5110,
-      "sha256": "d8bb2a6523fa42c421fbe5789786eb79195f2f75f3f9b5a8096ec236d77d4bdc"
+      "bytes": 5362,
+      "sha256": "5abf5b262bbd878feaf89560c520ddb43f641aa18203939b791c27c810ea115f"
     },
     {
       "path": "docs/testing/search-relevance-worksheet.md",
@@ -111,8 +111,8 @@
     },
     {
       "path": "tests/contracts/test_lifecycle_contracts.py",
-      "bytes": 2283,
-      "sha256": "b2f6ba0d8758c3f633477cd9ac0c37c41f257f684382012f8d77fd424115e20f"
+      "bytes": 2362,
+      "sha256": "1cf199a14b7c36956bae467a2106d84008dbbd549f6b3b28ef53f344816851dd"
     },
     {
       "path": "tests/fixtures/lifecycle/confirmation.json",
@@ -121,8 +121,13 @@
     },
     {
       "path": "tests/fixtures/lifecycle/purge.json",
-      "bytes": 746,
-      "sha256": "1008145a2f0c17d3f02a99c0f059be5c72a13e005f90406f879c8b78de8e3c72"
+      "bytes": 972,
+      "sha256": "8d0cda669a6f7b64bfa59ae3c6d5900304c83a86951a517e39098f47d056744d"
+    },
+    {
+      "path": "tests/contracts/test_copy_contracts.py",
+      "bytes": 2679,
+      "sha256": "4f053e89805fff6f6e272e5f70bb83b114b0b9c3ead68f53d2f0bbabcc2a0f7c"
     }
   ]
 }

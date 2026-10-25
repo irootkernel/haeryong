@@ -21,6 +21,35 @@ func validateCommandFlags(opt options) error {
 		verb = args[1]
 	}
 	switch args[0] {
+	case "backup":
+		switch verb {
+		case "create":
+			add("destination operation-id")
+		case "verify":
+			add("input")
+		case "resume":
+			add("operation-id")
+		case "abandon":
+			add("operation-id confirm")
+		}
+	case "export":
+		switch verb {
+		case "plan", "create":
+			add("version document project versions lifecycle records include-retained-sources format destination metadata-destination operation-id")
+		case "verify":
+			add("input index")
+		case "show", "plan.show":
+			add("cursor")
+		}
+	case "restore":
+		switch verb {
+		case "plan":
+			add("input")
+		case "apply":
+			add("operation-id confirm")
+		case "review":
+			add("confirm choices")
+		}
 	case "lifecycle":
 		switch verb {
 		case "plan":

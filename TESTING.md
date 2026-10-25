@@ -54,6 +54,34 @@ adapter to the same aggregate and exposes its private run root to manual CI.
 The shell adapter uses the same Make-selected Python. `make -j test` preserves stage order. The aggregate has no stage prerequisites
 that Make could run concurrently, and no ignored failures or reverse edges.
 
+## Continuing independent checks
+
+Default `make test` and `KEEP_GOING=0` remain fail-fast. Use
+`make test KEEP_GOING=1` for the native completion selection that continues after
+ordinary failures. The stages are prepare, unit, integration, persistence, then
+E2E, serially once even with `-j`. Standalone `make test-e2e KEEP_GOING=1`
+runs persistence and E2E once each. Each other leaf accepts the same Make option;
+`tests/run_checks.py STAGE --keep-going` selects it directly.
+
+In this mode Ginkgo adds `--keep-going`, pytest omits `-x`, and a Go failure
+cannot suppress the independent Python selection. Prepare checks `gofmt -l`
+without rewriting and retains failures while checking independent syntax inputs,
+contract digests, docs, layers, modules, vet, dependency boundaries and all four
+cross-builds. Default prepare still applies `gofmt -w`.
+
+Each command retains its raw exit, signal and timeout in private `.status.json`
+beside its log. Leaf control exits are separate: 0 success, 1 completed check
+failure, 2 fatal setup, and 128+signal cancellation. The aggregate returns nonzero
+if any check failed. Cancellation and unsafe global setup stop later scheduling;
+owned command process groups are terminated and awaited. An ordinary timeout may
+continue only after cleanup. No retries, relaxed collection, new skips or budget
+changes are implied. Missing/failed reports remain failures; unexecuted required
+scenario steps remain obligations, not passes.
+
+The [EPIC-005 verification profile](docs/testing/epic-harmony-verification-profile.md)
+selects this native mode and the separately owned frontend/desktop/campaign checks.
+Historical runtime adapters are not the post-change completion command.
+
 ## Stage Mapping
 
 | Stage | Concrete ownership and isolation |

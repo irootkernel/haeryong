@@ -86,9 +86,12 @@ type PurgeIntent struct {
 	ReceiptID         string   `json:"receipt_id,omitempty"`
 }
 type PurgeBackup struct {
-	State          string  `json:"state"`
-	LastCompleteAt *string `json:"last_complete_at"`
-	Reason         string  `json:"reason"`
+	SetID          *string        `json:"set_id"`
+	LastAttempt    *BackupAttempt `json:"last_attempt"`
+	LastTrial      TrialRestore   `json:"last_trial_restore"`
+	State          string         `json:"state"`
+	LastCompleteAt *string        `json:"last_complete_at"`
+	Reason         *string        `json:"reason"`
 }
 
 // LifecycleTransition carries the shared owner-write conflict across application

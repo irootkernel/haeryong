@@ -5,6 +5,7 @@ package work
 
 import (
 	"context"
+	"errors"
 	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
 	"time"
@@ -22,15 +23,33 @@ type Dispatcher struct {
 	Imports Processor
 	Derived Maintenance
 	Purge   *Purger
+	Copies  Processor
 }
 
-func (d Dispatcher) Run(ctx context.Context) error {
+func (d Dispatcher) Run(ctx context.Context) (result error) {
+	// Optional only for the copy adapter. Existing import/derived/purge routing
+	// remains serial; the dispatcher owns the one copy phase through shutdown.
+	phases, _ := d.Copies.(interface {
+		PollCopy(context.Context) error
+		StopCopies() error
+	})
+	if phases != nil {
+		defer func() { result = errors.Join(result, phases.StopCopies()) }()
+	}
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 	swept := false
 	for {
 		if ctx.Err() != nil {
 			return nil
+		}
+		if phases != nil {
+			if err := phases.PollCopy(ctx); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return err
+			}
 		}
 		if !swept && d.Derived != nil {
 			var err error
@@ -54,7 +73,9 @@ func (d Dispatcher) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return nil
 			}
-			if j.Kind == "lifecycle" && d.Purge != nil {
+			if (j.Kind == "backup" || j.Kind == "export") && d.Copies != nil {
+				_ = d.Copies.Process(ctx, j.ID)
+			} else if j.Kind == "lifecycle" && d.Purge != nil {
 				_ = d.Purge.Process(ctx, j.ID)
 			} else if j.Kind == "derived_index" {
 				if d.Derived != nil {

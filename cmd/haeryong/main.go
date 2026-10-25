@@ -32,19 +32,21 @@ import (
 	appconfig "haeryong.local/haeryong/internal/application/configuration"
 	importer "haeryong.local/haeryong/internal/application/import"
 	"haeryong.local/haeryong/internal/application/query"
+	"haeryong.local/haeryong/internal/application/recovery"
 	"haeryong.local/haeryong/internal/application/service"
 	appsource "haeryong.local/haeryong/internal/application/source"
 )
 
 type options struct {
-	selection    service.Selection
-	port         int
-	portSelected bool
-	endpoint     string
-	json         bool
-	command      []string
-	flags        map[string]string
-	noInput      bool
+	selection       service.Selection
+	port            int
+	portSelected    bool
+	profileSelected bool
+	endpoint        string
+	json            bool
+	command         []string
+	flags           map[string]string
+	noInput         bool
 }
 type commandError struct {
 	code int
@@ -74,7 +76,7 @@ func parse(args []string) (options, error) {
 			continue
 		}
 		key, value, equals := strings.Cut(arg, "=")
-		if key == "--json" || key == "--no-input" || key == "--new-document" || key == "--resolve-link" || key == "--confirm" || key == "--confirmed" || key == "--unadopted" {
+		if key == "--json" || key == "--no-input" || key == "--new-document" || key == "--resolve-link" || key == "--confirm" || key == "--confirmed" || key == "--unadopted" || key == "--include-retained-sources" {
 			if equals {
 				return opt, invalid("boolean flags do not accept a value")
 			}
@@ -88,7 +90,7 @@ func parse(args []string) (options, error) {
 			continue
 		}
 		switch key {
-		case "--expected-revision", "--flag", "--action", "--if-match", "--if-none-match", "--profile", "--data-dir", "--volume-root", "--port", "--endpoint", "--credential", "--client-dir", "--operation-id", "--project", "--document", "--base-version", "--metadata", "--version", "--path", "--output", "--input", "--state", "--cursor", "--limit", "--directory", "--kind", "--file", "--format", "--expected-config-revision", "--scope", "--name", "--evidence", "--expected-sha256", "--expected-excerpt-file", "--source-id", "--root-path", "--repo-id", "--retention-mode", "--provider-ids", "--plan-id", "--page", "--region", "--coverage-set", "--reference-id", "--query", "--lifecycle", "--versions":
+		case "--destination", "--metadata-destination", "--records", "--choices", "--index", "--expected-revision", "--flag", "--action", "--if-match", "--if-none-match", "--profile", "--data-dir", "--volume-root", "--port", "--endpoint", "--credential", "--client-dir", "--operation-id", "--project", "--document", "--base-version", "--metadata", "--version", "--path", "--output", "--input", "--state", "--cursor", "--limit", "--directory", "--kind", "--file", "--format", "--expected-config-revision", "--scope", "--name", "--evidence", "--expected-sha256", "--expected-excerpt-file", "--source-id", "--root-path", "--repo-id", "--retention-mode", "--provider-ids", "--plan-id", "--page", "--region", "--coverage-set", "--reference-id", "--query", "--lifecycle", "--versions":
 		default:
 			return opt, invalid("unsupported flag: " + key)
 		}
@@ -105,6 +107,7 @@ func parse(args []string) (options, error) {
 		switch key {
 		case "--profile":
 			opt.selection.Profile = value
+			opt.profileSelected = true
 		case "--data-dir":
 			opt.selection.DataDir = value
 		case "--volume-root":
@@ -146,6 +149,12 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 	if len(opt.command) >= 2 && opt.command[0] == "auth" && opt.command[1] == "grant" {
 		return commandError{5, errors.New("FEATURE_NOT_READY: workflow credential issuance")}
 	}
+	if opt.command[0] == "backup" || opt.command[0] == "restore" || opt.command[0] == "export" {
+		if e := validateCommandFlags(opt); e != nil {
+			return e
+		}
+		return copyCommand(ctx, opt, emit)
+	}
 	if isProductCommand(opt) {
 		if e := validateCommandFlags(opt); e != nil {
 			return e
@@ -171,7 +180,9 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 			core := appauth.New(store)
 			imports := importer.New(store, core, store, staging.New())
 			configurationCore := appconfig.New(store, core, configpath.Resolver{})
+			configurationCore.Backup = store.BackupStatus
 			queries := query.New(store, core, store)
+			copyCore := recovery.New(store, core, store)
 			sourceCore := appsource.New(store, core, store, gitreader.New())
 			var managementOrigin string
 			var externalOrigin string
@@ -179,7 +190,7 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 			runCtx, cancelRun := context.WithCancel(ctx)
 			var restart atomic.Bool
 			configurationCore.Restart = func() { restart.Store(true); cancelRun() }
-			endpoint := &localcontrol.HTTP{Auth: core, Product: func(origin string) (http.Handler, error) {
+			endpoint := &localcontrol.HTTP{Auth: core, Copies: copyCore, Product: func(origin string) (http.Handler, error) {
 				// Resolve open staged checks left by a crash before serving.
 				if err := sourceCore.Recover(runCtx); err != nil {
 					return nil, err
@@ -194,7 +205,7 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 				externalOrigin = configuredExternalOrigin(configuration.Value)
 				return productHandler(core, origin, configuration.Value, productRoutes{httpsource.New(sourceCore), httpimports.New(imports), httpv1.New(queries, renderFacade, func() (string, string) { return managementOrigin, externalOrigin }), httpconfig.New(configurationCore)})
 			}}
-			runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: store, Endpoint: endpoint, Work: (work.Dispatcher{Purge: &work.Purger{Store: store, Bytes: store}, Store: store, Imports: imports, Derived: work.NewMaintenance(store, store)}).Run, CloseDependents: renderFacade.Shutdown, ListenerPort: func(ctx context.Context) (int, error) {
+			runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: store, Endpoint: endpoint, Work: (work.Dispatcher{Copies: copyCore, Purge: &work.Purger{Store: store, Bytes: store}, Store: store, Imports: imports, Derived: work.NewMaintenance(store, store)}).Run, CloseDependents: renderFacade.Shutdown, ListenerPort: func(ctx context.Context) (int, error) {
 				configuration, e := store.Configuration(ctx)
 				if e != nil {
 					return 0, e

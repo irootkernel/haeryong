@@ -57,6 +57,13 @@ The daemon validates and creates the configured listener, verifies migrations an
 
 Use one short-lived write path and bounded read connections. All transactions must complete before waiting for a provider or user approval. A validated result is applied with current resource revisions, policy restrictions, permissions and lifecycle state rechecked. Package imports verify staged bytes, flush files, atomically publish immutable paths, flush containing directories as supported by the validated platform, and only then commit the referencing database transaction durably. A flush/publication failure cannot return success. G-STACK establishes the spike driver's measured SQLite settings and snapshot behavior; filesystem publication requires EPIC-002 evidence and coherent backup/restore durability requires EPIC-005 fault evidence. Writing or renaming alone is not a durability proof. Abandoned files are recoverable garbage, not visible half-documents. Read/render verification must cover the same bytes subsequently consumed.
 
+TASK-005-05 permits one dispatcher-owned asynchronous copy turn for long local
+snapshot/copy/hash/format/verification/retention work. The existing serial dispatcher
+alone schedules and collects it; no second queue or autonomous selector exists.
+The turn binds the claimed generation and daemon child context, keeps long I/O outside
+store/GC locks, and drains before stop confirmation, retry/abandon, storage close and
+profile unlock. Short guarded transactions still own checkpoints and publication.
+
 ## One product, two clients
 
 Shared frontend components depend on an `HaeryongClient` interface. The browser implementation calls `/api/v1` and consumes `/api/v1/events`; local and remote API/events use a header-capable bearer transport. Downloads and renderer resources use each endpoint's tested delivery construction under the normative [content delivery authority](contracts/authentication.md#content-delivery-authority). The trusted browser origin remembers its device token by default and reloads confirmed session state without pairing again. User/browser storage loss and optional memory-only mode have a visible reconnect/re-pair path; ordinary restart and actual storage loss are separate cases. The native implementation calls the same domain contracts through a narrow desktop Go proxy. Record its actual trusted document origin, API path and credential storage in TASK-001-04 / G-VIEW; a different native origin does not automatically require new browser CORS grants. Wails imports cannot appear in shared UI/domain modules. The proxy cannot accept arbitrary URLs, filesystem paths or generic method names from imported content.

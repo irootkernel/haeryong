@@ -179,3 +179,15 @@ with project.updated (resource project / project_id, nil body) via the existing
 outbox. The owner receives the scope event while the project remains visible;
 scoped source-event masking is unchanged. Public notifications omit stored
 bodies and clients refetch the authorized project/source view.
+
+## Restore reconciliation (TASK-005-05)
+
+A pending restore hold retains original and known-current choices, installs a validated
+safe loopback/manual/no-timed-purge configuration and blocks normal configuration commits.
+The exclusive owner-authenticated `restore review` path supplies the exact hold identity
+and choices through the existing validator/plan/commit; configuration and hold release
+commit atomically. Only listed same-intent purge jobs are reconciled under current guards;
+other old jobs remain held. Reviewing settings does not implement future ingress,
+scheduler or provider workflows. retention.backups is enforced opportunistically after
+successful complete backup creation; indefinite keeps all, and whole-set deletion checks
+active verify/restore ownership and a current verified fallback.

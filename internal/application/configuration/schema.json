@@ -105,7 +105,8 @@
       "lifecycle",
       "backup",
       "export",
-      "derived_index"
+      "derived_index",
+      "restore"
     ],
     "job.resume.decision": [
       "reconcile_only",

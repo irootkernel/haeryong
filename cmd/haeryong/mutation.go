@@ -23,6 +23,10 @@ func mutation(ctx context.Context, api *client.Client, state *clientstate.Store,
 }
 
 func mutationConditions(ctx context.Context, api *client.Client, state *clientstate.Store, id, method, target string, body any, conditions map[string]string) (domain.Response, string, error) {
+	return mutationDispatch(ctx, api, state, id, method, target, body, conditions, nil)
+}
+
+func mutationDispatch(ctx context.Context, api *client.Client, state *clientstate.Store, id, method, target string, body any, conditions map[string]string, send func(string, []byte) (domain.Response, error)) (domain.Response, string, error) {
 	identity, e := api.Identity(ctx)
 	if e != nil {
 		return domain.Response{}, id, e
@@ -32,7 +36,11 @@ func mutationConditions(ctx context.Context, api *client.Client, state *clientst
 		if e != nil {
 			return domain.Response{}, id, e
 		}
-		id, e = state.UseCommandPending(ctx, identity, clientstate.CommandIntent{Method: method, Target: target}, id)
+		intent := clientstate.CommandIntent{Method: method, Target: target}
+		if request, ok := body.(domain.CopyRequest); ok && target == "/local/v1/copy-requests" {
+			intent.CopyAction = request.Action
+		}
+		id, e = state.UseCommandPending(ctx, identity, intent, id)
 		if e != nil {
 			return domain.Response{}, id, e
 		}
@@ -81,7 +89,12 @@ func mutationConditions(ctx context.Context, api *client.Client, state *clientst
 	} else {
 		return domain.Response{}, id, e
 	}
-	result, e := api.JSONHeaders(ctx, method, target, id, json.RawMessage(journal.FinalBody), nil, journal.Preconditions)
+	var result domain.Response
+	if send != nil {
+		result, e = send(id, journal.FinalBody)
+	} else {
+		result, e = api.JSONHeaders(ctx, method, target, id, json.RawMessage(journal.FinalBody), nil, journal.Preconditions)
+	}
 	if e != nil {
 		// Only a terminal receipt supplies a failed response. A direct API
 		// error is not a recorded outcome and must not replace the journal.

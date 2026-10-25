@@ -1012,6 +1012,9 @@ func (s *Service) DeliveryAuthorityCurrent(ctx context.Context, tx app.WriteTx, 
 // personalWriteTarget identifies owner personal writes that report an exact
 // lifecycle conflict. GET and saved-response filtering keep strict masking.
 func personalWriteTarget(method, target string) bool {
+	if method == "POST" && target == "/local/v1/copy-requests" {
+		return true
+	}
 	if method == "POST" && LifecycleRoute(target) {
 		return true
 	}
@@ -1127,6 +1130,34 @@ func visibleRequest(tx app.WriteTx, r domain.Request) error {
 func visibleUploadTarget(tx app.WriteTx, raw []byte) error { return app.AuthorizeTarget(tx, raw) }
 
 func visibleJob(tx app.WriteTx, j domain.Job) error {
+	if j.Kind == "backup" || j.Kind == "export" || j.Kind == "restore" {
+		var scope struct {
+			Principal string `json:"principal_id"`
+			Set       string `json:"copy_set_id"`
+		}
+		if json.Unmarshal(j.Scope, &scope) != nil || scope.Principal == "" {
+			return domain.ErrDenied
+		}
+		owner, e := tx.AuthState()
+		if e != nil {
+			return e
+		}
+		if scope.Principal != owner.OwnerID {
+			return domain.ErrDenied
+		}
+		if j.Kind == "export" {
+			set, e := tx.CopySet(scope.Set)
+			if e != nil {
+				return e
+			}
+			for project := range set.Permissions {
+				if _, e = tx.Scope(project); e != nil {
+					return e
+				}
+			}
+		}
+		return nil
+	}
 	if j.Kind == "lifecycle" {
 		i, err := tx.PurgeIntent(j.ID)
 		if err != nil {

@@ -451,6 +451,13 @@ func (t *writeTx) ReserveGC(hash, token string) (domain.GCReservation, error) {
 	if object.State != "ready" {
 		return r, domain.ErrDeleting
 	}
+	var capturing int
+	if err := t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM copy_sets WHERE stage='capturing' OR json_extract(value,'$.Capturing')=1`).Scan(&capturing); err != nil {
+		return r, err
+	}
+	if capturing > 0 {
+		return r, domain.ErrPinned
+	}
 	var pins, refs, owners int
 	if err := t.tx.QueryRowContext(t.ctx, `SELECT (SELECT count(*) FROM object_pins WHERE content_hash=?),(SELECT count(*) FROM object_references WHERE content_hash=?),(SELECT count(*) FROM version_entries WHERE content_hash=?)+(SELECT count(*) FROM contexts WHERE content_hash=?)+(SELECT count(*) FROM metadata_indexes WHERE metadata_hash=?)+(SELECT count(*) FROM document_versions WHERE manifest_sha256=? OR supplied_metadata_hash=?)`, hash, hash, hash, hash, hash, hash, hash).Scan(&pins, &refs, &owners); err != nil {
 		return r, err

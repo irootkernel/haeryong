@@ -136,3 +136,57 @@ and the final publication transaction reject a tombstoned version ID with
 IMMUTABLE_VERSION_CONFLICT, even for identical bytes or a different/new document.
 Removing private version rows does not free page identity or version-scoped
 credentials for reuse. Receipt replay remains replay only and never republishes.
+
+## Local portable export format 1 (TASK-005-05)
+
+A one-version plain directory/ZIP preserves all original canonical entries and adds no
+service files. Two or more selected published versions use `versions/<version_id>/`
+roots with a structural `export-index.json` outside them. Each root's payload digest
+uses original relative paths, never the envelope prefix. Metadata is opt-in and separate
+from every payload root; original manifest.json/metadata paths remain ordinary payload.
+Index roots must be unique, nonoverlapping and nonescaping. Verification streams the
+canonical inventory, exact file bytes/size, directory/link types and link text, rejects
+extra/missing entries and checks selected record/context/body digests and anchors.
+Dependency states included/external_reference/tombstoned/unavailable/excluded_by_scope
+remain separate from factual/source-availability or merge claims. No archive/entry/byte
+ceiling is introduced; actual filesystem incompatibility fails explicitly, while ZIP
+writes directly from the canonical inventory.
+
+Portable Notes metadata selects annotation identities through any selected
+original/current/retained-history anchor, then retains their complete permitted
+history/current body/context closure. Historical anchors outside the payload selection
+remain exact references, with note_anchor dependency states; they never retarget or
+add original directories. Metadata verification checks closed declared structures,
+inner identities and context associations in addition to content checksums. It does
+not authenticate an export or independently establish producer completeness.
+
+For selected payloads, first-party Note original/current/retained-history pages and
+stored reader pages must name the exact canonical regular HTML entry in their own
+version root. Whole-version pointers remain null, and optional unproved regions
+remain unresolved. Selected-snapshot source descriptors bind the actual inventoried
+asset bytes: bytes_sha256 takes precedence, with snapshot_sha256 as its fallback.
+Reference-only digests do not require retained bytes.
+
+Authored references remain immutable declarations, including a document/version
+pair that cannot resolve. Dependency inclusion, scope exclusion and tombstones use
+the exact pair; an existing version under a different document is unavailable for
+that declaration. Export neither rejects nor rewrites such a reference. Included
+payload membership does not certify an authored page, region or source placement.
+Standalone verification uses selected payload facts without inventing outside-scope
+availability or proving producer completeness.
+
+Verification derives original-payload claims only from the exact verified canonical
+inventory. Each row uses the existing canonical JSONL codec, including decimal size
+spelling and LF framing, and matches actual type/bytes/link text. Exact namespace set
+comparison precedes metadata membership checks; neither filesystem reachability nor
+equal counts establish a path. Directory traversal does not expand symlink ancestors
+or accept case/Unicode aliases for an absent serialized key.
+
+ZIP namespaces include implied directories without requiring redundant directory
+headers. An explicitly represented file/link cannot shadow an implied directory or
+an indexed directory root, including an empty root. Structural versions roots match
+the index one-to-one whenever that layout is selected, for one or many versions;
+ordinary user paths named versions under plain/payload roots remain ordinary content.
+The selected_snapshot declaration requires its exact regular asset and matching
+effective digest; unavailable cannot waive those bytes. Reference-only sources and
+legitimate unresolved authored references keep their distinct semantics.

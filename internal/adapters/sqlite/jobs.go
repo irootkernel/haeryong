@@ -33,7 +33,7 @@ func (s *Store) Job(ctx context.Context, id string) (domain.Job, error) {
 }
 func (t *writeTx) CreateJob(j domain.Job) error {
 	switch j.Kind {
-	case "upload_seal", "import", "lifecycle", "backup", "export", "derived_index":
+	case "upload_seal", "import", "lifecycle", "backup", "export", "restore", "derived_index":
 	default:
 		return errors.New("local job kind not implemented")
 	}
@@ -478,6 +478,49 @@ func (s *Store) recoverLocalJobs(ctx context.Context) error {
 
 func (t *writeTx) stoppedOwnership(j domain.Job) error {
 	switch j.Kind {
+	case "backup", "export":
+		// Failure finalization also calls stoppedOwnership. Preserve its precise
+		// failed stage/error; only confirmed cancellation becomes interrupted.
+		if !j.CancelRequested {
+			return nil
+		}
+		var scope map[string]json.RawMessage
+		if json.Unmarshal(j.Scope, &scope) != nil || scope == nil {
+			return domain.ErrInvalidTarget
+		}
+		raw, declared := scope["copy_set_id"]
+		var id string
+		if declared && (json.Unmarshal(raw, &id) != nil || id == "") {
+			return domain.ErrInvalidTarget
+		}
+		// Generic local ledger jobs predate the copy coordinator. Absence of a
+		// declaration is unowned only when no set claims this job in reverse.
+		var owners int
+		var bound string
+		if err := t.tx.QueryRowContext(t.ctx, "SELECT count(*),coalesce(min(set_id),'') FROM copy_sets WHERE job_id=?", j.ID).Scan(&owners, &bound); err != nil {
+			return err
+		}
+		if owners > 1 || owners == 1 && (!declared || bound != id) {
+			return domain.ErrInvalidTarget
+		}
+		if !declared {
+			return nil
+		}
+		set, err := t.CopySet(id)
+		if err != nil {
+			return err
+		}
+		if set.ID != id || set.Kind != j.Kind || (set.JobID == j.ID) != (owners == 1) {
+			return domain.ErrInvalidTarget
+		}
+		// A former linked job cannot touch its replacement. An already
+		// interrupted set has no new progress/revision/event to record.
+		if set.JobID == j.ID && set.Stage != "interrupted" && set.Stage != "complete" && set.Stage != "abandoned" && set.Stage != "expired" && set.Stage != "restored_paused" {
+			set.Stage = "interrupted"
+			// Capture barriers and copy pins remain until exact resume/abandon.
+			return t.PutCopySet(set)
+		}
+		return nil
 	case "derived_index":
 		reason := j.Error
 		if j.CancelRequested {

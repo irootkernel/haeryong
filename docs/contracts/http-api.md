@@ -172,7 +172,7 @@ Assessment history returns assessment_id, version_id, scope {kind:version|page|r
 
 Topic-assignment PUT accepts {pinned,decision}, with decision accepted/rejected; pinned plus rejected is invalid. Rejected applied assignments retain prior evidence/history. Reading-position PUT accepts {page_path,page_query,page_fragment,opened:boolean} and changes only the owner/version last-opened pointer and service-assigned first/last-opened timestamps. A null page_path is the whole-version/listing context. GET links the selected page-position resource without lending its pointer ETag to that record. Page-position PUT accepts {page_query,page_fragment,position} for the exact query page and uses its own owner/version/page validator; position may carry page-local region and offset/progress. Saving it never silently moves the version pointer. Reader-preference PUT accepts {default_page:path-or-null}; a valid selected HTML path overrides the immutable default for that owner/version, and null clears the preference. Explicit page/deep links remain first priority. Continue follows the version's last-opened pointer, whereas open-without-page chooses personal default, immutable default, root index.html, sole HTML, then Files/Pages in that order. None of these actions publishes a version or changes Review. Clients coalesce and serialize autosaves per resource using the latest acknowledged validator and one ID per submitted save, not one receipt per scroll event. On 412, retain unsaved state, re-read and reconcile navigation intent before another write.
 
-Source status uses the registry's immutable source identity, retention_mode, availability, bytes_origin and typed reason. GET /status composes service (readiness/runtime_generation), provider (implemented capabilities and normalized availability/limits without account secrets) and backup. Backup exposes mode=manual when no schedule is configured, last_complete_verified {set_id,completed_at} or null, last_attempt {job_id,state,completed_at,error?} or null, and last_trial_restore {state:not_run|passed|failed,completed_at,error?}. A not_run trial has completed_at:null; errors are sanitized and no raw path is returned. A latest failed/incomplete attempt does not erase the previous complete verified set. No complete set is shown as not yet created; checksum verification cannot imply a trial restore ran. Storage reports staging_bytes, pending_upload_count and pending_uploads_url from upload/reference accounting, without a quota or expiry policy. Unsupported sections say unavailable with capability/reason, not fabricated healthy status.
+Source status uses the registry's immutable source identity, retention_mode, availability, bytes_origin and typed reason. GET /status composes service (readiness/runtime_generation), provider (implemented capabilities and normalized availability/limits without account secrets) and backup. Backup exposes mode=manual when no schedule is configured, last_complete_verified {set_id,completed_at,verified_at,age_seconds} or null, last_attempt {job_id,state,stage,completed_at,error?} or null, and last_trial_restore {state:not_run|passed|failed,completed_at,error?}. A not_run trial has completed_at:null; errors are sanitized and no raw path is returned. A latest failed/incomplete attempt does not erase the previous complete verified set. No complete set is shown as not yet created; checksum verification cannot imply a trial restore ran. Storage reports staging_bytes, pending_upload_count and pending_uploads_url from upload/reference accounting, without a quota or expiry policy. Unsupported sections say unavailable with capability/reason, not fabricated healthy status.
 
 Pairing rejection acts only on pending or approved-but-unredeemed requests, atomically prevents redemption and produces rejected polling status. Reject/approve use the normal K receipt rule; an already issued session is revoked through the session route. Client Cancel merely stops polling and forgets the polling secret, leaving server expiry or owner rejection to close the request.
 
@@ -765,9 +765,7 @@ lifecycle result plus `job_id` and `job_url`. This response never changes to a
 completion receipt. The atomic decision makes restore and cancellation impossible;
 restore-first instead stales the purge plan without any deletion.
 
-Purge plans additionally include `backup:{state:"unavailable",last_complete_at:null,
-reason:"full_backup_engine_not_implemented"}`. This is honest unavailable status,
-not proof that no independent copy exists; TASK-005-05 owns real backup status.
+Purge plans include the registry's real `purge_backup` projection: not_created, verified or unavailable, with separate attempt and trial observations. Independent copies outside the local ledger are not inferred. TASK-005-05 supplies this status.
 The owner need not create a new backup before confirming. The impact separates
 versions, notes/history, Review history, distinct referring documents and edges.
 Unlike preserving lifecycle actions, purge freshness includes current reader rows.
@@ -778,3 +776,19 @@ paused reason, retry time, remaining objects and metadata-removal status. No new
 resume route is implemented. Current/scoped data reads stay hidden; incoming
 historical references retain the D4 minimal IDs/410 result. A purged version ID is
 permanently reserved at import acceptance and final publication.
+
+## Current local-copy and backup status (TASK-005-05)
+
+GET /api/v1/status now reads real backup status and the purge impact projects the same
+source. It distinguishes no completed set, prior complete plus failed attempt,
+inaccessible destination and actual isolated trial. It does not add a backup prerequisite.
+The earlier TASK-005-04 placeholder is superseded by the registry's widened purge_backup.
+
+POST /local/v1/copy-requests is protected loopback control, not a product/browser API.
+Profile discovery proof precedes submission; domain-separated HMAC binds nonce, exact
+body, bearer digest, operation ID, profile/library and daemon instance. The body carries
+runtime_generation. A current owner session is checked before receipt replay and commit.
+Wrong Host, Origin, forwarding headers, peer, profile, instance, proof and non-owner
+credentials are rejected. Client proxying and redirects are disabled. Responses bind
+nonce/status/body. The closed actions and semantic conditions are in the registry;
+there is no /api/v1 counterpart or browser/native host-path submission method.

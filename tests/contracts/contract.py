@@ -136,7 +136,7 @@ def validate(name, value, code='INVALID_REQUEST'):
     def walk(rule, data, at):
         allowed = {'$ref', 'anyOf', 'oneOf', 'type', 'properties', 'required',
                    'additionalProperties', 'items', 'enum', 'minLength',
-                   'minimum', 'maximum', 'maxLength', 'pattern', 'format'}
+                   'minimum', 'maximum', 'maxLength', 'minItems', 'pattern', 'format'}
         assert set(rule) <= allowed, set(rule) - allowed
         if '$ref' in rule:
             return walk(SCHEMA['$defs'][rule['$ref'].split('/')[-1]], data, at)
@@ -183,6 +183,8 @@ def validate(name, value, code='INVALID_REQUEST'):
                     fail(code, at + '/' + key, 'unknown field')
                 elif isinstance(rule.get('additionalProperties'), dict):
                     walk(rule['additionalProperties'], item, at + '/' + key)
+        if isinstance(data, list) and len(data) < rule.get('minItems', 0):
+            fail(code, at, 'array has too few selected items')
         if isinstance(data, list) and 'items' in rule:
             for i, item in enumerate(data):
                 walk(rule['items'], item, at + '/' + str(i))

@@ -108,6 +108,25 @@ func (s *Service) lifecycleOwner(ctx context.Context, tx app.WriteTx, token stri
 }
 func (s *Service) lifecyclePage(ctx context.Context, tx app.WriteTx, token string, p domain.LifecyclePlan, o Options) (domain.LifecyclePage, error) {
 	out := domain.LifecyclePage{LifecyclePlan: p, Items: []domain.LifecycleItem{}}
+	if p.Operation == "purge" {
+		status, e := tx.CopyBackupStatus()
+		if e != nil {
+			return out, e
+		}
+		out.Backup = &domain.PurgeBackup{State: "not_created", LastAttempt: status.LastAttempt, LastTrial: status.LastTrial}
+		if status.LastComplete != nil {
+			out.Backup.State = "verified"
+			id, at := status.LastComplete.ID, status.LastComplete.CompletedAt
+			out.Backup.SetID = &id
+			out.Backup.LastCompleteAt = &at
+		}
+		if !status.Available {
+			out.Backup.State = "unavailable"
+			reason := status.Reason
+			out.Backup.Reason = &reason
+		}
+	}
+
 	c, n, _, err := s.cursorStart(ctx, token, tx, "lifecycle-plan:"+p.ID, o)
 	if err != nil {
 		return out, err
@@ -211,9 +230,7 @@ func (s *Service) LifecyclePlanCreate(ctx context.Context, token, key, document 
 			return domain.Response{}, e
 		}
 		p := domain.LifecyclePlan{ID: id, OwnerID: actor.PrincipalID, DocumentID: document, Operation: op, State: "open", From: d.Lifecycle, To: next, ExpectedRevision: rev, ConfigRevision: config.Revision, PermissionsRevision: scope.Project.PermissionsRevision, ExpiresAt: s.lifecycleNow().Add(15 * time.Minute).Format(time.RFC3339Nano), Digest: lifecycleDigest(items, op == "purge")}
-		if op == "purge" {
-			p.Backup = &domain.PurgeBackup{State: "unavailable", Reason: "full_backup_engine_not_implemented"}
-		}
+
 		if e = tx.PutLifecyclePlan(p, items); e != nil {
 			return domain.Response{}, e
 		}

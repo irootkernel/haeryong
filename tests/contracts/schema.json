@@ -105,7 +105,8 @@
       "lifecycle",
       "backup",
       "export",
-      "derived_index"
+      "derived_index",
+      "restore"
     ],
     "job.resume.decision": [
       "reconcile_only",
@@ -8694,22 +8695,63 @@
       "properties": {
         "state": {
           "enum": [
+            "not_created",
+            "verified",
             "unavailable"
           ]
         },
+        "set_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "last_complete_at": {
-          "type": "null"
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "reason": {
-          "enum": [
-            "full_backup_engine_not_implemented"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
           ]
+        },
+        "last_attempt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/backup_attempt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_trial_restore": {
+          "$ref": "#/$defs/trial_restore"
         }
       },
       "required": [
         "state",
+        "set_id",
         "last_complete_at",
-        "reason"
+        "reason",
+        "last_attempt",
+        "last_trial_restore"
       ],
       "additionalProperties": false
     },
@@ -8754,6 +8796,962 @@
         "stage",
         "remaining",
         "metadata_removed"
+      ],
+      "additionalProperties": false
+    },
+    "backup_complete": {
+      "type": "object",
+      "properties": {
+        "set_id": {
+          "$ref": "#/$defs/id"
+        },
+        "completed_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+        },
+        "verified_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+        },
+        "age_seconds": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "set_id",
+        "completed_at",
+        "verified_at",
+        "age_seconds"
+      ],
+      "additionalProperties": false
+    },
+    "backup_attempt": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "$ref": "#/$defs/id"
+        },
+        "state": {
+          "enum": [
+            "queued",
+            "running",
+            "paused",
+            "interrupted",
+            "reconciling",
+            "cancelling",
+            "completed",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "stage": {
+          "type": "string"
+        },
+        "completed_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id",
+        "state",
+        "stage",
+        "completed_at"
+      ],
+      "additionalProperties": false
+    },
+    "trial_restore": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "not_run",
+            "passed",
+            "failed"
+          ]
+        },
+        "completed_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "completed_at"
+      ],
+      "additionalProperties": false
+    },
+    "backup_status": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "manual"
+          ]
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "last_complete_verified": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/backup_complete"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_attempt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/backup_attempt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_trial_restore": {
+          "$ref": "#/$defs/trial_restore"
+        }
+      },
+      "required": [
+        "mode",
+        "available",
+        "last_complete_verified",
+        "last_attempt",
+        "last_trial_restore"
+      ],
+      "additionalProperties": false
+    },
+    "copy_progress": {
+      "type": "object",
+      "properties": {
+        "set_id": {
+          "$ref": "#/$defs/id"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "verified_objects": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "current_object_bytes": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "total_objects": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "total_bytes": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "checkpoint_id": {
+          "$ref": "#/$defs/id"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "set_id",
+        "stage",
+        "verified_objects",
+        "current_object_bytes",
+        "total_objects",
+        "total_bytes",
+        "checkpoint_id"
+      ],
+      "additionalProperties": false
+    },
+    "copy_acceptance": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "set_id": {
+          "$ref": "#/$defs/id"
+        },
+        "job_id": {
+          "$ref": "#/$defs/id"
+        },
+        "state": {
+          "enum": [
+            "queued"
+          ]
+        }
+      },
+      "required": [
+        "operation_id",
+        "set_id",
+        "job_id",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "copy_plan_result": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "set_id": {
+          "$ref": "#/$defs/id"
+        },
+        "plan_id": {
+          "$ref": "#/$defs/id"
+        },
+        "state": {
+          "enum": [
+            "planned"
+          ]
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "operation_id",
+        "set_id",
+        "plan_id",
+        "state",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "copy_version": {
+      "type": "object",
+      "properties": {
+        "document_id": {
+          "$ref": "#/$defs/id"
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "payload_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "supplied_metadata_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "payload_root": {
+          "type": "string"
+        },
+        "inventory_path": {
+          "type": "string"
+        },
+        "metadata_root": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "records_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "dependencies_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "document_id",
+        "version_id",
+        "payload_sha256",
+        "manifest_sha256",
+        "payload_root",
+        "inventory_path",
+        "metadata_root"
+      ],
+      "additionalProperties": false
+    },
+    "export_index": {
+      "type": "object",
+      "properties": {
+        "format_version": {
+          "enum": [
+            1
+          ]
+        },
+        "library_id": {
+          "$ref": "#/$defs/id"
+        },
+        "versions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/copy_version"
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "format_version",
+        "library_id",
+        "versions"
+      ],
+      "additionalProperties": false
+    },
+    "local_copy_request": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "backup.create"
+              ]
+            },
+            "runtime_generation": {
+              "$ref": "#/$defs/id"
+            },
+            "destination": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "destination",
+            "runtime_generation"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "export.plan"
+              ]
+            },
+            "runtime_generation": {
+              "$ref": "#/$defs/id"
+            },
+            "destination": {
+              "type": "string"
+            },
+            "format": {
+              "enum": [
+                "directory",
+                "zip"
+              ]
+            },
+            "metadata_destination": {
+              "type": "string"
+            },
+            "lifecycle": {
+              "enum": [
+                "active",
+                "archived",
+                "trash",
+                "all"
+              ]
+            },
+            "records": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "review",
+                  "revisit",
+                  "reader",
+                  "notes",
+                  "references",
+                  "decisions"
+                ]
+              }
+            },
+            "include_retained_sources": {
+              "type": "boolean"
+            },
+            "version_id": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "action",
+            "destination",
+            "format",
+            "version_id",
+            "runtime_generation"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "export.plan"
+              ]
+            },
+            "runtime_generation": {
+              "$ref": "#/$defs/id"
+            },
+            "destination": {
+              "type": "string"
+            },
+            "format": {
+              "enum": [
+                "directory",
+                "zip"
+              ]
+            },
+            "metadata_destination": {
+              "type": "string"
+            },
+            "lifecycle": {
+              "enum": [
+                "active",
+                "archived",
+                "trash",
+                "all"
+              ]
+            },
+            "records": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "review",
+                  "revisit",
+                  "reader",
+                  "notes",
+                  "references",
+                  "decisions"
+                ]
+              }
+            },
+            "include_retained_sources": {
+              "type": "boolean"
+            },
+            "document_id": {
+              "$ref": "#/$defs/id"
+            },
+            "versions": {
+              "enum": [
+                "latest",
+                "all"
+              ]
+            }
+          },
+          "required": [
+            "action",
+            "destination",
+            "format",
+            "document_id",
+            "runtime_generation"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "export.plan"
+              ]
+            },
+            "runtime_generation": {
+              "$ref": "#/$defs/id"
+            },
+            "destination": {
+              "type": "string"
+            },
+            "format": {
+              "enum": [
+                "directory",
+                "zip"
+              ]
+            },
+            "metadata_destination": {
+              "type": "string"
+            },
+            "lifecycle": {
+              "enum": [
+                "active",
+                "archived",
+                "trash",
+                "all"
+              ]
+            },
+            "records": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "review",
+                  "revisit",
+                  "reader",
+                  "notes",
+                  "references",
+                  "decisions"
+                ]
+              }
+            },
+            "include_retained_sources": {
+              "type": "boolean"
+            },
+            "project_id": {
+              "$ref": "#/$defs/id"
+            },
+            "versions": {
+              "enum": [
+                "latest",
+                "all"
+              ]
+            }
+          },
+          "required": [
+            "action",
+            "destination",
+            "format",
+            "project_id",
+            "runtime_generation"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "export.create"
+              ]
+            },
+            "runtime_generation": {
+              "$ref": "#/$defs/id"
+            },
+            "destination": {
+              "type": "string"
+            },
+            "format": {
+              "enum": [
+                "directory",
+                "zip"
+              ]
+            },
+            "metadata_destination": {
+              "type": "string"
+            },
+            "lifecycle": {
+              "enum": [
+                "active",
+                "archived",
+                "trash",
+                "all"
+              ]
+            },
+            "records": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "review",
+                  "revisit",
+                  "reader",
+                  "notes",
+                  "references",
+                  "decisions"
+                ]
+              }
+            },
+            "include_retained_sources": {
+              "type": "boolean"
+            },
+            "version_id": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "action",
+            "destination",
+            "format",
+            "version_id",
+            "runtime_generation"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "export.create"
+              ]
+            },
+            "runtime_generation": {
+              "$ref": "#/$defs/id"
+            },
+            "destination": {
+              "type": "string"
+            },
+            "format": {
+              "enum": [
+                "directory",
+                "zip"
+              ]
+            },
+            "metadata_destination": {
+              "type": "string"
+            },
+            "lifecycle": {
+              "enum": [
+                "active",
+                "archived",
+                "trash",
+                "all"
+              ]
+            },
+            "records": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "review",
+                  "revisit",
+                  "reader",
+                  "notes",
+                  "references",
+                  "decisions"
+                ]
+              }
+            },
+            "include_retained_sources": {
+              "type": "boolean"
+            },
+            "document_id": {
+              "$ref": "#/$defs/id"
+            },
+            "versions": {
+              "enum": [
+                "latest",
+                "all"
+              ]
+            }
+          },
+          "required": [
+            "action",
+            "destination",
+            "format",
+            "document_id",
+            "runtime_generation"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "export.create"
+              ]
+            },
+            "runtime_generation": {
+              "$ref": "#/$defs/id"
+            },
+            "destination": {
+              "type": "string"
+            },
+            "format": {
+              "enum": [
+                "directory",
+                "zip"
+              ]
+            },
+            "metadata_destination": {
+              "type": "string"
+            },
+            "lifecycle": {
+              "enum": [
+                "active",
+                "archived",
+                "trash",
+                "all"
+              ]
+            },
+            "records": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "review",
+                  "revisit",
+                  "reader",
+                  "notes",
+                  "references",
+                  "decisions"
+                ]
+              }
+            },
+            "include_retained_sources": {
+              "type": "boolean"
+            },
+            "project_id": {
+              "$ref": "#/$defs/id"
+            },
+            "versions": {
+              "enum": [
+                "latest",
+                "all"
+              ]
+            }
+          },
+          "required": [
+            "action",
+            "destination",
+            "format",
+            "project_id",
+            "runtime_generation"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "backup.resume"
+              ]
+            },
+            "runtime_generation": {
+              "$ref": "#/$defs/id"
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "action",
+            "id",
+            "runtime_generation"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "backup.abandon"
+              ]
+            },
+            "runtime_generation": {
+              "$ref": "#/$defs/id"
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "confirmed": {
+              "enum": [
+                true
+              ]
+            }
+          },
+          "required": [
+            "action",
+            "id",
+            "runtime_generation",
+            "confirmed"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "export.create"
+              ]
+            },
+            "runtime_generation": {
+              "$ref": "#/$defs/id"
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "action",
+            "id",
+            "runtime_generation"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "export.plan.show"
+              ]
+            },
+            "runtime_generation": {
+              "$ref": "#/$defs/id"
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "cursor": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "id",
+            "runtime_generation"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "copy_selection": {
+      "type": "object",
+      "properties": {
+        "document_id": {
+          "$ref": "#/$defs/id"
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "payload_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "supplied_metadata_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "document_id",
+        "version_id",
+        "payload_sha256",
+        "manifest_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "copy_plan_page": {
+      "type": "object",
+      "properties": {
+        "set_id": {
+          "$ref": "#/$defs/id"
+        },
+        "plan_id": {
+          "$ref": "#/$defs/id"
+        },
+        "state": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/copy_selection"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "set_id",
+        "plan_id",
+        "state",
+        "digest",
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "copy_abandon_result": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "set_id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": [
+            "backup",
+            "export"
+          ]
+        },
+        "state": {
+          "enum": [
+            "abandoned"
+          ]
+        }
+      },
+      "required": [
+        "operation_id",
+        "set_id",
+        "kind",
+        "state"
       ],
       "additionalProperties": false
     }

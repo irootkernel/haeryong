@@ -25,13 +25,16 @@ type Paths interface {
 	Canonical(string, bool) (string, error)
 }
 type Service struct {
-	Store            app.Store
-	Auth             *auth.Service
-	Paths            Paths
-	Now              func() time.Time
-	Restart          func()
-	RuntimeEndpoint  string
-	ListenerOverride bool
+	Store              app.Store
+	Auth               *auth.Service
+	Paths              Paths
+	Now                func() time.Time
+	Restart            func()
+	RuntimeEndpoint    string
+	ListenerOverride   bool
+	RestoreReviewID    string
+	RestoreCleanupJobs []string
+	Backup             func(context.Context) (domain.BackupStatus, error)
 }
 
 func New(store app.Store, a *auth.Service, paths Paths) *Service {
@@ -512,8 +515,20 @@ func (s *Service) Commit(ctx context.Context, token, id, alias string, input Com
 			if _, e = s.owner(ctx, tx, token); e != nil {
 				return e
 			}
+			hold, e := tx.RecoveryHold()
+			if e != nil {
+				return e
+			}
+			if hold != nil && hold.State != "reviewed" && hold.ID != s.RestoreReviewID {
+				return domain.ErrReconciliation
+			}
 			if e = tx.SetConfiguration(domain.Configuration{Value: plan.Effective, Actor: actor.PrincipalID}, current.Revision); e != nil {
 				return e
+			}
+			if hold != nil && hold.State != "reviewed" {
+				if e = tx.ReviewRecovery(hold.ID, s.RestoreCleanupJobs); e != nil {
+					return e
+				}
 			}
 			restart = !reflect.DeepEqual(old["network"], next["network"])
 			response = domain.Response{Status: 200, Body: encoded(map[string]any{"plan_id": id, "config_revision": current.Revision + 1, "impact": json.RawMessage(plan.Impact)})}

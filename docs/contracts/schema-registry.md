@@ -921,8 +921,7 @@ optional availability flag; absence/false disables these controls. TASK-005-04 a
 Additive provisional v1 widens implemented lifecycle plan operation/to-state and
 result to purge/purged. Only purge results add job_id/job_url and use 202; existing
 200 lifecycle results remain unchanged. `lifecycle_plan_page.backup` selects the
-closed `purge_backup` unavailable shape, with null last_complete_at and the honest
-full_backup_engine_not_implemented reason. Shared requests stay in the embedded
+closed `purge_backup` projection, now widened by TASK-005-05 to actual not_created, verified or unavailable state with separate attempt/trial records. Shared requests stay in the embedded
 subset; response-only definitions remain in the selected machine schema.
 
 Purge impact binds every saved annotation revision/body/context, source records,
@@ -933,3 +932,36 @@ terminal. The original 202 response/plan/aliases stay stable while the independe
 lifecycle job reports cleanup. Explicit target purge minimizes private plan and
 receipt copies while preserving operation identity, original fingerprints and
 uncertain outcomes; it does not authorize redispatch or expose hidden personal data.
+
+## Host-local copy additions (TASK-005-05)
+
+Additive provisional format-1 definitions in the selected machine schema are
+backup_status/backup_complete/backup_attempt/trial_restore, purge_backup, copy_progress,
+copy_acceptance, copy_plan_result, copy_version, export_index and local_copy_request.
+The API remains v1/package schema 1.0. job.kind adds restore; backup/export gain execution.
+The embedded configuration schema retains only its existing selected definitions/enums.
+
+`backup_status` is `{mode:"manual",available,reason?,last_complete_verified,last_attempt,
+last_trial_restore}`. Complete carries set_id/completed_at/verified_at/age_seconds;
+counts are nonnegative, copy bytes/counts are decimal strings and unknown totals null.
+Attempt includes job_id/state/stage/completed_at/error?; active completion time is null.
+Trial states are not_run/passed/failed; not_run has a null time. No host path is public.
+Purge's closed projection selects not_created/verified/unavailable, nullable set_id/time/
+reason and the same separate attempt/trial records. It is informational, outside impact
+freshness. The TASK-005-04 unavailable placeholder above is historical and superseded.
+
+The exact closed local request names backup.create/resume/abandon and
+export.plan/plan.show/create, carrying current runtime_generation. One export selector
+is mandatory; id-bound actions cannot change destination/options. No arbitrary input
+read or remote route is added. Export index format 1 binds library, distinct version IDs,
+document IDs, exact payload roots, canonical inventory paths/digests and nullable separate
+metadata roots, with selected-record/dependency file hashes. Metadata is outside original
+payload roots; this is portability, not cross-library personal-state import.
+
+Export verification enforces the declared closed copy_version shape and nested
+personal-record structures before discarding JSON key/presence information. Review,
+Revisit, reader resources and references bind their inner identities to the selected
+wrapper; Notes bind complete qualified annotation histories and actual context
+version/page descriptors, including anchors outside selected payload membership.
+Revisit flag is Boolean. note_anchor dependencies retain the existing five dependency
+states and do not widen payload selection. No portable personal-state merge is added.

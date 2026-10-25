@@ -274,7 +274,7 @@ export interface LifecyclePlanRequest {operation:LifecycleAction;expected_revisi
 export interface LifecycleCommitRequest {plan_id:string;expected_revision:number;confirmed:true}
 export interface LifecycleItem {kind:string;id:string;version_id:string|null;page_path:string|null;region_id:string|null;revision:number;source_document_id:string|null;resolution:string|null}
 export interface LifecycleResult {operation_id:string;plan_id:string;document_id:string;lifecycle:string;previous_lifecycle:string|null;trashed_at:string|null;revision:number;changed:boolean;job_id?:string;job_url?:string}
-export interface LifecyclePlanView {plan_id:string;document_id:string;operation:LifecycleAction;state:"open"|"committed"|"expired";from_lifecycle:string;to_lifecycle:string;expected_revision:number;config_revision:number;expires_at:string;impact:Record<string,number>;result:LifecycleResult|null;items:LifecycleItem[];next_cursor:string|null;backup?:{state:"unavailable";last_complete_at:null;reason:string}}
+export interface LifecyclePlanView {plan_id:string;document_id:string;operation:LifecycleAction;state:"open"|"committed"|"expired";from_lifecycle:string;to_lifecycle:string;expected_revision:number;config_revision:number;expires_at:string;impact:Record<string,number>;result:LifecycleResult|null;items:LifecycleItem[];next_cursor:string|null;backup?:PurgeBackup}
 export interface TrashItem {document_id:string;project_id:string;title:string;latest_version_id:string|null;revision:number;lifecycle:"trash";previous_lifecycle:"active"|"archived"|null;trashed_at:string|null;purge_eligible_at:string|null}
 export interface LifecyclePageRequest {cursor?:string;limit?:number}
 export interface TrashRequest extends LifecyclePageRequest {project_id?:string}
@@ -936,3 +936,9 @@ export class DispatchBlockedError extends Error {
 export function isNetworkFailure(error: unknown): boolean {
   return error instanceof NetworkError;
 }
+
+export interface BackupComplete {set_id:string;completed_at:string;verified_at:string;age_seconds:number}
+export interface BackupAttempt {job_id:string;state:string;stage:string;completed_at:string|null;error?:string}
+export interface TrialRestore {state:"not_run"|"passed"|"failed";completed_at:string|null;error?:string}
+export interface BackupStatus {mode:"manual";available:boolean;reason?:string;last_complete_verified:BackupComplete|null;last_attempt:BackupAttempt|null;last_trial_restore:TrialRestore}
+export interface PurgeBackup {state:"not_created"|"verified"|"unavailable";set_id:string|null;last_complete_at:string|null;reason:string|null;last_attempt:BackupAttempt|null;last_trial_restore:TrialRestore}

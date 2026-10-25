@@ -18,6 +18,8 @@ import (
 
 type Store struct {
 	gcMu sync.Mutex
+	// CopyFault is an adapter fault boundary for isolated persistence tests.
+	CopyFault func(string) error
 	*sqlite.Store
 	Objects *contentstore.Store
 }

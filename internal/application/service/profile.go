@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"haeryong.local/haeryong/internal/domain"
 	"io"
 	"os"
 	"path/filepath"
@@ -44,6 +45,14 @@ type Profile struct {
 	DataDir      string `json:"data_dir"`
 	VolumeRoot   string `json:"volume_root,omitempty"`
 	ControlKey   string `json:"control_key"`
+}
+
+type RestoreSwitch struct {
+	ID, Phase, Input, Staging, Rollback, NewKey string
+	OldProfile                                  Profile
+	Library                                     domain.Library
+	OldLibrary                                  domain.Library
+	FailureAt                                   string
 }
 
 type LockedProfile struct {
@@ -215,7 +224,8 @@ func Initialize(s Selection) (Profile, error) {
 }
 
 // Load is read-only and never initializes missing paths or rewrites credentials.
-func Load(s Selection) (Profile, error) {
+func Load(s Selection) (Profile, error) { return loadProfile(s, false) }
+func loadProfile(s Selection, recoverSwitch bool) (Profile, error) {
 	path, err := s.path()
 	if err != nil {
 		return Profile{}, err
@@ -246,6 +256,19 @@ func Load(s Selection) (Profile, error) {
 	}
 	for _, name := range []string{"runtime", "storage"} {
 		if err := privateDir(filepath.Join(path, name)); err != nil {
+			if recoverSwitch && name == "storage" && errors.Is(err, os.ErrNotExist) {
+				var marker RestoreSwitch
+				if e := readJSON(filepath.Join(path, "runtime", "restore-active.json"), &marker); e != nil {
+					return Profile{}, e
+				}
+				if !validID(marker.ID) || (marker.Phase != "switching" && marker.Phase != "rolling_back" && marker.Phase != "rollback_incoming_saved") || marker.OldProfile.ProfileID != p.ProfileID || marker.OldProfile.DataDir != path || marker.Rollback != filepath.Join(path, ".restore-"+marker.ID+".prior") || marker.Staging != filepath.Join(path, ".restore-"+marker.ID+".staging") {
+					return Profile{}, errors.New("invalid restore switch binding")
+				}
+				if e := privateDir(marker.Rollback); e != nil {
+					return Profile{}, e
+				}
+				continue
+			}
 			return Profile{}, err
 		}
 	}
@@ -257,8 +280,10 @@ func validID(s string) bool {
 }
 
 // OpenWriter holds the stable lock inode until all write-capable resources close.
-func OpenWriter(s Selection) (*LockedProfile, error) {
-	p, err := Load(s)
+func OpenWriter(s Selection) (*LockedProfile, error)         { return openWriter(s, false) }
+func OpenRecoveryWriter(s Selection) (*LockedProfile, error) { return openWriter(s, true) }
+func openWriter(s Selection, recoverSwitch bool) (*LockedProfile, error) {
+	p, err := loadProfile(s, recoverSwitch)
 	if err != nil {
 		return nil, err
 	}
@@ -267,7 +292,7 @@ func OpenWriter(s Selection) (*LockedProfile, error) {
 		return nil, err
 	}
 	// Re-read under ownership before any writable resource is opened.
-	current, err := Load(s)
+	current, err := loadProfile(s, recoverSwitch)
 	if err != nil || current != p {
 		lock.Close()
 		return nil, errors.New("profile changed while acquiring writer ownership")
@@ -447,5 +472,52 @@ func (p *LockedProfile) MarkStorageReady(fault func(string) error) error {
 		return err
 	}
 	p.Profile = next
+	return nil
+}
+
+// RestoreIdentity is only called by the exclusive offline recovery owner after
+// its durable switch journal exists. The stable lock inode is never replaced.
+func (p *LockedProfile) RestoreIdentity(library, key string) error {
+	if !validID(library) {
+		return errors.New("invalid restored library identity")
+	}
+	if raw, err := hex.DecodeString(key); err != nil || len(raw) != 32 {
+		return errors.New("invalid restored control material")
+	}
+	next := p.Profile
+	next.LibraryID = library
+	next.ControlKey = key
+	next.Format = 2
+	next.StorageState = "ready"
+	if err := writeJSON(next.DataDir, "profile.json", next); err != nil {
+		return err
+	}
+	p.Profile = next
+	return nil
+}
+
+func (p *LockedProfile) RestorePriorProfile(prior Profile) error {
+	if prior.DataDir != p.Profile.DataDir || prior.ProfileID != p.Profile.ProfileID {
+		return errors.New("restore rollback profile mismatch")
+	}
+	if err := writeJSON(prior.DataDir, "profile.json", prior); err != nil {
+		return err
+	}
+	p.Profile = prior
+	return nil
+}
+
+func (p *LockedProfile) CheckRecoverySwitch() error {
+	var state RestoreSwitch
+	err := readJSON(filepath.Join(p.Profile.DataDir, "runtime", "restore-active.json"), &state)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if state.Phase != "complete" && state.Phase != "rolled_back" {
+		return errors.New("protected restore incomplete; use local restore apply before normal startup")
+	}
 	return nil
 }

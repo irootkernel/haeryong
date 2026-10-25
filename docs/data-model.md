@@ -419,3 +419,34 @@ before those records disappear; independent pins/references remain authoritative
 Purge waits for open target check intents to settle before removing their ownership
 or source rows. Observation intermediate saves apply the shared lifecycle check,
 so reserved work cannot create a new target set/run after terminal purge.
+
+## Coherent copies and protected recovery (TASK-005-05, revision 14)
+
+Migration 14 appends copy_sets, its kind index, copy_versions and recovery_holds;
+migrations 1–13 remain byte-identical. Exact declaration validation chains through 14,
+including older search/reference/personal/lifecycle/purge declarations. Old binaries
+refuse the new revision. Failed migration rolls back and retains the verified prior
+DB/object recovery set.
+
+copy_sets holds private owner/library/runtime-bound scope, destination, stage and
+checkpoint JSON with a normal backup/export job identity. copy_versions freezes one
+ordered selection's document/version/content-set and payload/manifest/supplied hashes.
+The capture flag conservatively prevents new GC reservations until snapshot-derived
+backup pins are durable. It does not block ordinary publication or personal writes.
+The snapshot contains all operational receipts, lifecycle/purge checkpoints and permanent
+version reservations. Sessions/pairings/workflow verifiers are sanitized before hashing.
+
+recovery_holds stores one exact restore reconciliation, original preferences and known
+current preferences. Restore rotates generations, retains cancellation, fences nonterminal
+jobs with restore_job_hold resources and safe config, and pauses incomplete copy records.
+Only explicitly selected cleanup jobs can leave that quarantine under current guards.
+Completed restore jobs/receipts and independent backup_trial_restore observations use
+existing typed ledger/resources, not a second task framework. No provider-attempt schema
+or automatic external redispatch is introduced.
+
+Copy state also retains a private expected export-index and full formatted-tree digests at publication readiness,
+separate from the original plan digest. This binds recovered output without changing
+frozen payload membership. Restored complete-copy rows retain observation history;
+their older runtime does not authorize current retention deletion. The protected
+runtime directory retains per-plan restore terminal outcomes independently of the
+single active-switch journal and the replaceable library receipt tables.

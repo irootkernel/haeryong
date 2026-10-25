@@ -222,6 +222,16 @@
       "setup_or_action": "Admit additive derived_index in selected job.kind.",
       "expected_contract_result": "New kind accepted, unknown kind absent; workflow.scope unchanged.",
       "later_owner": "TASK-004-02 worker delivery"
+    },
+    {
+      "id": "CP01",
+      "test_prefix": "test_backup_status_retains_prior_set_failed_attempt_and_independent_trial",
+      "scope": "TASK-005-05 additive host-local copy/status synthetic schema fixtures; not production execution proof"
+    },
+    {
+      "id": "CP02",
+      "test_prefix": "test_local_copy_request_has_one_explicit_selector_and_no_generic_host_read",
+      "scope": "TASK-005-05 additive host-local copy/status synthetic schema fixtures; not production execution proof"
     }
   ],
   "source_owners": [

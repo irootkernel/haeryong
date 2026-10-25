@@ -26,8 +26,11 @@ Ordinary read pins have no startup reclaim. A process crash during a pinned
 read leaves the durable pin row in place with no automatic release, so its
 objects stay protected from collection. This is storage retention, not data
 loss, and it predates EPIC-004 in the EPIC-002 foundation. A reclaim must never
-remove backup or job pins; the purge and pin work of
-[TASK-005-05](../tasks/EPIC-005/TASK-005-05.md) is a natural place to adopt it.
+remove backup or job pins. [TASK-005-05](../tasks/EPIC-005/TASK-005-05.md)
+deliberately defers automatic read-pin reclamation: crash-leaked pins remain
+conservative retaining owners. Coherent capture/resume/abandon does not reclaim
+read, backup or job ownership by age or presumed process death. This entry stays
+open; DF-03's synchronous release and renderer drain remain unchanged.
 
 ### DF-03 Cancellation during a read-pin release
 

@@ -19,6 +19,7 @@ import (
 // or fresh default capture. Request bytes and resolved defaults remain in the
 // operation journal; this index never replaces those original semantics.
 type CommandIntent struct {
+	CopyAction       string `json:"copy_action,omitempty"`
 	Method           string `json:"method"`
 	Target           string `json:"target"`
 	SourcePath       string `json:"source_path,omitempty"`
@@ -28,8 +29,18 @@ type CommandIntent struct {
 }
 
 func commandKey(identity transfer.Identity, intent CommandIntent) (string, error) {
-	if identity.LibraryID == "" || identity.PrincipalID == "" || intent.Method == "" || intent.Method != strings.ToUpper(intent.Method) || !strings.HasPrefix(intent.Target, "/api/v1/") || strings.ContainsAny(intent.Target, "\r\n") {
+	if identity.LibraryID == "" || identity.PrincipalID == "" || intent.Method == "" || intent.Method != strings.ToUpper(intent.Method) || (!strings.HasPrefix(intent.Target, "/api/v1/") && intent.Target != "/local/v1/copy-requests") || strings.ContainsAny(intent.Target, "\r\n") {
 		return "", fmt.Errorf("invalid pending command binding")
+	}
+	if intent.CopyAction != "" {
+		if intent.Target != "/local/v1/copy-requests" || intent.Method != "POST" {
+			return "", fmt.Errorf("invalid copy command binding")
+		}
+		switch intent.CopyAction {
+		case "backup.create", "backup.resume", "backup.abandon", "export.plan", "export.create":
+		default:
+			return "", fmt.Errorf("invalid copy command action")
+		}
 	}
 	if intent.SourcePath != "" {
 		var e error

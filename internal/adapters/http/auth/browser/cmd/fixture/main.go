@@ -30,6 +30,7 @@ import (
 	"haeryong.local/haeryong/internal/application/work"
 	"haeryong.local/haeryong/internal/domain"
 	sec "haeryong.local/haeryong/internal/security/session"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -116,6 +117,8 @@ func (w *policyWriter) Write(data []byte) (int, error) {
 }
 
 func run() error {
+	trialInput := flag.String("failed-trial-input", "", "test-only health failure of a real isolated restore")
+	trialProfile := flag.String("trial-profile", "", "explicit disposable trial profile name")
 	dir := flag.String("directory", "", "explicit private disposable directory")
 	port := flag.Int("port", 0, "loopback listener port; 0 only for a new harness")
 	clockOffset := flag.Int64("clock-offset-seconds", 0, "synthetic clock offset retained by the harness across restarts")
@@ -123,6 +126,9 @@ func run() error {
 	flag.Parse()
 	if *dir == "" {
 		return errors.New("directory required")
+	}
+	if *trialInput != "" {
+		return failedTrial(*dir, *trialProfile, *trialInput)
 	}
 	selection := service.Selection{Profile: "browser-proof", DataDir: filepath.Join(*dir, "profile")}
 	if _, err := os.Stat(filepath.Join(selection.DataDir, "profile.json")); errors.Is(err, os.ErrNotExist) {
@@ -174,6 +180,7 @@ func run() error {
 	queries := query.New(store, core, store)
 	imports := importer.New(store, core, store, staging.New())
 	configurationCore := appconfig.New(store, core, configpath.Resolver{})
+	configurationCore.Backup = store.BackupStatus
 	sourceCore := appsource.New(store, core, store, gitreader.New())
 	api := &apiRoutes{queries: httpv1.New(queries, nil, nil), imports: httpimports.New(imports), configuration: httpconfig.New(configurationCore), source: httpsource.New(sourceCore)}
 	handler, err := httpauth.New(core, httpauth.Policy{Hosts: hosts, Origins: origins}, api)
@@ -364,4 +371,62 @@ func main() {
 		fmt.Fprintln(os.Stderr, "browser fixture failed; private details suppressed")
 		os.Exit(1)
 	}
+}
+
+// failedTrial injects a missing staged object through the existing validator
+// seam. It executes the real switch/health/rollback and records a real failed
+// trial in a disposable profile; no product HTTP route or release flag exists.
+func failedTrial(dir, name, input string) error {
+	if name == "" {
+		return errors.New("explicit disposable profile required")
+	}
+	selection := service.Selection{Profile: name, DataDir: dir}
+	w, e := service.OpenWriter(selection)
+	if e != nil {
+		return e
+	}
+	if e = w.PrepareStorageBootstrap(nil); e != nil {
+		w.Close()
+		return e
+	}
+	store := foundation.New(nil)
+	_, closeStore, e := store.Prepare(context.Background(), w.Profile)
+	if e != nil {
+		w.Close()
+		return e
+	}
+	e = w.MarkStorageReady(nil)
+	e = errors.Join(e, closeStore(), w.Close())
+	if e != nil {
+		return e
+	}
+	plan, e := foundation.PlanRestore(context.Background(), selection, input)
+	if e != nil {
+		return e
+	}
+	injected := false
+	_, e = foundation.ApplyRestore(context.Background(), selection, plan.ID, func(value map[string]any) error {
+		if e := appconfig.Validate(value); e != nil {
+			return e
+		}
+		objects := filepath.Join(dir, ".restore-"+plan.ID+".staging", "objects")
+		d, e := os.Open(objects)
+		if e != nil {
+			return e
+		}
+		defer d.Close()
+		entries, e := d.ReadDir(1)
+		if e != nil && e != io.EOF {
+			return e
+		}
+		if len(entries) != 1 {
+			return errors.New("trial needs an object")
+		}
+		injected = true
+		return os.Remove(filepath.Join(objects, entries[0].Name()))
+	})
+	if !injected || e == nil {
+		return errors.New("health failure was not observed")
+	}
+	return json.NewEncoder(os.Stdout).Encode(map[string]any{"fixture": "real isolated restore with injected missing staged object", "state": "rolled_back", "trial": "failed"})
 }

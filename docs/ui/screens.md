@@ -158,7 +158,7 @@ Retention eligibility is informational; permanent purge is not enabled by this T
 ### S08 delivered manual purge
 
 TASK-005-04 enables owner purge in Trash behind features.purge. The safe-close-first
-impact sheet lists version/note/history/referring-document/edge counts, unavailable
+impact sheet lists version/note/history/referring-document/edge counts, real
 backup status and retained-copy limits; one explicit confirmation accepts terminal
 purge. Enter on initial focus never deletes. All impact pages remain reviewable.
 Restore conflicts/stale plans preserve intent and require fresh impact confirmation.
@@ -170,3 +170,12 @@ unavailable job is shown separately with its own dismissal action; one lookup
 failure does not hide or stop polling other jobs. Pending and paused work remains
 remembered and visible. A transient lookup error retains its record and retries.
 Dismissing a local result record does not cancel or repeat the server operation.
+
+### S08 delivered local backup visibility (TASK-005-05)
+
+Settings → Backup shows real manual-mode status, complete identity/time/age, failed or
+incomplete latest attempt separately and actual trial status. Refresh is keyboard/touch
+accessible; reload reads current service state. The shared browser/native screen explains
+host-local CLI create/verify/export/restore/review, unsupported encryption and same-volume
+limits. Existing original-directory download is unchanged. Purge shows the same real
+status and still requires no fresh backup. No browser remote export action is invented.

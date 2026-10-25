@@ -293,3 +293,63 @@ reports independent cleanup, paused retention and automatic retry. No resume
 command is added. Reuse the exact plan/body after a lost response; never create a
 new destructive request to recover the old result. Acceptance is irreversible,
 including when I/O cleanup is paused; cancellation returns INVALID_TRANSITION.
+
+## Host-local backup, export and protected restore (TASK-005-05)
+
+The following commands are implemented. Backup/export create requires a running local
+daemon, its exact protected profile and a current owner session. Restore requires an
+explicit destination `--profile` or `--data-dir` and the daemon stopped. `--json`,
+credential/client-directory selection and existing exit classes remain applicable.
+Paths belong to the host executing this CLI; a remote endpoint cannot submit them.
+
+```sh
+haeryong backup create --destination DIR [--operation-id UUID]
+haeryong backup verify --input SET
+haeryong backup resume SET_ID [--operation-id UUID]
+haeryong backup abandon SET_ID --confirm [--operation-id UUID]
+haeryong export plan (--version ID | --document ID | --project ID) --format directory|zip --destination PATH [--versions latest|all] [--lifecycle active|archived|trash|all] [--records review,revisit,reader,notes,references] [--metadata-destination DIR] [--include-retained-sources] [--operation-id UUID]
+haeryong export show PLAN_ID [--cursor UUID]
+haeryong export create PLAN_ID [--operation-id UUID]
+haeryong export create --version ID --format directory|zip --destination PATH
+haeryong export verify --input PATH [--index EXPORT_INDEX]
+haeryong restore plan --input SET --profile DEST
+haeryong restore apply PLAN_ID --profile DEST --confirm [--operation-id UUID]
+haeryong restore review --profile DEST [--choices FILE --confirm]
+```
+
+`--versions` applies only to document/project and defaults to latest per document;
+all selects all published versions. `--lifecycle` defaults to active. Selectors are
+exclusive; empty selection, unavailable version and later authority loss fail without
+substitution. A plan retains its selected version IDs; later publications never join.
+Directory/ZIP export never overwrites an existing final output. A plain one-version
+copy adds no service file. Multiple versions have distinct UUID roots and an outer
+index. Metadata opt-in uses a separate destination or an outer payload/metadata envelope.
+Plain export verification requires its separately retained index; checksum verification
+cannot claim a merge or source correctness. Encryption/key flags are visibly rejected.
+
+Submission journals the original operation before effects and reuses the same acceptance
+on response loss. Jobs use existing inspection/cancel commands. An explicit `export create PLAN_ID` after a failed/stopped attempt creates a linked retry of that same frozen snapshot; the original key always replays its original acceptance. `backup abandon SET_ID --confirm` can discard either named kind of owned incomplete copy set after its worker stops. It never selects arbitrary host input or deletes another set. Cancelled/failed backup
+resume creates a linked job for the same set; it does not clear cancellation. Host paths
+stay in protected local requests/plans, never public job/status output. Restore's natural
+plan identity and optional aliases bind one switch, with durable results outside the
+replaced storage. On a runtime change, uncertain client requests reconcile rather than
+automatically receiving new operation IDs. `backup verify` is read-only; the verified_at
+status of creation is not silently relabelled as a later trial restore.
+
+For the implemented Notes record kind, a selected original/current/retained historical
+anchor selects that annotation identity's complete permitted retained current state,
+history and body/context bytes. Revisions keep exact anchors outside the payload
+selection; payload membership does not grow. Verification checks identity/revision
+consistency and each context_ref's actual version/page descriptor, alongside the
+other record families' inner owner/document/version/resource/local-reference bindings.
+A completed restore plan replays its durable external terminal outcome even after
+later restores and expiry/input unavailability; older replay never changes the later
+library or rotates its epochs. A rolled-back plan retains its failure outcome. Natural and already-bound
+alias replay checks the protected external binding and renews its directory durability;
+a later dataset's unrelated receipts cannot invalidate that outcome. A new alias is
+new admission and must not conflict with any applicable owned current/prior/incoming
+owner receipt namespace. Latest-generation database alias projection retains its
+identity checks. No original backup is required merely to replay an old result.
+An admitted staging restore retries the same plan after preview expiry, rechecking
+its matching journal, original destination state and immutable input. An unexecuted
+expired or malformed plan still refuses before journal or alias publication.

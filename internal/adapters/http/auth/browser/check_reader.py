@@ -1,9 +1,10 @@
 """Actual current shared Reader in Chrome with a real isolated test daemon and authenticated owner; native proof remains separate."""
 import importlib.util,json,os,pathlib,re,subprocess,tempfile,urllib.parse,hashlib
-import argparse,shutil
+import argparse,shutil,time
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--browser-cli',type=pathlib.Path,required=True)
 parser.add_argument('--receipt',type=pathlib.Path,required=True)
+parser.add_argument('--backup-only',action='store_true',help='Bounded TASK-005-05 Settings keyboard and hasTouch tap status proof')
 parser.add_argument('--lifecycle-only',action='store_true',help='Bounded TASK-005-03/04 lifecycle/purge proof; no external CDN')
 parser.add_argument('--notes-only',action='store_true',help='Bounded TASK-005-02 Notes/Revisit proof; no external CDN')
 parser.add_argument('--review-only',action='store_true',help='Bounded TASK-005-01 Review/Home/Versions proof; no external CDN')
@@ -13,11 +14,11 @@ REPO=pathlib.Path(__file__).resolve().parents[5]
 RECEIPT=args.receipt.resolve()
 assert RECEIPT.parent.is_dir(), 'receipt parent must exist'
 volume=pathlib.Path('/Volumes/RootKernel')
-base=pathlib.Path(os.environ['TMPDIR']) if (args.review_only or args.notes_only or args.lifecycle_only) and os.environ.get('TMPDIR') else volume/'tmp' if os.path.ismount(volume) and os.access(volume,os.W_OK) else pathlib.Path(tempfile.gettempdir())
+base=pathlib.Path(os.environ['TMPDIR']) if (args.review_only or args.notes_only or args.lifecycle_only or args.backup_only) and os.environ.get('TMPDIR') else volume/'tmp' if os.path.ismount(volume) and os.access(volume,os.W_OK) else pathlib.Path(tempfile.gettempdir())
 os.umask(0o077);work=pathlib.Path(tempfile.mkdtemp(prefix='h3r-',dir=base))
 env=os.environ|{'TMPDIR':str(work),'HAERYONG_TEST_STATE_DIR':str(work/'app-state'),'PYTHONDONTWRITEBYTECODE':'1'}
 os.environ['HAERYONG_TEST_STATE_DIR']=env['HAERYONG_TEST_STATE_DIR']
-if args.review_only or args.notes_only or args.lifecycle_only:env['PLAYWRIGHT_DAEMON_SOCKETS_DIR']=str(work.parent/'pw-sockets')
+if args.review_only or args.notes_only or args.lifecycle_only or args.backup_only:env['PLAYWRIGHT_DAEMON_SOCKETS_DIR']=str(work.parent/'pw-sockets')
 spec=importlib.util.spec_from_file_location('h',REPO/'tests/e2e/harness.py');h=importlib.util.module_from_spec(spec);spec.loader.exec_module(h)
 cli=str(args.browser_cli.resolve(strict=True))
 session=work.name;product=None;opened=False
@@ -46,7 +47,7 @@ try:
  source=work/'source';(source/'nested').mkdir(parents=True)
  first="""<!doctype html><meta charset=utf-8><title>Reader first</title><h1 id=heading>첫 페이지</h1><div id=framework></div><button id=increment onclick="this.textContent=String(Number(this.textContent)+1)">0</button><a id=next href="nested/둘째.html?scenario=2#part">next</a><a id=popup target=_blank href="nested/둘째.html?popup=1#part">popup</a><div style="height:2600px"></div><h2 id=part>끝</h2><script type=module>import {value} from './module.js';window.moduleValue=value;import('https://esm.sh/preact@10.27.2').then(({h,render})=>{render(h('strong',{},'External Preact rendered'),document.querySelector('#framework'));window.cdnFramework='pass';}).catch(()=>window.cdnFramework='unavailable');new Worker('./worker.js').onmessage=e=>window.workerValue=e.data;</script>"""
  second="""<!doctype html><meta charset=utf-8><title>Reader second</title><h1>둘째 페이지</h1><a href='../first.html'>first</a><div style='height:2600px'></div><h2 id=part>둘째 끝</h2>"""
- if args.review_only or args.notes_only or args.lifecycle_only:
+ if args.review_only or args.notes_only or args.lifecycle_only or args.backup_only:
   first="<h1 id='review-fixture'>Review fixture</h1><h2 id='retry'>Page-local note anchor</h2><p>Labelled synthetic AI minor-change assessment, no Review authority.</p><a id='next' href='nested/둘째.html'>next</a><div style='height:2600px'></div>"
   second="<h1 id='second-review-page'>Second Review page</h1>"
  (source/'first.html').write_text(first);(source/'nested/둘째.html').write_text(second)
@@ -70,7 +71,47 @@ try:
  call(['open',product.endpoint+'/health/live','--browser','chrome','--profile',str(work/'profile')]);opened=True
  js("async page=>{await page.evaluate(token=>localStorage.setItem('haeryong.owner-session.v1',token),"+json.dumps(owner['token'])+");return true;}")
  route=product.endpoint+f'/documents/{document}/versions/{version}?'+urllib.parse.urlencode({'page':'first.html','page_query':'scenario=1','page_fragment':''})
- if args.lifecycle_only:
+ if args.backup_only:
+  code=pathlib.Path(__file__).with_name('check_backup.js').read_text()
+  proof['backup_driver_sha256']=hashlib.sha256(code.encode()).hexdigest()
+  def backup_ui(phase):
+   actual=js(code.replace('INPUT',json.dumps({'origin':product.endpoint,'token':owner['token'],'phase':phase})))
+   proof['cases'].append({'kind':'TASK-005-05 actual Settings '+phase+'; disposable library','actual':actual})
+  def local(args,code=0):
+   r=subprocess.run([product.binary,*args,'--data-dir',str(product.data_dir),*owner['flags']],capture_output=True,text=True,env=env,timeout=90)
+   assert r.returncode==code,'local copy command failed'
+   return json.loads(r.stdout)['data']
+  backup_ui('absent')
+  accepted=local(['backup','create','--destination',str(work/'backups')])['result']
+  product.job(owner,accepted['job_id'],timeout=90)
+  complete=work/'backups'/accepted['set_id']
+  backup_ui('complete')
+  bad=work/'not-a-directory';bad.write_text('test-owned destination failure')
+  failed=local(['backup','create','--destination',str(bad)])['result']
+  deadline=time.monotonic()+90
+  while time.monotonic()<deadline:
+   state=product.data('GET','/api/v1/jobs/'+failed['job_id'],client=owner)['state']
+   if state=='failed':break
+   time.sleep(.05)
+  assert state=='failed','failed destination did not settle'
+  backup_ui('failed')
+  moved=complete.with_name(complete.name+'.unavailable');complete.rename(moved)
+  backup_ui('unavailable');moved.rename(complete)
+  product.stop()
+  trial_root=work/'trial-passed';trial_root.mkdir()
+  product=h.Product(work/'haeryong',trial_root);product.initialize()
+  plan=product.cli(['restore','plan','--input',str(complete)])['data']
+  product.cli(['restore','apply',plan['plan_id'],'--confirm']);product.start();owner=product.owner('actual successful isolated trial')
+  backup_ui('trial-passed');product.stop()
+  trial_root=work/'trial-failed';trial_root.mkdir()
+  product=h.Product(work/'haeryong',trial_root);product.initialize()
+  subprocess.run(['go','build','-o',str(work/'trial-fixture'),'./internal/adapters/http/auth/browser/cmd/fixture'],cwd=REPO,env=env,capture_output=True,check=True,timeout=90)
+  fault=subprocess.run([str(work/'trial-fixture'),'--directory',str(product.data_dir),'--trial-profile',product.profile,'--failed-trial-input',str(complete)],cwd=REPO,env=env,capture_output=True,text=True,timeout=90)
+  assert fault.returncode==0,'test-owned isolated failed trial did not roll back'
+  proof['trial_failure_fixture']=json.loads(fault.stdout)
+  product.start();owner=product.owner('actual failed isolated trial')
+  backup_ui('trial-failed')
+ elif args.lifecycle_only:
   code=pathlib.Path(__file__).with_name('check_lifecycle.js').read_text()
   proof['lifecycle_driver_sha256']=hashlib.sha256(code.encode()).hexdigest()
   actual=js(code.replace('INPUT',json.dumps({'route':route,'version':version,'origin':product.endpoint,'document':document,'peer_token':product.owner('Lifecycle peer owner')['token'],'screenshot':str(args.screenshot.resolve()) if args.screenshot else None})))

@@ -89,14 +89,199 @@ Use two projects with multiple directory versions and HTML pages, shared assets,
 ## Manual purge cleanup and the backup handoff
 
 TASK-005-04 implements owner-confirmed irreversible purge and resumable local GC.
-Its backup line is explicitly unavailable until TASK-005-05 supplies real status.
+Its original backup line was explicitly unavailable; TASK-005-05 now supplies real status.
 No new backup or delay is required; independent copies and protected objects may
 remain. Recoverable cleanup errors and retained candidates leave the lifecycle job
 paused with automatic bounded retry; job inspection distinguishes removed metadata
 from protected bytes. No cancelled/failed/completed job is restarted as new work.
 
-TASK-005-05 must snapshot the minimal permanent version reservations, terminal
+TASK-005-05 snapshots the minimal permanent version reservations, terminal
 intent/checkpoint/candidates (including retained_sets), receipt aliases/redaction comparison facts and fences
 coherently. Changed restore runtime/owner authority blocks old cleanup until the
 protected restore flow explicitly reconciles it. DF-02 crash read pins remain
 protected pending their owning Task; DF-03 synchronous read-drain behavior is unchanged.
+
+## Implemented host-local copy and recovery (TASK-005-05)
+
+The implementation uses SQLite revision 14 and version-1 backup/export formats.
+Backup/export submission uses the current owner's credential plus protected profile
+proof on the exact loopback daemon. The daemon retains its single writer lock;
+no remote arbitrary-path endpoint exists. See [CLI](../contracts/cli.md#host-local-backup-export-and-protected-restore-task-005-05)
+for the executable commands. Encryption/key flags are rejected; no encrypted format
+or automatic backup schedule is implemented.
+
+A backup starts with a durable capture barrier checked by ReserveGC. It drains an
+already running collector, then releases the live store gate before a dedicated
+SQLite connection executes VACUUM INTO. The snapshot's typed references and pins
+supply the required object closure. Required missing/deleting object metadata fails
+capture. Bounded live backup pins replace the barrier before copying; ordinary writes
+and reads can progress. Objects copy in 1 MiB turns with fsync and durable DB cursors.
+Resume checks the existing prefix and final complete hashes, preserving the snapshot.
+Crash-leaked read pins remain conservative owners (DF-02 remains deferred); backup/job
+pins are never reclaimed by age or guessed process death. DF-03 read-drain behavior
+is unchanged.
+
+The private output is `<destination>/.<set_id>.incomplete/` until publication, containing
+`database.sqlite`, `objects/<sha256>`, `inventory.jsonl` and `manifest.json`.
+The DB stores the authoritative per-object checkpoint. Manifest format 1 binds set,
+library, producing Go toolchain, origin profile, schema/migration digest, database and
+inventory digests/count, creation time and reference-only-source limitation. Credential
+rows (device sessions, pairings and scoped credentials) are removed and SQLite vacuumed
+before final hashing. Host profile/control/provider files are never backup inputs.
+File/directory sync precedes COMPLETE.json and a destination-local rename to `<set_id>`.
+The completion marker, final rename and live completion transaction serialize against
+cancellation; an interrupted acknowledgement re-verifies that same final set. A partial
+set cannot pass `backup verify`. Checksums do not authenticate a malicious replacement.
+
+`backup resume SET_ID` creates a linked job after a terminal failure/cancellation; it
+never clears the former job's cancellation. `backup abandon SET_ID --confirm` requires
+that worker to have stopped, releases only the set's backup pins and discards its owned
+incomplete directory. After restore review, abandoning a quarantined copied record releases only restored ownership and does not delete the source host's output. Keep an inaccessible destination mounted at its recorded path
+before resuming. ENOSPC, missing bytes, integrity, sync and rename failures leave a
+failed attempt and required ownership rather than false success. A failure during
+capture can conservatively delay GC until resume or explicit abandon.
+
+After a new usable complete set, validated `retention.backups` may expire older whole
+owned sets. The default indefinite value removes none. Active verify/restore directory
+locks prevent retention deletion; the new verified fallback is checked again before
+each deletion. Retention errors retain bytes. A newer incomplete set never expires the
+last usable set. External removal/unmount is reported as destination_unavailable.
+
+Protected restore runs offline under the stable profile lock. First stop the daemon
+normally; do not kill another writer. `restore plan` verifies input, binds destination
+profile/database+WAL state and a 15-minute expiry, and shows session/policy effects.
+`restore apply PLAN_ID --confirm` stages complete DB/object bytes on the destination
+filesystem, preserves a nonsecret outstanding-operation inventory and the previous
+storage/profile, installs an early recovery hold, recreates canonical reverse-index DDL,
+rotates runtime/auth/stream epochs and replaces storage through a synced phase journal.
+Retry the same plan after interruption, including admitted staging that outlasts the
+preview expiry. Its matching journal, destination state and immutable input are still
+checked; expiry is not a transfer-duration limit. An unexecuted expired or malformed
+plan still refuses without publishing a journal or alias. Staging is rebuilt from the immutable input and
+switch/health phases resume without rotating an already switched generation. A strict
+startup/object health failure rolls back to the matched prior storage and profile.
+An unfinished switch blocks normal startup with recoverable prior/staged state.
+
+All restored sessions, pairings, workflow verifiers and delivery authority are invalid.
+Bootstrap a new owner device and restart normally to retain that new session. Source
+access, copied jobs and destructive work remain held; listener/exposure settings are
+safe, maintenance manual and timed purge disabled. `restore review` shows original and
+known-current preferences. Supply a JSON choices file with `expected_config_revision`,
+`configuration` and `resume_cleanup_job_ids`, then use `--choices FILE --confirm` while
+stopped and authenticated with the new owner credential. Existing configuration
+validation/plan/commit and hold release are atomic. Normal configuration commits cannot
+bypass a pending hold. Only enumerated guarded purge intents may continue; all other
+old jobs remain quarantined. Unknown external outcomes never authorize redispatch.
+
+A completed restore has one maintenance job and natural plan receipt; an optional
+operation ID aliases that result. An isolated destination-library replacement records
+an actual trial success only after strict DB/object startup health. Same-library
+recovery and read-only checksum verification do not claim a new isolated trial.
+The current trial observation lives in the restored destination, not by writing into
+an unrelated source profile. Full OS/VM rollback and missing reference-only source
+repositories remain outside application recovery guarantees.
+
+Portable exports select exactly one version/document/project, freeze published version
+membership, and optionally include exact Review, Revisit, reader, Notes/history/context
+and reference records. Unsupported decisions production is reported unavailable. Single
+plain outputs retain the original root unchanged. Multiple versions use
+`versions/<version_id>/` plus an outer export-index.json; optional metadata is separate
+from every original root. Directory incompatibilities fail; ZIP is written directly
+from canonical inventories, preserving names even when a host filesystem cannot.
+Separately retained verification expectation excerpts use their real typed ownership and require --include-retained-sources; their inclusion is not a fresh source read. Metadata and dependency states do not claim source availability or personal-state merge.
+See [the implementation evidence](../testing/backup-recovery.md) for actual checks and
+remaining verification limits; required Task/Epic acceptance remains separate.
+
+### Recovery identity and owned long phases
+
+The serial dispatcher schedules and collects one asynchronous copy turn at a time.
+Its child context and actual claimed job generation cover snapshot copying, prefix
+hashing, directory/ZIP formatting, final verification and retention. Independent
+queued import/seal/derived/purge work continues through the same dispatcher while
+those operations run outside the store gate. The capture barrier still blocks new
+GC reservations until snapshot pins are installed. Cancellation fences the attempt;
+stop confirmation, linked retry and abandonment wait for actual handle closure.
+Daemon shutdown drains that turn before dependent/storage closure and profile unlock.
+A completed job can still own retention handles until its turn is collected.
+
+Directory durability includes newly created backup destination entries in their
+parents, object entries before checkpoint acknowledgement, export payload/metadata
+subdirectories, and both source and destination parents of cross-directory output
+renames. Recovered publication repeats the required syncs before completion/pin
+release. Export privately records the verified expected index and complete formatted-tree digests before any
+publication rename; recovery compares the actual output to that frozen identity
+and verifies all referenced bytes. A foreign valid export or missing expected
+publication binding is refused. This digest does not replace the plan digest.
+
+Restore journals rollback direction before moving incoming storage aside. Each
+move and profile restoration can resume idempotently; ambiguous directory identities
+remain maintenance-blocked. The existing protected profile write syncs the storage
+rename parent. Success requires the intended library/profile/runtime/auth/stream
+identity and restore hold. After health succeeds, completion-record I/O failure
+resumes terminalization instead of rolling back committed success. A rolled-back
+plan returns a retained failure outcome. Per-plan terminal results and alias bindings
+live outside replaced storage independently of the active-switch journal: a later
+restore cannot erase an earlier result, and older replay does not mutate the later
+library, trial status or epochs.
+
+Restored complete-copy rows remain historical observations. Paths and matching
+checksums do not adopt those outputs for retention deletion. Only sets created by
+the current library/profile/runtime are eligible; even same-profile restoration
+rotates runtime and conservatively leaves earlier outputs independent. Current owned
+retention still requires an exact verified fallback and an exclusive active-use lock.
+
+With Notes selected, any original/current/retained-history anchor in frozen payload
+membership selects the authorized annotation identity and its complete permitted
+retained current/history/body/context closure. Outside-payload anchors retain their
+actual version/page/navigation and context binding; they do not expand payload
+membership. Their dependency rows use kind note_anchor and the existing dependency
+states. Unrelated identities and legitimately purged/redacted history are excluded;
+missing bytes required by retained selected records fail integrity verification.
+Nested index/record grammar and per-family owner/document/version/resource/local-ID
+bindings are checked, including Note context descriptors. Revisit flags are JSON
+Booleans. Checksums neither authenticate rewritten exports nor independently prove
+that a producer emitted every historical revision.
+
+Restore operation identity is shared by natural plans, retained terminal outcomes and
+optional aliases under the protected local profile. External binding consistency is
+checked for every key. Natural or already-bound alias replay returns the exact old
+success/failure even when a later dataset contains unrelated receipts with those IDs;
+it does not open that later database or change its trial/epochs. New aliases still
+require current admission. Latest-success database alias projection retains its own
+identity/receipt checks.
+
+Before new/in-progress binding, inspect all available logically owned database sides,
+not only the path currently named storage: current/prior plus verified input during
+staging; protected incoming and prior across switching/health/committing; saved
+incoming and matched prior during rollback. Exact journal paths and library/runtime/
+profile identities fence the roles. Each database's preserved owner receipt namespace
+remains separate from unrelated workflow principals. A matching uncertain receipt
+requires reconciliation; absence never proves non-dispatch. No arbitrary older
+recovery directories are scanned. Existing private records require renewed parent
+sync before acknowledgement, including retries after a visible rename whose sync
+failed. Older terminal replay needs no original backup input.
+
+If incoming health fails after switching away from a startup-refused prior database,
+rollback preserves the matched prior storage/profile and records the actual failure.
+The isolated-trial projection is a metadata transaction, not permission to weaken normal
+startup checks or repair prior DDL online. After failure terminalization, the same plan
+replays failure and a later explicit healthy protected restore remains available. Actual
+trial/terminal write or sync failures remain visible, retryable maintenance errors.
+
+Export verification first checks canonical inventory rows and streamed bytes, then
+compares the exact typed payload namespace before making path/type/hash facts
+available to Note, reader and selected-source claims. A directory alias, alternative
+case spelling or compensated entry count cannot create a canonical inventory member.
+Directory roots must actually be directories even with empty inventories. ZIP roots
+and parents may be implicit, but an explicit file/link cannot occupy their directory
+role. Reserved versions-layout membership follows the index descriptors at every
+cardinality; it does not reserve an ordinary versions path in original payloads.
+
+Missing or non-file selected_snapshot assets fail verification regardless of an
+unavailable dependency label. Reference-only digests still do not imply retained
+bytes. The verifier retains only entry identity/type/hash facts and small root-parent
+listings; file contents and inventories are processed incrementally with cancellation.
+Actual ZIP entries remain the authority for the existing frozen formatted-output
+binding, so adding logical implied-directory facts does not change that binding's
+encoding. Initial, standalone, separate-metadata and recovered verification share the
+same payload proof. No new metadata-object format is inferred from this rule.

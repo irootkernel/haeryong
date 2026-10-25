@@ -21,6 +21,7 @@ import (
 	"time"
 
 	appauth "haeryong.local/haeryong/internal/application/auth"
+	"haeryong.local/haeryong/internal/application/recovery"
 	"haeryong.local/haeryong/internal/application/service"
 )
 
@@ -31,6 +32,7 @@ const stopPath = "/local/v1/stop"
 // HTTP implements service.Endpoint. Its lifetime is independent of any desktop.
 type HTTP struct {
 	Auth           *appauth.Service
+	Copies         *recovery.Service
 	Product        func(string) (http.Handler, error)
 	server         *http.Server
 	listener       net.Listener
@@ -101,6 +103,9 @@ func (h *HTTP) Start(ctx context.Context, p service.Profile, id service.Identity
 	mux.HandleFunc(stopPath, func(w http.ResponseWriter, r *http.Request) { respond(w, r, http.MethodPost, stop) })
 	if id.Storage.Ready && h.Auth != nil {
 		h.mountBootstrap(mux, p, id)
+		if h.Copies != nil {
+			mux.HandleFunc(copiesPath, func(w http.ResponseWriter, r *http.Request) { h.copyRequest(w, r, p, id) })
+		}
 	}
 	var product http.Handler
 	if id.Storage.Ready && h.Product != nil {

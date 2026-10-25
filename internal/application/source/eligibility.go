@@ -88,6 +88,11 @@ type Mapping struct {
 
 // Mappings decodes the project's effective configured sources.
 func Mappings(tx app.WriteTx, projectID string) ([]Mapping, error) {
+	if hold, e := tx.RecoveryHold(); e != nil {
+		return nil, e
+	} else if hold != nil && hold.State != "reviewed" {
+		return nil, domain.ErrReconciliation
+	}
 	configuration, err := tx.Configuration()
 	if err != nil {
 		return nil, err

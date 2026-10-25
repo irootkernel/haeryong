@@ -29,6 +29,7 @@ type Store interface {
 // Each callback is a short serialized write transaction. Files are streamed and
 // synced before entry; only atomic publication/directory sync may run inside it.
 type WriteTx interface {
+	CopyTx
 	PurgeImpact(string) ([]domain.LifecycleItem, error)
 	StartPurge(domain.LifecyclePlan, domain.LifecycleResult) error
 	PurgeIntent(string) (domain.PurgeIntent, error)

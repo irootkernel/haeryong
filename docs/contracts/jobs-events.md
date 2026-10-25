@@ -348,3 +348,47 @@ phases, retained-set checkpoints settled and all candidates collected or safely 
 cancelled remain immutable and are never reselected as work. The original acceptance
 receipt stays completed/202 throughout. Existing job.updated and lifecycle_changed
 outbox events retain current visibility masking, including library.invalidated.
+
+## Copy and exclusive restore execution (TASK-005-05)
+
+Backup/export use the existing queued/running/interrupted/cancelling and terminal jobs,
+completed principal-wide 202 acceptance receipts, parent linkage and transactional
+job.updated events. Progress has set_id/stage, verified_objects/current_object_bytes
+as decimal strings, nullable total_objects/total_bytes and checkpoint_id. Stages are
+capturing/copying/publishing/complete or interrupted/failed; plans are planned. Public
+progress has no host paths. One object copy turn is bounded; formatting and verification
+stream inventories without a whole-payload buffer. All checkpoint/publication writes
+recheck owner/library/runtime/project permissions and attempt generation.
+
+Cancellation retains incomplete ownership. Resume after terminal backup failure creates
+a linked job; explicit abandon is required to discard protected incomplete bytes.
+Restore is an additive job kind executed only under exclusive offline maintenance,
+never selected by the normal dispatcher. Its natural plan receipt and optional aliases
+record the health-checked result. Restore quarantines old nonterminal jobs and keeps
+accepted/reconciling receipts outcome-unknown; a new generation cannot imply non-dispatch.
+
+Copy cancellation retains the same copy-set identity, capture barrier and backup pins.
+Queued cancellation is resumable through a linked job; a running copy's stop is
+confirmed only after its owned turn drains. A terminal job row alone does not prove
+that finalization or retention handles have closed. The serial dispatcher collects
+the one copy turn before retry/abandonment or daemon storage/profile shutdown.
+
+Copy publication authority and cessation ownership are distinct. When current project
+permissions or the recovery hold revoke execution, the dispatcher cancels and drains
+its owned turn, then records failed job/set state with current set/job/attempt/library/
+runtime/owner fencing. This stop record does not publish output or release capture
+barriers, checkpoints or backup pins. Explicit cancellation retains precedence. A stale
+selected job cannot write through a newer linked job, or reopen a complete, abandoned,
+expired or restored-paused set. A failed stop-record transaction does not discard the
+drained slot or its result before durable acknowledgement; shutdown surfaces unresolved
+persistence failure.
+
+Protected restore distinguishes immutable terminal replay from admitting a new
+operation binding. Natural/existing-alias terminal replay does not consult an
+unrelated later dataset. New bindings inspect every available logically owned
+current, prior and incoming database at the journal's physical phase, including
+prior after incoming becomes active and saved incoming during rollback. Each side
+is library/runtime/profile fenced and uses its preserved owner principal namespace;
+no arbitrary historical-directory scan or global UUID reservation is implied.
+Preview expiry applies before restore admission; a matching admitted staging
+journal retains recoverability while original state/input/receipt guards remain.

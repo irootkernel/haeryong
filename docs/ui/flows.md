@@ -114,3 +114,9 @@ commit; current document/impact changes require refreshed review. Automatic posi
 saves do not stale the open dialog. Unknown commits preserve the original plan and
 captured runtime generation; reconnect only reconciles. Trash lists deletion time and
 prior lifecycle; Restore returns to active/archived without moving personal anchors.
+
+TASK-005-05 adds Settings → Backup → Refresh for real backup and independent trial
+status. The shared browser/native UI directs host-local portability operations to CLI;
+normal version download remains available. Offline restore follows stop → plan → explicit
+apply → new bootstrap → exact configuration review → normal restart. A pending hold
+cannot be bypassed by an ordinary config commit, and old uncertain work is not retried.

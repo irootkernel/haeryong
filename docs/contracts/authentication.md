@@ -97,3 +97,14 @@ The trusted connect shell remembers the bearer in origin-local localStorage by d
 The bounded production verifier also accepts persisted workflow credentials, separate from owner-device session rows. A stable server principal/binding and immutable credential scope/epoch/project-permission snapshot determine authority; effective scope is captured scope intersected with current binding. Current restriction/deactivation applies, while later expansion cannot widen a captured token. Hash verifiers remain the only stored bearer representation. Accepted seal/import jobs retain exact captured authority independently of the creator credential's logout or expiry, with current binding, lifecycle, project permission generations and attempt fences checked before application.
 
 Disposable typed principal/credential seeds exercise the real verifier, HTTP middleware and SQLite path for draft-write-only staging/sealing and denied publication/personal/config/session management. No public issuer, grant rotation CLI or remembered workflow CRUD is claimed. All paired owner devices retain the same owner principal and management authority. Protected local control remains separate, and generated children receive no management bearer/native bridge. [Task05 evidence](../testing/query-cli-configuration.md) owns the new scope contribution; the Task03 device/browser evidence remains historical within its original source boundary.
+
+## Protected host-local copies and restore (TASK-005-05)
+
+Local profile proof is necessary but insufficient for backup/export: current owner device
+authority is required before receipt lookup and writes. Workflow credentials cannot gain
+personal export authority from package.export. Protected local submission is body/bearer/
+operation/instance bound with signed responses. Remote product routes do not accept host
+copy paths. Backup snapshots exclude credential rows and host secrets. Offline restore
+rotates runtime/auth/stream epochs once, invalidates sessions/pairings/workflow/delivery
+authority and requires a new bootstrap; later normal restarts retain the new session.
+A missing older-snapshot receipt never authorizes external redispatch.

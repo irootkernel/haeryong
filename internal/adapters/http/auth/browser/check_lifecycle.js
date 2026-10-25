@@ -159,7 +159,7 @@ async page=>{
   const choosePurge=async()=>{const menu=phone.locator('.lifecycle-control details').first();if(await menu.getAttribute('open')===null)await menu.locator('summary').tap();await phone.getByRole('button',{name:'영구 삭제',exact:true}).tap();await phone.locator('[data-purge-backup]').waitFor();while(await phone.getByRole('button',{name:'영향 목록 더 보기',exact:true}).count())await phone.getByRole('button',{name:'영향 목록 더 보기',exact:true}).tap();};
   await choosePurge();
   const box=phone.getByRole('dialog',{name:'수명주기 영향 확인'});
-  if(!(await box.innerText()).includes('복원과 취소가 불가능')||!(await box.locator('[data-purge-backup]').innerText()).includes('상태를 제공할 수 없습니다'))throw Error('purge confirmation effects/backup absent');
+  if(!(await box.innerText()).includes('복원과 취소가 불가능')||!(await box.locator('[data-purge-backup]').innerText()).includes('아직 생성'))throw Error('purge confirmation effects/backup absent');
   await phone.keyboard.press('Enter');await box.waitFor({state:'hidden'});
   if(!(await api('GET','/api/v1/trash')).items.some(row=>row.document_id===input.document))throw Error('opening Enter purged target');
   await choosePurge();await box.getByRole('button',{name:'닫기',exact:true}).tap();
@@ -189,7 +189,7 @@ async page=>{
   await phone.reload();await liveRow.waitFor();if(await missingRow.count())throw Error('dismissed job returned after reload');
   if((await api('GET','/api/v1/trash')).items.some(row=>row.document_id===input.document))throw Error('purge did not commit');
   await page.waitForFunction(()=>!document.querySelector('iframe')&&!document.querySelector('#reader-context-panel')&&!document.querySelector('.reader-header'));
-  purge={hasTouch:true,width:390,height:844,explicitKeyboardConfirmation:true,safeEnterDefault:true,tapCancel:true,tapImpact:true,backupUnavailable:true,progressVisible:true,lostAcceptanceReload:true,samePlanAndJob:true,acceptances,receiptReads,missingLookupIsolated:true,livePollingContinues:true,missingDismissed:true,pendingRememberedAfterReload:true};
+  purge={hasTouch:true,width:390,height:844,explicitKeyboardConfirmation:true,safeEnterDefault:true,tapCancel:true,tapImpact:true,backupNotCreated:true,progressVisible:true,lostAcceptanceReload:true,samePlanAndJob:true,acceptances,receiptReads,missingLookupIsolated:true,livePollingContinues:true,missingDismissed:true,pendingRememberedAfterReload:true};
  } finally {await purgeContext.close();}
  return {purge,archiveTrashRestore:true,restorePreviousArchived:true,keyboardConfirmation:true,delayedPositionSaveKeepsPlan:true,changedNoteRefreshKeepsIntent:true,oldDeliveryCannotRevive:true,noEnterDefault:true,cancel:true,fourViewports:true,touchTarget44:true,twoSessionRendererClosure:true,sameContextSiblingReader:true,noAutomaticRendererRevival:true,fastTrashRestoreDisposesReadableDelivery:true,missedEventResyncDisposesDelivery:true,refusedRenewalDisposesFrameAndHost:true,touch,operationEffects:true,incomingReferenceEffects:true,unresolvedIncomingEffect:true,localizedTrashMetadata:true,...boundary};
  }catch(cause){if(input.screenshot)await page.screenshot({path:input.screenshot,fullPage:true});throw Error(step+": "+cause.message+"; host="+(await page.locator('body').innerText()).slice(-1200));}

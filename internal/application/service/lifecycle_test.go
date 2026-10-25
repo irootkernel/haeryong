@@ -212,3 +212,39 @@ type pendingFixture struct{}
 func (pendingFixture) Prepare(context.Context, Profile) (StorageState, func() error, error) {
 	return StorageState{State: "fixture_pending"}, func() error { return nil }, nil
 }
+
+var _ = It("Copies restore profile switch and rollback retain file rename directory-sync ordering and propagate sync failures", Label("integration"), func() {
+	s := testSelection(GinkgoT())
+	w, e := OpenWriter(s)
+	Expect(e).NotTo(HaveOccurred())
+	defer w.Close()
+	old := w.Profile
+	library, e := NewID()
+	Expect(e).NotTo(HaveOccurred())
+	Expect(w.RestoreIdentity(library, strings.Repeat("ab", 32))).To(Succeed())
+	switched, e := Load(s)
+	Expect(e).NotTo(HaveOccurred())
+	Expect(switched.LibraryID).To(Equal(library))
+	Expect(w.RestorePriorProfile(old)).To(Succeed())
+	restored, e := Load(s)
+	Expect(e).NotTo(HaveOccurred())
+	Expect(restored).To(Equal(old))
+	injected := errors.New("profile parent sync failure")
+	order := []string{}
+	next := old
+	next.LibraryID = library
+	e = writeJSONWithFault(old.DataDir, "profile.json", next, func(phase string) error {
+		order = append(order, phase)
+		if phase == "profile_directory_sync" {
+			// Reaching this boundary requires successful file sync, close and rename.
+			onDisk, e := Load(s)
+			Expect(e).NotTo(HaveOccurred())
+			Expect(onDisk).To(Equal(next))
+			return injected
+		}
+		return nil
+	})
+	Expect(e).To(MatchError(injected))
+	Expect(order).To(Equal([]string{"profile_file_sync", "profile_rename", "profile_directory_sync"}))
+	Expect(writeJSON(old.DataDir, "profile.json", old)).To(Succeed())
+})
