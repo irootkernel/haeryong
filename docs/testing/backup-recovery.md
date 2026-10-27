@@ -30,7 +30,11 @@ Restore uses an explicit offline profile and stable lock, destination-local stag
 nonsecret uncertainty inventory, early policy/job holds, fresh runtime/auth/stream epochs,
 credential removal, canonical reverse-index recreation, recoverable storage/profile switch
 and strict startup/object health. New bootstrap and remembered normal restart retain
-fresh sessions. Existing configuration validation/plan/commit atomically reconciles
+fresh sessions. TASK-005-06 corrects current-epoch event replay/head selection while
+retaining old event rows, including nonzero sequence starts and safe poll/SSE resync.
+Its focused restore/replay regressions passed; complete native recovered body/context
+proof and the fresh final gate remain pending in [owner composition](owner-records.md).
+Existing configuration validation/plan/commit atomically reconciles
 selected settings and explicitly enumerated purge jobs. Unknown external outcomes remain
 unknown. No future provider-attempt table, ingress or scheduler is invented.
 

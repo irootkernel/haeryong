@@ -637,10 +637,15 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request, token string) {
 		fail(w, r, err)
 		return
 	}
-	epoch, after, resync := eventCursor(r, currentEpoch, head)
-	if _, err := h.core.Events(r.Context(), token, epoch, after); err != nil {
+	epoch, after, resync, bootstrap := eventCursor(r, currentEpoch, head)
+	events, replayReason, err := h.replayEvents(r.Context(), token, epoch, after, head, bootstrap)
+	if err != nil {
 		fail(w, r, err)
 		return
+	}
+	if resync == "" && replayReason != "" {
+		resync = replayReason
+		after = head
 	}
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("X-Accel-Buffering", "no")
@@ -667,6 +672,7 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request, token string) {
 		})
 	}
 	if resync != "" {
+		events = nil
 		if err := write("resync.required", fmt.Sprintf("%s:%d", epoch, head), map[string]any{"reason": resync, "stream_epoch": epoch, "head": strconv.FormatInt(head, 10), "resume_cursor": fmt.Sprintf("%s:%d", epoch, head)}); err != nil {
 			return
 		}
@@ -678,29 +684,8 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request, token string) {
 	heartbeat := time.NewTicker(20 * time.Second)
 	defer heartbeat.Stop()
 	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case <-heartbeat.C:
-			if write("", "", nil) != nil {
-				return
-			}
-			continue
-		case <-ticker.C:
-		}
-		events, err := h.core.Events(r.Context(), token, epoch, after)
-		if err != nil {
-			return
-		}
-
-		if !continuousEvents(events, after) {
-			current, head, e := h.core.EventHead(r.Context(), token)
-			if e != nil {
-				return
-			}
-			_ = write("resync.required", fmt.Sprintf("%s:%d", current, head), map[string]any{"reason": "sequence_gap", "stream_epoch": current, "head": strconv.FormatInt(head, 10), "resume_cursor": fmt.Sprintf("%s:%d", current, head)})
-			return
-		}
+		// Deliver the validated initial batch once. Subsequent reads resume an
+		// established position, even when that position is still zero.
 		for _, event := range events {
 			event, err = h.core.FilterEvent(r.Context(), token, event)
 			if err != nil {
@@ -725,12 +710,35 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request, token string) {
 			}
 			after = event.Sequence
 		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-heartbeat.C:
+			if write("", "", nil) != nil {
+				return
+			}
+			events = nil
+			continue
+		case <-ticker.C:
+		}
+		events, err = h.core.Events(r.Context(), token, epoch, after)
+		if err != nil {
+			return
+		}
+		if !continuousEvents(events, after, false) {
+			current, head, e := h.core.EventHead(r.Context(), token)
+			if e != nil {
+				return
+			}
+			_ = write("resync.required", fmt.Sprintf("%s:%d", current, head), map[string]any{"reason": "sequence_gap", "stream_epoch": current, "head": strconv.FormatInt(head, 10), "resume_cursor": fmt.Sprintf("%s:%d", current, head)})
+			return
+		}
 	}
 }
 
 // eventCursor is shared by SSE and polling. Resync publishes the current head,
 // never an acknowledgement that the client has saved unsent local work.
-func eventCursor(r *http.Request, currentEpoch string, head int64) (string, int64, string) {
+func eventCursor(r *http.Request, currentEpoch string, head int64) (string, int64, string, bool) {
 	var err error
 	epoch := r.URL.Query().Get("stream_epoch")
 	after := int64(0)
@@ -769,7 +777,8 @@ func eventCursor(r *http.Request, currentEpoch string, head int64) (string, int6
 		epoch = currentEpoch
 		after = head
 	}
-	return epoch, after, resync
+	bootstrap := len(r.Header.Values("Last-Event-ID")) == 0 && !r.URL.Query().Has("after") && !r.URL.Query().Has("stream_epoch")
+	return epoch, after, resync, bootstrap
 }
 func eventWire(library string, event domain.Event) map[string]any {
 	kind := event.Kind
@@ -788,14 +797,41 @@ func eventWire(library string, event domain.Event) map[string]any {
 
 // Validate the complete retained batch before emitting any domain item or
 // advancing its cursor. A missing interior sequence also requires fresh state.
-func continuousEvents(events []domain.Event, after int64) bool {
-	for _, event := range events {
-		if event.Sequence <= after || event.Sequence-after != 1 {
+func continuousEvents(events []domain.Event, after int64, bootstrap bool) bool {
+	for i, event := range events {
+		// Only a fresh cursorless batch may start above 1 after restore.
+		// An explicit zero cursor or live position must not skip a prefix.
+		if event.Sequence <= after || (i > 0 || after > 0 || !bootstrap) && event.Sequence-after != 1 {
 			return false
 		}
 		after = event.Sequence
 	}
 	return true
+}
+
+func (h *handler) replayEvents(ctx context.Context, token, epoch string, after, head int64, bootstrap bool) ([]domain.Event, string, error) {
+	if after > 0 {
+		// A positive resume cursor must name retained current-epoch history.
+		// Adjacency alone would admit the last sequence of the prior epoch.
+		cursor, err := h.core.Events(ctx, token, epoch, after-1)
+		if err != nil {
+			return nil, "", err
+		}
+		if len(cursor) == 0 || cursor[0].Sequence != after {
+			return nil, "trimmed_cursor", nil
+		}
+	}
+	events, err := h.core.Events(ctx, token, epoch, after)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(events) == 0 && after < head {
+		return nil, "trimmed_cursor", nil
+	}
+	if !continuousEvents(events, after, bootstrap) {
+		return nil, "sequence_gap", nil
+	}
+	return events, "", nil
 }
 func (h *handler) pollEvents(w http.ResponseWriter, r *http.Request, token string) {
 	for key, values := range r.URL.Query() {
@@ -814,14 +850,14 @@ func (h *handler) pollEvents(w http.ResponseWriter, r *http.Request, token strin
 		fail(w, r, e)
 		return
 	}
-	current, after, reason := eventCursor(r, epoch, head)
-	events, e := h.core.Events(r.Context(), token, current, after)
+	current, after, reason, bootstrap := eventCursor(r, epoch, head)
+	events, replayReason, e := h.replayEvents(r.Context(), token, current, after, head, bootstrap)
 	if e != nil {
 		fail(w, r, e)
 		return
 	}
-	if !continuousEvents(events, after) {
-		reason = "sequence_gap"
+	if reason == "" && replayReason != "" {
+		reason = replayReason
 		after = head
 		events = nil
 	}

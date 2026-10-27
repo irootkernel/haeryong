@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"haeryong.local/haeryong/internal/adapters/localcontrol"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	. "github.com/onsi/gomega"
 	"haeryong.local/haeryong/internal/adapters/configpath"
 	"haeryong.local/haeryong/internal/adapters/foundation"
+	httpauth "haeryong.local/haeryong/internal/adapters/http/auth"
 	"haeryong.local/haeryong/internal/adapters/sqlite"
 	"haeryong.local/haeryong/internal/application/auth"
 	config "haeryong.local/haeryong/internal/application/configuration"
@@ -297,6 +299,34 @@ var _ = It("Copies protected restore invalidates old tokens rotates once and ret
 	after, e := s.Health(ctx)
 	Expect(e).NotTo(HaveOccurred())
 	Expect(after.Library.RuntimeGeneration).To(Equal(result["runtime_generation"]))
+	// A normal post-review reopen must expose a fresh replay era through the
+	// same cursorless poll used by native stream admission, retaining history.
+	server := httptest.NewUnstartedServer(nil)
+	handler, e := httpauth.New(auth.New(s), httpauth.Policy{Hosts: []string{server.Listener.Addr().String()}, Origins: []string{"http://" + server.Listener.Addr().String()}}, http.NotFoundHandler())
+	Expect(e).NotTo(HaveOccurred())
+	server.Config.Handler = handler
+	server.Start()
+	defer server.Close()
+	request, e := http.NewRequest(http.MethodGet, server.URL+"/api/v1/events?transport=poll", nil)
+	Expect(e).NotTo(HaveOccurred())
+	request.Header.Set("Authorization", "Bearer "+session.Token)
+	response, e := (&http.Client{Timeout: 5 * time.Second}).Do(request)
+	Expect(e).NotTo(HaveOccurred())
+	defer response.Body.Close()
+	Expect(response.StatusCode).To(Equal(http.StatusOK), "fresh restored replay must not deliver old-epoch events to the final epoch guard")
+	var poll struct {
+		Data struct {
+			StreamEpoch string `json:"stream_epoch"`
+			Items       []struct {
+				StreamEpoch string `json:"stream_epoch"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	Expect(json.NewDecoder(response.Body).Decode(&poll)).To(Succeed())
+	Expect(poll.Data.StreamEpoch).To(Equal(after.Library.StreamEpoch))
+	for _, event := range poll.Data.Items {
+		Expect(event.StreamEpoch).To(Equal(after.Library.StreamEpoch))
+	}
 })
 
 var _ = It("Copies checkpoint failures preserve the prior complete set and resume the exact set without new publication", Label("persistence"), func() {

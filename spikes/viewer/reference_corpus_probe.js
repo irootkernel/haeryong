@@ -3,9 +3,10 @@ const c=REFERENCE_CONSTANTS,rows=[],traffic=[];let done=false,announcement=null,
 const report=()=>window.haeryongNativeCall(701101,[{Rows:[...rows,{name:'page.done',status:done?'pass':'pending',detail:{}}]}]).catch(()=>{});
 setInterval(()=>void report(),1000);
 const wait=async(fn,label)=>{const end=Date.now()+20000;while(Date.now()<end){const v=fn();if(v)return v;await new Promise(r=>setTimeout(r,100));}throw Error('RF12 native wait: '+label);};
-const check=async(name,fn)=>{try{rows.push({name,status:'pass',detail:await fn()});}catch(e){rows.push({name,status:'fail',detail:{error:String(e),url:location.pathname+location.search+location.hash,traffic:traffic.slice(-12)}});}await report();};
+const shellState=()=>({marker:window.__haeryongNativeTransport,phase:document.querySelector('.service-state')?.dataset.state,heading:document.querySelector('main h1')?.textContent,status:document.querySelector('[aria-label="연결 상태"]')?.textContent,frame:[...document.querySelectorAll('iframe')].map(f=>({title:f.title,src:f.src,name:f.name})),loading:document.querySelector('.reader-content [role="status"]')?.textContent,alerts:[...document.querySelectorAll('[role="alert"]')].map(e=>e.textContent)});
+const check=async(name,fn)=>{try{rows.push({name,status:'pass',detail:await fn()});}catch(e){rows.push({name,status:'fail',detail:{error:String(e),url:location.pathname+location.search+location.hash,traffic:traffic.slice(-12),shell:shellState(),announcement}});}await report();};
 addEventListener('error',e=>rows.push({name:'page.error',status:'fail',detail:String(e.message)}));
-addEventListener('unhandledrejection',e=>rows.push({name:'page.unhandled',status:'fail',detail:String(e.reason)}));
+addEventListener('unhandledrejection',e=>rows.push({name:'page.unhandled',status:'fail',detail:{error:String(e.reason),shell:shellState(),traffic:traffic.slice(-12),announcement}}));
 const post=MessagePort.prototype.postMessage,seen=new WeakSet();
 MessagePort.prototype.postMessage=function(value,...rest){if(!seen.has(this)){seen.add(this);this.addEventListener('message',e=>{if(e.data?.type)traffic.push({direction:'child',message:e.data});});}if(value?.type){traffic.push({direction:'host',message:value});if(value.type==='reference.navigation')currentPort=this;}return post.call(this,value,...rest);};
 addEventListener('message',e=>{if(e.source===document.querySelector('iframe[title="결과 뷰어"]')?.contentWindow&&e.data?.type==='viewer.loaded')announcement=e.data;});
@@ -85,7 +86,7 @@ await check('RF12 native source recovery after real input asserts focus success'
 const sourceContext=history.state?.haeryongReaderContext;
 await check('RF12 actual native keyboard click opens old Mulgae M11 despite synthetic successor',async()=>{
  // G12 contains two citation anchors before its marked prior-compose link.
- // The complete original HTML is unchanged; real PID-targeted Option+Tab x3 + Enter
+ // The complete original HTML is unchanged; real PID-targeted Tab x3 + Enter with TabFocusesLinks enabled
  // activates that authored link, and the actual loader request is the oracle.
  const sourceRender=announcement.render_instance_id;
  const fresh=sourceFresh;

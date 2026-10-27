@@ -7,7 +7,8 @@ args=parser.parse_args()
 STAGES=set(args.stages.split(','))
 ALL_STAGES={'selfcheck','app','seed','restart','crash','evidence','search','references'}
 assert sys.platform=='darwin','this check requires the existing native macOS Wails harness'
-assert STAGES and STAGES<=ALL_STAGES|{'corpus','reference-corpus','versions'},STAGES
+assert STAGES and STAGES<=ALL_STAGES|{'corpus','reference-corpus','versions','owner-records'},STAGES
+assert 'owner-records' not in STAGES or STAGES=={'owner-records'},'owner-records is an explicit standalone local campaign'
 assert not ('restart' in STAGES and 'seed' not in STAGES),'restart requires the seed stage'
 assert not (STAGES&{'seed','restart','crash','search','corpus','reference-corpus'} and 'app' not in STAGES),'these stages require the app smoke context'
 # Versions/evidence/references launch the same compiled App themselves and
@@ -27,7 +28,7 @@ assert RECEIPT.parent.is_dir(),'receipt parent must exist'
 volume=pathlib.Path('/Volumes/RootKernel')
 scratch=volume/'tmp' if os.path.ismount(volume) and os.access(volume,os.W_OK) else pathlib.Path(tempfile.gettempdir())
 os.umask(0o077)
-work=pathlib.Path(tempfile.mkdtemp(prefix='h3n-',dir='/tmp')).resolve()
+work=pathlib.Path(tempfile.mkdtemp(prefix='h3n-',dir=scratch)).resolve()
 print(json.dumps({'runtime':str(work)}),flush=True)
 env=os.environ|{'TMPDIR':str(work),'HAERYONG_TEST_STATE_DIR':str(work/'app-state'),'PYTHONDONTWRITEBYTECODE':'1'}
 os.environ['HAERYONG_TEST_STATE_DIR']=env['HAERYONG_TEST_STATE_DIR']
@@ -40,7 +41,13 @@ def fingerprints():
                  +[p for p in (REPO/'desktop').rglob('*') if p.is_file()]
                  +[REPO/'spikes/viewer/desktop/main.go',REPO/'spikes/viewer/desktop/reader_mode.go',REPO/'spikes/viewer/desktop/go.mod',REPO/'spikes/viewer/desktop/go.sum']
                  +[REPO/'frontend/native.html',REPO/'frontend/vite.native.config.ts',REPO/'frontend/src/native-main.tsx',REPO/'frontend/src/client/native-bridge.ts',REPO/'frontend/src/client/native-wire.ts',REPO/'frontend/src/client/native.ts',REPO/'spikes/viewer/check_reader_native.py',REPO/'spikes/viewer/reference_native.py',REPO/'spikes/viewer/reference_corpus_native.py',REPO/'spikes/viewer/reference_corpus_probe.js',REPO/'tests/manual/search_corpus_support.py',REPO/'spikes/viewer/reference_probe.js',REPO/'tests/manual/reference_support.py'])
-    return {str(p.relative_to(REPO)):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
+    result={str(p.relative_to(REPO)):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
+    # Explicit new compiler/helper/fixture closure; historical lists are not
+    # automatic dependency discovery. This helper performs no product setup.
+    spec=importlib.util.spec_from_file_location('owner_input_support',REPO/'tests/manual/owner_records_support.py')
+    support=importlib.util.module_from_spec(spec);spec.loader.exec_module(support)
+    result.update(support.fingerprints())
+    return result
 def receipts(pid):
     path=state/f'native-reader-receipts-{pid}.json'
     return json.loads(path.read_text()) if path.exists() else None
@@ -734,6 +741,11 @@ for(let i=0;i<6;i++){try{await fetch('wails://denied/'+i);}catch(e){}}
                 seeded_server.shutdown();seeded_server.server_close()
 
     reference_fixture=None
+    if 'owner-records' in STAGES:
+        spec=importlib.util.spec_from_file_location('owner_records_native',REPO/'spikes/viewer/owner_records_native.py')
+        support=importlib.util.module_from_spec(spec);spec.loader.exec_module(support)
+        proof['excluded_stages']=[{'stage':s,'status':'not_run','reason':'standalone local Task6 campaign; no broader harness qualification'} for s in sorted(ALL_STAGES)]
+        support.run(REPO,work,state,product,owner,launch,proof)
     if 'versions' in STAGES:
         spec=importlib.util.spec_from_file_location('reference_native',REPO/'spikes/viewer/reference_native.py')
         support=importlib.util.module_from_spec(spec);spec.loader.exec_module(support)
@@ -768,11 +780,28 @@ for(let i=0;i<6;i++){try{await fetch('wails://denied/'+i);}catch(e){}}
     proof['binary_sha256']=hashlib.sha256((work/'native').read_bytes()).hexdigest()
     proof['complete']=True
 finally:
+    proof['cleanup_errors']=[]
     for process,handle in runs:
-        if process.poll() is None:process.kill();process.wait(timeout=5)
-        handle.close()
-    if product is not None and product.process is not None:product.stop()
+        try:
+            if process.poll() is None:process.kill();process.wait(timeout=5)
+        except Exception as error:proof['cleanup_errors'].append({'pid':process.pid,'error':type(error).__name__})
+        finally:handle.close()
+    if product is not None and product.process is not None:
+        try:product.stop()
+        except Exception as error:
+            proof['cleanup_errors'].append({'daemon':type(error).__name__})
+            try:product.close()
+            except Exception as fallback:proof['cleanup_errors'].append({'daemon_fallback':type(fallback).__name__})
     proof['daemon_closed']=product is None or product.process is None
+    # Preserve source binding on failed campaigns too. A stable input inventory
+    # and a normal process exit cannot promote failed/missing scenario rows.
+    proof['inputs']=before
+    proof['inputs_unchanged']=fingerprints()==before
+    proof['input_sha256']=hashlib.sha256(json.dumps(before,sort_keys=True).encode()).hexdigest()
+    proof['uncaptured_inputs']=['prepared Go module/build caches and native SDK','prepared frontend/node_modules','installed Go/Python/Node/Chrome tools']
+    proof['native_processes']=[{'pid':process.pid,'exit_code':process.returncode} for process,_ in runs]
+    proof['build_outputs']={str(p.relative_to(work)):hashlib.sha256(p.read_bytes()).hexdigest() for p in [work/'haeryong',work/'native',*sorted((work/'dist-native').rglob('*'))] if p.is_file()}
+    proof['complete']=proof['complete'] and proof['inputs_unchanged'] and not proof['cleanup_errors']
     RECEIPT.write_text(json.dumps(proof,ensure_ascii=False,indent=2)+'\n')
     if os.environ.get('H3N_RETAIN') is None:
         shutil.rmtree(work,ignore_errors=True)

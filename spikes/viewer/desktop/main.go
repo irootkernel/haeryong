@@ -238,6 +238,9 @@ func main() {
 	readerDist := flag.String("reader-dist", "", "Compiled dist-native directory served at the fixed static origin")
 	readerPath := flag.String("reader-path", "/", "App path (route and query) opened at the native static origin")
 	readerProbe := flag.String("reader-probe", "", "Owned test probe script injected after guard+bootstrap into the actual app (enables the report binding)")
+	readerWidth := flag.Int("reader-width", 1180, "Owned ReaderMode window width; default unchanged")
+	readerHeight := flag.Int("reader-height", 880, "Owned ReaderMode window height; default unchanged")
+	readerCloseOnDone := flag.Bool("reader-close-on-done", false, "Owned probe: close the real window after its final report")
 	flag.Parse()
 	u, e := url.Parse(*base)
 	info, se := os.Stat(*state)
@@ -248,7 +251,13 @@ func main() {
 		if *readerDist == "" {
 			log.Fatal("--reader-dist is required in ReaderMode")
 		}
-		if err := runReader(*base, *state, *readerDist, *readerPort, *readerPath, *readerSelfcheck, *readerProbe, *closeAfter); err != nil {
+		if *readerWidth <= 0 || *readerHeight <= 0 {
+			log.Fatal("ReaderMode dimensions must be positive")
+		}
+		if *readerCloseOnDone && *readerProbe == "" && !*readerSelfcheck {
+			log.Fatal("reader-close-on-done requires an explicit probe or selfcheck")
+		}
+		if err := runReader(*base, *state, *readerDist, *readerPort, *readerPath, *readerSelfcheck, *readerProbe, *closeAfter, *readerWidth, *readerHeight, *readerCloseOnDone); err != nil {
 			log.Fatal(err)
 		}
 		return

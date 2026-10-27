@@ -108,6 +108,15 @@ Drafts are scoped to owner/library/exact version and retain their captured ancho
 page/tab changes. A real browser storage failure leaves the text visible with an error.
 Reattachment and deletion each use explicit owner confirmation and their own note CAS.
 
+The shared Notes confirmation is a trusted-host HTML modal. New/Edit replacement,
+server reload, reattachment, deletion and draft discard retain the captured action,
+draft revision, destination and validator across the wait. Close, default Enter
+and Escape are safe; only the named confirmation admits the action. Route, owner,
+runtime, panel/tab or modal-mode changes invalidate unconfirmed consent without
+clearing drafts or unresolved requests. Confirmed local replacement becomes visible
+after its guarded journal write; newer text and other-window changes refuse it.
+An admitted request retains its original identity when the screen later closes.
+
 TASK-005-03's concrete lifecycle flow is More → request impact → inspect all pages →
 explicit plan confirmation → acknowledged/reconciled result. Cancel/Escape does not
 commit; current document/impact changes require refreshed review. Automatic position
@@ -120,3 +129,17 @@ status. The shared browser/native UI directs host-local portability operations t
 normal version download remains available. Offline restore follows stop → plan → explicit
 apply → new bootstrap → exact configuration review → normal restart. A pending hold
 cannot be bypassed by an ordinary config commit, and old uncertain work is not retried.
+
+
+### Saved context reading implementation boundary
+
+The current Notes context attempt keeps its exact captured revision and complete
+literal inline spans in a wrapping noneditable scroll area. Start, End, Select text and Close are
+reading actions; they do not save, discard, reattach or confirm a Note mutation.
+Typing and responsive resize retain a still-authorized view. Closing, changing
+the active reader scope or losing current authority retires the owned read and
+its protected presentation. Complete large-context access and focus/cancellation
+execution remain unqualified. Selection.toString() is a rendered serialization observation for the three
+identified terminal-newline workloads; complete decoded DOM and actual selected
+Range text/global offsets remain required for every interval; the
+[Task6 record](../testing/owner-records.md) records the unresolved boundary.

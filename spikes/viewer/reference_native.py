@@ -9,11 +9,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util
 import json
 from pathlib import Path
+import socket
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+
+# Match the existing shared forwarding proxy's Darwin listen policy. Real
+# native-network failures remain evidence; this adds no transport retry.
+class ProjectionServer(ThreadingHTTPServer):
+    request_queue_size = socket.SOMAXCONN
 
 
 def run(repo, work, state, product, owner, launch, proof, fixture=None):
@@ -90,7 +97,7 @@ def run(repo, work, state, product, owner, launch, proof, fixture=None):
             def do_PUT(self):self.forward()
             def do_DELETE(self):self.forward()
             def do_HEAD(self):self.forward()
-        server=ThreadingHTTPServer(('127.0.0.1',0),Projection)
+        server=ProjectionServer(('127.0.0.1',0),Projection)
         server.daemon_threads=True
         threading.Thread(target=server.serve_forever,daemon=True).start()
         try:
@@ -99,7 +106,7 @@ def run(repo, work, state, product, owner, launch, proof, fixture=None):
             probe.write_text(script_path.read_text().replace('REFERENCE_CONSTANTS',json.dumps(constants,ensure_ascii=False)))
             process=launch(['--reader','--reader-port','9271','--reader-path',fixture['source_route'],'--reader-probe',str(probe)],'155s' if mode=='true' else '65s',base=f'http://127.0.0.1:{server.server_port}')
             deadline=time.monotonic()+(180 if mode=='true' else 90)
-            sent=set();rows=None
+            sent=set();rows=None;observed=[]
             while time.monotonic()<deadline:
                 path=state/f'native-reader-selfcheck-{process.pid}.json'
                 if path.exists():
@@ -112,11 +119,13 @@ def run(repo, work, state, product, owner, launch, proof, fixture=None):
                     if any(r['name']=='page.done' and r['status']=='pass' for r in observed):rows=observed;break
                 if process.poll() is not None:break
                 time.sleep(.2)
-            if rows is None:
-                proof['cases'].append({'kind':'RF09–RF11 native '+mode,'ok':False,'window_or_probe_unavailable':True,'note':'No final actual-window report; Supervisor must run this stage in a window-capable session.'})
-                raise AssertionError('native reference window/probe unavailable; no passing native proof claimed')
-            assert process.wait(timeout=190)==0
-            case={'kind':'RF09–RF11 native '+mode,'ok':all(r['status']=='pass' for r in rows),'rows':rows,'resolver_calls':control['calls'],'capability_projections':control['capabilities'],'native_inputs':sorted(sent),'seeded':mode!='true','fault_ids_seeded':['gone','denied'] if mode=='true' else [],'retired_request_peer_disconnects':control['peer_disconnects']}
+            completed=rows is not None
+            rows=rows if completed else observed
+            exit_code=process.wait(timeout=190)
+            case={'kind':'RF09–RF11 native '+mode,'ok':completed and exit_code==0 and all(r['status']=='pass' for r in rows),'final_report':completed,'exit_code':exit_code,'pid':process.pid,'rows':rows,'resolver_calls':control['calls'],'capability_projections':control['capabilities'],'native_inputs':sorted(sent),'seeded':mode!='true','fault_ids_seeded':['gone','denied'] if mode=='true' else [],'retired_request_peer_disconnects':control['peer_disconnects']}
+            for field,filename in [('guard','native-guard.json'),('facade',f'native-reader-receipts-{process.pid}.json'),('network',f'native-network-observations-{process.pid}.json')]:
+                path=state/filename
+                if path.exists():case[field]=json.loads(path.read_text())
             if mode=='true':
                 guard=json.loads((state/'native-guard.json').read_text())
                 popups=guard.get('popup_urls') or []
@@ -147,7 +156,7 @@ def run_versions(repo, work, state, product, owner, launch, proof):
     quartz.CGEventCreateKeyboardEvent.restype=ctypes.c_void_p
     quartz.CGEventPostToPid.argtypes=[ctypes.c_int,ctypes.c_void_p];quartz.CFRelease.argtypes=[ctypes.c_void_p]
     process=launch(['--reader','--reader-port','9271','--reader-path',fixture['encoded_route'],'--reader-probe',str(probe)],'120s')
-    deadline=time.monotonic()+140;sent=set();rows=None
+    deadline=time.monotonic()+140;sent=set();rows=None;observed=[]
     while time.monotonic()<deadline:
         path=state/f'native-reader-selfcheck-{process.pid}.json'
         if path.exists():

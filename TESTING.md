@@ -98,6 +98,13 @@ migrated to pytest; low-level persistence and injected-boundary checks retain
 their own evidence. No GC API, provider, future grant issuer or alternate
 production coordinator is introduced for setup.
 
+`tests/integration/owner-records` is persistence-labelled and is selected by
+`make test-persistence`/`make test-e2e`, not `make test-int` alone. Its public
+counterpart is `tests/e2e/test_owner_records.py`. Separate actual browser/Wails
+commands and current limits are in [the Task6 record](docs/testing/owner-records.md).
+Recovery/storage consumer specs use `unit`; a `persistence` filter does not cover
+them. Required final gates retain complete registered layers.
+
 Go leaf execution is `go tool ginkgo --race --fail-on-empty --fail-on-pending
 --no-color --timeout=<budget> --label-filter=<layer> --json-report=<private-report>
 <packages>` using only packages containing that layer. The budget is `1000s` for

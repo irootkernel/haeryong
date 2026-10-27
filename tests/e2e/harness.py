@@ -90,7 +90,7 @@ class Product:
         assert not self.data_dir.is_symlink()
         self.process = subprocess.Popen(
             [self.binary, "daemon", "run", *([] if configured else ["--port", str(self.address)]), *self.local_flags],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+            stdout=subprocess.PIPE, stderr=getattr(self, 'diagnostic_stderr', subprocess.DEVNULL), text=True,
         )
         process = self.process
         ready = queue.Queue()
@@ -222,7 +222,7 @@ class Product:
 
 class Proxy:
     """A test-owned loopback transport for lost acknowledgements and interrupted bodies."""
-    def __init__(self, product, *, drop=None, interrupt_download=False, block_after_drop=False, before=None):
+    def __init__(self, product, *, drop=None, interrupt_download=False, block_after_drop=False, before=None, after=None):
         self.product = product
         self.drop = drop
         self.interrupt_download = interrupt_download
@@ -231,6 +231,7 @@ class Proxy:
         self.block_after_drop = block_after_drop
         self.blocked_path = None
         self.before = before
+        self.after = after
         self.requests = []
         self.transport_errors = []
         owner = self
@@ -244,7 +245,7 @@ class Proxy:
             def do_GET(self):
                 self.forward()
 
-            do_POST = do_PUT = do_DELETE = do_HEAD = do_GET
+            do_POST = do_PUT = do_PATCH = do_DELETE = do_HEAD = do_GET
 
             def forward(self):
                 size = int(self.headers.get("Content-Length", "0"))
@@ -273,6 +274,8 @@ class Proxy:
                 if owner.before:
                     owner.before(self.command, self.path, headers, body)
                 if (owner.block_uploads and self.command == "PUT") or owner.blocked_path == (self.command, self.path):
+                    if owner.after:
+                        owner.after(self.command, self.path, headers, body, 503, b"", False)
                     self.send_response(503)
                     self.send_header("Content-Length", "0")
                     self.send_header("Connection", "close")
@@ -285,6 +288,8 @@ class Proxy:
                     upstream = connection.getresponse()
                     payload = upstream.read()
                     fields = upstream.getheaders()
+                    if owner.after:
+                        owner.after(self.command, self.path, headers, body, upstream.status, payload)
                     matched = owner.drop and owner.drop(self.command, self.path, upstream.status)
                     if matched and not owner.dropped:
                         owner.dropped = True
@@ -314,7 +319,13 @@ class Proxy:
                     connection.close()
                     self.close_connection = True
 
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        class ForwardingServer(ThreadingHTTPServer):
+            # The real shared App opens parallel reads. Python's default five
+            # pending connects caused observed ECONNRESET at this test listener
+            # on Darwin; use the platform listen queue, without retrying calls.
+            request_queue_size = socket.SOMAXCONN
+
+        self.server = ForwardingServer(("127.0.0.1", 0), Handler)
         self.server.daemon_threads = True
         self.endpoint = f"http://127.0.0.1:{self.server.server_port}"
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)

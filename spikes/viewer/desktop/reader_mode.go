@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -22,6 +25,37 @@ import (
 )
 
 const nativeBootstrapReader = `(()=>{if(window.haeryongNativeCall)return;let calls=new Map();window.haeryongNativeReply=m=>{let p=calls.get(m.id);if(p){calls.delete(m.id);m.error?p.reject(new Error(m.error)):p.resolve(m.value);}};window.haeryongNativeCall=(methodID,args=[])=>new Promise((resolve,reject)=>{let id=crypto.randomUUID();calls.set(id,{resolve,reject});window.webkit.messageHandlers.external.postMessage(JSON.stringify({kind:'haeyong.native',id,object:0,method:0,args:{'call-id':id,methodID,args}}));});window.dispatchEvent(new Event('haeryong-native-bridge'));})();`
+
+// A probe-only transport observer uses the real default transport exactly once.
+// It never records headers, query strings or bodies and never changes an outcome.
+type readerNetworkObserver struct {
+	upstream http.RoundTripper
+	state    string
+	mu       sync.Mutex
+	rows     []map[string]any
+}
+
+func (o *readerNetworkObserver) RoundTrip(request *http.Request) (*http.Response, error) {
+	response, err := o.upstream.RoundTrip(request)
+	row := map[string]any{"method": request.Method, "path": request.URL.Path, "host": request.URL.Host, "forwarded": 1}
+	if response != nil {
+		row["status"] = response.StatusCode
+	}
+	if err != nil {
+		cause := err
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			cause = urlErr.Err
+		}
+		row["error"] = cause.Error()
+	}
+	o.mu.Lock()
+	o.rows = append(o.rows, row)
+	encoded, _ := json.Marshal(o.rows)
+	_ = os.WriteFile(filepath.Join(o.state, fmt.Sprintf("native-network-observations-%d.json", os.Getpid())), encoded, 0600)
+	o.mu.Unlock()
+	return response, err
+}
 
 func readerCredential(state string) (string, error) {
 	path := filepath.Join(state, "native-session")
@@ -40,7 +74,7 @@ func readerCredential(state string) (string, error) {
 	return token, nil
 }
 
-func runReader(base, state, dist, port string, appPath string, selfcheck bool, probePath string, closeAfter time.Duration) error {
+func runReader(base, state, dist, port string, appPath string, selfcheck bool, probePath string, closeAfter time.Duration, width, height int, closeOnDone bool) error {
 	token, err := readerCredential(state)
 	if err != nil {
 		return err
@@ -61,6 +95,11 @@ func runReader(base, state, dist, port string, appPath string, selfcheck bool, p
 	if err != nil {
 		// No silent fallback: the fixed static origin must be exactly this.
 		return fmt.Errorf("fixed native static origin %s unavailable: %w", address, err)
+	}
+	if probeScript != "" {
+		originalTransport := http.DefaultTransport
+		http.DefaultTransport = &readerNetworkObserver{upstream: originalTransport, state: state}
+		defer func() { http.DefaultTransport = originalTransport }()
 	}
 	service := facade.NewReaderService(base, state, token)
 	origin := "http://" + address
@@ -112,6 +151,11 @@ func runReader(base, state, dist, port string, appPath string, selfcheck bool, p
 	// own goroutine (application.go:705/717), so the guard-ready publication
 	// must be synchronized, not a plain bool.
 	var guardReady atomic.Bool
+	// Harness-only observation at the actual forwarding seam. The native port
+	// captures its bridge before a late page probe can wrap that global. Record
+	// only admitted named mutations; forward exactly once and preserve the reply.
+	var observationMu sync.Mutex
+	var observations []map[string]any
 	app = application.New(application.Options{
 		Name: "Haeryong Reader native", Transport: transport,
 		Services: []application.Service{application.NewService(service)},
@@ -163,12 +207,65 @@ func runReader(base, state, dist, port string, appPath string, selfcheck bool, p
 			}
 			request.WebviewWindowID = uint32(window.ID())
 			response, err := transport.processor.HandleRuntimeCallWithIDs(context.Background(), &request)
+			if probeScript != "" && call.MethodID == 701100 {
+				var invocation struct {
+					Args []struct {
+						Operation string
+						Payload   json.RawMessage
+					}
+				}
+				if json.Unmarshal(envelope.Args, &invocation) == nil && len(invocation.Args) == 1 {
+					invoked := invocation.Args[0]
+					switch invoked.Operation {
+					case "annotationCreate", "annotationPatch", "annotationDelete", "reviewPut", "lifecyclePlan", "lifecyclePlanCommit", "revisitPut":
+						var payload map[string]json.RawMessage
+						_ = json.Unmarshal(invoked.Payload, &payload)
+						row := map[string]any{"pid": os.Getpid(), "call_id": envelope.ID, "operation": invoked.Operation, "forwarded": 1, "returned_error": err != nil}
+						for _, name := range []string{"version_id", "annotation_id", "document_id", "plan_id", "operation_id", "etag", "precondition"} {
+							if value, present := payload[name]; present {
+								row[name] = value
+							}
+						}
+						if body, present := payload["body"]; present {
+							sum := sha256.Sum256(body)
+							row["body_sha256"] = hex.EncodeToString(sum[:])
+						}
+						encoded, marshalErr := json.Marshal(response)
+						row["reply_marshaled"] = marshalErr == nil
+						sum := sha256.Sum256(encoded)
+						row["reply_sha256"] = hex.EncodeToString(sum[:])
+						observationMu.Lock()
+						observations = append(observations, row)
+						encoded, _ = json.Marshal(observations)
+						_ = os.WriteFile(filepath.Join(state, fmt.Sprintf("native-call-observations-%d.json", os.Getpid())), encoded, 0600)
+						observationMu.Unlock()
+					}
+				}
+			}
 			value := map[string]any{"id": envelope.ID, "value": response}
 			if err != nil {
 				value["error"] = err.Error()
 			}
 			encoded, _ := json.Marshal(value)
 			application.InvokeSync(func() { facade.EvalNative(window, "window.haeryongNativeReply("+string(encoded)+")") })
+			// Optional probe-only cleanup: progress never closes the window. A
+			// final report still needs every row/process/guard checked by Python;
+			// this branch supplies no test verdict and changes no default mode.
+			if closeOnDone && call.MethodID == 701101 && err == nil {
+				var report struct {
+					Args []struct {
+						Rows []struct{ Name, Status string }
+					}
+				}
+				if json.Unmarshal(envelope.Args, &report) == nil && len(report.Args) == 1 {
+					for _, row := range report.Args[0].Rows {
+						if row.Name == "page.done" && row.Status == "pass" {
+							application.InvokeSync(func() { window.Close() })
+							break
+						}
+					}
+				}
+			}
 		},
 	})
 	target := origin + appPath
@@ -177,9 +274,11 @@ func runReader(base, state, dist, port string, appPath string, selfcheck bool, p
 		// query carried by --reader-path.
 		target = origin + "/-selfcheck.html" + appPath
 	}
-	options := application.WebviewWindowOptions{Title: "Haeryong Reader native", Width: 1180, Height: 880, URL: target}
+	options := application.WebviewWindowOptions{Title: "Haeryong Reader native", Width: width, Height: height, URL: target}
 	options.Mac.WebviewPreferences.JavaScriptCanOpenWindowsAutomatically.Set(true)
+	options.Mac.WebviewPreferences.TabFocusesLinks.Set(true)
 	window := app.Window.NewWithOptions(options)
+	var focusOwnedReader sync.Once
 	window.RegisterHook(events.Common.WindowClosing, func(_ *application.WindowEvent) {
 		service.CloseOwned()
 		// Final guard statistics at close time: imported-frame denials and
@@ -187,6 +286,7 @@ func runReader(base, state, dist, port string, appPath string, selfcheck bool, p
 		application.InvokeSync(func() {
 			stats := facade.GuardStats()
 			stats["pid"] = os.Getpid()
+			stats["window_visible_at_capture"] = window.IsVisible()
 			stats["scheme_denied"] = schemeDenied.Load()
 			encoded, _ := json.Marshal(stats)
 			os.WriteFile(filepath.Join(state, "native-guard.json"), encoded, 0600)
@@ -202,9 +302,12 @@ func runReader(base, state, dist, port string, appPath string, selfcheck bool, p
 			// The facade exists only after the guard: the bridge bootstrap is
 			// injected here, once per navigation, without replacing the guard.
 			guardReady.Store(true)
+			// Activate only the initial owned Reader, once its guard is ready.
+			focusOwnedReader.Do(func() { window.Focus() })
 			facade.EvalNative(window, nativeBootstrapReader)
 			stats := facade.GuardStats()
 			stats["pid"] = os.Getpid()
+			stats["window_visible_at_capture"] = window.IsVisible()
 			stats["scheme_denied"] = schemeDenied.Load()
 			encoded, _ := json.Marshal(stats)
 			os.WriteFile(filepath.Join(state, "native-guard.json"), encoded, 0600)

@@ -382,3 +382,45 @@ search result. No authored sample script is changed. The option is explicit and
 is excluded from the default full-qualification stages; selected runs retain
 `full_qualification=false`. `tests/manual/check_search_corpus.py` coordinates the
 Chrome `--corpus` and native examples with the HTTP/CLI worksheet.
+
+## Owner-records standalone campaign (TASK-005-06)
+
+`check_reader_native.py --stages owner-records --receipt PATH` selects the new
+actual Wails Notes/Review/lifecycle/recovery journey over common production
+setup. The [owning record](../../docs/testing/owner-records.md) describes current
+failures; this selection has not passed. It remains outside default stages and
+reports broader `full_qualification=false`. The existing offline corpus allowlist
+is unchanged. Prepaired credentials are supporting setup, not onboarding proof.
+
+ReaderMode defaults stay 1180x880. Explicit `--reader-width`/`--reader-height`
+allow a measured narrow test window. Probe-only `--reader-close-on-done` closes
+after a final report; the Python checker still requires every row, actual input,
+normal process exit and per-PID guard/facade/call receipts. Progress never closes
+or passes. Probe-only call/network observers forward unchanged outcomes once.
+They add no imported-content authority or production facade behavior. Keep
+`H3N_RETAIN=1` when original private diagnostic artifacts need retention.
+
+## Owner-record context probe boundary
+
+The standalone owner-records producer prepends the shared
+tests/manual/notes_context_cases.js before its probe. It preserves the complete
+declared text workload and requires actual offset-bound first/final geometry,
+selection, local keyboard input and unchanged record/frame observations within
+the existing context guard. Browser diagnostics are separate from actual Wails
+rows; this probe has not qualified the native campaign. It retains complete
+inline-tree/global-offset and grapheme-aligned selection checks and explicit
+native key/modifier mappings including PageUp/PageDown/arrows/Home/End. Actual
+movement remains separate from trusted key observation.
+Focus checks assert raw associated Range text and independently derived offsets
+unconditionally across full/partial/restored selections. Only the three named
+terminal workloads record the rendered string separately; other strings remain
+strict. The native driver uses its computed canonical scratch parent.
+Pending real frame/input waits fail within the original context interval. Native
+DOM text reached its exact expected value while real frames stalled in a hidden
+document; a locked console session was independently confirmed. A later owner
+attempt after the unlocked-session prerequisite still found its first Note
+control in a hidden document and was stopped with cleanup. No input or real-frame
+qualification follows; the remaining visibility cause is unknown. Do not repeat
+the native UI campaign until supported visible execution is available. Private
+Show/Focus experiments and an unqualified App subscription repair are not retained
+in the shipping source; no mocked visibility or frame success is accepted.

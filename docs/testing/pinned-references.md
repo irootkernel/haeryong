@@ -828,7 +828,8 @@ app,reference-corpus --receipt <private>`; `reference-corpus` is distinct from t
 existing search `corpus` stage. Original sample HTML has no injected observer.
 Real PID-targeted ArrowDown followed by host outline re-selection requires
 `found=true, focused=true`; initial programmatic false results remain recorded.
-Actual Option+Tab/Enter activates the authored `prior-compose` link. Loader
+The current native check uses plain Tab/Enter with ReaderMode's enabled
+`TabFocusesLinks` preference to activate the authored `prior-compose` link. Loader
 announcements and current-channel focus acks verify exact navigation and reload.
 The source departure snapshot and saved history coordinates must agree and
 must differ from both fresh-load and region-focus-only coordinates after real

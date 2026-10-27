@@ -267,7 +267,15 @@ var _ = It("TestActualCLIEventsResyncFreshStateReplayPreservesPendingIntent", La
 		return nil
 	})
 	daemon = startDaemon(t, s, port)
-	hidden := poll(initial.StreamEpoch + ":" + strconv.FormatInt(head+1, 10))
+	// The deleted acknowledgement takes the implementation's conservative
+	// resync path; it must expose no domain or now-private target data.
+	expired := poll(initial.StreamEpoch + ":" + strconv.FormatInt(head+1, 10))
+	expiredWire, _ := json.Marshal(expired)
+	Expect(expired.Resync == nil || expired.Resync.Reason != "trimmed_cursor" || expired.Resync.StreamEpoch != initial.StreamEpoch || expired.Resync.ResumeCursor != replay.NextCursor || len(expired.Items) != 0 || bytes.Contains(expiredWire, []byte(document)) || bytes.Contains(expiredWire, []byte("synthetic event-visible"))).To(BeFalse(), func() string {
+		return fmt.Sprint("pruned cursor did not resync safely without exposing the hidden target")
+	})
+	// Use the retained acknowledgement to exercise per-event visibility below.
+	hidden := poll(initial.StreamEpoch + ":" + strconv.FormatInt(head+2, 10))
 	encoded, _ := json.Marshal(hidden)
 	foundInvalidation := false
 	for _, event := range hidden.Items {

@@ -544,6 +544,261 @@ var _ = It("TestProductionEventReplayWireAndResync", Label("persistence"), func(
 	}
 
 })
+
+// Rotate only the disposable fixture's stream namespace, retaining all rows.
+// The actual protected restore/review/reopen path is covered in query/copies_test.
+var _ = DescribeTable("Restored event replay and resync", Label("persistence"), func(mode, wantReason string) {
+	t := GinkgoT()
+	f := newFixture(t)
+	token, _ := f.owner(t)
+	oldEpoch, oldHead, err := f.core.EventHead(context.Background(), token)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(oldHead).To(BeNumerically(">", 0))
+	db, err := sql.Open("sqlite", f.databasePath)
+	Expect(err).NotTo(HaveOccurred())
+	defer db.Close()
+	current := newOperation(t)
+	_, err = db.Exec("UPDATE libraries SET stream_epoch=?", current)
+	Expect(err).NotTo(HaveOccurred())
+	empty := mode == "empty" || strings.HasPrefix(mode, "empty-zero")
+	if strings.Contains(mode, "zero") {
+		status, _, data := f.request(t, "GET", "/api/v1/events?transport=poll", token, nil, nil)
+		Expect(status).To(Equal(http.StatusOK))
+		var body struct {
+			Data struct {
+				NextCursor string `json:"next_cursor"`
+			} `json:"data"`
+		}
+		Expect(json.Unmarshal(data, &body)).To(Succeed())
+		Expect(body.Data.NextCursor).To(Equal(current + ":0"))
+	}
+	if !empty {
+		for _, name := range []string{"first", "middle", "last"} {
+			Expect(f.store.Write(context.Background(), func(tx storage.WriteTx) error {
+				_, err := tx.MutateResource(domain.Resource{Kind: "fixture", ID: name, Value: []byte(`{}`)}, 0, "resource.invalidated")
+				return err
+			})).To(Succeed())
+		}
+	}
+	epoch, head, err := f.core.EventHead(context.Background(), token)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(epoch).To(Equal(current))
+	cursor := ""
+	wantFirst := oldHead + 1
+	if strings.Contains(mode, "zero-header") {
+		cursor = current + ":0"
+	}
+	if strings.HasPrefix(mode, "expired-zero") {
+		_, err = db.Exec("DELETE FROM events WHERE sequence=?", oldHead+1)
+		Expect(err).NotTo(HaveOccurred())
+	}
+	switch mode {
+	case "empty":
+		Expect(head).To(BeZero())
+	case "resume":
+		cursor = fmt.Sprintf("%s:%d", current, oldHead+1)
+		wantFirst++
+	case "prior-sequence":
+		cursor = fmt.Sprintf("%s:%d", current, oldHead)
+	case "old-epoch":
+		cursor = fmt.Sprintf("%s:%d", oldEpoch, oldHead)
+	case "expired":
+		_, err = db.Exec("DELETE FROM events WHERE sequence=?", oldHead+1)
+		Expect(err).NotTo(HaveOccurred())
+		cursor = fmt.Sprintf("%s:%d", current, oldHead+1)
+	case "gap":
+		_, err = db.Exec("DELETE FROM events WHERE sequence=?", oldHead+2)
+		Expect(err).NotTo(HaveOccurred())
+	case "future":
+		cursor = fmt.Sprintf("%s:%d", current, head+1)
+	case "malformed":
+		cursor = "malformed"
+	}
+	for _, transport := range []string{"poll", "sse"} {
+		path := "/api/v1/events"
+		if transport == "poll" {
+			path += "?transport=poll"
+		}
+		if strings.Contains(mode, "zero-query") {
+			separator := "?"
+			if transport == "poll" {
+				separator = "&"
+			}
+			path += separator + "after=0&stream_epoch=" + current
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		r, err := http.NewRequestWithContext(ctx, http.MethodGet, f.server.URL+path, nil)
+		Expect(err).NotTo(HaveOccurred())
+		r.Header.Set("Authorization", "Bearer "+token)
+		r.Header.Set("Origin", f.server.URL)
+		if cursor != "" {
+			r.Header.Set("Last-Event-ID", cursor)
+		}
+		response, err := http.DefaultClient.Do(r)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(response.StatusCode).To(Equal(http.StatusOK), transport)
+		if transport == "poll" {
+			var body struct {
+				Data struct {
+					StreamEpoch string           `json:"stream_epoch"`
+					Head        string           `json:"head"`
+					NextCursor  string           `json:"next_cursor"`
+					Items       []map[string]any `json:"items"`
+					Resync      map[string]any   `json:"resync"`
+				} `json:"data"`
+			}
+			Expect(json.NewDecoder(response.Body).Decode(&body)).To(Succeed())
+			Expect(body.Data.StreamEpoch).To(Equal(current))
+			Expect(body.Data.Head).To(Equal(strconv.FormatInt(head, 10)))
+			if wantReason != "" {
+				Expect(body.Data.Items).To(BeEmpty())
+				Expect(body.Data.Resync["reason"]).To(Equal(wantReason))
+				Expect(body.Data.Resync["resume_cursor"]).To(Equal(fmt.Sprintf("%s:%d", current, head)))
+			} else {
+				Expect(body.Data.Resync).To(BeNil())
+				if empty {
+					Expect(body.Data.Items).To(BeEmpty())
+				} else {
+					Expect(body.Data.Items[0]["sequence"]).To(Equal(strconv.FormatInt(wantFirst, 10)))
+					Expect(body.Data.Items).To(HaveLen(int(head - wantFirst + 1)))
+					for _, item := range body.Data.Items {
+						Expect(item["stream_epoch"]).To(Equal(current))
+					}
+				}
+			}
+			Expect(body.Data.NextCursor).To(Equal(fmt.Sprintf("%s:%d", current, head)))
+		} else if empty {
+			line, err := bufio.NewReader(response.Body).ReadString('\n')
+			Expect(err).NotTo(HaveOccurred())
+			Expect(line).To(Equal(": connected\n"))
+		} else {
+			event, data := firstSSEData(t, response.Body)
+			Expect(data["stream_epoch"]).To(Equal(current))
+			if wantReason != "" {
+				Expect(event).To(Equal("resync.required"))
+				Expect(data["reason"]).To(Equal(wantReason))
+				Expect(data["resume_cursor"]).To(Equal(fmt.Sprintf("%s:%d", current, head)))
+			} else {
+				Expect(event).To(Equal("resource.invalidated"))
+				Expect(data["sequence"]).To(Equal(strconv.FormatInt(wantFirst, 10)))
+			}
+		}
+		response.Body.Close()
+		cancel()
+	}
+	var retained int
+	Expect(db.QueryRow("SELECT count(*) FROM events WHERE stream_epoch=?", oldEpoch).Scan(&retained)).To(Succeed())
+	Expect(retained).To(Equal(int(oldHead)), "delivery retains the original epoch history")
+}, Entry("cursorless current history", "current", ""),
+	Entry("valid current resume", "resume", ""),
+	Entry("prior namespace's adjacent sequence", "prior-sequence", "trimmed_cursor"),
+	Entry("old epoch", "old-epoch", "epoch_changed"),
+	Entry("expired current cursor", "expired", "trimmed_cursor"),
+	Entry("true interior gap", "gap", "sequence_gap"),
+	Entry("empty current epoch with retained history", "empty", ""),
+	Entry("empty explicit header zero", "empty-zero-header", ""),
+	Entry("empty explicit query zero", "empty-zero-query", ""),
+	Entry("unavailable prefix after issued header zero", "expired-zero-header", "sequence_gap"),
+	Entry("unavailable prefix after issued query zero", "expired-zero-query", "sequence_gap"),
+	Entry("uncertain restored history after header zero", "zero-header", "sequence_gap"),
+	Entry("uncertain restored history after query zero", "zero-query", "sequence_gap"),
+	Entry("future cursor", "future", "future_cursor"),
+	Entry("malformed cursor", "malformed", "malformed_cursor"))
+
+// Publish the visible suffix atomically so the live reader cannot observe the
+// prefix before the fixture removes it. No timing-dependent deletion race.
+var _ = DescribeTable("Zero-position live event continuity", Label("persistence"), func(retainOld, losePrefix bool) {
+	t := GinkgoT()
+	f := newFixture(t)
+	token, _ := f.owner(t)
+	db, err := sql.Open("sqlite", f.databasePath)
+	Expect(err).NotTo(HaveOccurred())
+	defer db.Close()
+	current := newOperation(t)
+	_, err = db.Exec("UPDATE libraries SET stream_epoch=?", current)
+	Expect(err).NotTo(HaveOccurred())
+	if !retainOld {
+		_, err = db.Exec("DELETE FROM events")
+		Expect(err).NotTo(HaveOccurred())
+		_, err = db.Exec("DELETE FROM sqlite_sequence WHERE name='events'")
+		Expect(err).NotTo(HaveOccurred())
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, f.server.URL+"/api/v1/events", nil)
+	Expect(err).NotTo(HaveOccurred())
+	r.Header.Set("Authorization", "Bearer "+token)
+	r.Header.Set("Origin", f.server.URL)
+	response, err := http.DefaultClient.Do(r)
+	Expect(err).NotTo(HaveOccurred())
+	defer response.Body.Close()
+	Expect(response.StatusCode).To(Equal(http.StatusOK))
+	reader := bufio.NewReader(response.Body)
+	line, err := reader.ReadString('\n')
+	Expect(err).NotTo(HaveOccurred())
+	Expect(line).To(Equal(": connected\n"))
+	tx, err := db.Begin()
+	Expect(err).NotTo(HaveOccurred())
+	defer tx.Rollback()
+	for _, id := range []string{"first", "last"} {
+		_, err = tx.Exec("INSERT INTO events(stream_epoch,resource_kind,resource_id,kind,revision) VALUES(?,'fixture',?,'resource.invalidated',1)", current, id)
+		Expect(err).NotTo(HaveOccurred())
+	}
+	if losePrefix {
+		_, err = tx.Exec("DELETE FROM events WHERE stream_epoch=? AND resource_id='first'", current)
+		Expect(err).NotTo(HaveOccurred())
+	}
+	Expect(tx.Commit()).To(Succeed())
+	event, data := firstSSEData(t, reader)
+	Expect(data["stream_epoch"]).To(Equal(current))
+	if retainOld || losePrefix {
+		Expect(event).To(Equal("resync.required"))
+		Expect(data["reason"]).To(Equal("sequence_gap"))
+	} else {
+		Expect(event).To(Equal("resource.invalidated"))
+		Expect(data["sequence"]).To(Equal("1"))
+		// Explicit zero is still a valid resume when history starts at one.
+		for _, query := range []bool{false, true} {
+			for _, transport := range []string{"poll", "sse"} {
+				path := "/api/v1/events?transport=" + transport
+				if query {
+					path += "&after=0&stream_epoch=" + current
+				}
+				request, err := http.NewRequestWithContext(ctx, http.MethodGet, f.server.URL+path, nil)
+				Expect(err).NotTo(HaveOccurred())
+				request.Header.Set("Authorization", "Bearer "+token)
+				request.Header.Set("Origin", f.server.URL)
+				if !query {
+					request.Header.Set("Last-Event-ID", current+":0")
+				}
+				resumed, err := http.DefaultClient.Do(request)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resumed.StatusCode).To(Equal(http.StatusOK))
+				if transport == "poll" {
+					var body struct {
+						Data struct {
+							Items  []map[string]any `json:"items"`
+							Resync any              `json:"resync"`
+						} `json:"data"`
+					}
+					Expect(json.NewDecoder(resumed.Body).Decode(&body)).To(Succeed())
+					Expect(body.Data.Resync).To(BeNil())
+					Expect(body.Data.Items).To(HaveLen(2))
+					Expect(body.Data.Items[0]["sequence"]).To(Equal("1"))
+				} else {
+					kind, item := firstSSEData(t, resumed.Body)
+					Expect(kind).To(Equal("resource.invalidated"))
+					Expect(item["sequence"]).To(Equal("1"))
+				}
+				resumed.Body.Close()
+			}
+		}
+	}
+}, Entry("new sequence one is delivered", false, false),
+	Entry("new sequence prefix loss requires resync", false, true),
+	Entry("restored sequence origin is uncertain", true, false),
+	Entry("restored sequence prefix loss requires resync", true, true))
+
 var _ = It("TestPassiveEventStreamHonorsConfiguredIdleExpiry", Label("persistence"), func() {
 	t := GinkgoT()
 

@@ -1,12 +1,13 @@
 const c=REFERENCE_CONSTANTS,rows=[],traffic=[];let done=false;
 addEventListener('error',e=>rows.push({name:'page.error',status:'fail',detail:String(e.message)}));
-addEventListener('unhandledrejection',e=>rows.push({name:'page.unhandled',status:'fail',detail:String(e.reason)}));
+addEventListener('unhandledrejection',e=>rows.push({name:'page.unhandled',status:'fail',detail:{error:String(e.reason),shell:shellState(),traffic:traffic.slice(-12),announcement}}));
 const report=()=>window.haeryongNativeCall(701101,[{Rows:[...rows,{name:'page.done',status:done?'pass':'pending',detail:{}}]}]).catch(()=>{});
 setInterval(()=>void report(),1000);
 const wait=async(fn,label)=>{const end=Date.now()+15000;while(Date.now()<end){const value=fn();if(value)return value;await new Promise(r=>setTimeout(r,100));}throw Error('native wait: '+label);};
 const record=(name,ok,detail={})=>{rows.push({name,status:ok?'pass':'fail',detail});};
 let step='start';
-const check=async(name,fn)=>{try{record(name,true,await fn());}catch(e){record(name,false,{error:String(e),step,url:location.pathname+location.search+location.hash,state:history.state,text:document.body.textContent.slice(-1800),traffic:traffic.slice(-12)});}await report();};
+const shellState=()=>({marker:window.__haeryongNativeTransport,phase:document.querySelector('.service-state')?.dataset.state,heading:document.querySelector('main h1')?.textContent,status:document.querySelector('[aria-label="연결 상태"]')?.textContent,frame:[...document.querySelectorAll('iframe')].map(f=>({title:f.title,src:f.src,name:f.name})),loading:document.querySelector('.reader-content [role="status"]')?.textContent,alerts:[...document.querySelectorAll('[role="alert"]')].map(e=>e.textContent)});
+const check=async(name,fn)=>{try{record(name,true,await fn());}catch(e){record(name,false,{error:String(e),step,url:location.pathname+location.search+location.hash,state:history.state,text:document.body.textContent.slice(-1800),traffic:traffic.slice(-12),shell:shellState(),announcement});}await report();};
 const post=MessagePort.prototype.postMessage,seen=new WeakSet();let currentPort;
 MessagePort.prototype.postMessage=function(value,...rest){if(!seen.has(this)){seen.add(this);this.addEventListener('message',e=>{if(e.data?.type)traffic.push({direction:'child',message:e.data});});}if(value?.type){traffic.push({direction:'host',message:value});if(value.type==='reference.navigation')currentPort=this;}return post.call(this,value,...rest);};
 const commands=[];let announcement=null;
@@ -49,6 +50,8 @@ if(c.versions) {
    await loaded(c.source,c.source_page);await focus(c.source,c.source_page,c.region);
    const sheet=document.querySelector('#reader-context-panel');
    if(sheet instanceof HTMLDialogElement&&sheet.matches(':modal')){button('문맥 닫기').click();await wait(()=>!sheet.matches(':modal'),'context Sheet close before host keyboard');}
+   // Labelled clipboard-unavailable boundary: no OS clipboard call is permitted.
+   let clipboardAttempts=0;Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async()=>{clipboardAttempts++;throw Error('Supporting native clipboard unavailable; OS call prohibited');}}});
    await key('copy',document.querySelector('#reader-copy-link'));
    const field=await wait(()=>document.querySelector('input[aria-label="복사할 링크"]'),'copied link');
    const parsed=new URL(field.value),query=parsed.searchParams;
@@ -73,7 +76,7 @@ if(c.versions) {
    await key('latest',document.querySelector('#reader-open-latest'));
    await wait(()=>location.pathname.endsWith('/'+v.new.version_id),'explicit latest');
    if(location.hash)throw Error('latest inherited old region');
-   return {copy:true,actual_comparison:true,keyboard:true,round_trip:true,latest:true,full_qualification:false};
+   return {copyLinkField:true,clipboard:'supporting unavailable; no OS call/proof',clipboardAttempts,actual_comparison:true,keyboard:true,round_trip:true,latest:true,full_qualification:false};
  });
  await check('T5 native no-HTML Versions keeps whole-version context',async()=>{
    const id=v.no_html;

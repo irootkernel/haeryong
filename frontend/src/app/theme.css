@@ -261,3 +261,14 @@ label.choice input { width: 18px; height: 18px; }
 .backup-screen { min-width: 0; overflow-wrap: anywhere; }
 .backup-screen pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .backup-screen button { min-height: 44px; }
+.note-confirmation { overflow-wrap: anywhere; max-width: min(36rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow-y: auto; }
+.note-confirmation button { white-space: normal; }
+
+
+/* Complete revision-bound text; geometry limits the viewport, never content. */
+.note-context { min-width: 0; }
+.note-context-text { box-sizing: border-box; width: 100%; min-width: 0; height: clamp(6rem, 35dvh, 20rem); margin-block: 1rem; padding: .5rem; contain: size layout; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; border: 1px solid var(--border); }
+.note-context-text > span { display: inline; unicode-bidi: normal; }
+.note-context-text:focus-visible { outline: 2px solid var(--accent, #2558d6); outline-offset: 2px; }
+.note-context-controls { display: flex; flex-wrap: wrap; gap: .5rem; }
+.note-context-controls button { min-width: 44px; min-height: 44px; }

@@ -43,3 +43,8 @@ C07, C08, C09, M04, M06, M08, M09, M13, M18, M20. See [traceability](../testing/
 ## Handoff
 
 Production lifecycle/review evidence, local backup/export commands, pin/accounting fixtures and restored receipt/epoch ambiguity cases ready for provider-specific extension. Use the [Epic gate template](../templates/epic-gate.md) as an index to actual artifacts and identify the exact next task.
+
+The [owner-state handoff](../testing/epic-005-owner-gate.md) indexes completed
+member-Task verification and the owner composition. Assembled Epic review and
+Master's overall acceptance remain pending. It is not an exit-gate or
+overall-acceptance record.

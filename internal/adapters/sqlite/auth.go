@@ -177,7 +177,7 @@ func (t *writeTx) Events(epoch string, after int64, limit int) ([]domain.Event, 
 	if epoch != "" && epoch != current {
 		return nil, domain.ErrPrecondition
 	}
-	rows, err := t.tx.QueryContext(t.ctx, "SELECT stream_epoch,sequence,resource_kind,resource_id,kind,revision,body FROM events WHERE sequence>? ORDER BY sequence LIMIT ?", after, batch(limit))
+	rows, err := t.tx.QueryContext(t.ctx, "SELECT stream_epoch,sequence,resource_kind,resource_id,kind,revision,body FROM events WHERE stream_epoch=? AND sequence>? ORDER BY sequence LIMIT ?", current, after, batch(limit))
 	if err != nil {
 		return nil, err
 	}
@@ -217,6 +217,6 @@ func (t *writeTx) Version(id string) (domain.Version, error) {
 func (t *writeTx) EventHead() (string, int64, error) {
 	var epoch string
 	var head int64
-	err := t.tx.QueryRowContext(t.ctx, "SELECT stream_epoch,(SELECT coalesce(max(sequence),0) FROM events) FROM libraries WHERE singleton=1").Scan(&epoch, &head)
+	err := t.tx.QueryRowContext(t.ctx, "SELECT stream_epoch,(SELECT coalesce(max(sequence),0) FROM events WHERE events.stream_epoch=libraries.stream_epoch) FROM libraries WHERE singleton=1").Scan(&epoch, &head)
 	return epoch, head, err
 }

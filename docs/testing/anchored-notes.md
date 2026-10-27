@@ -157,6 +157,28 @@ embedded file and remains byte-unchanged.
 
 ## Reproduction and limits
 
+TASK-005-06 repairs the selected Wails client's unusable synchronous JavaScript
+confirmation through the shared trusted-host HTML Sheet. All five consent branches
+(including Edit/server reload) use an ephemeral captured intent and explicit named
+action. The confirmation is portalled outside the Reader context dialog; Reader
+and draft namespace remain mounted. Scope/authority invalidation, synchronous
+admission, after-stream/inside-WebLock/pre-dispatch guards and storage-first local
+replacement preserve current draft/pending/CAS semantics. Serialized journals,
+transports, API, capability and schema contracts are unchanged. Current integrated
+execution status belongs to the [Task6 record](owner-records.md); predecessor
+passes above are not relabelled as native or Task6 proof.
+
+The current Task6 context presentation uses complete literal inline spans
+in a sized, wrapping scroll viewport with explicit Start/End/Select/Close.
+Its read handle and captured revision/navigation scope are independent of Notes
+mutations and consent. The three named terminal-workload rendered strings are
+separate observations; associated Range text/global endpoints and decoded data
+remain exact for all intervals. Finite browser cases exercise read cancellation,
+supersession, scope retirement and unrelated typing/resize. Required native
+paint/input qualification remains blocked by unavailable visible execution. See
+the [Task6 record](owner-records.md); no predecessor or intermediate pass is
+extended to the current candidate.
+
 Use the prepared offline toolchain and authorized Gaori execution. Focused Ginkgo uses
 race detection and the appropriate unit/integration/persistence label; new specs are named
 Annotations or Revisit. The strict pytest selection is `tests/e2e/test_annotations.py`
@@ -167,7 +189,7 @@ in both package.json and check_build.py. Desktop request checks are `go -C deskt
 The existing Chrome driver adds `--notes-only`:
 `python3 -B internal/adapters/http/auth/browser/check_reader.py --notes-only --browser-cli <installed-playwright-cli> --receipt <private-json> [--screenshot <private-png>]`.
 It owns isolated profiles/ports, closes its browser/daemon, fingerprints production inputs,
-and exercises keyboard Save, native confirmations and 390×844 emulated touch. The source
+and exercises keyboard Save, named trusted HTML confirmations and 390×844 emulated touch. The source
 script and private receipt identify the exact selected actions. Frontend compiled browser,
 renderer and native assets are regenerated with their inputs and verified for equality.
 

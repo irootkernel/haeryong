@@ -4,6 +4,10 @@ import {readStream,sha256Hex} from "./evidence-view.ts";
 export interface NoteDraft {id:string;revision:number;anchor:AnnotationAnchor;text:string;selectedText:string|null;contextRef:string|null;context:unknown|null;base:AnnotationView|null}
 export interface NoteIntent {kind:"create"|"patch"|"delete";target:string;key:string;generation:string;etag:string|null;body:AnnotationCreate|AnnotationPatch|null;draftSave?:{id:string;revision:number};rejected?:boolean;preparation?:{createKey:string;sealKey:string;uploadId:string|null;offset:number;complete:UploadCheckpoint|null}}
 export interface NoteRecord {draft:NoteDraft|null;pending:NoteIntent|null}
+// Ephemeral admission snapshot, never part of the persisted journal contract.
+export function noteRecordIdentity(record:NoteRecord):string{return JSON.stringify([record.draft?.id??null,record.draft?.revision??null,record.pending]);}
+export function requireNoteRecord(record:NoteRecord,expected:string):void{if(noteRecordIdentity(record)!==expected)throw Error("초안이나 저장 요청이 바뀌었습니다. 현재 내용을 확인하세요.");}
+export function requireNotePending(record:NoteRecord,key:string,priorRejected:string|null):void{const pending=record.pending;if(pending&&pending.key!==key&&!(pending.rejected&&pending.key===priorRejected))throw Error("다른 저장 요청을 먼저 확인하세요.");}
 export function noteBindingChanged(a:AnnotationAnchor,b:AnnotationAnchor):boolean{return a.version_id!==b.version_id||a.page_path!==b.page_path;}
 export function noteAnchorChanged(a:AnnotationAnchor,b:AnnotationAnchor):boolean{return noteBindingChanged(a,b)||a.region_id!==b.region_id||a.page_query!==b.page_query||a.page_fragment!==b.page_fragment;}
 export function dropNoteContext(draft:NoteDraft):NoteDraft{return {...draft,revision:draft.revision+1,selectedText:null,contextRef:null,context:null};}
@@ -42,7 +46,21 @@ export class NoteJournal {
  readonly storage:Pick<Storage,"getItem"|"setItem">;readonly key:string;private snapshot:string|null;
  constructor(storage:Pick<Storage,"getItem"|"setItem">,namespace:string){this.storage=storage;this.key="haeryong.notes.v1:"+namespace;this.snapshot=storage.getItem(this.key);}
  read():NoteRecord{const raw=this.snapshot;if(!raw)return {draft:null,pending:null};const r=JSON.parse(raw) as NoteRecord;if(!r||!("draft" in r)||!("pending" in r)||r.draft&&(!r.draft.anchor||typeof r.draft.text!=="string")||r.pending&&(!["create","patch","delete"].includes(r.pending.kind)||typeof r.pending.key!=="string"))throw Error("노트 복구 기록을 확인할 수 없습니다.");if(r.draft){r.draft.id??=crypto.randomUUID();r.draft.revision??=0;}return r;}
- async write(record:NoteRecord){if(!navigator.locks)throw Error("노트 동시 저장 잠금을 사용할 수 없습니다.");await navigator.locks.request(this.key,()=>{if(this.storage.getItem(this.key)!==this.snapshot)throw Error("다른 창의 노트 초안을 먼저 확인하세요.");const raw=JSON.stringify(record);this.storage.setItem(this.key,raw);this.snapshot=raw;});}
+ async write(record:NoteRecord,guard:()=>void=()=>{}){guard();if(!navigator.locks)throw Error("노트 동시 저장 잠금을 사용할 수 없습니다.");await navigator.locks.request(this.key,()=>{if(this.storage.getItem(this.key)!==this.snapshot)throw Error("다른 창의 노트 초안을 먼저 확인하세요.");const raw=JSON.stringify(record);guard();this.storage.setItem(this.key,raw);this.snapshot=raw;});}
+ async dispatch<T>(intent:NoteIntent,guard:()=>void,start:()=>Promise<T>):Promise<T>{
+  guard();if(!navigator.locks)throw Error("노트 동시 저장 잠금을 사용할 수 없습니다.");
+  let outcome:Promise<{ok:true;value:T}|{ok:false;error:unknown}>|undefined;
+  await navigator.locks.request(this.key,()=>{
+   if(this.storage.getItem(this.key)!==this.snapshot)throw Error("다른 창의 노트 초안을 먼저 확인하세요.");
+   if(JSON.stringify(this.read().pending)!==JSON.stringify(intent))throw Error("원래 저장 요청을 로컬에 보관한 뒤 다시 확인하세요.");
+   guard();
+   // Admit the real client call synchronously under the lock. Do not hold the
+   // lock during network I/O: typing must still be durably journalled.
+   outcome=start().then(value=>({ok:true as const,value}),error=>({ok:false as const,error}));
+  });
+  if(!outcome)throw Error("노트 요청이 시작되지 않았습니다.");
+  const result=await outcome;if(!result.ok)throw result.error;return result.value;
+ }
 }
 export function definitiveNoteRejection(error:unknown):boolean{return error instanceof ApiError&&[400,403,404,409,410,412,428].includes(error.status)&&error.code!=="OPERATION_RECONCILIATION_REQUIRED";}
 export async function dispatchNote(client:HaeryongClient,intent:NoteIntent):Promise<AnnotationView>{

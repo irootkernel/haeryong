@@ -2,6 +2,7 @@
 import ctypes
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import socket
 import threading
 import urllib.request
 import urllib.error
@@ -10,6 +11,12 @@ import json
 import os
 from pathlib import Path
 import time
+
+
+# Match the existing shared forwarding proxy's Darwin listen policy. Real
+# native-network failures remain evidence; this adds no transport retry.
+class ProjectionServer(ThreadingHTTPServer):
+    request_queue_size = socket.SOMAXCONN
 
 
 def run(repo,work,state,product,owner,launch,proof):
@@ -25,7 +32,7 @@ def run(repo,work,state,product,owner,launch,proof):
     def key(pid,code):
         for down in (True,False):
             event=quartz.CGEventCreateKeyboardEvent(None,code,down)
-            if code==48:quartz.CGEventSetFlags(event,1<<19)  # Option+Tab includes authored links in WebKit.
+            quartz.CGEventSetFlags(event,0)  # Reader TabFocusesLinks already includes authored links.
             quartz.CGEventPostToPid(pid,event);quartz.CFRelease(event)
     sent=set()
     class Projection(BaseHTTPRequestHandler):
@@ -45,7 +52,7 @@ def run(repo,work,state,product,owner,launch,proof):
                 try:self.wfile.write(data)
                 except (BrokenPipeError,ConnectionResetError):pass
         do_GET=do_POST=do_PUT=do_PATCH=do_DELETE=do_HEAD=forward
-    server=ThreadingHTTPServer(('127.0.0.1',0),Projection);server.daemon_threads=True
+    server=ProjectionServer(('127.0.0.1',0),Projection);server.daemon_threads=True
     threading.Thread(target=server.serve_forever,daemon=True).start()
     process=launch(['--reader','--reader-port','9271','--reader-path',fixture['source_route'],'--reader-probe',str(probe)],'130s',base='http://127.0.0.1:'+str(server.server_port))
     rows=None;deadline=time.monotonic()+150

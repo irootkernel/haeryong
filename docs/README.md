@@ -56,6 +56,13 @@ backup status. [The recovery record](testing/backup-recovery.md#review-and-accep
 records the final-candidate checks, delegated Task acceptance and remaining limits.
 Encryption and scheduling are not delivered; DF-02 remains explicitly deferred.
 
+TASK-005-06 completes the two-project owner-state composition: actual browser and
+native Save/Review, exact anchors/history/context through restart and protected
+recovery, lifecycle safety and complete original-directory export/reimport.
+[The owner record](testing/owner-records.md) states the execution boundaries;
+[the Epic handoff](testing/epic-005-owner-gate.md) separates Task delivery from
+assembled Epic review and Master's overall acceptance.
+
 ## Start here
 
 | Reader | Recommended path |
@@ -89,6 +96,7 @@ The owner explicitly waived creation of a separate execution dossier for EPIC-00
 G-VIEW and G-AI each close against the complete checklist of their owning TASK-001-04 and TASK-001-05; later production behaviors are not extra early prerequisites. D-10 selects the additional tailnet-only port experiment, not a passed renderer or permission for public exposure. No network setting is changed by this bundle.
 
 Stage A requires the connected desktop and private remote reader, real source-grounded AI integration, and the shared quality corpus. A deterministic fixture or fake provider does not satisfy the real provider integration gate. Durable local work and retry/event foundations belong to EPIC-002, before lifecycle/backup consumers; later Epics extend them.
+
 
 ## Navigation
 

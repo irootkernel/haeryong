@@ -193,3 +193,27 @@ counterpart is `--stages app,corpus`; `tests/manual/check_search_corpus.py`
 coordinates these examples with the fixed HTTP/CLI worksheet and seeded variants.
 All eight canonical sample files round-trip unchanged; ignored tool state is not
 sample content. The corpus helpers add no product hook or new frontend assets.
+
+## Owner-records composition (TASK-005-06)
+
+The explicit browser `check_owner_records.py` and standalone native
+`check_reader_native.py --stages owner-records` exercise existing host controls.
+Their [record](../docs/testing/owner-records.md) separates actual actions from
+supporting setup and describes current qualifications. The shared Notes repair replaces synchronous confirmation with captured trusted
+HTML consent and guarded local replacement; browser assets are regenerated with
+those inputs. The common Sheet API and persisted/API contracts are unchanged.
+No Task or broader companion gate passed.
+
+## Saved-context presentation boundary
+
+NotesPanel currently retains complete saved-revision text in ordinary inline
+grapheme-boundary spans in a labelled, focusable, noneditable wrapping viewport.
+Start/End use mounted native text offsets; Select/Close remain reading controls.
+A separate owned context read lifetime cancels/fences obsolete reads without
+editing the Notes journal or consent. No Copy override or normalized replacement
+is used. The three named terminal workloads record rendered strings separately;
+all selection intervals require exact associated Range text/global offsets and
+all other strings remain strict. Finite mounted-component browser cases cover
+read cancellation, supersession, scope retirement and unrelated typing/resize.
+Complete Wails qualification remains GUI-blocked. See
+[owner records](../docs/testing/owner-records.md).

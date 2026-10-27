@@ -1,8 +1,32 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {NoteJournal,prepareNoteBody,dispatchNote,definitiveNoteRejection,noteSaveIntent,completeNoteIntent,noteComparisonText,reconcileNoteDraft,noteBindingChanged,type NoteDraft,type NoteRecord,type NoteIntent} from "./notes-operations.ts";
+import {NoteJournal,prepareNoteBody,dispatchNote,definitiveNoteRejection,noteSaveIntent,completeNoteIntent,noteComparisonText,reconcileNoteDraft,noteBindingChanged,noteRecordIdentity,requireNoteRecord,requireNotePending,type NoteDraft,type NoteRecord,type NoteIntent} from "./notes-operations.ts";
 import {ApiError,type HaeryongClient,type AnnotationView,type AnnotationStream} from "../../client/types.ts";
+import {prepareNoteContext} from "./notes-context.ts";
 const anchor={version_id:"original",page_path:"pages/한글.html",region_id:"retry",page_query:"q=+%2F",page_fragment:"part"};
+test("Task6 complete context preserves boundary graphemes and literal code units without a content quota",async()=>{
+ const samples=["","x","a".repeat(4095),"a".repeat(4096),"a".repeat(4097),"a".repeat(4095)+"🌊\r\ne\u0301👩‍👩‍👧‍👦🇰🇷", "x"+"\u0301".repeat(5000)+"z", "\r\n\r\n\t  \n", "مرحبا بالعالم אבג (abc)\u2067عربي\u2069", "<script>literal</script>\0\r", "\n".repeat(10000)];
+ for(const text of samples){
+  const value=await prepareNoteContext(text,()=>{});
+  assert.equal(value.parts.join(""),text);assert.deepEqual(new TextEncoder().encode(value.parts.join("")),new TextEncoder().encode(text));
+  let offset=0;const cuts=new Set([0,...[...new Intl.Segmenter(undefined,{granularity:"grapheme"}).segment(text)].map(s=>s.index+s.segment.length)]);
+  for(const part of value.parts){offset+=part.length;assert.ok(cuts.has(offset));}
+  assert.equal(offset,text.length);assert.equal(value.length,text.length);
+ }
+});
+test("Task6 preparation yields to host tasks and retirement fences every preparation boundary",async()=>{
+ const text="ab🌊".repeat(30000);
+ let turn=false;setTimeout(()=>{turn=true;},0);await prepareNoteContext("hello",()=>{});assert.equal(turn,true);
+ for(const retireAt of [0,1,2,3]){
+  let retired=retireAt===0,yields=0,published=false;
+  const guard=()=>{if(retired)throw Error("retired owned read");};
+  await assert.rejects(async()=>{await prepareNoteContext(text,guard,async()=>{if(++yields===retireAt)retired=true;});published=true;},/retired owned read/);
+  assert.equal(published,false);
+ }
+ let guards=0;await assert.rejects(prepareNoteContext("x",()=>{if(++guards===4)throw Error("retired before complete publication");},async()=>{}),/retired before complete publication/);
+ const descriptor=Object.getOwnPropertyDescriptor(Intl,"Segmenter")!;
+ try{Object.defineProperty(Intl,"Segmenter",{...descriptor,value:undefined});await assert.rejects(prepareNoteContext("x",()=>{}),/준비할 수 없습니다/);}finally{Object.defineProperty(Intl,"Segmenter",descriptor);}
+});
 test("T-005-02-02 draft and immutable pending request survive conflict and another window cannot overwrite them",async()=>{
  const original=Object.getOwnPropertyDescriptor(globalThis,"navigator");Object.defineProperty(globalThis,"navigator",{configurable:true,value:{locks:{request:async(_name:string,fn:()=>unknown)=>fn()}}});
  try{const values=new Map<string,string>();const storage={getItem:(k:string)=>values.get(k)??null,setItem:(k:string,v:string)=>{values.set(k,v);}};const first=new NoteJournal(storage,"owner/library/original"),other=new NoteJournal(storage,"owner/library/original");
@@ -36,6 +60,98 @@ function note(id:string,revision=1):AnnotationView {
 }
 function draft(base:AnnotationView|null):NoteDraft{return {id:crypto.randomUUID(),revision:0,anchor,text:"draft A",selectedText:null,contextRef:null,context:null,base};}
 function deferred<T>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(done=>{resolve=done;});return {promise,resolve};}
+
+test("Task6 consent snapshots reject new drafts, newer revisions and pending changes without altering records",()=>{
+ const original:NoteRecord={draft:null,pending:null},empty=noteRecordIdentity(original);
+ requireNoteRecord(original,empty);
+ const local=draft(null),opened:NoteRecord={draft:local,pending:null},captured=noteRecordIdentity(opened);
+ assert.throws(()=>requireNoteRecord(opened,empty),/초안이나 저장 요청/);
+ for(const changed of [{...opened,draft:{...local,revision:1,text:"new text"}},{...opened,draft:draft(null)},{...opened,pending:noteSaveIntent(local,"era","unknown")}]){
+  const before=structuredClone(changed);assert.throws(()=>requireNoteRecord(changed,captured),/초안이나 저장 요청/);assert.deepEqual(changed,before);
+ }
+ const pending={...opened,pending:noteSaveIntent(local,"era","original")};
+ assert.throws(()=>requireNoteRecord({...pending,pending:{...pending.pending,rejected:true}},noteRecordIdentity(pending)),/초안이나 저장 요청/);
+});
+
+test("Task6 new confirmed work may replace only the captured definitive rejection, never another unknown intent",()=>{
+ const intent=noteSaveIntent(draft(null),"era","rejected-region");
+ requireNotePending({draft:null,pending:{...intent,rejected:true}},"explicit-page-fallback",intent.key);
+ requireNotePending({draft:null,pending:{...intent,key:"explicit-page-fallback"}},"explicit-page-fallback",intent.key);
+ requireNotePending({draft:null,pending:null},"explicit-page-fallback",intent.key);
+ for(const pending of [intent,{...intent,key:"peer-unknown"},{...intent,key:"peer-rejected",rejected:true}])assert.throws(()=>requireNotePending({draft:null,pending},"explicit-page-fallback",intent.key),/다른 저장 요청/);
+});
+
+test("Task6 guarded journal rechecks inside the actual delayed WebLock and preserves bytes on refusal/CAS/storage failure",async()=>{
+ const original=Object.getOwnPropertyDescriptor(globalThis,"navigator");
+ try{
+  for(const boundary of ["authority","draft","new-pending","other-window","storage"] as const){
+   const gate=deferred<void>();let entered=false,writes=0,valid=true,failStorage=false;
+   Object.defineProperty(globalThis,"navigator",{configurable:true,value:{locks:{request:async(_key:string,fn:()=>unknown)=>{entered=true;await gate.promise;return fn();}}}});
+   const values=new Map<string,string>(),storage={getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{if(failStorage)throw Error("storage unavailable");writes++;values.set(key,value);}};
+   const journal=new NoteJournal(storage,"guarded-"+boundary),current:NoteRecord={draft:null,pending:null},expected=noteRecordIdentity(current);
+   const replacement:NoteRecord={draft:draft(null),pending:null},check=()=>{if(!valid)throw Error("authority expired");requireNoteRecord(current,expected);};
+   const writing=journal.write(replacement,check);assert.equal(entered,true);assert.equal(writes,0);
+   if(boundary==="authority")valid=false;
+   if(boundary==="draft")current.draft=draft(null);
+   if(boundary==="new-pending")current.pending=noteSaveIntent(draft(null),"era","peer-unknown");
+   if(boundary==="other-window")values.set(journal.key,JSON.stringify({draft:draft(null),pending:null}));
+   if(boundary==="storage")failStorage=true;
+   const before=storage.getItem(journal.key);gate.resolve();await assert.rejects(writing);assert.equal(writes,0);assert.equal(storage.getItem(journal.key),before);
+  }
+ }finally{if(original)Object.defineProperty(globalThis,"navigator",original);else Reflect.deleteProperty(globalThis,"navigator");}
+});
+
+test("Task6 dispatch admits only the exact durable pending intent and releases the lock before awaiting the unchanged network result",async()=>{
+ const original=Object.getOwnPropertyDescriptor(globalThis,"navigator");let held=false;
+ Object.defineProperty(globalThis,"navigator",{configurable:true,value:{locks:{request:async(_key:string,fn:()=>unknown)=>{assert.equal(held,false);held=true;try{return fn();}finally{held=false;}}}}});
+ try{
+  const values=new Map<string,string>(),storage={getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{values.set(key,value);}},journal=new NoteJournal(storage,"dispatch-admission");
+  const local=draft(null),intent=noteSaveIntent(local,"era","original-key");let calls=0;
+  const start=()=>{assert.equal(held,true);calls++;return Promise.resolve(note("saved"));};
+  await assert.rejects(journal.dispatch(intent,()=>{},start),/로컬/);assert.equal(calls,0);
+  await journal.write({draft:local,pending:intent});
+  for(const changed of [{...intent,target:"other-note"},{...intent,key:"new-key"},{...intent,etag:'"different"'},{...intent,generation:"another-era"},{...intent,body:{...intent.body!,body:"changed"}}] as NoteIntent[])await assert.rejects(journal.dispatch(changed,()=>{},start));
+  assert.equal(calls,0);
+  const response=deferred<AnnotationView>();const running=journal.dispatch(intent,()=>{},()=>{assert.equal(held,true);calls++;return response.promise;});
+  await Promise.resolve();const newer={...local,revision:1,text:"typing while dispatch waits"};await journal.write({draft:newer,pending:intent});assert.equal(held,false);assert.equal(journal.read().draft?.text,newer.text);
+  const result=note("saved");response.resolve(result);assert.equal(await running,result);assert.equal(calls,1);
+  const error=new ApiError(412,"PRECONDITION_FAILED",false);await assert.rejects(journal.dispatch(intent,()=>{},()=>Promise.reject(error)),value=>value===error);
+  values.set(journal.key,JSON.stringify({draft:newer,pending:{...intent,key:"other-window-unknown"}}));await assert.rejects(journal.dispatch(intent,()=>{},start),/다른 창/);assert.equal(calls,1);
+ }finally{if(original)Object.defineProperty(globalThis,"navigator",original);else Reflect.deleteProperty(globalThis,"navigator");}
+});
+
+test("Task6 actual delayed dispatch lock rechecks authority before starting the protected call",async()=>{
+ const original=Object.getOwnPropertyDescriptor(globalThis,"navigator");
+ try{Object.defineProperty(globalThis,"navigator",{configurable:true,value:{locks:{request:async(_key:string,fn:()=>unknown)=>fn()}}});
+  const values=new Map<string,string>(),storage={getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{values.set(key,value);}},journal=new NoteJournal(storage,"delayed-dispatch"),intent=noteSaveIntent(draft(null),"era","key");
+  await journal.write({draft:null,pending:intent});const gate=deferred<void>();let valid=true,calls=0,callbacks=0;
+  Object.defineProperty(globalThis,"navigator",{configurable:true,value:{locks:{request:async(_key:string,fn:()=>unknown)=>{await gate.promise;callbacks++;return fn();}}}});
+  const running=journal.dispatch(intent,()=>{if(!valid)throw Error("authority changed");},async()=>{calls++;return note("never");});valid=false;gate.resolve();await assert.rejects(running,/authority changed/);assert.equal(callbacks,1);assert.equal(calls,0);assert.equal(journal.read().pending?.key,intent.key);
+ }finally{if(original)Object.defineProperty(globalThis,"navigator",original);else Reflect.deleteProperty(globalThis,"navigator");}
+});
+
+test("Task6 a newly durable unknown intent while dispatch waits cannot be replaced or dispatched",async()=>{
+ const original=Object.getOwnPropertyDescriptor(globalThis,"navigator");
+ try{Object.defineProperty(globalThis,"navigator",{configurable:true,value:{locks:{request:async(_key:string,fn:()=>unknown)=>fn()}}});
+  const values=new Map<string,string>(),storage={getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{values.set(key,value);}},journal=new NoteJournal(storage,"new-unknown-at-dispatch"),intent=noteSaveIntent(draft(null),"era","approved");
+  await journal.write({draft:null,pending:intent});const gate=deferred<void>();let calls=0,callbacks=0;
+  Object.defineProperty(globalThis,"navigator",{configurable:true,value:{locks:{request:async(_key:string,fn:()=>unknown)=>{await gate.promise;callbacks++;return fn();}}}});
+  const running=journal.dispatch(intent,()=>{},async()=>{calls++;return note("never");});
+  const competing=JSON.stringify({draft:draft(null),pending:{...intent,key:"another-window-unknown"}});values.set(journal.key,competing);gate.resolve();await assert.rejects(running,/다른 창/);assert.equal(callbacks,1);assert.equal(calls,0);assert.equal(storage.getItem(journal.key),competing);
+ }finally{if(original)Object.defineProperty(globalThis,"navigator",original);else Reflect.deleteProperty(globalThis,"navigator");}
+});
+
+test("Task6 authority or unknown pending change during body preparation prevents later checkpoints and mutation",async()=>{
+ for(const boundary of ["authority","unknown"] as const){
+  const local=draft(null);local.text="🌊".repeat(20000);const intent=noteSaveIntent(local,"era","approved");let current:NoteRecord={draft:local,pending:intent},valid=true,calls=0,saves=0;
+  const entered=deferred<void>(),release=deferred<void>();
+  const client={createUpload:async()=>{calls++;entered.resolve();await release.promise;return {upload_id:"prepared-only"};}} as unknown as HaeryongClient;
+  const guard=()=>{if(!valid)throw Error("authority expired");requireNotePending(current,intent.key,null);};
+  const running=prepareNoteBody(client,intent,guard,async next=>{guard();saves++;current={...current,pending:next};});await entered.promise;
+  if(boundary==="authority")valid=false;else current={...current,pending:{...intent,key:"new-unknown"}};
+  const retained=structuredClone(current);release.resolve();await assert.rejects(running);assert.equal(calls,1);assert.equal(saves,1);assert.deepEqual(current,retained);
+ }
+});
 
 test("RR1-F1 delete and reattach preserve unrelated new/existing drafts, including typing in flight and later Save target",async()=>{
  for(const existing of [false,true])for(const kind of ["delete","reattach"] as const)for(const typing of [false,true]){

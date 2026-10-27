@@ -139,7 +139,7 @@ func (s *Store) Events(ctx context.Context, epoch string, after int64, limit int
 	if epoch != current {
 		return nil, domain.ErrPrecondition
 	}
-	rows, err := s.db.QueryContext(ctx, "SELECT stream_epoch,sequence,resource_kind,resource_id,kind,revision,body FROM events WHERE sequence>? ORDER BY sequence LIMIT ?", after, batch(limit))
+	rows, err := s.db.QueryContext(ctx, "SELECT stream_epoch,sequence,resource_kind,resource_id,kind,revision,body FROM events WHERE stream_epoch=? AND sequence>? ORDER BY sequence LIMIT ?", current, after, batch(limit))
 	if err != nil {
 		return nil, err
 	}

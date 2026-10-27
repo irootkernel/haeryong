@@ -14,14 +14,15 @@ REPO=pathlib.Path(__file__).resolve().parents[5]
 RECEIPT=args.receipt.resolve()
 assert RECEIPT.parent.is_dir(), 'receipt parent must exist'
 volume=pathlib.Path('/Volumes/RootKernel')
-base=pathlib.Path(os.environ['TMPDIR']) if (args.review_only or args.notes_only or args.lifecycle_only or args.backup_only) and os.environ.get('TMPDIR') else volume/'tmp' if os.path.ismount(volume) and os.access(volume,os.W_OK) else pathlib.Path(tempfile.gettempdir())
-os.umask(0o077);work=pathlib.Path(tempfile.mkdtemp(prefix='h3r-',dir=base))
+base=volume/'tmp' if os.path.ismount(volume) and os.access(volume,os.W_OK) else pathlib.Path(tempfile.gettempdir())
+os.umask(0o077);work=pathlib.Path(tempfile.mkdtemp(prefix='h3r-',dir=base)).resolve()
 env=os.environ|{'TMPDIR':str(work),'HAERYONG_TEST_STATE_DIR':str(work/'app-state'),'PYTHONDONTWRITEBYTECODE':'1'}
 os.environ['HAERYONG_TEST_STATE_DIR']=env['HAERYONG_TEST_STATE_DIR']
-if args.review_only or args.notes_only or args.lifecycle_only or args.backup_only:env['PLAYWRIGHT_DAEMON_SOCKETS_DIR']=str(work.parent/'pw-sockets')
+if args.review_only or args.notes_only or args.lifecycle_only or args.backup_only:env['PLAYWRIGHT_DAEMON_SOCKETS_DIR']=str(work/'sockets')
 spec=importlib.util.spec_from_file_location('h',REPO/'tests/e2e/harness.py');h=importlib.util.module_from_spec(spec);spec.loader.exec_module(h)
 cli=str(args.browser_cli.resolve(strict=True))
 session=work.name;product=None;opened=False
+if args.review_only or args.notes_only or args.lifecycle_only or args.backup_only:pathlib.Path(env['PLAYWRIGHT_DAEMON_SOCKETS_DIR']).mkdir(mode=0o700)
 proof={'scope':__doc__,'runtime':str(work),'complete':False,'cases':[],'driver_sha256':hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest()}
 def fingerprints():
  paths=sorted([p for folder in ['cmd','internal'] for p in (REPO/folder).rglob('*.go') if not p.name.endswith('_test.go')]+[REPO/'go.mod',REPO/'go.sum']+[p for p in (REPO/'internal/webassets/dist').rglob('*') if p.is_file()])
@@ -122,16 +123,16 @@ try:
   code=pathlib.Path(__file__).with_name('check_notes.js').read_text()
   identity={'route':route,'version':version,'origin':product.endpoint,'document':document,'project':published.get('project_id','')}
   prepared=js(code.replace('INPUT',json.dumps(identity|{'phase':'prepare'})))
-  # The CLI returns control at native confirm dialogs; handle each explicitly.
+  # Explicit trusted-host HTML consent; preserve the original CAS/history assertions.
   call(['run-code',"async page=>{await page.locator('#note-new').click();await page.locator('#note-body').fill('cancelled unsaved draft');await page.getByRole('button',{name:'취소',exact:true}).click();}"])
-  call(['dialog-accept'])
+  js("async page=>{await page.locator('#note-confirmation:modal [data-note-confirm]').click();return true;}")
   js("async page=>{await page.waitForFunction(()=>!document.querySelector('#note-body'));const notes=await page.evaluate(async()=>{const path='/api/v1/versions/'+location.pathname.split('/')[4]+'/annotations';return (await (await fetch(path,{headers:{Authorization:'Bearer '+localStorage.getItem('haeryong.owner-session.v1')}})).json()).data;});if(notes.items.length!==1||notes.items[0].body!=='deliberately merged'||notes.items[0].revision!==3)throw Error('Cancel changed saved note');return true;}")
   prepared['cancelPreservesSavedNote']=True
   call(['run-code',"async page=>{await page.locator('.note-entry').first().getByRole('button',{name:'현재 읽는 위치로 재연결',exact:true}).click();}"])
-  call(['dialog-accept'])
+  js("async page=>{await page.locator('#note-confirmation:modal [data-note-confirm]').click();return true;}")
   js("async page=>{await page.getByRole('alert').filter({hasText:'재연결 위치'}).waitFor();return true;}")
   call(['run-code',"async page=>{await page.getByLabel('새 노트·재연결 범위').selectOption('page');await page.locator('.note-entry').first().getByRole('button',{name:'현재 읽는 위치로 재연결',exact:true}).click();}"])
-  call(['dialog-accept'])
+  js("async page=>{await page.locator('#note-confirmation:modal [data-note-confirm]').click();return true;}")
   actual=prepared|js(code.replace('INPUT',json.dumps(identity|{'phase':'finish'})))
   actual|=js(code.replace('INPUT',json.dumps(identity|{'phase':'reattach-conflict'})))
   proof['cases'].append({'kind':'T-005-02-01..03 X19 C07 B-1 contribution; Notes/Revisit keyboard/touch; synthetic','actual':actual})

@@ -24,6 +24,73 @@ type fixtureAuthority struct {
 	calls       atomic.Int64
 }
 
+var _ = DescribeTable("Event replay excludes retained prior epochs", Label("persistence"), func(transactional bool) {
+	t := GinkgoT()
+	_, writer := profile(t)
+	s := openStore(t, writer, nil)
+	before, err := s.Health(ctx)
+	Expect(err).NotTo(HaveOccurred())
+	appendPosition := func(name string) {
+		Expect(s.Write(ctx, func(tx app.WriteTx) error {
+			_, err := tx.MutateResource(domain.Resource{Kind: "position", ID: name, Value: []byte(`{"where":"` + name + `"}`)}, 0, "position.changed")
+			return err
+		})).To(Succeed())
+	}
+	appendPosition("prior")
+	// Protected restore rotates the library epoch while retaining event history.
+	// Its real restore/reopen/poll integration is also exercised in copies_test.
+	current := id(t)
+	_, err = s.db.ExecContext(ctx, "UPDATE libraries SET stream_epoch=?", current)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(s.Write(ctx, func(tx app.WriteTx) error {
+		epoch, head, err := tx.EventHead()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(epoch).To(Equal(current))
+		Expect(head).To(BeZero(), "retained old rows are not the current head")
+		events, err := tx.Events("", 0, 64)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(events).To(BeEmpty(), "empty-epoch convention selects current history")
+		_, err = tx.Events(before.Library.StreamEpoch, 0, 64)
+		Expect(err).To(MatchError(domain.ErrPrecondition))
+		return nil
+	})).To(Succeed())
+	appendPosition("current")
+	var retained int
+	Expect(s.db.QueryRowContext(ctx, "SELECT count(*) FROM events WHERE stream_epoch=?", before.Library.StreamEpoch).Scan(&retained)).To(Succeed())
+	Expect(retained).To(BeNumerically(">", 0))
+	var events []domain.Event
+	if transactional {
+		err = s.Write(ctx, func(tx app.WriteTx) error {
+			var err error
+			events, err = tx.Events(current, 0, 64)
+			return err
+		})
+	} else {
+		events, err = s.Events(ctx, current, 0, 64)
+	}
+	Expect(err).NotTo(HaveOccurred())
+	var after int
+	Expect(s.db.QueryRowContext(ctx, "SELECT count(*) FROM events WHERE stream_epoch=?", before.Library.StreamEpoch).Scan(&after)).To(Succeed())
+	Expect(after).To(Equal(retained), "replay must not delete historical epochs")
+	_, err = s.Events(ctx, before.Library.StreamEpoch, 0, 64)
+	Expect(err).To(MatchError(domain.ErrPrecondition))
+	Expect(events).To(ContainElement(HaveField("ResourceID", "current")))
+	Expect(events).To(HaveEach(HaveField("StreamEpoch", current)))
+	Expect(events).To(HaveLen(1))
+	Expect(s.Close()).To(Succeed())
+	s = openStore(t, writer, nil)
+	Expect(s.Write(ctx, func(tx app.WriteTx) error {
+		epoch, head, err := tx.EventHead()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(epoch).To(Equal(current), "ordinary reopen retains the restored epoch")
+		Expect(head).To(Equal(events[0].Sequence))
+		replayed, err := tx.Events("", 0, 64)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(replayed).To(Equal(events))
+		return nil
+	})).To(Succeed())
+}, Entry("Store.Events", false), Entry("writeTx.Events", true))
+
 func (a *fixtureAuthority) Authorize(context.Context, domain.Request) error {
 	a.calls.Add(1)
 	if a.deny {
