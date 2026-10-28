@@ -1,5 +1,21 @@
 # CLI contract
 
+TASK-006-01 adds `haeryong jobs resume JOB_ID --decision
+reconcile_only|continue|retry --expected-attempt-generation N --if-match ETAG`
+with the standard optional `--operation-id`. It journals the exact body and
+validator through the existing mutation recovery path. It never infers retry
+authority from a lost response, new operation ID or local process exit. The
+command resumes an existing eligible provider job; generation/question creation
+remains with its ordered implementing owner. jobs show/list JSON retains the
+scoped provider_attempts counts and unknown-outcome reason, including older
+uncertain attempts on a completed current job. Explicit reconcile_only can
+settle those attempts without changing the terminal state/current result or
+creating another external execution. The server captures the finite target set
+under the supplied validator; the CLI cannot choose arbitrary native IDs.
+Permanent saved-result supersession is INVALID_TRANSITION (exit 4); the normal
+definitive-response journal acknowledgement applies, rather than a transient
+service-recovery retry. Replayed accepted decisions still use their original key.
+
 **Command contract, documentation baseline 1.6.0.** TASK-002-01 implements the bounded local lifecycle subset described in [profile/lifecycle evidence](../testing/profile-lifecycle.md): init, daemon run, service status/stop, status, doctor and version. [TASK-002-02](../testing/storage-foundation.md) adds real storage preparation to these lifecycle commands. TASK-002-03 adds protected `auth pairings` and stdin-intent `auth approve/reject <pairing_id>` bootstrap commands as described in [authentication](authentication.md#implemented-headless-scope-task-002-03). TASK-002-04 wires the upload/seal/import worker into daemon mode. TASK-002-05 implements the bounded authenticated query/transfer/configuration command subset below; future families in the catalog remain unavailable. Local control is protected OS-user authority, separate from current owner bearer sessions and future workflow credential issuance. One haeryong headless executable provides CLI and daemon mode; the desktop companion is separate. Shared wire fields/enums/errors are defined by the [registry](schema-registry.md) and [HTTP API](http-api.md).
 
 ## Global behavior

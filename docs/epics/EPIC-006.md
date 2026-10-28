@@ -2,7 +2,7 @@
 id: "EPIC-006"
 type: "epic"
 title: "Haeryong skill, durable AI work and Q&A"
-status: "planned"
+status: "in_progress"
 depends_on: ["EPIC-005"]
 completion_requires: ["TASK-006-01","TASK-006-02","TASK-006-03","TASK-006-04","TASK-006-05","TASK-006-06"]
 ---
@@ -43,3 +43,14 @@ C01, C02, C04, C05, M05, M06, M07, M08, M18, M19, M20. See [traceability](../tes
 ## Handoff
 
 Real supported provider compatibility, evaluated explanation/Q&A corpus and complete durable attempt reconciliation on the existing receipt/event/pin foundation. Use the [Epic gate template](../templates/epic-gate.md) as an index to actual artifacts and identify the exact next task.
+
+## Execution sources
+
+On 2026-10-28 the owner approved the proposed Epic execution plan in conversation
+("Implement the plan"), including the waiver of a separate execution dossier.
+The roadmap, six
+member Tasks, execution protocol, product/architecture/data-model authorities,
+interface contracts and knowledge-quality/acceptance owners form its composite
+execution source of truth. The waiver removes no implementation or evidence
+obligation. TASK-006-01's [attempt foundation](../testing/provider-attempts.md)
+records the current bounded implementation; later Tasks retain their order.

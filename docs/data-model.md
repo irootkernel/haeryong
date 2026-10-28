@@ -1,5 +1,88 @@
 # Data model and transactional rules
 
+## Provider attempt foundation (revision 15)
+
+TASK-006-01 adds provider_attempts, provider_inputs,
+provider_retry_authorizations, provider_linked_retry_authorizations and
+provider_orphans, plus finite provider_reconcile_intents. The attempt's producing
+generation is immutable; a separate application generation can be explicitly
+bound to exactly the next claim for explicit saved continuation after current
+checks. Ordinary-restart eligibility also covers output recovered later by
+supported reconciliation; a rolled-back claim leaves the binding unconsumed.
+Input objects receive ordinary active-attempt pins. Actual input_origin is
+recorded separately from source capture; request/session identifiers are retained
+only when observed. Complete output gets an immutable result-object reference
+before any application transaction. Retry authorization is generation-specific
+and does not delete the older attempt. Linked new-work authorization names a
+finite predecessor-attempt set; ParentID alone cannot bypass uncertainty. Input/result
+hashes are historical metadata independent of object-row lifetime. Only terminal
+jobs with all effects settled release temporary input pins; result and unrelated
+snapshot ownership remain. Orphan input references pin matching available
+recovery objects without manufacturing missing bytes. The protected-restore
+byte copier supplies a requested-object availability callback over fresh
+verified staging; ready metadata is not availability evidence for unowned
+objects omitted from the backup, and no whole-object inventory is buffered.
+
+Orphan facts survive protected replacement by an older snapshot. They preserve
+newer observed identities/outcomes or a visible conflict, without manufacturing
+missing source/result bytes. They block an equivalent unacknowledged reissue
+under a fresh identity. The [attempt record](testing/provider-attempts.md)
+describes current checks and the later provider/generation/question owners.
+Terminal jobs expose older uncertainty in a minimal public summary. Explicit
+status-only reconciliation captures and durably claims a finite attempt set;
+current terminal state/result/generation remain unchanged. Retry and lookup
+admissions are separate, and no client-supplied native identifier selects work.
+
+Reconciliation intents retain an exact foreign-key-backed ledger or orphan
+target. An explicit trusted owner admission may bind an existing carrier job to
+a finite same-principal, same-semantic-request and same-target orphan set, even
+when the original job is absent. This link never fabricates the missing job or
+grants dispatch. Status carriers remain non-dispatchable after lookup completion,
+and their linkage cannot grant continue/retry. New linked work needs separate
+finite retry authorization, preserving every older effect and cancel fact.
+Same-ID ledger/orphan copies share supported terminal observations; a local
+cancel-before-dispatch inference cannot override retained dispatch uncertainty.
+Startup under exclusive profile ownership reclaims interrupted status lookups.
+A recorded normal-restart transition may carry an eligible saved-result binding;
+same-daemon reassignment cannot revive an obsolete result. Explicit continuation
+is queued and binds the next claim only. Claim/application commits atomically
+after verified byte reads outside the writer. Repeated unconsumed continuation
+rechecks authority; explicit retry revokes only its pending cached binding.
+
+Settled orphan-only status work has its own terminal operational carrier result.
+Its retained resolution proof binds the actual resolver, principal, semantic
+request, attempt, observed native identities, outcome and completion time. Original
+job/state/cancel facts remain historical facts. A bare resolution_job_id cannot
+release ownership. Complete proof and absence of a live original continuation
+permit release of only that orphan's execution-input pins, including after an
+older restore lacks the carrier job. Unknown/conflicting/partial work, result
+ownership and independent snapshots remain protected.
+
+The immutable may_have_dispatched flag describes the logical/possible boundary,
+not provider receipt. Local prepared failures retain explicit no-dispatch
+provenance; missing legacy provenance remains conservative unknown. Existing
+ledger and orphan facts both participate in restore reconciliation, so local
+failure cannot erase prior possible external effects. Supported correlated
+backend terminal evidence remains usable. Fresh status-only carrier creation
+and finite admission commit atomically; existing semantic work cannot be
+repurposed as a completed status operation. The in-process provider_continuation
+verified-reader pin is separate from execution ownership: normal Read releases
+its unique pin, and exclusive startup reclaims that kind after process death.
+It never releases attempt/orphan, snapshot or durable result owners.
+Explicit local no-call facts converge
+with older prepared rows without overriding possible dispatch. Both conflict
+chains survive canonical merge and repeated inventory replay, retaining every
+available input/result owner. Existing settled terminal reconciliation intents
+can drain after explicit recovery release without changing the semantic result.
+
+The logical `provider_attempts` inventory below includes later adapter metadata.
+TASK-006-01 persists attempt/generation/state, exact request/input identities,
+actual input observation times, observed request/session IDs, result hashes and
+ownership. Provider identity, attempt lifecycle timestamps, disclosure-inventory
+integration and allowance observations remain with TASK-006-03's production
+adapter and its required schema migration before enabling that capability.
+Unknown allowance is not zero; no missing native input observation is inferred.
+
 **Source:** Revision 4 storage/state separation. **Proposal:** logical schema v1, documentation baseline 1.6.1, clarified by [shared wire registry](contracts/schema-registry.md). [TASK-002-02](testing/storage-foundation.md) implements and exercises the current storage/local-operation subset. TASK-002-03 adds schema revision 3 owner/session/pairing records and a verified DB-plus-required-object pre-migration recovery set; current auth evidence is [separate](testing/authenticated-sessions.md). TASK-002-04 adds schema revision 4 upload entries, import intents and internal metadata preparation/index ownership, with [atomic-import evidence](testing/atomic-import.md). Complete generated metadata remains in an immutable manifest object; current version rows keep its hash and a compact summary, while supplied metadata retains its separate immutable identity. This logical model also lists future feature-owned tables; it does not assert that all of them exist.
 
 ## Identifiers and common columns

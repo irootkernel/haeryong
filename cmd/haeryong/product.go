@@ -299,6 +299,9 @@ func productCommand(ctx context.Context, opt options, emit func(any) error) erro
 			return call("GET", "/api/v1/operations/"+args[2], nil)
 		}
 	case "jobs":
+		if len(args) > 1 && args[1] == "resume" {
+			return resumeProviderCLI(ctx, api, state, opt, emit)
+		}
 		if len(args) == 2 && args[1] == "list" {
 			return call("GET", "/api/v1/jobs", nil)
 		}

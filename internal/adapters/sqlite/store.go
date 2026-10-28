@@ -26,7 +26,7 @@ import (
 	driverSQLite "modernc.org/sqlite"
 )
 
-const SchemaRevision = 14
+const SchemaRevision = 15
 
 type Boundary string
 
@@ -195,7 +195,10 @@ func (s *Store) Prepare(ctx context.Context, p service.Profile) (state service.S
 	// Only dead-call, unlinked validation preparations are reclaimed under the profile writer lock. A context_prepare pin exists only inside one
 	// in-process POST; with the single writer restarted, any remainder is dead staging from an interrupted attempt (same-key retry re-stages
 	// idempotently), so its pin is reclaimed while the unadopted object itself follows future cleanup policy.
-	if _, err := s.db.ExecContext(ctx, "DELETE FROM object_pins WHERE (owner_kind='metadata_prepare' OR owner_kind='import_prepare') AND owner_id IN(SELECT index_id FROM metadata_indexes WHERE job_id IS NULL);DELETE FROM object_pins WHERE owner_kind='import' AND pin_id GLOB 'metadata-request:*';DELETE FROM object_pins WHERE owner_kind='context_prepare';DELETE FROM metadata_indexes WHERE job_id IS NULL"); err != nil {
+	// provider_continuation is an in-process verified reader, not an external
+	// effect owner. Exclusive startup proves its old process is gone; reclaim
+	// only that reader kind, retaining attempt/orphan/snapshot/result ownership.
+	if _, err := s.db.ExecContext(ctx, "DELETE FROM object_pins WHERE (owner_kind='metadata_prepare' OR owner_kind='import_prepare') AND owner_id IN(SELECT index_id FROM metadata_indexes WHERE job_id IS NULL);DELETE FROM object_pins WHERE owner_kind='import' AND pin_id GLOB 'metadata-request:*';DELETE FROM object_pins WHERE owner_kind='context_prepare';DELETE FROM object_pins WHERE owner_kind='provider_continuation';DELETE FROM metadata_indexes WHERE job_id IS NULL"); err != nil {
 		return state, nil, err
 	}
 	// Local work left running by a dead process is fenced before any new claim.
@@ -620,7 +623,12 @@ func (s *Store) validateTables(ctx context.Context, revision int) error {
 		}
 	}
 	if revision >= 14 {
-		return s.validateCopyDeclarations(ctx)
+		if e := s.validateCopyDeclarations(ctx); e != nil {
+			return e
+		}
+	}
+	if revision >= 15 {
+		return s.validateProviderDeclarations(ctx)
 	}
 	return nil
 }

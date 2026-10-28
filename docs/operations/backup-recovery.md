@@ -1,5 +1,32 @@
 # Backup, restore, migration and crash recovery
 
+TASK-006-01 extends protected recovery with provider-attempt orphan retention.
+Before replacement, the destination's external attempt identities, outcomes and
+input/result references enter the protected older database. Missing bytes stay
+unavailable. Repeated restore retains newer definite evidence or an unresolved
+conflict. Global configuration review does not resolve uncertain provider effects
+or grant a second submission. After review, explicit reconcile-only work may
+clear its provider job's scheduling hold for supported status/output lookup;
+it cannot read newly forbidden source or apply output under old authority.
+Hidden-target reconciliation is status-only; verified remote completion can
+settle external uncertainty with local result_unavailable accounting without
+fetching a forbidden body. Orphan input references retain matching available
+recovery objects independently of older temporary pins. A requested-object
+availability callback checks only orphan inputs/results in freshly rebuilt,
+verified staging, without a whole-backup in-memory index. A ready metadata row
+may be unowned and have no object file in that backup. Missing input/result
+bytes remain recorded but are not pinned as though they had been copied. Intentional linked new
+work must name its complete predecessor set through trusted owner admission;
+fresh IDs and ParentID alone do not bypass the restored uncertainty.
+See [provider-attempt verification](../testing/provider-attempts.md).
+
+Both incoming and retained conflict chains conserve their complete observations
+through canonical duplicate-free replay, including available input/result owners.
+Explicit never-dispatched outcomes can settle older prepared intents without
+settling actual uncertainty. A terminal job whose pending status intent becomes
+definite during restore may explicitly release its hold after global review and
+drain that existing work locally; terminal result/state/generation remain intact.
+
 ## Backup unit
 
 A usable backup includes a consistent SQLite snapshot, every immutable object referenced by it, complete result-directory inventories and file bytes, required drafts/notes/review history/rejections/lifecycle state and their saved context objects, configuration snapshot, schema/toolchain/profile metadata and a digest manifest. The default is a coherent set of private local files with checksums. `reference_only` source remains a reference and is reported as uncopied. Do not include raw provider credentials, native bootstrap secrets, owner/agent bearer tokens or content-delivery credentials. Restored credential records cannot be used as authority.
@@ -103,7 +130,18 @@ protected pending their owning Task; DF-03 synchronous read-drain behavior is un
 
 ## Implemented host-local copy and recovery (TASK-005-05)
 
-The implementation uses SQLite revision 14 and version-1 backup/export formats.
+The current implementation uses SQLite revision 15 and version-1 backup/export
+formats. Revision 14 was the TASK-005-05 delivery baseline. Backup admission
+requires the exact current schema revision and migration fingerprint: a
+revision-14 backup, or an incompatible earlier revision-15 layout, is refused
+before replacement. A format version of 1 does not imply cross-schema restore
+compatibility. TASK-006-01 verifies atomic migration of an existing revision-14
+database with the existing pre-migration DB/object recovery set, and verifies
+current revision-15 backup/protected restore. It does not execute or establish
+an old-binary restore of revision-14 backups. Preserve older backups and their
+matching software; using that software for recovery requires its applicable
+verified procedure before upgrading. The current binary offers no automatic
+older-backup conversion or relabelling.
 Backup/export submission uses the current owner's credential plus protected profile
 proof on the exact loopback daemon. The daemon retains its single writer lock;
 no remote arbitrary-path endpoint exists. See [CLI](../contracts/cli.md#host-local-backup-export-and-protected-restore-task-005-05)

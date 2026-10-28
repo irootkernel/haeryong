@@ -1,6 +1,6 @@
-// Package work owns the single serial local dispatcher. It never launches a
-// second queue or concurrent processor; each derived turn yields a bounded batch
-// or one page to existing import/seal work.
+// Package work owns one serial local dispatcher and ledger. Local batches yield
+// between turns; externally waiting copy/provider phases have bounded ownership
+// and are collected by that same dispatcher through shutdown.
 package work
 
 import (
@@ -19,11 +19,12 @@ type Maintenance interface {
 	Sweep(context.Context) (bool, error)
 }
 type Dispatcher struct {
-	Store   app.Store
-	Imports Processor
-	Derived Maintenance
-	Purge   *Purger
-	Copies  Processor
+	Store    app.Store
+	Imports  Processor
+	Derived  Maintenance
+	Purge    *Purger
+	Copies   Processor
+	Provider Processor
 }
 
 func (d Dispatcher) Run(ctx context.Context) (result error) {
@@ -35,6 +36,14 @@ func (d Dispatcher) Run(ctx context.Context) (result error) {
 	})
 	if phases != nil {
 		defer func() { result = errors.Join(result, phases.StopCopies()) }()
+	}
+	providerPhases, _ := d.Provider.(interface {
+		ScheduleProvider(context.Context, string) error
+		PollProvider(context.Context) error
+		StopProviders() error
+	})
+	if providerPhases != nil {
+		defer func() { result = errors.Join(result, providerPhases.StopProviders()) }()
 	}
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
@@ -48,6 +57,11 @@ func (d Dispatcher) Run(ctx context.Context) (result error) {
 				if ctx.Err() != nil {
 					return nil
 				}
+				return err
+			}
+		}
+		if providerPhases != nil {
+			if err := providerPhases.PollProvider(ctx); err != nil {
 				return err
 			}
 		}
@@ -73,7 +87,13 @@ func (d Dispatcher) Run(ctx context.Context) (result error) {
 			if ctx.Err() != nil {
 				return nil
 			}
-			if (j.Kind == "backup" || j.Kind == "export") && d.Copies != nil {
+			if domain.ProviderJob(j.Kind) {
+				if providerPhases != nil {
+					_ = providerPhases.ScheduleProvider(ctx, j.ID)
+				} else if d.Provider != nil {
+					_ = d.Provider.Process(ctx, j.ID)
+				}
+			} else if (j.Kind == "backup" || j.Kind == "export") && d.Copies != nil {
 				_ = d.Copies.Process(ctx, j.ID)
 			} else if j.Kind == "lifecycle" && d.Purge != nil {
 				_ = d.Purge.Process(ctx, j.ID)

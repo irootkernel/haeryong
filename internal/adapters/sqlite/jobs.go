@@ -24,6 +24,21 @@ func job(ctx context.Context, q rowReader, id string) (domain.Job, error) {
 	if err := json.Unmarshal(permissions, &j.Permissions); err != nil {
 		return j, err
 	}
+	if domain.ProviderJob(j.Kind) {
+		summary := &domain.ProviderAttemptSummary{}
+		err = q.QueryRowContext(ctx, `WITH facts AS (
+ SELECT attempt_id,attempt_generation AS generation,state FROM provider_attempts WHERE job_id=?
+ UNION ALL SELECT attempt_id,coalesce(json_extract(value,'$.attempt_generation'),0),state FROM provider_orphans WHERE json_extract(value,'$.job_id')=? OR attempt_id IN(SELECT prior_attempt_id FROM provider_linked_retry_authorizations WHERE job_id=? AND decision='reconcile_only')
+ ), unique_facts AS(SELECT attempt_id,max(state IN ('dispatching','running','outcome_unknown')) AS unresolved FROM facts GROUP BY attempt_id)
+ SELECT count(*),coalesce(sum(unresolved),0),coalesce((SELECT state FROM facts ORDER BY generation DESC,(state IN ('dispatching','running','outcome_unknown')) DESC LIMIT 1),''),(SELECT count(*) FROM provider_reconcile_intents WHERE job_id=?) FROM unique_facts`, id, id, id, id).Scan(&summary.Count, &summary.Unknown, &summary.LatestState, &summary.ReconciliationPending)
+		if err != nil {
+			return j, err
+		}
+		if summary.Unknown > 0 {
+			summary.UnknownReason = "outcome_unknown"
+		}
+		j.ProviderAttempts = summary
+	}
 	return j, nil
 }
 func (s *Store) Job(ctx context.Context, id string) (domain.Job, error) {
@@ -33,7 +48,7 @@ func (s *Store) Job(ctx context.Context, id string) (domain.Job, error) {
 }
 func (t *writeTx) CreateJob(j domain.Job) error {
 	switch j.Kind {
-	case "upload_seal", "import", "lifecycle", "backup", "export", "restore", "derived_index":
+	case "upload_seal", "import", "lifecycle", "backup", "export", "restore", "derived_index", "generation", "question":
 	default:
 		return errors.New("local job kind not implemented")
 	}
@@ -93,6 +108,23 @@ func (t *writeTx) CancelJob(id string) (domain.Job, error) {
 			return j, err
 		}
 	}
+	// The public cancel receipt and recovered-state normalization share this
+	// writer transaction. Its bodyless outbox records the ordered revisions.
+	if domain.ProviderJob(j.Kind) && j.State == "interrupted" {
+		if err = t.ReconcileJob(id); err != nil {
+			return j, err
+		}
+		j, err = job(t.ctx, t.tx, id)
+		if err != nil {
+			return j, err
+		}
+		if j.CancelRequested {
+			if err = t.ConfirmStop(id, j.AttemptGeneration); err != nil {
+				return j, err
+			}
+			return job(t.ctx, t.tx, id)
+		}
+	}
 	if terminal(j.State) || j.CancelRequested {
 		return j, nil
 	}
@@ -104,7 +136,7 @@ func (t *writeTx) CancelJob(id string) (domain.Job, error) {
 	if err := t.exec("UPDATE jobs SET state='cancelling',cancel_requested=1,attempt_generation=?,revision=revision+1 WHERE job_id=?", j.AttemptGeneration, id); err != nil {
 		return j, err
 	}
-	if wasQueued {
+	if wasQueued || domain.ProviderJob(j.Kind) {
 		if err := t.ConfirmStop(id, j.AttemptGeneration); err != nil {
 			return j, err
 		}
@@ -117,14 +149,38 @@ func (t *writeTx) ConfirmStop(id string, generation int64) error {
 	if err != nil {
 		return err
 	}
-	if j.AttemptGeneration != generation || !j.CancelRequested || (j.State != "cancelling" && j.State != "interrupted" && j.State != "cancelled") {
+	if j.AttemptGeneration != generation || !j.CancelRequested || (j.State != "cancelling" && j.State != "interrupted" && j.State != "cancelled" && !(domain.ProviderJob(j.Kind) && (j.State == "paused" || j.State == "reconciling"))) {
 		return domain.ErrStaleWorker
+	}
+	if domain.ProviderJob(j.Kind) {
+		if j.ProviderAttempts != nil && j.ProviderAttempts.Unknown > 0 {
+			return t.PauseProviderJob(id, "outcome_unknown")
+		}
+		attempts, e := t.providerJobEffects(id)
+		if e != nil {
+			return e
+		}
+		for _, a := range attempts {
+			if a.State == "dispatching" || a.State == "running" || a.State == "outcome_unknown" {
+				return t.PauseProviderJob(id, "outcome_unknown")
+			}
+			if a.State == "prepared" {
+				if e = t.ObserveProviderAttempt(a.ID, "cancelled", "", "", "cancel_before_dispatch"); e != nil {
+					return e
+				}
+			}
+		}
 	}
 	if j.State != "cancelled" {
 		if err := t.exec("UPDATE jobs SET state='cancelled',revision=revision+1 WHERE job_id=?", id); err != nil {
 			return err
 		}
 		if err := t.jobUpdated(id); err != nil {
+			return err
+		}
+	}
+	if domain.ProviderJob(j.Kind) {
+		if err := t.releaseProviderInputs(id); err != nil {
 			return err
 		}
 	}
@@ -148,6 +204,12 @@ func (t *writeTx) ReconcileJob(id string) error {
 	}
 	if j.State != "interrupted" {
 		return domain.ErrTransition
+	}
+	if domain.ProviderJob(j.Kind) {
+		if err = t.exec(`UPDATE jobs SET state='reconciling',revision=revision+1 WHERE job_id=?`, id); err != nil {
+			return err
+		}
+		return t.jobUpdated(id)
 	}
 	if j.CancelRequested {
 		return t.ConfirmStop(id, j.AttemptGeneration)
@@ -189,6 +251,11 @@ func (t *writeTx) FinishJob(id string, generation int64, failure string, apply f
 		if err := t.stoppedOwnership(j); err != nil {
 			return err
 		}
+		if domain.ProviderJob(j.Kind) {
+			if err := t.releaseProviderInputs(id); err != nil {
+				return err
+			}
+		}
 		return t.jobUpdated(id)
 	}
 	if apply != nil {
@@ -198,6 +265,11 @@ func (t *writeTx) FinishJob(id string, generation int64, failure string, apply f
 	}
 	if err := t.exec("UPDATE jobs SET state='completed',revision=revision+1 WHERE job_id=?", id); err != nil {
 		return err
+	}
+	if domain.ProviderJob(j.Kind) {
+		if err := t.releaseProviderInputs(id); err != nil {
+			return err
+		}
 	}
 	return t.jobUpdated(id)
 }
@@ -453,7 +525,11 @@ func (s *Store) recoverLocalJobs(ctx context.Context) error {
 	if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM jobs WHERE "+needs).Scan(&count); err != nil {
 		return err
 	}
-	if count == 0 {
+	var pending int
+	if err := s.db.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM provider_reconcile_intents WHERE state='executing')+(SELECT count(*) FROM provider_attempts WHERE state IN ('dispatching','running'))`).Scan(&pending); err != nil {
+		return err
+	}
+	if count == 0 && pending == 0 {
 		return nil
 	}
 	// Prepare already owns s.mu and the profile lock. Start the private SQL
@@ -464,6 +540,15 @@ func (s *Store) recoverLocalJobs(ctx context.Context) error {
 	}
 	defer tx.Rollback()
 	t := &writeTx{tx: tx, ctx: ctx}
+	if err := t.exec(`UPDATE provider_reconcile_intents SET state='pending',runtime_generation='' WHERE state='executing'`); err != nil {
+		return err
+	}
+	if err := t.exec(`UPDATE provider_attempts SET restart_generation=(SELECT attempt_generation+1 FROM jobs WHERE jobs.job_id=provider_attempts.job_id) WHERE state IN ('result_saved','dispatching','running','outcome_unknown') AND (application_generation=(SELECT attempt_generation FROM jobs WHERE jobs.job_id=provider_attempts.job_id) OR restart_generation=(SELECT attempt_generation FROM jobs WHERE jobs.job_id=provider_attempts.job_id)) AND job_id IN(SELECT job_id FROM jobs WHERE ` + needs + `)`); err != nil {
+		return err
+	}
+	if err := t.exec(`UPDATE provider_attempts SET state='outcome_unknown',reason='transport_unknown' WHERE state IN ('dispatching','running')`); err != nil {
+		return err
+	}
 	if err := t.exec("INSERT INTO events(stream_epoch,resource_kind,resource_id,kind,revision,body) SELECT libraries.stream_epoch,'job',jobs.job_id,'job.updated',jobs.revision+1,NULL FROM jobs CROSS JOIN libraries WHERE libraries.singleton=1 AND (" + needs + ")"); err != nil {
 		return err
 	}

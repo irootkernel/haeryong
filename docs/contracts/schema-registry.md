@@ -1,5 +1,19 @@
 # Shared wire schemas, states and routes
 
+## Provider resume addition (TASK-006-01)
+
+The selected machine definition `job_resume` is the closed object
+`{decision,expected_attempt_generation}`. Decision is `reconcile_only`, `continue`
+or `retry`; expected_attempt_generation is a positive integer. The mutation
+requires the current job If-Match and Idempotency-Key, preserves cancellation
+intent and cannot turn a status lookup into dispatch. Unknown fields fail.
+
+Owner status for a provider job whose target is hidden retains its job identity,
+state, revision, generation, cancellation and normalized error. Scope, result,
+permission map and parent/upload references are withheld. Its opaque job ETag
+still identifies the operational resource; it grants no payload access. Only
+reconcile-only mutation and its receipt use that limited recovery projection.
+
 **Normative v1 registry; selected initial freeze recorded by [G-CONTRACT](../testing/contract-freeze.md).** This Markdown registry owns semantic meanings and delegates selected typed fields, enums, defaults and error mappings to the single [machine contract](../../tests/contracts/schema.json), with [executable behavioral fixtures](../../tests/contracts/README.md). The same validator serves package, API/config examples and fixture client/models; no parallel client type definition is authoritative. Unselected future responses remain provisional. These files are not an executed migration or evidence of an implemented production capability. Runtime `schema_version: "1.0"` and API `/api/v1` identify the selected evidence-backed baseline; documentation baseline 1.6.2 incorporates the Grok contract reconciliation and D-10 private-renderer-port approval. Shared enums stay here; [import and transfer workflow](import-workflow.md) is the delegated normative definition of purpose/target fields, action authority, import requests, multi-request key mapping, seal cancellation and list/detail shapes. Normal author JavaScript and one remembered owner-session model remain unchanged.
 
 ## Identity and common fields
@@ -965,3 +979,13 @@ wrapper; Notes bind complete qualified annotation histories and actual context
 version/page descriptors, including anchors outside selected payload membership.
 Revisit flag is Boolean. note_anchor dependencies retain the existing five dependency
 states and do not widen payload selection. No portable personal-state merge is added.
+
+## Current provider operational summary
+
+The selected executable provider_attempt_summary schema describes the minimal
+provider_attempts member on provider Job responses. Counts distinguish total
+attempts, unresolved external outcomes and admitted reconciliation records;
+latest_state does not erase older uncertainty. Native request/session IDs and
+payloads remain server-side. Existing job_resume captures the finite eligible
+attempt set on the server; terminal reconcile_only changes operational accounting
+without reopening the terminal job or changing its current result/generation.

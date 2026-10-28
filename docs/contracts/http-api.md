@@ -1,5 +1,26 @@
 # HTTP API v1
 
+TASK-006-01 implements owner-only `POST /api/v1/jobs/{id}/resume` for provider
+jobs. It requires Idempotency-Key, the job's strong If-Match and the closed
+`job_resume` body from the schema registry. The original response replays before
+its original precondition is re-evaluated, subject to current authorization.
+Hidden provider targets expose minimal owner operational status and permit only
+reconcile-only recovery; source/result delivery and continue/retry retain normal
+current visibility. [The foundation record](../testing/provider-attempts.md)
+states current behavior and qualification limits. A permanently superseded
+saved-result continuation returns 409 INVALID_TRANSITION, not retryable service
+recovery. Authentication, current ETag and expected-generation checks retain
+precedence. Safe saved continuation queues the job; it does not dispatch again.
+
+Provider job detail/list exposes the scoped provider_attempts summary: count,
+unknown, latest_state, reconciliation_pending and unknown_outcome_reason when
+needed. A completed current job can still have older unknown attempts. No native
+request/session IDs, source or output bodies enter that summary. The same fields
+participate in job ETags across detail, resume and receipt replay. Explicit
+reconcile_only may authorize a finite server-captured older-attempt set while
+preserving terminal job state, current result and generation; it performs status
+lookups only and cannot dispatch/apply again.
+
 **Proposed contract, documentation baseline 1.6.1.** Common prefix `/api/v1`. JSON is UTF-8. The [shared registry](schema-registry.md) defines shared enums, errors, resource validators and browser routes; it delegates exact upload/import fields and composite-command semantics to [import workflow](import-workflow.md). Private responses use `Cache-Control: no-store`; trusted content-hashed UI assets may be cached, but private result pages/assets/source excerpts may not.
 
 ## Principal model

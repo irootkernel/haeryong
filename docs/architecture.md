@@ -1,5 +1,17 @@
 # Architecture
 
+TASK-006-01 extends `internal/application/work` with an injected
+ProviderCoordinator and typed storage ports. The existing serial dispatcher
+routes provider jobs explicitly; the default unavailable driver never falls
+through to import processing or launches a configured shell. Native startup
+precedes the one-use current-authority dispatch callback. External waits hold no
+writer transaction. Saved continuation verifies captured bytes outside the writer
+and atomically claims/applies the exact reserved generation under current guards;
+its failure cannot become a new dispatch. Phase ownership advances only after its
+own claim commits. The production adapter remains TASK-006-03; the test-only
+native bridge is outside runtime dispatch. The [foundation record](testing/provider-attempts.md)
+owns the current executed boundary and limits.
+
 **Source:** Revision 4, Section 3, as amended by owner decisions D-08 and D-09 for personal developer use and directory results. **Elaboration:** proposed production component boundaries and implementation layout; the selected evidence-backed contract baseline is recorded in [G-CONTRACT](testing/contract-freeze.md).
 
 ## Context and process boundary

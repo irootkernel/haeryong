@@ -1,5 +1,10 @@
 # Durable jobs, events and findings
 
+The [TASK-006-01 foundation](../testing/provider-attempts.md) implements the
+provider attempt ledger, one-use dispatch fence, cancellation/reconciliation and
+saved-result application guards on the existing coordinator. It introduces no
+production provider transport or generation/question submission endpoint.
+
 **Proposal, documentation baseline 1.6.0:** one daemon-owned durable coordinator for generation, questions, scans, upload sealing, streamed directory import and local lifecycle/backup/export work. It is not a general-purpose orchestration platform. Shared enum values and resource fields are in the [wire registry](schema-registry.md).
 
 EPIC-002 owns the generic local job ledger, operation receipts, resource revisions, pins and transactional outbox. EPIC-005 can use those foundations for lifecycle/copy work. EPIC-006 adds provider attempts, external ambiguity, cancellation and their integration; it must not retrofit missing receipts/outbox into earlier mutations.
@@ -392,3 +397,99 @@ is library/runtime/profile fenced and uses its preserved owner principal namespa
 no arbitrary historical-directory scan or global UUID reservation is implied.
 Preview expiry applies before restore admission; a matching admitted staging
 journal retains recoverability while original state/input/receipt guards remain.
+
+## Current provider request identity and explicit retry admission
+
+TASK-006-01's internal RequestSHA is a trusted semantic identity, not an opaque
+client token. Later admission owners must construct it from stable principal
+and authorized scope, the canonical semantic request (including selected
+provider/model and meaningful options), and exact ordered input content/revision
+identities. Fresh operation/job/read/target-set/session IDs, authentication
+epochs, timestamps and unrelated configuration revision churn must not provide entropy that lets
+an equivalent uncertain request evade reconciliation. Public clients cannot
+choose an unchecked digest. Capture IDs still bind the attempt's exact readset;
+they do not make equivalent external intent new.
+
+Unresolved equivalent attempts and retained restore orphans block preparation
+across job IDs. The current non-cancelled job may record an explicit generation
+retry. New linked work requires authenticated current owner admission and the
+internal AuthorizeProviderRetry port, naming the complete finite set of
+predecessor attempts whose additional execution was deliberately approved.
+ParentID alone grants nothing. That port preserves every predecessor and its
+immutable cancellation fact; any unnamed equivalent uncertainty still blocks.
+When an original orphan job is absent, the exact typed predecessor authorization
+retains its historical linkage without inventing a parent row. The trusted
+AuthorizeProviderReconciliation port separately grants status-only processing on
+an existing owner-authorized carrier for a finite same-request/target orphan
+set. Such carriers remain non-dispatchable after settlement, and cannot obtain
+continue/retry authority from their lookup links. Later public admission owners
+must provide normal receipt/current-owner validation before using either port.
+Create a fresh carrier and admit its finite set atomically in the same writer
+transaction; existing semantic attempts/results/retry work cannot be repurposed.
+A genuinely changed authorized semantic request/source has its own identity and
+can proceed without globally disabling new work after recovery review. Public
+generation/question admission is not implemented by this foundation.
+
+The driver persists accepted progress before a long wait: provider operation/turn
+ID maps to provider_request_id, thread ID to provider_session_id, and local RPC
+correlation is distinct. Verified backend completion must be explicit, never
+inferred from transport shutdown or output EOF. A known completed backend with
+unavailable/forbidden output uses local failed/result_unavailable accounting,
+which does not assert provider failure or provider cancellation. Status-only
+reconciliation can thereby settle external uncertainty without a source read,
+forbidden result retrieval, library application or another dispatch.
+
+## Current saved continuation and operational carrier transitions
+
+The original semantic job transitions above remain authoritative. Explicit
+continue of eligible saved output follows paused -> queued -> running ->
+completed, with no new provider submission. Application generation reserves the
+exact next claim after current eligibility checks; producing generation stays
+immutable. A pre-claim rollback/pause leaves that reservation unconsumed and
+revalidatable. Explicit retry revokes that pending reservation, preserves the
+old attempt and uses one finite generation-specific grant. Queued cached work
+never falls through to dispatch when its bytes/authority become unavailable.
+Interrupted continue/retry is refused until durable reconciliation establishes
+an eligible paused state. All interrupted processing begins with reconciling.
+
+The bounded pre-claim continuation/preparation path also permits queued ->
+paused before any claim commits: unavailable transport or a local preparation
+rollback, or failure to revalidate the explicitly selected saved continuation's
+bytes/current authority, leaves a recoverable pause. A saved continuation keeps
+its exact next-generation reservation unconsumed; it cannot fall through to a
+new dispatch. This narrow recovery mapping does not replace the original
+failed transition for definitively invalid newly submitted input. Ordinary caller
+context stop before claim keeps the queued reservation unchanged and releases
+only that invocation's reader pins. Current permission and generation checks
+still precede any later authorized claim.
+
+Successful normalization or partial finite status work stays reconciling while
+admitted work remains. A failed normalization commit leaves interrupted intact.
+Public cancellation of an interrupted provider job normalizes and records its
+final cancellation/unknown disposition in the same writer/receipt transaction.
+An already recorded cancel intent keeps its existing generation. The outbox
+contains ordered bodyless job.updated sequence/revisions; it does not store an
+intermediate state payload or commit a separate intermediate public snapshot.
+
+The existing typed status-only carrier has these additional narrow operational
+transitions; they grant no semantic output or provider dispatch authority:
+
+| From | Event / guard | To |
+| --- | --- | --- |
+| queued | Fresh owner-authorized status carrier and exact finite orphan set admitted atomically; no semantic attempts/results/capture/retry work | reconciling |
+| reconciling | All admitted status effects definitive and intents drained; persist actual terminal operational resolution proof | completed, with provider_reconciliation result only |
+
+An interrupted carrier still goes through reconciling. Its operational completed
+result cannot be interpreted as a generated answer, assessment or publication,
+and does not rewrite the original historical job/state/cancel facts. Ordinary
+terminal job reconcile-only preserves that job's state/result/generation; after
+explicit recovery release it may also drain already-settled finite intents and
+holds locally, with no provider lookup, body retrieval or application.
+
+TASK-006-02 owns capture/selected-snapshot retention and availability semantics.
+TASK-006-04/05 admission must acquire the authorized queued execution-input pins
+atomically before work becomes ready, independently of any selected_snapshot
+owner. TASK-006-03 owns actual adapter delivery and observed input evidence;
+preparation pins are not a substitute for queued admission lifetime. Reference-
+only bytes that are no longer available remain unavailable rather than becoming
+a manufactured snapshot. These owners remain ordered future implementation.

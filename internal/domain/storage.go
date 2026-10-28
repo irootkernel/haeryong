@@ -114,20 +114,22 @@ type Configuration struct {
 }
 
 type Job struct {
-	Revision          int64            `json:"revision"`
-	Result            json.RawMessage  `json:"result,omitempty"`
-	Scope             json.RawMessage  `json:"scope"`
-	ConfigRevision    int64            `json:"config_revision"`
-	Permissions       map[string]int64 `json:"permissions_revisions"`
-	Deadline          string           `json:"deadline"`
-	ID                string           `json:"job_id"`
-	Kind              string           `json:"kind"`
-	State             string           `json:"state"`
-	ParentID          string           `json:"parent_job_id"`
-	UploadID          string           `json:"upload_id"`
-	AttemptGeneration int64            `json:"attempt_generation"`
-	CancelRequested   bool             `json:"cancel_requested"`
-	Error             string           `json:"error"`
+	ProviderAttempts  *ProviderAttemptSummary `json:"provider_attempts,omitempty"`
+	ProjectionETag    string                  `json:"-"`
+	Revision          int64                   `json:"revision"`
+	Result            json.RawMessage         `json:"result,omitempty"`
+	Scope             json.RawMessage         `json:"scope"`
+	ConfigRevision    int64                   `json:"config_revision"`
+	Permissions       map[string]int64        `json:"permissions_revisions"`
+	Deadline          string                  `json:"deadline"`
+	ID                string                  `json:"job_id"`
+	Kind              string                  `json:"kind"`
+	State             string                  `json:"state"`
+	ParentID          string                  `json:"parent_job_id"`
+	UploadID          string                  `json:"upload_id"`
+	AttemptGeneration int64                   `json:"attempt_generation"`
+	CancelRequested   bool                    `json:"cancel_requested"`
+	Error             string                  `json:"error"`
 }
 type Checkpoint struct {
 	Generation      int64  `json:"generation"`

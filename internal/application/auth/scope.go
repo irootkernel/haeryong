@@ -351,6 +351,9 @@ func authorizeScope(tx app.WriteTx, record domain.Session, r domain.Request) err
 			return domain.ErrNotFound
 		}
 	case "jobs":
+		if len(parts) > 4 && parts[4] == "resume" {
+			return domain.ErrDenied
+		}
 		action := "job.read"
 		if r.Method != "GET" {
 			action = "job.cancel"

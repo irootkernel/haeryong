@@ -117,6 +117,9 @@ func validateCommandFlags(opt options) error {
 			add("name operation-id")
 		}
 	case "jobs":
+		if verb == "resume" {
+			add("decision expected-attempt-generation if-match operation-id")
+		}
 		if verb == "cancel" {
 			add("operation-id")
 		}
@@ -183,6 +186,11 @@ func validateCommandFlags(opt options) error {
 	if args[0] == "references" {
 		if _, err := referenceCLIPath(opt); err != nil {
 			return err
+		}
+	}
+	if args[0] == "jobs" && verb == "resume" {
+		if _, e := resumeProviderInput(opt); e != nil {
+			return e
 		}
 	}
 	if scope := opt.flags["scope"]; scope != "" {

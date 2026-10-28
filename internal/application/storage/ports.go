@@ -29,6 +29,7 @@ type Store interface {
 // Each callback is a short serialized write transaction. Files are streamed and
 // synced before entry; only atomic publication/directory sync may run inside it.
 type WriteTx interface {
+	ProviderTx
 	CopyTx
 	PurgeImpact(string) ([]domain.LifecycleItem, error)
 	StartPurge(domain.LifecyclePlan, domain.LifecycleResult) error
@@ -172,6 +173,7 @@ type WriteTx interface {
 	// (TASK-004-01). Writes are append-only except check-intent state.
 	PutTargetSet(domain.TargetSet) error
 	PutCapturedRead(domain.CapturedRead) error
+	CapturedRead(string) (domain.CapturedRead, error)
 	PutVerification(domain.CitationVerification) error
 	PutCheckIntent(domain.CheckIntent) error
 	CheckIntent(string) (domain.CheckIntent, error)

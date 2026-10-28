@@ -423,6 +423,9 @@ func (s *Service) Operation(ctx context.Context, token, id string) (domain.Recei
 		if e = authorizeScope(tx, a, out.Original); e != nil {
 			return e
 		}
+		if ok, e := providerReconcileOnly(tx, a, out.Original); e != nil || ok {
+			return e
+		}
 		if LifecycleRoute(out.Original.Target) {
 			return lifecycleTarget(tx, out.Original)
 		}
@@ -452,7 +455,7 @@ func (s *Service) Job(ctx context.Context, token, id string) (domain.Job, error)
 		}
 		out, e = tx.Job(id)
 		if e == nil {
-			e = visibleJob(tx, out)
+			out, e = projectProviderJob(tx, record, out)
 		}
 		return e
 	})
@@ -481,7 +484,7 @@ func (s *Service) Jobs(ctx context.Context, token string) ([]domain.Job, error) 
 			if e != nil {
 				return e
 			}
-			e = visibleJob(tx, j)
+			j, e = projectProviderJob(tx, record, j)
 			if errors.Is(e, domain.ErrNotFound) {
 				continue
 			}
@@ -656,6 +659,9 @@ func authorizeAuthenticated(tx app.WriteTx, record domain.Session, r domain.Requ
 	if err := authorizeScope(tx, record, r); err != nil {
 		return err
 	}
+	if ok, e := providerReconcileOnly(tx, record, r); e != nil || ok {
+		return e
+	}
 	// Only a current owner write may reach the personal service's explicit
 	// lifecycle conflict. Saved responses and receipt reads retain strict
 	// current visibility through visibleRequest.
@@ -699,6 +705,27 @@ func (a *Authority) Filter(ctx context.Context, r domain.Request, response domai
 			}
 			if err := authorizeScope(tx, record, r); err != nil {
 				return err
+			}
+			if ok, e := providerReconcileOnly(tx, record, r); e != nil {
+				return e
+			} else if ok {
+				var job domain.Job
+				if e = json.Unmarshal(response.Body, &job); e != nil {
+					return e
+				}
+				job, e = projectProviderJob(tx, record, job)
+				if e != nil {
+					return e
+				}
+				response.Body, _ = json.Marshal(job)
+				if response.Headers == nil {
+					response.Headers = map[string]string{}
+				}
+				response.Headers["ETag"] = JobETag(job)
+				if job.ProjectionETag != "" {
+					response.Headers["ETag"] = job.ProjectionETag
+				}
+				return nil
 			}
 		}
 		if LifecycleRoute(r.Target) {

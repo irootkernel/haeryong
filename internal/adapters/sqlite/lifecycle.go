@@ -100,7 +100,7 @@ func (t *writeTx) CommitLifecycle(p domain.LifecyclePlan, r domain.LifecycleResu
 		}
 		if r.Lifecycle == "trash" || r.Lifecycle == "purged" {
 			// Fence accepted publication and deterministic work before releasing the writer gate.
-			rows, err := t.tx.QueryContext(t.ctx, `SELECT job_id FROM derived_work WHERE version_id IN (SELECT version_id FROM document_versions WHERE document_id=?) UNION SELECT job_id FROM import_intents WHERE json_extract(value,'$.DocumentID')=?`, p.DocumentID, p.DocumentID)
+			rows, err := t.tx.QueryContext(t.ctx, `SELECT job_id FROM derived_work WHERE version_id IN (SELECT version_id FROM document_versions WHERE document_id=?) UNION SELECT job_id FROM import_intents WHERE json_extract(value,'$.DocumentID')=? UNION SELECT job_id FROM jobs WHERE kind IN ('generation','question') AND (json_extract(scope,'$.target.document_id')=? OR json_extract(scope,'$.target.version_id') IN (SELECT version_id FROM document_versions WHERE document_id=?))`, p.DocumentID, p.DocumentID, p.DocumentID, p.DocumentID)
 			if err != nil {
 				return err
 			}

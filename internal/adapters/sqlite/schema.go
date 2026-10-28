@@ -253,4 +253,5 @@ CREATE TABLE purge_intents(job_id TEXT PRIMARY KEY REFERENCES jobs(job_id),plan_
 CREATE TABLE purge_candidates(job_id TEXT NOT NULL REFERENCES purge_intents(job_id),content_hash TEXT NOT NULL,byte_size INTEGER NOT NULL CHECK(byte_size>=0),PRIMARY KEY(job_id,content_hash));
 `,
 	copyMigration,
+	providerMigration,
 }

@@ -34,6 +34,11 @@ func (t *writeTx) PutTargetSet(ts domain.TargetSet) error {
 func (t *writeTx) PutCapturedRead(r domain.CapturedRead) error {
 	return t.exec("INSERT INTO captured_reads VALUES(?,?,?,?,?,?,?,?,?)", r.ID, r.TargetSetID, r.Basis, r.SourceJSON, r.LocationJSON, nullableString(r.BytesSHA), r.ConfigRevision, r.PermissionsRevision, r.CreatedAt)
 }
+func (t *writeTx) CapturedRead(id string) (domain.CapturedRead, error) {
+	r := domain.CapturedRead{ID: id}
+	e := t.tx.QueryRowContext(t.ctx, `SELECT target_set_id,basis,source_json,location_json,coalesce(bytes_sha256,''),config_revision,permissions_revision,created_at FROM captured_reads WHERE read_id=?`, id).Scan(&r.TargetSetID, &r.Basis, &r.SourceJSON, &r.LocationJSON, &r.BytesSHA, &r.ConfigRevision, &r.PermissionsRevision, &r.CreatedAt)
+	return r, notFound(e)
+}
 
 func (t *writeTx) PutVerification(v domain.CitationVerification) error {
 	return t.exec("INSERT INTO citation_verifications VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", v.ID, v.PrincipalID, v.VersionID, v.EvidenceID, nullableString(v.ReadID), nullableString(v.TargetSetID), v.SourceJSON, v.LocationJSON, nullableString(v.BytesSHA), nullableString(v.BytesOrigin), v.Outcome, nullableString(v.ExpectedBytesSHA), nullableBytes(v.ExpectedExcerpt), nullableString(v.ExpectedExcerptRef), v.ConfigRevision, v.PermissionsRevision, v.CheckedAt, nullableString(v.VerifiedAt), v.Reason, v.OperationID)

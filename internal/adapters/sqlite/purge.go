@@ -312,7 +312,7 @@ func (t *writeTx) PurgeStep(id string, generation int64, limit int) (bool, error
 	// Do not remove a running worker's ownership ledger before it confirms
 	// stop. The serial dispatcher gives accepted cancellation its normal turn.
 	var active int
-	if err = t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM jobs WHERE state NOT IN('completed','failed','cancelled') AND job_id IN(SELECT job_id FROM derived_work WHERE version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?) UNION SELECT job_id FROM import_intents WHERE json_extract(value,'$.DocumentID')=?)`, i.DocumentID, i.DocumentID).Scan(&active); err != nil {
+	if err = t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM jobs WHERE state NOT IN('completed','failed','cancelled') AND job_id IN(SELECT job_id FROM derived_work WHERE version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?) UNION SELECT job_id FROM import_intents WHERE json_extract(value,'$.DocumentID')=? UNION SELECT job_id FROM jobs WHERE kind IN ('generation','question') AND (json_extract(scope,'$.target.document_id')=? OR json_extract(scope,'$.target.version_id') IN(SELECT version_id FROM purged_versions WHERE document_id=?)))`, i.DocumentID, i.DocumentID, i.DocumentID, i.DocumentID).Scan(&active); err != nil {
 		return false, err
 	}
 	if active > 0 {
@@ -322,6 +322,11 @@ func (t *writeTx) PurgeStep(id string, generation int64, limit int) (bool, error
 		return false, err
 	}
 	if active > 0 {
+		return false, nil
+	}
+	if blocked, e := t.providerBlocksPurge(i.DocumentID); e != nil {
+		return false, e
+	} else if blocked {
 		return false, nil
 	}
 	// Always finish derived cleanup before any private/FK parents disappear.

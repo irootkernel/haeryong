@@ -82,6 +82,18 @@ Haeryong's repository-local agent guidance is defined in this file.
 
 TASK-005-06 adds the two-project owner-state composition, actual browser/native Save/Review and safe lifecycle workflows, exact retained records through restart/protected recovery, and original-directory export/reimport. docs/testing/owner-records.md owns the executed scope and limits; docs/testing/epic-005-owner-gate.md indexes the accepted assembled delivery and its qualification limits.
 
+TASK-006-01 adds schema revision 15, durable provider
+attempt/input/result accounting, acknowledged provider progress, one
+dispatcher-owned waiting phase, explicit linked retry accounting, owner-only job
+resume, verified queued saved-result continuation, hidden-target status-only
+reconciliation and restore orphan retention. docs/testing/provider-attempts.md owns
+its current proof and limits. The production provider capability remains false;
+TASK-006-03/04/05 retain transport, generation and saved-Q&A ownership. Canonical
+tests make no provider calls; the separate haeryong_provider_live build tag
+requires explicit scoped execution and a private physical evidence directory.
+The separate haeryong_provider_replay tag replays retained observations without
+opening a native client.
+
 ### Commit Messages
 
 - Use one English imperative subject with exactly one purpose header: [FEAT], [FIX], [DEV], [TEST], [DOC], [CI], [REL], or [INT].

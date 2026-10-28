@@ -275,6 +275,27 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			respond(w, r, 200, data, err)
 		})
+	case len(parts) == 3 && parts[0] == "jobs" && parts[2] == "resume" && r.Method == http.MethodPost:
+		if err := mutationHeaders(r, false); err != nil {
+			fail(w, r, err)
+			return
+		}
+		matches := r.Header.Values("If-Match")
+		if len(matches) == 0 {
+			fail(w, r, missingHeader("If-Match"))
+			return
+		}
+		if len(matches) != 1 || !strings.HasPrefix(matches[0], `"`) || !strings.HasSuffix(matches[0], `"`) || strings.Count(matches[0], `"`) != 2 {
+			fail(w, r, session.ErrInvalid)
+			return
+		}
+		var input appauth.ResumeJobRequest
+		if err := decode(w, r, &input); err != nil {
+			fail(w, r, err)
+			return
+		}
+		value, err := h.core.ResumeJob(r.Context(), token, parts[1], r.Header.Get("Idempotency-Key"), r.Header.Get("If-Match"), input)
+		durable(w, r, value, err)
 	case len(parts) == 3 && parts[0] == "jobs" && parts[2] == "cancel" && r.Method == http.MethodPost:
 		if err := mutationHeaders(r, false); err != nil {
 			fail(w, r, err)
@@ -558,10 +579,13 @@ func durable(w http.ResponseWriter, r *http.Request, response domain.Response, e
 		}
 	}
 	var body any = json.RawMessage(response.Body)
-	if strings.HasPrefix(r.URL.Path, "/api/v1/jobs/") && strings.HasSuffix(r.URL.Path, "/cancel") {
+	if strings.HasPrefix(r.URL.Path, "/api/v1/jobs/") && (strings.HasSuffix(r.URL.Path, "/cancel") || strings.HasSuffix(r.URL.Path, "/resume")) {
 		var job domain.Job
 		if json.Unmarshal(response.Body, &job) == nil {
 			body = jobWire(job)
+			if response.Headers["ETag"] != "" {
+				body.(map[string]any)["etag"] = response.Headers["ETag"]
+			}
 			w.Header().Set("ETag", body.(map[string]any)["etag"].(string))
 		}
 	}
@@ -573,6 +597,9 @@ func jobWire(job domain.Job) map[string]any {
 	var value map[string]any
 	_ = json.Unmarshal(bytes, &value)
 	value["etag"] = fmt.Sprintf(`"job-%s-%x"`, job.ID, digest[:])
+	if job.ProjectionETag != "" {
+		value["etag"] = job.ProjectionETag
+	}
 	return value
 }
 func fail(w http.ResponseWriter, r *http.Request, err error) {

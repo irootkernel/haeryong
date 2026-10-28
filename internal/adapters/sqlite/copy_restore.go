@@ -13,6 +13,8 @@ import (
 	"haeryong.local/haeryong/internal/domain"
 )
 
+const providerAttemptInventory = `SELECT json_object('attempt_id',a.attempt_id,'job_id',a.job_id,'principal_id',json_extract(j.scope,'$.principal_id'),'job_state',j.state,'target',json(json_extract(j.scope,'$.target')),'cancel_requested',json(CASE j.cancel_requested WHEN 1 THEN 'true' ELSE 'false' END),'request_sha256',a.request_sha256,'state',a.state,'may_have_dispatched',json(CASE a.may_have_dispatched WHEN 1 THEN 'true' ELSE 'false' END),'reason',a.reason,'attempt_generation',a.attempt_generation,'target_set_id',a.target_set_id,'provider_request_id',a.provider_request_id,'provider_session_id',a.provider_session_id,'result_hash',a.result_hash,'inputs',json((SELECT json_group_array(json_object('attempt_id',i.attempt_id,'read_id',i.read_id,'bytes_sha256',i.content_hash,'input_origin',i.input_origin,'observed_at',i.observed_at)) FROM provider_inputs i WHERE i.attempt_id=a.attempt_id))) FROM provider_attempts a JOIN jobs j ON j.job_id=a.job_id`
+
 // ProtectRestoredDatabase operates only on verified destination-local staging.
 // Live startup remains strict; missing destination DDL is repaired by replacing
 // the complete storage set, never by weakening its normal admission checks.
@@ -88,7 +90,7 @@ func ProtectRestoredDatabase(ctx context.Context, path string, p service.Profile
 	if e = t.exec(`INSERT INTO recovery_holds VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET value=excluded.value`, jsonBytes(hold)); e != nil {
 		return lib, e
 	}
-	if e = t.exec(`INSERT INTO resource_revisions(resource_kind,resource_id,revision,value) SELECT 'restore_job_hold',job_id,1,'{}' FROM jobs WHERE state NOT IN ('completed','failed','cancelled') ON CONFLICT(resource_kind,resource_id) DO NOTHING`); e != nil {
+	if e = t.exec(`INSERT INTO resource_revisions(resource_kind,resource_id,revision,value) SELECT 'restore_job_hold',job_id,1,'{}' FROM jobs WHERE state NOT IN ('completed','failed','cancelled') OR EXISTS(SELECT 1 FROM provider_reconcile_intents i WHERE i.job_id=jobs.job_id) ON CONFLICT(resource_kind,resource_id) DO NOTHING`); e != nil {
 		return lib, e
 	}
 	if e = t.exec(`UPDATE jobs SET state='paused',attempt_generation=attempt_generation+1,revision=revision+1 WHERE state NOT IN ('completed','failed','cancelled')`); e != nil {
@@ -139,7 +141,7 @@ func RestoreOutstanding(ctx context.Context, path string, consume func(json.RawM
 		return e
 	}
 	defer db.Close()
-	rows, e := db.QueryContext(ctx, `SELECT json_object('principal_id',principal_id,'operation_id',operation_id,'state',state,'fingerprint',request_fingerprint) FROM operation_receipts WHERE state IN ('accepted','reconciling') UNION ALL SELECT json_object('job_id',job_id,'kind',kind,'state',state,'attempt_generation',attempt_generation,'cancel_requested',cancel_requested) FROM jobs WHERE state NOT IN ('completed','failed','cancelled')`)
+	rows, e := db.QueryContext(ctx, `SELECT json_object('principal_id',principal_id,'operation_id',operation_id,'state',state,'fingerprint',request_fingerprint) FROM operation_receipts WHERE state IN ('accepted','reconciling') UNION ALL SELECT json_object('job_id',job_id,'kind',kind,'state',state,'attempt_generation',attempt_generation,'cancel_requested',cancel_requested) FROM jobs WHERE state NOT IN ('completed','failed','cancelled') UNION ALL `+providerAttemptInventory+` WHERE a.state<>'prepared' UNION ALL SELECT value FROM provider_orphans`)
 	if e != nil {
 		return e
 	}

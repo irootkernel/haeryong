@@ -9754,6 +9754,67 @@
         "state"
       ],
       "additionalProperties": false
+    },
+    "job_resume": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "type": "string",
+          "enum": [
+            "reconcile_only",
+            "continue",
+            "retry"
+          ]
+        },
+        "expected_attempt_generation": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "decision",
+        "expected_attempt_generation"
+      ]
+    },
+    "provider_attempt_summary": {
+      "type": "object",
+      "required": [
+        "count",
+        "unknown",
+        "reconciliation_pending"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unknown": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reconciliation_pending": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "latest_state": {
+          "enum": [
+            "prepared",
+            "dispatching",
+            "running",
+            "result_saved",
+            "failed",
+            "cancelled",
+            "outcome_unknown"
+          ]
+        },
+        "unknown_outcome_reason": {
+          "enum": [
+            "outcome_unknown"
+          ]
+        }
+      }
     }
   },
   "error_http": {

@@ -1,0 +1,127 @@
+package work
+
+import (
+	"context"
+	"errors"
+	app "haeryong.local/haeryong/internal/application/storage"
+	"haeryong.local/haeryong/internal/domain"
+)
+
+// One externally waiting turn is owned, scheduled and collected by Dispatcher.
+// It shares WorkJobs and the serialized writer; it is not another queue.
+type providerPhase struct {
+	jobID            string
+	generation       int64
+	cancel           context.CancelFunc
+	done             chan error
+	result           error
+	drained          bool
+	reconcileAttempt string
+}
+
+func (p *ProviderCoordinator) ScheduleProvider(ctx context.Context, id string) error {
+	if p.active.Load() != nil {
+		return nil
+	}
+	j, e := p.Store.Job(ctx, id)
+	if e != nil {
+		return e
+	}
+	if !domain.ProviderJob(j.Kind) {
+		return domain.ErrTransition
+	}
+	generation := j.AttemptGeneration
+	turn, cancel := context.WithCancel(ctx)
+	phase := &providerPhase{jobID: id, generation: generation, cancel: cancel, done: make(chan error, 1)}
+	p.active.Store(phase)
+	go func() { phase.done <- p.process(turn, id, phase); close(phase.done) }()
+	return nil
+}
+
+func (p *ProviderCoordinator) collectProvider(phase *providerPhase) error {
+	phase.cancel()
+	e := p.Store.Write(context.Background(), func(tx app.WriteTx) error {
+		j, e := tx.Job(phase.jobID)
+		if e != nil {
+			return e
+		}
+		if phase.reconcileAttempt != "" {
+			if e = tx.CompleteProviderReconciliation(j.ID, phase.reconcileAttempt); e != nil {
+				return e
+			}
+		}
+		if terminalProviderJob(j.State) {
+			return nil
+		}
+		if j.AttemptGeneration != phase.generation && !(j.CancelRequested && j.AttemptGeneration == phase.generation+1) {
+			return nil
+		}
+		attempts, e := tx.ProviderAttempts(j.ID)
+		if e != nil {
+			return e
+		}
+		for _, a := range attempts {
+			if a.Generation != phase.generation {
+				continue
+			}
+			if a.State == "dispatching" || a.State == "running" {
+				if e = tx.ObserveProviderAttempt(a.ID, "outcome_unknown", "", "", "transport_unknown"); e != nil {
+					return e
+				}
+			}
+		}
+		if j.CancelRequested {
+			return tx.ConfirmStop(j.ID, j.AttemptGeneration)
+		}
+		// A successful turn may only normalize or advance a finite lookup set.
+		// Keep that intended progress after the unchanged ownership/cancel guards.
+		if j.State == "reconciling" && phase.result == nil {
+			return nil
+		}
+		if j.State == "running" || j.State == "reconciling" {
+			return tx.PauseProviderJob(j.ID, "reconciliation_required")
+		}
+		return nil
+	})
+	if e == nil {
+		p.active.Store(nil)
+	}
+	return e
+}
+
+func terminalProviderJob(state string) bool {
+	return state == "completed" || state == "failed" || state == "cancelled"
+}
+
+func (p *ProviderCoordinator) PollProvider(context.Context) error {
+	phase := p.active.Load()
+	if phase == nil {
+		return nil
+	}
+	if !phase.drained {
+		select {
+		case phase.result = <-phase.done:
+			phase.drained = true
+		default:
+			return nil
+		}
+	}
+	return p.collectProvider(phase)
+}
+
+func (p *ProviderCoordinator) StopProviders() error {
+	phase := p.active.Load()
+	if phase == nil {
+		return nil
+	}
+	phase.cancel()
+	if !phase.drained {
+		phase.result = <-phase.done
+		phase.drained = true
+	}
+	result := phase.result
+	if errors.Is(result, context.Canceled) || errors.Is(result, domain.ErrStaleWorker) || errors.Is(result, domain.ErrTransition) || errors.Is(result, domain.ErrDenied) || errors.Is(result, domain.ErrPrecondition) || errors.Is(result, domain.ErrReconciliation) {
+		result = nil
+	}
+	return errors.Join(result, p.collectProvider(phase))
+}

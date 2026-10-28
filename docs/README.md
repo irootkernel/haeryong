@@ -65,6 +65,12 @@ assembled Epic review and Master's overall acceptance.
 
 ## Start here
 
+TASK-006-01 is complete; TASK-006-02 is the next implementing owner. The [provider-attempt foundation](testing/provider-attempts.md)
+describes durable attempt/input/result accounting, one-use dispatch fencing,
+owner reconciliation and restore orphan retention at schema revision 15. Its
+real test-only subscription boundary does not enable the production provider,
+generation or saved-question capabilities owned by the later ordered Tasks.
+
 | Reader | Recommended path |
 | --- | --- |
 | Owner reviewing the proposal | [Review guide](REVIEW-GUIDE.md), [decision register](decisions.md), [UI overview](ui/README.md), [R5 prototype](design/prototype/README.md), [wireframes](ui/wireframes.md), [roadmap](roadmap.md) |

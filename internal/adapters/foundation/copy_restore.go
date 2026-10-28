@@ -332,6 +332,33 @@ func applyRestore(ctx context.Context, selection service.Selection, id string, v
 		if e != nil {
 			return nil, e
 		}
+		prior, e := os.Open(filepath.Join(p.DataDir, "runtime", "restore-outstanding-"+id+".jsonl"))
+		if e != nil {
+			return nil, e
+		}
+		e = sqlite.RetainProviderOrphans(ctx, filepath.Join(state.Staging, "library.sqlite"), prior, func(object domain.Object) (bool, error) {
+			// Staging was rebuilt fresh and every copied file above passed hash/size
+			// verification. Inspect only requested objects, never catalog all files.
+			decoded, e := hex.DecodeString(object.Hash)
+			if e != nil || len(decoded) != sha256.Size || hex.EncodeToString(decoded) != object.Hash || object.Size < 0 {
+				return false, domain.ErrContentIntegrity
+			}
+			info, e := os.Lstat(filepath.Join(state.Staging, "objects", object.Hash))
+			if os.IsNotExist(e) {
+				return false, nil
+			}
+			if e != nil {
+				return false, e
+			}
+			if !info.Mode().IsRegular() || info.Size() != object.Size {
+				return false, domain.ErrContentIntegrity
+			}
+			return true, nil
+		})
+		e = errors.Join(e, prior.Close())
+		if e != nil {
+			return nil, e
+		}
 		if e = boundary("protected_database"); e != nil {
 			return nil, e
 		}
