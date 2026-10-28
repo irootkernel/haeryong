@@ -202,7 +202,8 @@ Their [record](../docs/testing/owner-records.md) separates actual actions from
 supporting setup and describes current qualifications. The shared Notes repair replaces synchronous confirmation with captured trusted
 HTML consent and guarded local replacement; browser assets are regenerated with
 those inputs. The common Sheet API and persisted/API contracts are unchanged.
-No Task or broader companion gate passed.
+The completed owner-records campaigns and Task checks have the bounded scope
+recorded there; they do not qualify a physical device or every companion stage.
 
 ## Saved-context presentation boundary
 
@@ -215,5 +216,6 @@ is used. The three named terminal workloads record rendered strings separately;
 all selection intervals require exact associated Range text/global offsets and
 all other strings remain strict. Finite mounted-component browser cases cover
 read cancellation, supersession, scope retirement and unrelated typing/resize.
-Complete Wails qualification remains GUI-blocked. See
-[owner records](../docs/testing/owner-records.md).
+The standalone Wails owner campaign completed its selected saved-context,
+consent and recovery cases. Broader native qualification retains its stage
+boundaries; see [owner records](../docs/testing/owner-records.md).

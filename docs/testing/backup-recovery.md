@@ -32,8 +32,9 @@ credential removal, canonical reverse-index recreation, recoverable storage/prof
 and strict startup/object health. New bootstrap and remembered normal restart retain
 fresh sessions. TASK-005-06 corrects current-epoch event replay/head selection while
 retaining old event rows, including nonzero sequence starts and safe poll/SSE resync.
-Its focused restore/replay regressions passed; complete native recovered body/context
-proof and the fresh final gate remain pending in [owner composition](owner-records.md).
+Its focused restore/replay regressions, actual native recovered body/context
+campaign and final Task checks passed within the completed
+[owner composition](owner-records.md).
 Existing configuration validation/plan/commit atomically reconciles
 selected settings and explicitly enumerated purge jobs. Unknown external outcomes remain
 unknown. No future provider-attempt table, ingress or scheduler is invented.
@@ -303,7 +304,8 @@ Browser/daemon cleanup completed. Touch is emulated; Task-level native transport
 parity/build does not certify an interactive Wails recovery journey or a physical
 device. No production-provider, full-VM rollback or hardware power-loss claim applies.
 
-Next is TASK-005-06: repeat production Note/Review/new-version/reopen/recovery with
-two real projects and browser/native clients, stale-write and lifecycle races,
-and full original-directory export/reimport with portable metadata checked separately.
+TASK-005-06 now records the completed production Note/Review/new-version/reopen/
+recovery composition with two projects and browser/native clients, stale-write
+and lifecycle races, and full original-directory export/reimport with portable
+metadata checked separately in [owner composition](owner-records.md).
 DF-02 remains conservatively deferred and DF-03 retains its existing read-drain behavior.

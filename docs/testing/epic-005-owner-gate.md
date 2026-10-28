@@ -1,7 +1,7 @@
 # EPIC-005 owner-state handoff
 
-Status: member Task delivery complete. Assembled Epic review and Master's overall
-acceptance remain separate; this index alone does not close the Epic exit gate.
+Status: completed selected Epic scope. All six Tasks and the assembled delivery
+were independently reviewed; Master accepted the complete scoped result.
 
 | Owner | Canonical record | Contribution |
 | --- | --- | --- |
@@ -24,6 +24,16 @@ campaigns or the final-candidate backstop. Original failed attempts retain their
 supported dispositions and unknown causes; no flake allowance follows from a
 later pass. No AI generation or physical private-device behavior is claimed.
 
-The assembled Epic review assesses the six committed Tasks together against the
-[exit gate](../epics/EPIC-005.md#exit-gate). Overall acceptance remains Master-only;
-publication, installation and remote push are outside this delivery authority.
+The assembled review by the Epic Evaluator and two fresh non-authoring Task
+Operators assessed the six committed Tasks together against the
+[exit gate](../epics/EPIC-005.md#exit-gate). Required final-candidate verification
+uses the completed whole-suite anchor and qualifying delta checks; this is not
+a claim that the historical negative aggregate passed. Original failures and
+their supported dispositions remain preserved.
+
+The selected exit is `pass`: original version/page/region records and histories,
+pinned navigation, protected objects, complete exported directory bytes and
+restored authority/configuration guards hold together. Physical private-device
+use remains EPIC-007; AI/provider extensions and DF-02/DF-03 retain their owners
+and qualifications. The next ordered Epic is EPIC-006. Publication, installation
+and remote push are outside this delivery authority.

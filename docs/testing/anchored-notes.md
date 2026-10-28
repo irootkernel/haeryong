@@ -174,10 +174,10 @@ Its read handle and captured revision/navigation scope are independent of Notes
 mutations and consent. The three named terminal-workload rendered strings are
 separate observations; associated Range text/global endpoints and decoded data
 remain exact for all intervals. Finite browser cases exercise read cancellation,
-supersession, scope retirement and unrelated typing/resize. Required native
-paint/input qualification remains blocked by unavailable visible execution. See
-the [Task6 record](owner-records.md); no predecessor or intermediate pass is
-extended to the current candidate.
+supersession, scope retirement and unrelated typing/resize. The complete actual native owner campaign exercised the required paint/input
+and saved-context cases within the [Task6 scope](owner-records.md). Historical
+blocked attempts retain their outcomes; completed Task proof and the separately
+reviewed assembled Epic gate have distinct candidate and execution bindings.
 
 Use the prepared offline toolchain and authorized Gaori execution. Focused Ginkgo uses
 race detection and the appropriate unit/integration/persistence label; new specs are named

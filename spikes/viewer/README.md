@@ -387,8 +387,8 @@ Chrome `--corpus` and native examples with the HTTP/CLI worksheet.
 
 `check_reader_native.py --stages owner-records --receipt PATH` selects the new
 actual Wails Notes/Review/lifecycle/recovery journey over common production
-setup. The [owning record](../../docs/testing/owner-records.md) describes current
-failures; this selection has not passed. It remains outside default stages and
+setup. The [owning record](../../docs/testing/owner-records.md) describes the
+completed selected campaign and its limits. It remains outside default stages and
 reports broader `full_qualification=false`. The existing offline corpus allowlist
 is unchanged. Prepaired credentials are supporting setup, not onboarding proof.
 
@@ -407,7 +407,8 @@ tests/manual/notes_context_cases.js before its probe. It preserves the complete
 declared text workload and requires actual offset-bound first/final geometry,
 selection, local keyboard input and unchanged record/frame observations within
 the existing context guard. Browser diagnostics are separate from actual Wails
-rows; this probe has not qualified the native campaign. It retains complete
+rows; complete campaign qualification is recorded separately in the owning
+record. It retains complete
 inline-tree/global-offset and grapheme-aligned selection checks and explicit
 native key/modifier mappings including PageUp/PageDown/arrows/Home/End. Actual
 movement remains separate from trusted key observation.
@@ -415,12 +416,14 @@ Focus checks assert raw associated Range text and independently derived offsets
 unconditionally across full/partial/restored selections. Only the three named
 terminal workloads record the rendered string separately; other strings remain
 strict. The native driver uses its computed canonical scratch parent.
-Pending real frame/input waits fail within the original context interval. Native
-DOM text reached its exact expected value while real frames stalled in a hidden
-document; a locked console session was independently confirmed. A later owner
-attempt after the unlocked-session prerequisite still found its first Note
-control in a hidden document and was stopped with cleanup. No input or real-frame
-qualification follows; the remaining visibility cause is unknown. Do not repeat
-the native UI campaign until supported visible execution is available. Private
-Show/Focus experiments and an unqualified App subscription repair are not retained
-in the shipping source; no mocked visibility or frame success is accepted.
+Pending real frame/input waits fail within the original context interval. Earlier
+native attempts reached exact DOM text while real frames stalled in a hidden
+document; a locked console session was independently confirmed. A later attempt
+after that prerequisite still found a hidden first Note control and stopped with
+cleanup; its remaining visibility cause is unknown. Those attempts provide no
+input or real-frame qualification. After supported visible execution became
+available, the complete actual owner campaign passed within its selected scope;
+this does not establish a retrospective cause for the earlier failures. Native
+UI campaigns still require visible execution. Private Show/Focus experiments and
+an unqualified App subscription repair are absent from shipping source; mocked
+visibility or frame success is never accepted.

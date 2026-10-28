@@ -2,7 +2,7 @@
 id: "EPIC-005"
 type: "epic"
 title: "Personal review, annotations and lifecycle"
-status: "in_progress"
+status: "done"
 depends_on: ["EPIC-004"]
 completion_requires: ["TASK-005-01","TASK-005-02","TASK-005-03","TASK-005-04","TASK-005-05","TASK-005-06"]
 ---
@@ -44,7 +44,20 @@ C07, C08, C09, M04, M06, M08, M09, M13, M18, M20. See [traceability](../testing/
 
 Production lifecycle/review evidence, local backup/export commands, pin/accounting fixtures and restored receipt/epoch ambiguity cases ready for provider-specific extension. Use the [Epic gate template](../templates/epic-gate.md) as an index to actual artifacts and identify the exact next task.
 
-The [owner-state handoff](../testing/epic-005-owner-gate.md) indexes completed
-member-Task verification and the owner composition. Assembled Epic review and
-Master's overall acceptance remain pending. It is not an exit-gate or
-overall-acceptance record.
+The [owner-state handoff](../testing/epic-005-owner-gate.md) indexes all six
+completed Tasks, assembled qualification and retained limits.
+
+## Closeout
+
+Decision: `pass` for the selected personal-tool scope after independent assembled
+review and actual Master overall acceptance. The exit preserves exact original
+Notes, Review history and pinned targets through successor versions, restart and
+protected recovery. Purge retains protected/shared/source bytes; complete export
+and reimport preserve the selected directory and separately checked personal
+metadata. Restored device tokens remain invalid; resumed work requires normal owner
+configuration review.
+
+This delivery does not qualify a physical private device, AI maintenance or a
+provider extension. DF-02/DF-03 and the predecessor records retain their stated
+limits. Installation and publication are separate. The next ordered work is
+[EPIC-006](EPIC-006.md); no downstream implementation is included here.
