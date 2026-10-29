@@ -130,6 +130,9 @@ func AuthorizeUploadScope(scope domain.CredentialScope, purpose string, raw []by
 	return nil
 }
 func authorizeScope(tx app.WriteTx, record domain.Session, r domain.Request) error {
+	if handled, e := authorizeManagedCapture(tx, record, r); handled {
+		return e
+	}
 	if record.Scope.Kind == "owner" {
 		return nil
 	}

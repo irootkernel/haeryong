@@ -813,3 +813,38 @@ Wrong Host, Origin, forwarding headers, peer, profile, instance, proof and non-o
 credentials are rejected. Client proxying and redirects are disabled. Responses bind
 nonce/status/body. The closed actions and semantic conditions are in the registry;
 there is no /api/v1 counterpart or browser/native host-path submission method.
+
+## Implemented managed source capture transport (TASK-006-02)
+
+These additive authenticated operations use only configured logical source IDs
+and clean relative selected paths. They add no server-filesystem browsing API,
+provider call or generation/question admission endpoint.
+
+| Method and route | Implemented behavior |
+| --- | --- |
+| POST /projects/{project_id}/source-captures | Strict CaptureRequest JSON and Idempotency-Key. Reserve receipt/selection, capture outside writer, recheck current authority, then atomically publish the complete target/read set or retain an incomplete selection. 201 carries the capture projection, whose complete flag and nullable target distinguish partial capture. Policy/config failure returns its retained typed error response. |
+| GET/HEAD /source-captures/{capture_id} | Current-authorized metadata and first read page; optional cursor enumerates reads. No source/Git/AI work. |
+| GET/HEAD /source-captures/{capture_id}/reads | The same capture/read projection and cursor semantics. |
+| GET/HEAD /source-captures/{capture_id}/diff?other={capture_id} | Persisted exact-byte/availability comparison with optional cursor bound to that pair. No source or AI read. |
+| GET/HEAD /source-reads/{read_id} | Explicit verified retained read or exact reference-only source reread. Current source/session/version authority precedes delivery and each consumer read. Inert octet-stream attachment with nosniff, exact digest ETag and private no-store. HEAD performs the same verification without delivering bytes. |
+
+Capture mode/default/intent, selected-path shape and pagination are in the
+[registry](schema-registry.md#additive-managed-capture-dtos-task-006-02). A scoped
+principal requires version.read and source.read for its exact project/version,
+and can inspect only its own captures. The owner may inspect permitted project
+history, while byte reads still obey current source policy and target lifecycle.
+Replay through both POST and operation receipts reapplies current visibility.
+Partial/missing source is never represented as a successful empty target set.
+Canonical 409 SOURCE_UNAVAILABLE covers missing or changed exact source, and
+503 CONTENT_INTEGRITY_ERROR withholds corrupt stored bytes. Ordinary authority
+errors remain actual read failures; capture/history alone never promises current byte access.
+No raw source, provider credentials or host root paths enter diagnostic output.
+
+Capture operation failures preserve the existing authority error code/status
+(including 401 SESSION_REVOKED), 412 configuration fencing, and a settled
+nonretryable receipt. Detached stage/deadline/interruption failures use 503
+SERVICE_RECOVERING; storage exhaustion uses 503 RESOURCE_EXHAUSTED. Exclusive
+restart settles interrupted unpublished capture as interrupted_before_commit,
+retaining its original selection and receipt. These failures cannot be retried
+automatically under the original operation ID. Metadata view and both diff sides
+use the registry's same current-availability projection without reading bytes.

@@ -323,3 +323,40 @@ Actual ZIP entries remain the authority for the existing frozen formatted-output
 binding, so adding logical implied-directory facts does not change that binding's
 encoding. Initial, standalone, separate-metadata and recovered verification share the
 same payload proof. No new metadata-object format is inferred from this rule.
+
+## Managed source copy projection (TASK-006-02 implementation)
+
+Schema-16 full backup uses a source-specific projection of its private coherent
+SQLite snapshot. Reference-only capture rows keep their exact identity and
+selection but become unavailable/reference_only_uncopied. Only their temporary
+capture, job-input, attempt-input and proven reference-only orphan-input owners
+are omitted. A same-hash independently retained snapshot, payload, result,
+context or other owner still requires its actual object bytes. The general
+required-object integrity/fingerprint checks remain strict. Unclassified legacy
+or conflicting input ownership is retained conservatively; no missing bytes are
+manufactured from object readiness or a digest.
+
+Restore preserves retention/source-version facts with provider uncertainty and
+retains its normal policy-review barrier. A missing reference-only checkout after
+review remains unavailable; selected snapshots can verify/read offline under
+current access. Explicit retained-source export adds only selected additional
+snapshots bound to the exported version. It does not expand project-only source
+captures or include provider operational history. See the [managed-source record](../testing/managed-sources.md)
+for actual copy, protected restore and ownership tests and their limits.
+
+The uncopied projection changes only reference-only rows whose stored capture
+availability was available. Existing missing, denied and not_read reasons remain
+unchanged across protected restore and a subsequent backup. A copied independent
+same-hash owner never upgrades a reference-only capture's retention claim.
+
+### Managed capture history after source omission
+
+The source-specific reference_only_uncopied projection marks only previously
+available reference-only reads. Supported rows retain their exact captured source,
+location and byte identity. Metadata views and byte-digest diffs interpret that
+marker as historical capture availability, while current bytes remain unavailable
+and unretained. This does not authorize source reads, restore omitted objects or
+create an attempt observation. Missing, denied, unconsumed and unsupported legacy
+rows retain conservative facts; an ambiguous marker alone cannot invent history.
+Independent payload, selected snapshot, result and other owners keep their normal
+coherent object-copy and retention requirements.

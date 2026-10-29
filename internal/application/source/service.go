@@ -32,11 +32,15 @@ type Reader interface {
 }
 
 type Service struct {
+	Files  FileReader
 	Store  app.Store
 	Auth   *appauth.Service
 	Bytes  Bytes
 	Reader Reader
 	Now    func() time.Time
+	// Lifetime cancels accepted capture work when its owning daemon drains.
+	// Caller acknowledgement loss remains independent of this lifetime.
+	Lifetime context.Context
 	// CheckBound overrides the detached check bound (tests, D4).
 	CheckBound time.Duration
 	// Fault injects staged-protocol boundaries for tests only.

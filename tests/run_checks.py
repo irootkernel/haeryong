@@ -2,6 +2,7 @@
 """Leaf handlers for the root Make authority. No aggregate or dependency installation."""
 import argparse
 import ast
+import errno
 import hashlib
 import importlib.metadata
 import json
@@ -92,6 +93,54 @@ def interrupt(signum, _frame):
     raise RunInterrupted(signum)
 
 
+def owned_group_is_drained(pgid):
+    # Only the current metadata snapshot is inspected: no argv, historical PID
+    # signals or conclusion from the direct leader alone. Any unknown snapshot
+    # is fatal, so keep-going cannot schedule more work after uncertain cleanup.
+    if type(pgid) is not int or pgid <= 0 or pgid == os.getpgrp():
+        raise FatalSetup("Invalid owned process group for cleanup observation")
+    try:
+        observed = subprocess.run(["ps", "-A", "-o", "pid=,pgid=,uid=,stat="],
+                                  capture_output=True, encoding="ascii", timeout=5,
+                                  env=os.environ | {"LC_ALL": "C"})
+    except (OSError, subprocess.SubprocessError, UnicodeError) as error:
+        raise FatalSetup("Cannot observe current owned process group") from error
+    if observed.returncode != 0 or observed.stderr or not observed.stdout or not observed.stdout.endswith("\n"):
+        raise FatalSetup("Incomplete current process metadata for cleanup")
+    members, seen, caller = [], set(), False
+    for line in observed.stdout.splitlines():
+        fields = line.split()
+        if len(fields) != 4:
+            raise FatalSetup("Malformed current process metadata for cleanup (field count)")
+        if (any(not re.fullmatch(r"[0-9]+", field) for field in fields[:2])
+                or not re.fullmatch(r"-?[0-9]+", fields[2])):
+            raise FatalSetup("Malformed current process metadata for cleanup (numeric identity)")
+        try:
+            pid, group, uid = map(int, fields[:3])
+        except ValueError as error:
+            raise FatalSetup("Invalid numeric process metadata for cleanup") from error
+        # Native ps can render an unrelated effective UID as signed decimal.
+        # It is never the current owner unless it equals the actual effective UID.
+        state = fields[3]
+        # State is relevant only to the owned group and this caller witness.
+        # Unrelated states are opaque; all rows still require structural and
+        # numeric integrity, and globally unique process identities.
+        if (group == pgid or pid == os.getpid()) and not re.fullmatch(r"[RSDTtIWUXZ][<ANLSsl+EVXW>]*", state):
+            raise FatalSetup("Malformed current process metadata for cleanup (relevant state)")
+        if pid in seen:
+            raise FatalSetup("Duplicate current process metadata for cleanup")
+        seen.add(pid)
+        if pid == os.getpid():
+            caller = group == os.getpgrp() and uid == os.geteuid() and not state.startswith("Z")
+        if group == pgid:
+            members.append((uid, state))
+    # ps -A must include this still-running caller. A successful exit alone
+    # cannot turn empty, partial or unparseable output into proof of absence.
+    if not caller:
+        raise FatalSetup("Current process metadata lacks the cleanup caller")
+    return all(uid == os.geteuid() and state.startswith("Z") for uid, state in members)
+
+
 def stop_children(process):
     # Each command owns a new process group, including descendants whose direct
     # parent already exited. Repeated cancellation must not interrupt draining.
@@ -101,6 +150,17 @@ def stop_children(process):
             try:
                 os.killpg(process.pid, sig)
             except ProcessLookupError:
+                break
+            except PermissionError as error:
+                if sig != signal.SIGKILL or error.errno != errno.EPERM:
+                    raise
+                # The error itself proves no postcondition: kernels may deny
+                # signals to zombie-only groups, or deny genuinely live work.
+                # A successful zero-wait reaps/establishes the owned direct
+                # leader's terminal state before any metadata-only fallback.
+                process.wait(timeout=0)
+                if process.returncode is None or not owned_group_is_drained(process.pid):
+                    raise
                 break
             if sig == signal.SIGTERM:
                 try:
@@ -118,6 +178,7 @@ def stop_children(process):
 
 def command(args, output, env, *, timeout=120):
     result = {"argv": args, "exit_code": None, "signal": None, "timed_out": False}
+    child = None
     try:
         with output.open("xb") as stream:
             try:
@@ -141,6 +202,10 @@ def command(args, output, env, *, timeout=120):
                 stop_children(child)
                 raise RunInterrupted(result["signal"])
     finally:
+        # Cleanup control may fail after the direct child has already reaped.
+        # Preserve that known raw outcome independently; unknown stays unknown.
+        if result["exit_code"] is None and child is not None and child.returncode is not None:
+            result["exit_code"] = child.returncode
         if result["exit_code"] is not None and result["exit_code"] < 0:
             result["signal"] = -result["exit_code"]
         pending = sys.exc_info()[1]

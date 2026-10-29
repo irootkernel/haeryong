@@ -19,6 +19,7 @@ import (
 	httpimports "haeryong.local/haeryong/internal/adapters/http/imports"
 	httpsource "haeryong.local/haeryong/internal/adapters/http/source"
 	httpv1 "haeryong.local/haeryong/internal/adapters/http/v1"
+	sourcefiles "haeryong.local/haeryong/internal/adapters/source"
 	appauth "haeryong.local/haeryong/internal/application/auth"
 	appconfig "haeryong.local/haeryong/internal/application/configuration"
 	importer "haeryong.local/haeryong/internal/application/import"
@@ -182,6 +183,7 @@ func run() error {
 	configurationCore := appconfig.New(store, core, configpath.Resolver{})
 	configurationCore.Backup = store.BackupStatus
 	sourceCore := appsource.New(store, core, store, gitreader.New())
+	sourceCore.Files = sourcefiles.ManagedFiles(writer.Profile.DataDir)
 	api := &apiRoutes{queries: httpv1.New(queries, nil, nil), imports: httpimports.New(imports), configuration: httpconfig.New(configurationCore), source: httpsource.New(sourceCore)}
 	handler, err := httpauth.New(core, httpauth.Policy{Hosts: hosts, Origins: origins}, api)
 	if err != nil {

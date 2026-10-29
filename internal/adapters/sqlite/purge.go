@@ -48,6 +48,7 @@ func (t *writeTx) PurgeImpact(document string) ([]domain.LifecycleItem, error) {
 		{"annotation_value", `SELECT a.value FROM annotations a WHERE a.document_id=? ORDER BY annotation_id`},
 		{"annotation_revision", `SELECT h.value FROM annotation_history h JOIN annotations a USING(annotation_id) WHERE a.document_id=? ORDER BY h.annotation_id,h.revision`},
 		{"source_history", `SELECT value FROM (SELECT json_object('id',verification_id,'excerpt',hex(expected_excerpt),'ref',expected_excerpt_ref,'read',read_id,'outcome',outcome) AS value FROM citation_verifications WHERE version_id IN(SELECT version_id FROM document_versions WHERE document_id=?) ORDER BY verification_id)`},
+		{"managed_source_snapshot", `SELECT json_object('capture',c.capture_id,'read',r.read_id,'hash',r.content_hash,'retention',r.retention_mode,'availability',r.availability) FROM source_capture_reads r JOIN source_captures c ON c.capture_id=r.capture_id WHERE json_extract(c.requested_selection,'$.version_id') IN(SELECT version_id FROM document_versions WHERE document_id=?) AND EXISTS(SELECT 1 FROM object_references own WHERE own.owner_kind='selected_snapshot' AND own.owner_id=r.read_id AND own.content_hash=r.content_hash) ORDER BY c.capture_id,r.read_id`},
 	} {
 		rs, e := t.tx.QueryContext(t.ctx, q.sql, document)
 		if e != nil {
@@ -312,13 +313,19 @@ func (t *writeTx) PurgeStep(id string, generation int64, limit int) (bool, error
 	// Do not remove a running worker's ownership ledger before it confirms
 	// stop. The serial dispatcher gives accepted cancellation its normal turn.
 	var active int
-	if err = t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM jobs WHERE state NOT IN('completed','failed','cancelled') AND job_id IN(SELECT job_id FROM derived_work WHERE version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?) UNION SELECT job_id FROM import_intents WHERE json_extract(value,'$.DocumentID')=? UNION SELECT job_id FROM jobs WHERE kind IN ('generation','question') AND (json_extract(scope,'$.target.document_id')=? OR json_extract(scope,'$.target.version_id') IN(SELECT version_id FROM purged_versions WHERE document_id=?)))`, i.DocumentID, i.DocumentID, i.DocumentID, i.DocumentID).Scan(&active); err != nil {
+	if err = t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM jobs WHERE state NOT IN('completed','failed','cancelled') AND job_id IN(SELECT job_id FROM derived_work WHERE version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?) UNION SELECT job_id FROM import_intents WHERE json_extract(value,'$.DocumentID')=? UNION SELECT job_id FROM jobs WHERE kind IN ('generation','question') AND (json_extract(scope,'$.target.document_id')=? OR json_extract(scope,'$.target.version_id') IN(SELECT version_id FROM purged_versions WHERE document_id=?)) UNION SELECT i.job_id FROM job_inputs i JOIN source_capture_reads r ON r.read_id=i.read_id JOIN source_captures c ON c.capture_id=r.capture_id WHERE json_extract(c.requested_selection,'$.version_id') IN(SELECT version_id FROM purged_versions WHERE document_id=?))`, i.DocumentID, i.DocumentID, i.DocumentID, i.DocumentID, i.DocumentID).Scan(&active); err != nil {
 		return false, err
 	}
 	if active > 0 {
 		return false, nil
 	}
 	if err = t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM check_intents WHERE state='open' AND json_extract(canonical_target,'$.version_id') IN(SELECT version_id FROM purged_versions WHERE document_id=?)`, i.DocumentID).Scan(&active); err != nil {
+		return false, err
+	}
+	if active > 0 {
+		return false, nil
+	}
+	if err = t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM source_captures WHERE state='capturing' AND json_extract(requested_selection,'$.version_id') IN(SELECT version_id FROM purged_versions WHERE document_id=?)`, i.DocumentID).Scan(&active); err != nil {
 		return false, err
 	}
 	if active > 0 {
@@ -380,6 +387,13 @@ func (t *writeTx) PurgeStep(id string, generation int64, limit int) (bool, error
 			return false, err
 		}
 		return false, t.purgeProgress(i)
+	}
+	// Version-context snapshot ownership ends with the explicit document
+	// purge; standalone project snapshots and every other owner remain separate.
+	if detached, e := t.detachManagedSnapshots(id, i.DocumentID, limit); e != nil {
+		return false, e
+	} else if detached {
+		return false, nil
 	}
 	// Contexts are removed only after all saved-note owners are gone. Unknown and
 	// independent pins/references remain and ReserveGC will protect their bytes.
@@ -674,6 +688,19 @@ func (t *writeTx) minimizePurgeReceipts(i *domain.PurgeIntent) (bool, error) {
 				owned = owned || n > 0
 			}
 		}
+		if len(parts) == 5 && parts[2] == "projects" && parts[4] == "source-captures" {
+			var input struct {
+				Version string `json:"version_id"`
+			}
+			if e = json.Unmarshal(r.Original.Body, &input); e != nil {
+				return false, e
+			}
+			var n int
+			if e = t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM purged_versions WHERE version_id=? AND document_id=?`, input.Version, i.DocumentID).Scan(&n); e != nil {
+				return false, e
+			}
+			owned = owned || n > 0
+		}
 		for _, name := range []string{"context_ref", "context_id"} {
 			if ref, ok := body[name].(string); ok {
 				c, e := t.Context(ref)
@@ -770,4 +797,37 @@ func purgeStage(i domain.PurgeIntent) string {
 		return "source"
 	}
 	return "versions"
+}
+
+func (t *writeTx) detachManagedSnapshots(job, document string, limit int) (bool, error) {
+	rows, e := t.tx.QueryContext(t.ctx, `SELECT r.read_id,r.content_hash FROM source_capture_reads r JOIN source_captures c ON c.capture_id=r.capture_id WHERE json_extract(c.requested_selection,'$.version_id') IN(SELECT version_id FROM purged_versions WHERE document_id=?) AND EXISTS(SELECT 1 FROM object_references own WHERE own.owner_kind='selected_snapshot' AND own.owner_id=r.read_id AND own.content_hash=r.content_hash) ORDER BY r.read_id LIMIT ?`, document, batch(limit))
+	if e != nil {
+		return false, e
+	}
+	type binding struct{ id, hash string }
+	page := []binding{}
+	for rows.Next() {
+		var b binding
+		if e = rows.Scan(&b.id, &b.hash); e != nil {
+			rows.Close()
+			return false, e
+		}
+		page = append(page, b)
+	}
+	e = errors.Join(rows.Err(), rows.Close())
+	if e != nil {
+		return false, e
+	}
+	for _, b := range page {
+		if e = t.candidateSelect(job, `o.content_hash=?`, b.hash); e != nil {
+			return false, e
+		}
+		if e = t.exec(`DELETE FROM object_references WHERE owner_kind='selected_snapshot' AND owner_id=? AND content_hash=?`, b.id, b.hash); e != nil {
+			return false, e
+		}
+		if e = t.exec(`UPDATE source_capture_reads SET availability='unavailable',reason='version_purged' WHERE read_id=?`, b.id); e != nil {
+			return false, e
+		}
+	}
+	return len(page) > 0, nil
 }

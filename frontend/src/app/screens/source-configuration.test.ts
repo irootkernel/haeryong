@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import type { ConfigurationCommitView, ConfigurationPlanView, HaeryongClient, SourceMapping } from "../../client/types.ts";
 import { ApiError, DispatchBlockedError, StaleResponseError } from "../../client/types.ts";
 import { PendingSourceWriteError } from "../../client/source-operations.ts";
-import { ProjectRegistrationFlow, SourceConfigurationFlow, expandsSourceScope, sourcesForPreview } from "./source-configuration.ts";
+import { ProjectRegistrationFlow, SourceConfigurationFlow, sourceConfirmation, expandsSourceScope, sourcesForPreview } from "./source-configuration.ts";
 
 const mapping: SourceMapping = { source_id: "s", kind: "git", repo_id: "r", root_path: "/approved", retention_mode: "reference_only", provider_ids: [] };
 const plan: ConfigurationPlanView = { plan_id: "plan", base_config_revision: 7, expires_at: "later", normalized_changes: { projects: { p: { sources: [mapping] } } }, affected_permissions_revisions: { p: 1 }, impact: { workflow_scope: "new capture", security: "immediate" } };
@@ -15,7 +15,7 @@ function fixture() {
   const calls: unknown[][] = [];
   const client = {
     configurationView: async () => ({ config_revision: 7, etag: "tag", configuration: { projects: { p: { sources: [mapping] } } } }),
-    configurationPlan: async (...args: unknown[]) => { calls.push(["plan", ...args]); return { ...plan, normalized_changes: { projects: { p: { sources: (args[0] as { changes: { sources: SourceMapping[] } }).changes.sources } } } }; },
+    configurationPlan: async (...args: unknown[]) => { calls.push(["plan", ...args]); return { ...plan, normalized_changes: { projects: { p: { ...(args[0] as { changes: Record<string, unknown> }).changes } } } }; },
     configurationPlanCommit: async (...args: unknown[]) => { calls.push(["commit", ...args]); return { config_revision: 8 }; },
   } as unknown as HaeryongClient;
   const intents = new SourceWriteIntents();
@@ -358,3 +358,78 @@ for (const phase of ["committing", "pending"] as const) {
     assert.equal(authority.sourceWriteIntents().configurations.size, 0);
   });
 }
+
+
+test("normal source settings preserve pinned/current and provider defaults through preview and explicit confirmation", async () => {
+  const { flow, calls } = fixture(); await flow.load();
+  await flow.preview([mapping], { source_mode_default: "current", provider_id: "chosen-provider" });
+  assert.deepEqual((calls[0]![1] as { changes: unknown }).changes, { sources: [mapping], source_mode_default: "current", provider_id: "chosen-provider" });
+  assert.deepEqual(flow.snapshot().previewDefaults, { source_mode_default: "current", provider_id: "chosen-provider" });
+  assert.equal(flow.snapshot().expandsScope, false);
+  assert.deepEqual(flow.snapshot().providerChange, { before: null, after: "chosen-provider" });
+  await flow.commit(false); assert.equal(calls.length, 1);
+  await flow.commit(true); assert.equal(flow.snapshot().phase, "done");
+  assert.deepEqual(flow.snapshot().previewSources[0]!.provider_ids, [], "a default does not grant disclosure on the source");
+});
+
+
+for (const kind of ["provider", "source", "both"] as const) {
+  test(`${kind} changes name their real impact and use one explicit confirmation`, async () => {
+    const { flow, client, calls } = fixture();
+    client.configurationView = async () => ({ config_revision: 7, etag: "tag", configuration: { projects: { p: { sources: [mapping], provider_id: "old-provider" } } } });
+    await flow.load();
+    const sources = kind === "provider" ? [mapping] : [{ ...mapping, provider_ids: ["allowed-provider"] }];
+    const provider = kind === "source" ? "old-provider" : "next-provider";
+    await flow.preview(sources, { source_mode_default: "current", provider_id: provider });
+    assert.equal(flow.snapshot().expandsScope, kind !== "provider");
+    assert.deepEqual(flow.snapshot().providerChange, kind === "source" ? null : { before: "old-provider", after: "next-provider" });
+    const expected = kind === "provider" ? "기본 Provider 변경 영향을 확인했습니다" : kind === "source" ? "출처/공개 범위 확대 영향을 확인했습니다" : "출처/공개 범위 확대와 기본 Provider 변경 영향을 확인했습니다";
+    assert.equal(sourceConfirmation(flow.snapshot()), expected);
+    await flow.commit(false); assert.equal(calls.length, 1, "no commit before impact confirmation");
+    await flow.commit(true); assert.equal(flow.snapshot().phase, "done");
+    assert.deepEqual(flow.snapshot().previewSources, sources, "a default never edits the source allow list");
+  });
+}
+
+test("clearing a provider default names old to none and retains the ordinary Apply flow", async () => {
+  const { flow, client, calls } = fixture();
+  client.configurationView = async () => ({ config_revision: 7, etag: "tag", configuration: { projects: { p: { sources: [mapping], provider_id: "old-provider" } } } });
+  await flow.load(); await flow.preview([mapping], { source_mode_default: "pinned", provider_id: null });
+  assert.deepEqual(flow.snapshot().providerChange, { before: "old-provider", after: null });
+  assert.equal(flow.snapshot().expandsScope, false); assert.equal(sourceConfirmation(flow.snapshot()), null);
+  await flow.commit(false); assert.equal(flow.snapshot().phase, "done");
+  assert.deepEqual((calls[0]![1] as { changes: unknown }).changes, { sources: [mapping], source_mode_default: "pinned", provider_id: null });
+});
+
+test("initial configuration read failure has no current values or mutation and retries the actual read", async () => {
+  const { flow, client, calls } = fixture(); let reads = 0;
+  client.configurationView = async () => { reads++; throw new ApiError(503, "SERVICE_RECOVERING", true); };
+  await flow.load();
+  assert.equal(flow.snapshot().phase, "error"); assert.equal(flow.snapshot().configuration, null);
+  await flow.preview([mapping]); assert.equal(calls.length, 0);
+  client.configurationView = async () => { reads++; return { config_revision: 9, etag: "actual", configuration: { projects: { p: { sources: [mapping], source_mode_default: "current", provider_id: "remembered-provider" } } } }; };
+  await flow.load();
+  assert.equal(reads, 2); assert.equal(flow.snapshot().phase, "editing");
+  assert.equal(flow.snapshot().configuration!.configuration.projects.p!.provider_id, "remembered-provider");
+  await flow.preview([mapping]); assert.equal((calls[0]![1] as { expected_config_revision: number }).expected_config_revision, 9);
+});
+
+test("failed reread preserves loaded configuration and a failed preview keeps its editable basis", async () => {
+  const { flow, client } = fixture(); await flow.load(); const loaded = flow.snapshot().configuration;
+  client.configurationPlan = async () => { throw new ApiError(422, "INVALID_REQUEST", false); };
+  await flow.preview([{ ...mapping, root_path: "/owner-draft" }]);
+  assert.equal(flow.snapshot().phase, "error"); assert.equal(flow.snapshot().configuration, loaded);
+  client.configurationView = async () => { throw new ApiError(503, "SERVICE_RECOVERING", true); };
+  await flow.load(); assert.equal(flow.snapshot().phase, "error"); assert.equal(flow.snapshot().configuration, loaded);
+});
+
+
+test("changing the provider while narrowing disclosure is a provider change without source expansion", async () => {
+  const { flow, client } = fixture();
+  client.configurationView = async () => ({ config_revision: 7, etag: "tag", configuration: { projects: { p: { sources: [{ ...mapping, provider_ids: ["old-allowed"] }], provider_id: "old-provider" } } } });
+  await flow.load(); await flow.preview([mapping], { source_mode_default: "pinned", provider_id: "new-provider" });
+  assert.equal(flow.snapshot().expandsScope, false);
+  assert.deepEqual(flow.snapshot().providerChange, { before: "old-provider", after: "new-provider" });
+  assert.equal(sourceConfirmation(flow.snapshot()), "기본 Provider 변경 영향을 확인했습니다");
+  assert.deepEqual(flow.snapshot().previewSources[0]!.provider_ids, [], "the visible source plan narrows disclosure independently of its provider default");
+});

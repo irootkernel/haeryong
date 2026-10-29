@@ -25,14 +25,17 @@ type ProviderAttempt struct {
 // ObservedAt is the first local durable acknowledgement time, not capture time.
 // A nil timestamp in retained historical evidence remains unknown.
 type ProviderInput struct {
-	AttemptID      string  `json:"attempt_id"`
-	ReadID         string  `json:"read_id"`
-	Hash           string  `json:"bytes_sha256"`
-	ObservedOrigin string  `json:"input_origin,omitempty"`
-	ObservedAt     *string `json:"observed_at"`
+	SourceVersionID string  `json:"source_version_id,omitempty"`
+	RetentionMode   string  `json:"retention_mode,omitempty"`
+	AttemptID       string  `json:"attempt_id"`
+	ReadID          string  `json:"read_id"`
+	Hash            string  `json:"bytes_sha256"`
+	ObservedOrigin  string  `json:"input_origin,omitempty"`
+	ObservedAt      *string `json:"observed_at"`
 }
 
 type ProviderScope struct {
+	ProviderID      string          `json:"provider_id,omitempty"`
 	PrincipalID     string          `json:"principal_id"`
 	AuthEpoch       string          `json:"auth_epoch"`
 	CredentialScope CredentialScope `json:"credential_scope"`

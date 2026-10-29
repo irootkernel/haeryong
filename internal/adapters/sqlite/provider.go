@@ -81,7 +81,7 @@ func (t *writeTx) ProviderAttempts(jobID string) ([]domain.ProviderAttempt, erro
 	return out, nil
 }
 func (t *writeTx) ProviderInputs(id string) ([]domain.ProviderInput, error) {
-	rows, e := t.tx.QueryContext(t.ctx, `SELECT read_id,content_hash,coalesce(input_origin,''),observed_at FROM provider_inputs WHERE attempt_id=? ORDER BY read_id`, id)
+	rows, e := t.tx.QueryContext(t.ctx, `SELECT i.read_id,i.content_hash,coalesce(i.input_origin,''),i.observed_at,coalesce(r.retention_mode,''),coalesce(json_extract(c.requested_selection,'$.version_id'),'') FROM provider_inputs i LEFT JOIN source_capture_reads r ON r.read_id=i.read_id LEFT JOIN source_captures c ON c.capture_id=r.capture_id WHERE i.attempt_id=? ORDER BY i.read_id`, id)
 	if e != nil {
 		return nil, e
 	}
@@ -89,7 +89,7 @@ func (t *writeTx) ProviderInputs(id string) ([]domain.ProviderInput, error) {
 	out := []domain.ProviderInput{}
 	for rows.Next() {
 		v := domain.ProviderInput{AttemptID: id}
-		if e = rows.Scan(&v.ReadID, &v.Hash, &v.ObservedOrigin, &v.ObservedAt); e != nil {
+		if e = rows.Scan(&v.ReadID, &v.Hash, &v.ObservedOrigin, &v.ObservedAt, &v.RetentionMode, &v.SourceVersionID); e != nil {
 			return nil, e
 		}
 		out = append(out, v)

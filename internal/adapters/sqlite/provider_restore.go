@@ -360,12 +360,16 @@ func RetainProviderOrphans(ctx context.Context, path string, input io.Reader, av
 				if e = validateProviderObservation(input); e != nil {
 					return e
 				}
-				retainedInputs[input.ReadID+":"+input.Hash] = input
+				key := input.ReadID + ":" + input.Hash
+				previous, exists := retainedInputs[key]
+				if !exists || previous.RetentionMode == "reference_only" {
+					retainedInputs[key] = input
+				}
 			}
 		}
 		for _, input := range retainedInputs {
 			pinID := "provider-orphan:" + a.ID + ":" + input.ReadID + ":" + input.Hash
-			if !needsInputs {
+			if !needsInputs || input.RetentionMode == "reference_only" {
 				if _, e = tx.ExecContext(ctx, `DELETE FROM object_pins WHERE pin_id=? AND owner_kind='provider_orphan' AND owner_id=? AND content_hash=?`, pinID, a.ID, input.Hash); e != nil {
 					return e
 				}
@@ -440,6 +444,9 @@ func RetainProviderOrphans(ctx context.Context, path string, input io.Reader, av
 // Timestamp-less prior evidence stays unknown; restore never manufactures an
 // observation. A supplied timestamp must belong to an actual observation pair.
 func validateProviderObservation(input domain.ProviderInput) error {
+	if input.RetentionMode != "" && input.RetentionMode != "reference_only" && input.RetentionMode != "selected_snapshot" {
+		return domain.ErrInvalidTarget
+	}
 	if input.ObservedOrigin != "" && input.ObservedOrigin != "daemon_supplied" && input.ObservedOrigin != "native_observed" {
 		return domain.ErrInvalidTarget
 	}

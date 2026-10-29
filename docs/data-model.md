@@ -533,3 +533,38 @@ frozen payload membership. Restored complete-copy rows retain observation histor
 their older runtime does not authorize current retention deletion. The protected
 runtime directory retains per-plan restore terminal outcomes independently of the
 single active-switch journal and the replaceable library receipt tables.
+
+## Migration-16 managed source capture implementation
+
+This additive implementation preserves the logical requirements and earlier
+migration records above. TASK-006-02 adds these exact relations:
+
+| Relation | Stored fields and ownership |
+| --- | --- |
+| source_captures | capture_id, principal_id, project_id FK, preallocated target_set_id, state capturing/completed/failed, requested_selection JSON, config_revision, permissions_revision, captured_at, operation_id, reason; unique principal/operation. Only completed full capture publishes its target set; partial wire target/time are null. |
+| source_capture_reads | read_id PK, capture_id FK, source_id, source_json, location_json, content_hash, byte_size, retention_mode, availability, reason. Every selected path has a pending/result row. Historical hash has no object FK and cannot retain or reconstruct bytes. |
+| job_inputs | job_id FK and read_id FK to captured_reads, composite PK. Trusted atomic admission acquires exact generic job_input pins; this relation alone is not an attempt input observation. |
+
+The source_capture owner protects each verified staged object. Completion adopts
+selected_snapshot references by read_id; reference_only staging ends after
+atomic job handoff or standalone completion. Snapshot version context is the
+immutable version_id inside requested_selection: existing document purge releases
+only those snapshot references, while project-only captures and every independent
+owner survive. source_capture_read is a unique invocation-owned verified reader;
+exclusive locked startup reclaims only provably dead capture/reader ownership
+and settles interrupted captures without altering job/attempt/orphan owners.
+
+Provider input/orphan inventory derives optional retention_mode and
+source_version_id from the exact managed read binding. These are lifetime/scope
+facts, separate from actual input_origin/observed_at. Full backup marks
+reference-only source reads uncopied and removes only their temporary source/input
+owners. Independent same-hash payload, selected snapshots, result and other
+owners remain required objects. Protected restore retains that metadata and
+uncertainty; it does not infer available bytes from ready object rows.
+
+Migration 15 to 16 uses the verified pre-migration recovery set and one atomic
+migration transaction. Missing/altered migration-16 DDL refuses startup. Old
+hash-only captured_reads are preserved without invented content objects,
+job_inputs, managed bindings or input observations. Backup compatibility retains
+the exact schema/fingerprint requirement; an older software backup is not
+silently relabelled as schema 16. See [managed-source evidence](testing/managed-sources.md).

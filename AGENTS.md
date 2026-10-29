@@ -113,3 +113,12 @@ opening a native client.
 - Preserve the Revision 4 source, historical review qualifications, and generated-file authorities. Keep secrets, private source, and hidden model reasoning out of public logs and committed evidence.
 - Setup does not authorize product implementation, provider authentication or calls, network changes, service startup, staging, commits, or publication.
 - For agent-owned scratch files, verify that /Volumes/RootKernel is mounted and writable before using a unique task directory under /Volumes/RootKernel/tmp. Otherwise use the system temporary directory. Pass explicit paths to temporary-file tools and clean up only this task's artifacts.
+
+TASK-006-02 implements managed exact source capture/retained reads and metadata
+comparison at schema revision 16, atomic capture-to-job input ownership,
+source-specific reference-only backup projection, version-context snapshot purge
+and normal shared Sources default/provider settings. docs/testing/managed-sources.md
+records current checks and limits. Source capture alone never proves an attempt
+received bytes. TASK-006-03/04/05 retain production transport/generation/Q&A;
+Task02's bounded delivery is complete after its actual common gate, independent
+final assessment and delegated member acceptance. TASK-006-03 is the next owner.

@@ -254,4 +254,5 @@ CREATE TABLE purge_candidates(job_id TEXT NOT NULL REFERENCES purge_intents(job_
 `,
 	copyMigration,
 	providerMigration,
+	sourceCaptureMigration,
 }

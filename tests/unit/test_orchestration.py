@@ -219,6 +219,7 @@ except r.RunInterrupted as e:sys.exit(128+e.signum)
         assert not later.exists()
         status=json.loads((tmp_path/'child.status.json').read_text())
         assert status['signal'] in (signal.SIGTERM,signal.SIGKILL)
+        assert status['timed_out'] is False and status['exit_code'] < 0
     finally:
         if proc.poll() is None:proc.kill();proc.wait(timeout=5)
 
@@ -285,3 +286,248 @@ def test_stop_control_survives_evidence_failure_and_never_continues(tmp_path,mon
         checks.run('child',lambda:r.command(['fixture'],tmp_path/'child.log',{},timeout=1))
         checks.run('later',lambda:later.append(True))
     assert not later
+
+
+@pytest.mark.parametrize("group_state", ["absent", "zombies", "unrelated-opaque-state"])
+def test_sigkill_eperm_uses_only_current_reaped_owned_group_evidence(tmp_path, monkeypatch, group_state):
+    from tests import run_checks as r
+    import errno, json, signal
+
+    group = max(os.getpid(), os.getpgrp()) + 100000  # synthetic; killpg is fault-injected below
+    calls, snapshots = [], []
+    class Child:
+        pid = group
+        returncode = None
+        def wait(self, *, timeout):
+            calls.append(("wait", timeout))
+            if timeout == 17:
+                raise subprocess.TimeoutExpired("owned-fixture", timeout)
+            self.returncode = -signal.SIGTERM
+            return self.returncode
+    child = Child()
+    monkeypatch.setattr(r.subprocess, "Popen", lambda *a, **k: child)
+    def killpg(pgid, sig):
+        assert pgid == group
+        calls.append(("signal", sig))
+        if sig == signal.SIGKILL:
+            raise PermissionError(errno.EPERM, "injected owned group EPERM")
+    monkeypatch.setattr(r.os, "killpg", killpg)
+    def snapshot(argv, **kwargs):
+        snapshots.append(argv)
+        assert argv == ["ps", "-A", "-o", "pid=,pgid=,uid=,stat="]
+        assert kwargs["timeout"] == 5 and kwargs["capture_output"] and kwargs["encoding"] == "ascii"
+        assert kwargs["env"]["LC_ALL"] == "C"
+        assert child.returncode == -signal.SIGTERM and ("wait", 0) in calls
+        # An unrelated runnable process with another UID must not be selected.
+        text = f"{os.getpid()} {os.getpgrp()} {os.geteuid()} S\n{group+9} {group+9} {os.geteuid()+1} R\n{group+10} {group+10} -2 SS\n"
+        if group_state == "unrelated-opaque-state":
+            text += f"{group+11} {group+11} -2 synthetic-unknown-state\n"
+        if group_state == "zombies":
+            text += f"{group+1} {group} {os.geteuid()} Z\n{group+2} {group} {os.geteuid()} Z+\n"
+        return subprocess.CompletedProcess(argv, 0, text, "")
+    monkeypatch.setattr(r.subprocess, "run", snapshot)
+    handlers = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
+    checks = r.Checks(tmp_path, True); later = []
+    checks.run("timeout", lambda: r.command(["owned-fixture"], tmp_path / "child.log", {}, timeout=17))
+    checks.run("later", lambda: later.append("ran"))
+    assert later == ["ran"] and len(checks.failures) == 1
+    status = json.loads((tmp_path / "child.status.json").read_text())
+    assert status == {"argv": ["owned-fixture"], "exit_code": -signal.SIGTERM, "signal": signal.SIGTERM, "timed_out": True}
+    assert snapshots == [["ps", "-A", "-o", "pid=,pgid=,uid=,stat="]]
+    assert [item for item in calls if item[0] == "signal"] == [("signal", signal.SIGTERM), ("signal", signal.SIGKILL)]
+    assert ("wait", 5) in calls and {sig: signal.getsignal(sig) for sig in handlers} == handlers
+
+
+@pytest.mark.parametrize("fault", [
+    "runnable", "stopped", "foreign-zombie", "foreign-signed-uid", "mixed", "unknown-state", "bad-pid", "bad-group", "bad-uid",
+    "missing-field", "extra-field", "duplicate-pid", "blank-line", "empty", "truncated", "missing-caller",
+    "wrong-caller-uid", "wrong-caller-group", "unknown-caller-state", "unrelated-bad-pid", "unrelated-extra-field", "stderr", "failed", "timeout", "unavailable", "undecodable",
+])
+def test_sigkill_eperm_unknown_or_live_group_is_fatal_and_stops_later_checks(tmp_path, monkeypatch, fault):
+    from tests import run_checks as r
+    import errno, json, signal
+
+    group = max(os.getpid(), os.getpgrp()) + 100000  # no real group is signalled
+    class Child:
+        pid = group
+        returncode = None
+        def wait(self, *, timeout):
+            if timeout == 17:
+                raise subprocess.TimeoutExpired("owned-fixture", timeout)
+            self.returncode = -signal.SIGTERM
+            return self.returncode
+    monkeypatch.setattr(r.subprocess, "Popen", lambda *a, **k: Child())
+    signals = []
+    def killpg(pgid, sig):
+        assert pgid == group; signals.append(sig)
+        if sig == signal.SIGKILL:
+            raise PermissionError(errno.EPERM, "injected EPERM")
+    monkeypatch.setattr(r.os, "killpg", killpg)
+    def snapshot(argv, **kwargs):
+        if fault == "timeout":raise subprocess.TimeoutExpired(argv, 5)
+        if fault == "unavailable":raise FileNotFoundError("injected missing ps")
+        if fault == "undecodable":raise UnicodeDecodeError("ascii", b"\xff", 0, 1, "injected invalid metadata")
+        caller = f"{os.getpid()} {os.getpgrp()} {os.geteuid()} S\n"
+        row = f"{group+1} {group} {os.geteuid()} Z\n"
+        if fault == "runnable":row = row.replace(" Z", " R")
+        if fault == "stopped":row = row.replace(" Z", " T")
+        if fault == "foreign-zombie":row = f"{group+1} {group} {os.geteuid()+1} Z\n"
+        if fault == "foreign-signed-uid":row = f"{group+1} {group} -2 Z\n"
+        if fault == "mixed":row += f"{group+2} {group} {os.geteuid()} S\n"
+        if fault == "unknown-state":row = row.replace(" Z", " ?")
+        if fault == "bad-pid":row = f"invalid {group} {os.geteuid()} Z\n"
+        if fault == "bad-group":row = f"{group+1} -1 {os.geteuid()} Z\n"
+        if fault == "bad-uid":row = f"{group+1} {group} owner Z\n"
+        if fault == "missing-field":row = f"{group+1} {group} {os.geteuid()}\n"
+        if fault == "extra-field":row = row.rstrip() + " argv-not-requested\n"
+        if fault == "duplicate-pid":row += row
+        if fault == "blank-line":row += "\n"
+        if fault == "unknown-caller-state":caller = caller.replace(" S", " synthetic-unknown-state")
+        if fault == "unrelated-bad-pid":row += f"invalid {group+9} -2 synthetic-unknown-state\n"
+        if fault == "unrelated-extra-field":row += f"{group+9} {group+9} -2 synthetic-unknown-state extra\n"
+        if fault == "wrong-caller-uid":caller = f"{os.getpid()} {os.getpgrp()} {os.geteuid()+1} S\n"
+        if fault == "wrong-caller-group":caller = f"{os.getpid()} {group+9} {os.geteuid()} S\n"
+        text = ("" if fault == "missing-caller" else caller) + row
+        if fault == "empty":text = ""
+        if fault == "truncated":text = text.rstrip("\n")
+        return subprocess.CompletedProcess(argv, 1 if fault == "failed" else 0, text, "injected error" if fault == "stderr" else "")
+    monkeypatch.setattr(r.subprocess, "run", snapshot)
+    handlers = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
+    checks = r.Checks(tmp_path, True); later = []
+    with pytest.raises(r.FatalSetup):
+        checks.run("timeout", lambda: r.command(["owned-fixture"], tmp_path / "child.log", {}, timeout=17))
+        checks.run("later", lambda: later.append(True))
+    assert not later and not checks.failures
+    assert signals == [signal.SIGTERM, signal.SIGKILL]
+    status = json.loads((tmp_path / "child.status.json").read_text())
+    assert status["timed_out"] is True  # no fabricated successful command
+    assert status["exit_code"] == -signal.SIGTERM and status["signal"] == signal.SIGTERM, "known leader exit survives fatal descendant cleanup"
+    assert {sig: signal.getsignal(sig) for sig in handlers} == handlers
+
+
+@pytest.mark.parametrize("fault", ["term-eperm", "kill-eacces", "leader-not-reaped", "leader-unknown"])
+def test_cleanup_does_not_generalize_permission_exception_or_leader_termination(monkeypatch, fault):
+    from tests import run_checks as r
+    import errno, signal
+    group = max(os.getpid(), os.getpgrp()) + 100000
+    class Child:
+        pid = group
+        returncode = None
+        def wait(self, *, timeout):
+            if fault == "leader-not-reaped":raise subprocess.TimeoutExpired("owned-fixture", timeout)
+            if fault != "leader-unknown":self.returncode = -signal.SIGTERM
+            return self.returncode
+    def killpg(pgid, sig):
+        assert pgid == group
+        if sig == signal.SIGTERM and fault == "term-eperm":raise PermissionError(errno.EPERM, "injected TERM EPERM")
+        if sig == signal.SIGKILL:raise PermissionError(errno.EACCES if fault == "kill-eacces" else errno.EPERM, "injected kill denial")
+    monkeypatch.setattr(r.os, "killpg", killpg)
+    monkeypatch.setattr(r.subprocess, "run", lambda *a, **k: pytest.fail("unqualified permission errors must not inspect metadata"))
+    handlers = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
+    with pytest.raises(r.FatalSetup):r.stop_children(Child())
+    assert {sig: signal.getsignal(sig) for sig in handlers} == handlers
+
+
+@pytest.mark.parametrize("ignore_term", [False, True])
+def test_actual_ready_descendant_term_and_kill_cleanup_retains_timeout_and_continues(tmp_path, monkeypatch, ignore_term):
+    from tests import run_checks as r
+    import json, signal, time
+    ready = tmp_path / "descendant-ready"
+    # The descendant publishes readiness only AFTER its selected TERM behavior
+    # is installed. The real command timeout starts after that barrier.
+    descendant_code = "import os,pathlib,signal,sys,time; signal.signal(signal.SIGTERM,signal.SIG_IGN if sys.argv[2]=='ignore' else signal.SIG_DFL); pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)"
+    parent_code = "import subprocess,sys,time; subprocess.Popen([sys.executable,'-B','-c',sys.argv[1],sys.argv[2],sys.argv[3]]); time.sleep(60)"
+    argv = [sys.executable, "-B", "-c", parent_code, descendant_code, str(ready), "ignore" if ignore_term else "normal"]
+    original_popen, original_killpg = subprocess.Popen, os.killpg
+    owned, sent = [], []
+    def prepared(args, **kwargs):
+        process = original_popen(args, **kwargs)
+        if args == argv:
+            owned.append(process)
+            deadline = time.monotonic() + 15
+            while not ready.exists() and time.monotonic() < deadline:
+                assert process.poll() is None, "owned leader exited before descendant readiness"
+                time.sleep(.01)
+            if not ready.exists():
+                original_killpg(process.pid, signal.SIGKILL);process.wait(timeout=5)
+                pytest.fail("owned descendant did not reach its TERM readiness barrier")
+        return process
+    def killpg(pgid, sig):
+        assert owned and pgid == owned[0].pid, "signals must target only this newly owned group"
+        sent.append(sig);return original_killpg(pgid, sig)
+    monkeypatch.setattr(r.subprocess, "Popen", prepared)
+    monkeypatch.setattr(r.os, "killpg", killpg)
+    try:
+        checks = r.Checks(tmp_path, True)
+        checks.run("actual-timeout", lambda: r.command(argv, tmp_path / "actual.log", dict(os.environ), timeout=1))
+        assert len(checks.failures) == 1 and owned[0].returncode == -signal.SIGTERM
+        status = json.loads((tmp_path / "actual.status.json").read_text())
+        assert status["timed_out"] and status["exit_code"] == -signal.SIGTERM and status["signal"] == signal.SIGTERM
+        assert signal.SIGTERM in sent and (not ignore_term or signal.SIGKILL in sent)
+        pid = int(ready.read_text()); deadline = time.monotonic() + 5
+        while True:
+            observation = subprocess.run(["ps", "-p", str(pid), "-o", "pid=,pgid=,uid=,stat="], capture_output=True, text=True, timeout=5)
+            fields = observation.stdout.split()
+            if not fields:assert observation.returncode == 1;break
+            assert observation.returncode == 0 and len(fields) == 4
+            assert [int(value) for value in fields[:3]] == [pid, owned[0].pid, os.geteuid()]
+            if fields[3].startswith("Z"):break
+            assert time.monotonic() < deadline, "newly owned descendant remained runnable after cleanup"
+            time.sleep(.01)
+        assert r.owned_group_is_drained(owned[0].pid), "actual native ps grammar must establish this fresh group's drained state"
+        # Restore only instrumentation before a fresh independent actual command;
+        # production cleanup/timeout semantics stay in force throughout.
+        monkeypatch.setattr(r.subprocess, "Popen", original_popen)
+        monkeypatch.setattr(r.os, "killpg", original_killpg)
+        checks.run("later", lambda: r.command([sys.executable, "-B", "-c", "pass"], tmp_path / "later.log", dict(os.environ)))
+        assert (tmp_path / "later.status.json").is_file() and len(checks.failures) == 1
+    finally:
+        # Every failure path still owns only this newly launched fixture. The
+        # direct Popen handle, or the ready descendant's exact current PID/group/
+        # UID, must establish ownership before emergency cleanup signals it.
+        if owned:
+            leader = owned[0]
+            active_leader = leader.poll() is None
+            active_descendant = False
+            if ready.exists():
+                descendant = int(ready.read_text())
+                current = subprocess.run(["ps", "-p", str(descendant), "-o", "pid=,pgid=,uid=,stat="], capture_output=True, text=True, timeout=5)
+                fields = current.stdout.split()
+                assert not current.stderr, "cleanup metadata errors are not absence"
+                if fields:
+                    assert current.returncode == 0 and len(fields) == 4
+                    assert [int(value) for value in fields[:3]] == [descendant, leader.pid, os.geteuid()]
+                    active_descendant = not fields[3].startswith("Z")
+                else:
+                    assert current.returncode == 1
+            if active_leader or active_descendant:
+                try:
+                    original_killpg(leader.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            leader.wait(timeout=5)
+
+
+def test_unreaped_fatal_cleanup_keeps_unknown_raw_child_status(tmp_path, monkeypatch):
+    from tests import run_checks as r
+    import errno, json, signal
+    group = max(os.getpid(), os.getpgrp()) + 100000
+    class Child:
+        pid = group
+        returncode = None
+        def wait(self, *, timeout):
+            raise subprocess.TimeoutExpired("owned-fixture", timeout)
+    monkeypatch.setattr(r.subprocess, "Popen", lambda *a, **k: Child())
+    def killpg(pgid, sig):
+        assert pgid == group
+        if sig == signal.SIGKILL:
+            raise PermissionError(errno.EPERM, "injected inability to establish terminal leader")
+    monkeypatch.setattr(r.os, "killpg", killpg)
+    monkeypatch.setattr(r.subprocess, "run", lambda *a, **k: pytest.fail("an unreaped leader cannot use metadata fallback"))
+    checks = r.Checks(tmp_path, True); later = []
+    with pytest.raises(r.FatalSetup):
+        checks.run("owned", lambda: r.command(["owned-fixture"], tmp_path / "unknown.log", {}, timeout=17))
+        checks.run("later", lambda: later.append(True))
+    status = json.loads((tmp_path / "unknown.status.json").read_text())
+    assert status["timed_out"] is True and status["exit_code"] is None and status["signal"] is None
+    assert not later and not checks.failures

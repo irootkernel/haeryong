@@ -21,4 +21,5 @@ UNION SELECT metadata_sha FROM picked WHERE metadata_sha!=''
 UNION SELECT json_extract(value,'$.body_object.Hash') FROM note_values
 UNION SELECT c.content_hash FROM contexts c JOIN note_values n ON c.context_id=json_extract(n.value,'$.context_ref')
 UNION SELECT x.expected_excerpt_ref FROM citation_verifications x JOIN picked p ON p.version_id=x.version_id WHERE x.expected_excerpt_ref IS NOT NULL AND (SELECT json_extract(value,'$.Request.include_retained_sources') FROM choice)=1
+UNION SELECT r.content_hash FROM source_capture_reads r JOIN source_captures c ON c.capture_id=r.capture_id JOIN picked p ON p.version_id=json_extract(c.requested_selection,'$.version_id') JOIN object_references own ON own.owner_kind='selected_snapshot' AND own.owner_id=r.read_id AND own.content_hash=r.content_hash WHERE c.state='completed' AND r.retention_mode='selected_snapshot' AND r.availability='available' AND (SELECT json_extract(value,'$.Request.include_retained_sources') FROM choice)=1
 ) SELECT hash FROM hashes WHERE hash IS NOT NULL AND hash!=''`

@@ -26,7 +26,7 @@ import (
 	driverSQLite "modernc.org/sqlite"
 )
 
-const SchemaRevision = 15
+const SchemaRevision = 16
 
 type Boundary string
 
@@ -199,6 +199,9 @@ func (s *Store) Prepare(ctx context.Context, p service.Profile) (state service.S
 	// effect owner. Exclusive startup proves its old process is gone; reclaim
 	// only that reader kind, retaining attempt/orphan/snapshot/result ownership.
 	if _, err := s.db.ExecContext(ctx, "DELETE FROM object_pins WHERE (owner_kind='metadata_prepare' OR owner_kind='import_prepare') AND owner_id IN(SELECT index_id FROM metadata_indexes WHERE job_id IS NULL);DELETE FROM object_pins WHERE owner_kind='import' AND pin_id GLOB 'metadata-request:*';DELETE FROM object_pins WHERE owner_kind='context_prepare';DELETE FROM object_pins WHERE owner_kind='provider_continuation';DELETE FROM metadata_indexes WHERE job_id IS NULL"); err != nil {
+		return state, nil, err
+	}
+	if err := s.recoverSourceCaptures(ctx); err != nil {
 		return state, nil, err
 	}
 	// Local work left running by a dead process is fenced before any new claim.
@@ -628,7 +631,12 @@ func (s *Store) validateTables(ctx context.Context, revision int) error {
 		}
 	}
 	if revision >= 15 {
-		return s.validateProviderDeclarations(ctx)
+		if e := s.validateProviderDeclarations(ctx); e != nil {
+			return e
+		}
+	}
+	if revision >= 16 {
+		return s.validateSourceCaptureDeclarations(ctx)
 	}
 	return nil
 }

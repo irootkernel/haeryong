@@ -65,7 +65,7 @@ assembled Epic review and Master's overall acceptance.
 
 ## Start here
 
-TASK-006-01 is complete; TASK-006-02 is the next implementing owner. The [provider-attempt foundation](testing/provider-attempts.md)
+TASK-006-01 and TASK-006-02 are complete. The [managed-source implementation record](testing/managed-sources.md) covers capture, selected snapshots and remembered Sources defaults without enabling a production provider. The [provider-attempt foundation](testing/provider-attempts.md)
 describes durable attempt/input/result accounting, one-use dispatch fencing,
 owner reconciliation and restore orphan retention at schema revision 15. Its
 real test-only subscription boundary does not enable the production provider,

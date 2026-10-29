@@ -369,3 +369,32 @@ identity checks. No original backup is required merely to replay an old result.
 An admitted staging restore retries the same plan after preview expiry, rechecking
 its matching journal, original destination state and immutable input. An unexecuted
 expired or malformed plan still refuses before journal or alias publication.
+
+## Implemented managed source inspection (TASK-006-02)
+
+The authenticated CLI adds the following narrow operations. IDs and source paths
+refer to the managed capture API, never an arbitrary server filesystem root.
+
+```sh
+haeryong sources capture --project PROJECT_ID --input request.json
+haeryong sources captured --capture CAPTURE_ID
+haeryong sources captured --capture CAPTURE_ID --cursor CURSOR
+haeryong sources diff --capture CAPTURE_ID --other OTHER_CAPTURE_ID
+haeryong sources read --read READ_ID --output NEW_LOCAL_FILE
+```
+
+Capture accepts optional --operation-id and uses the existing durable command
+journal/receipt recovery. The strict request file contains the selected logical
+source IDs, mode/intent/revision and relative paths described in the registry.
+A missing/partial capture remains inspectable with complete false and its full
+original selection. Captured/diff reads never start Git or AI. Diff also accepts
+--cursor. Source bytes stream to an exclusively created private output file;
+the client verifies the returned SHA-256, syncs completion, preserves existing
+files and removes only its own incomplete output. It never prints raw source as
+JSON diagnostics or reports an input observation. Current scope/visibility is
+rechecked by the service on every operation, including retained reads and replay.
+
+Source/default/provider settings continue through normal configuration
+plan/confirm/commit. The default provider does not widen any source provider_ids.
+Production provider transport and source-grounded answer/generation commands
+retain their ordered later implementing owners.

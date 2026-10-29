@@ -6,6 +6,8 @@ import "errors"
 // both the adapter and the service classify identical errors; the registry's
 // unavailable reasons derive from them.
 var (
+	ErrSourceChanged = errors.New("selected source changed during open")
+	ErrSourceDenied  = errors.New("selected source is outside managed collection policy")
 	// ErrObjectMissing marks a pinned revision or its path that cannot be
 	// read at an existing mapped repository.
 	ErrObjectMissing = errors.New("git object missing")

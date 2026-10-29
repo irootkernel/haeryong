@@ -166,6 +166,67 @@ async page => {
   const actual=await page.evaluate(()=>{const key=Object.keys(localStorage).find(key=>key.startsWith('haeryong.notes.v1:')&&JSON.parse(localStorage.getItem(key)).draft?.anchor.version_id===document.querySelector('.review-control')?.dataset.versionId&&JSON.parse(localStorage.getItem(key)).draft?.text==='Task6 restart retained local draft');return JSON.parse(localStorage.getItem(key));});if(recordJSON(actual.draft)!==recordJSON(c.fixture.restart_draft)||actual.pending!==null)throw Error('restart changed draft or created intent: '+JSON.stringify({actual,expected:{draft:c.fixture.restart_draft,pending:null}}));
   await page.locator('.annotation-editor').getByRole('button',{name:'취소',exact:true}).click();await page.locator('#note-confirmation [data-note-confirm]').click();await page.waitForFunction(()=>!document.querySelector('#note-body'));return {ephemeralConsentGone:true,exactDraftRetained:true,explicitDiscardAfterReopen:true};
  });
+ if(c.phase==='managed-purge-sources'){
+  const sources=c.fixture.managed_purge_sources,document=c.fixture.originals.mulgae.document_id;
+  const list=async path=>{const items=[];let cursor=null;do{const query='limit=64'+(cursor?'&cursor='+encodeURIComponent(cursor):'');const r=await api('GET',path+'?'+query);if(r.status!==200)throw Error('public list failed '+path);items.push(...r.wire.data.items);cursor=r.wire.data.next_cursor;}while(cursor);return items;};
+  for(const mode of ['keyboard','touch'])await check('ui.managed-purge.'+mode,async()=>{
+   const touch=mode==='touch';let context,target=page;const plans=[],pending=[],consoleMessages=[];let rendererBoundary=null;
+   if(touch){context=await page.context().browser().newContext({hasTouch:true,viewport:{width:390,height:844}});await context.addInitScript(({origin,token})=>{if(window===top&&location.origin===origin)localStorage.setItem('haeryong.owner-session.v1',token);},{origin:c.origin,token:c.token});target=await context.newPage();target.on('pageerror',e=>errors.push(String(e)));}
+   else await page.setViewportSize({width:1280,height:900});
+   await target.context().addInitScript(()=>{window.__managedPurgeInputs=[];for(const name of ['keydown','pointerdown'])addEventListener(name,e=>{if(e.isTrusted)window.__managedPurgeInputs.push({type:name,key:e.key,pointerType:e.pointerType});},true);});
+   const observeConsole=message=>{if(['error','warning'].includes(message.type())&&message.location().url?.startsWith(c.origin))consoleMessages.push({type:message.type(),text:message.text(),path:message.location().url.slice(c.origin.length).split('?')[0]});};target.on('console',observeConsole);
+   const observePlan=response=>{if(response.request().method()==='POST'&&response.url().includes('/documents/'+document+'/lifecycle-plans'))pending.push((async()=>{const wire=await response.json();if(response.status()===201||response.status()===200)plans.push(wire.data);})());};target.on('response',observePlan);
+   const activate=async locator=>{await locator.scrollIntoViewIfNeeded();if(touch)await locator.tap();else{await locator.focus();await target.keyboard.press('Enter');}};
+   const choose=async name=>{const menu=target.locator('.lifecycle-control details').first();if(await menu.getAttribute('open')===null)await activate(menu.locator('summary'));await activate(target.getByRole('button',{name,exact:true}));await target.locator('[data-lifecycle-confirm]').waitFor();};
+   const confirm=async()=>{await activate(target.locator('[data-lifecycle-confirm]'));await target.getByRole('dialog',{name:'수명주기 영향 확인'}).waitFor({state:'hidden'});};
+   try{
+    await target.goto(c.origin+c.fixture.routes.mulgae);await target.locator('#review-state').waitFor();
+    await target.waitForFunction(()=>{const form=document.querySelector('.reader-content form');if(!form?.hasAttribute('action'))return false;const url=new URL(form.action);return ['http:','https:'].includes(url.protocol)&&url.origin!==location.origin&&url.pathname==='/__haeryong/handoff';});
+    rendererBoundary=await target.locator('.reader-content form').evaluate(form=>({origin:new URL(form.action).origin,expectedOriginSource:'existing handoff form action; secret is not read',hostOrigin:location.origin,declaredFrameSrc:document.querySelector('iframe').getAttribute('src'),sandbox:document.querySelector('iframe').sandbox.value}));
+    const frame=await (await target.locator('iframe').elementHandle()).contentFrame();if(!frame)throw Error('renderer child frame absent');
+    await frame.waitForURL(rendererBoundary.origin+'/**');await frame.locator('body').waitFor();
+    rendererBoundary.loaded=await frame.evaluate(()=>({url:location.href,origin:location.origin,bodyReady:document.body!==null}));
+    if(!rendererBoundary.loaded.bodyReady||!rendererBoundary.loaded.url.startsWith(rendererBoundary.origin+'/')||rendererBoundary.loaded.origin!==rendererBoundary.origin||rendererBoundary.loaded.origin===rendererBoundary.hostOrigin)throw Error('loaded renderer is not on its expected separate origin');
+    if(!(await target.title())||await target.locator('body').innerText()==='')throw Error('blank or unidentified host page');
+    await choose('휴지통으로 이동');await confirm();
+    await target.goto(c.origin+'/trash');await target.getByRole('heading',{name:'휴지통',exact:true}).waitFor();
+    const before=(await list('/trash')).find(row=>row.document_id===document);if(!before)throw Error('actual document not in Trash');
+    const jobs=(await list('/jobs')).map(row=>row.job_id).sort();
+    await choose('영구 삭제');
+    const dialog=target.getByRole('dialog',{name:'수명주기 영향 확인'});
+    while(await dialog.getByRole('button',{name:'영향 목록 더 보기',exact:true}).count())await activate(dialog.getByRole('button',{name:'영향 목록 더 보기',exact:true}));
+    await Promise.all(pending);const plan=plans.filter(row=>row.operation==='purge').at(-1);
+    if(!plan||plan.impact.managed_source_snapshot!==1)throw Error('actual public impact must count exactly one selected snapshot');
+    const records=plan.items.filter(row=>row.kind==='managed_source_snapshot');
+    if(records.length!==1||records[0].id!==sources.snapshot_impact_id||records.some(row=>row.id===sources.reference_impact_id))throw Error('reference-only same-hash ownership entered purge impact');
+    const countRow=dialog.locator('dl > div').filter({hasText:'보관한 소스 스냅샷'});
+    if(await countRow.count()!==1||(await countRow.locator('dd').innerText()).trim()!=='1')throw Error('managed snapshot label/count not rendered');
+    const item=dialog.locator('li').filter({hasText:'보관한 소스 스냅샷'});if(await item.count()!==1)throw Error('managed snapshot list item missing');
+    await activate(item.locator('summary'));if(!(await item.innerText()).includes(sources.snapshot_impact_id))throw Error('actual managed snapshot item identity not rendered');
+    if(await dialog.evaluate(e=>e.scrollWidth>e.clientWidth+1))throw Error('purge dialog horizontal overflow');
+    const explainedConsoleMessages=[],unexpectedConsoleMessages=[];
+    for(const message of consoleMessages){
+     if(message.type==='error'&&message.path==='/favicon.ico'&&message.text==='Failed to load resource: the server responded with a status of 404 (Not Found)')explainedConsoleMessages.push({...message,reason:'Existing optional favicon route is absent; not a failed app resource.'});
+     else if(message.type==='warning'&&message.text==="An iframe which has both allow-scripts and allow-same-origin for its sandbox attribute can escape its sandboxing."&&rendererBoundary.loaded.origin!==rendererBoundary.hostOrigin)explainedConsoleMessages.push({...message,reason:'Existing Chrome sandbox advisory for the separately originated renderer; actual renderer origin differs from trusted host.'});
+     else unexpectedConsoleMessages.push(message);
+    }
+    if(unexpectedConsoleMessages.length||await target.locator('vite-error-overlay').count())throw Error('trusted host console or framework overlay error: '+JSON.stringify(unexpectedConsoleMessages));
+    const screenshot=c.work+'/managed-purge-'+mode+'.png';await target.screenshot({path:screenshot,fullPage:false});
+    const inputsBefore=await target.evaluate(()=>window.__managedPurgeInputs);
+    if(touch)await activate(dialog.getByRole('button',{name:'닫기',exact:true}));else await target.keyboard.press('Escape');
+    await dialog.waitFor({state:'hidden'});
+    const inputs=await target.evaluate(()=>window.__managedPurgeInputs);
+    if(!touch&&(!inputs.some(e=>e.type==='keydown'&&e.key==='Enter')||!inputs.some(e=>e.type==='keydown'&&e.key==='Escape')))throw Error('actual keyboard interaction evidence missing');
+    if(touch&&!inputs.some(e=>e.type==='pointerdown'&&e.pointerType==='touch'))throw Error('actual emulated touch evidence missing');
+    const after=(await list('/trash')).find(row=>row.document_id===document);
+    if(recordJSON(after)!==recordJSON(before)||recordJSON((await list('/jobs')).map(row=>row.job_id).sort())!==recordJSON(jobs))throw Error('cancel changed Trash revision or created a job');
+    await choose('복원');await confirm();
+    const restored=await api('GET','/documents/'+document);if(restored.status!==200||restored.wire.data.lifecycle!=='active')throw Error('cancelled document did not restore');
+    return {label:'보관한 소스 스냅샷',count:1,hostConsoleMessages:consoleMessages,explainedConsoleMessages,unexpectedConsoleMessages,rendererBoundary,frameworkOverlay:false,pageTitle:await target.title(),sameHashReferenceExcluded:true,publicPlanObserved:true,plan_id:plan.plan_id,screenshot,inputMethod:mode,programmaticFocus:!touch,physicalDevice:false,purgeCommitted:false,unchangedTrashRevision:before.revision,noNewJob:true,inputsBeforeCancel:inputsBefore.length,inputs};
+   }catch(e){await target.screenshot({path:c.work+'/managed-purge-'+mode+'-failure.png'}).catch(()=>{});throw e;}
+   finally{await Promise.all(pending);target.off('response',observePlan);target.off('console',observeConsole);if(context)await context.close();}
+  });
+ }
  if(c.phase==='lifecycle'){
   const document=c.fixture.originals.mulgae.document_id;
   const exclusion=async(kind,hidden)=>{

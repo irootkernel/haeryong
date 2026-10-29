@@ -224,6 +224,43 @@ func CopyDependencies(ctx context.Context, path, id string, v domain.CopyVersion
 			return e
 		}
 	}
+	if e = rows.Err(); e != nil {
+		return e
+	}
+	if e = rows.Close(); e != nil {
+		return e
+	}
+	// Only exact version-bound managed snapshots are dependencies of this
+	// export. Project-only captures and operational provider records stay private.
+	rows, e = db.QueryContext(ctx, `SELECT r.read_id,r.source_id,r.source_json,r.location_json,r.content_hash,r.byte_size,EXISTS(SELECT 1 FROM object_references own WHERE own.owner_kind='selected_snapshot' AND own.owner_id=r.read_id AND own.content_hash=r.content_hash),o.state FROM source_capture_reads r JOIN source_captures c ON c.capture_id=r.capture_id LEFT JOIN content_objects o ON o.content_hash=r.content_hash WHERE json_extract(c.requested_selection,'$.version_id')=? AND c.state='completed' AND r.retention_mode='selected_snapshot' ORDER BY r.read_id`, v.VersionID)
+	if e != nil {
+		return e
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var read, id, hash string
+		var source, location json.RawMessage
+		var size int64
+		var owned bool
+		var state sql.NullString
+		if e = rows.Scan(&read, &id, &source, &location, &hash, &size, &owned, &state); e != nil {
+			return e
+		}
+		status := "excluded_by_scope"
+		if includeSources {
+			if !owned || !state.Valid || state.String != "ready" {
+				return domain.ErrContentIntegrity
+			}
+			if e = object(domain.Object{Hash: hash, Size: size, State: "ready"}); e != nil {
+				return e
+			}
+			status = "included"
+		}
+		raw, _ := json.Marshal(map[string]any{"kind": "managed_source_snapshot", "read_id": read, "source_id": id, "version_id": v.VersionID, "source": source, "location": location, "sha256": hash, "bytes": size, "state": status})
+		if e = consume(raw); e != nil {
+			return e
+		}
+	}
 	return rows.Err()
 }
 

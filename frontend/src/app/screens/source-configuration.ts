@@ -5,13 +5,17 @@ import type { ConfigurationIntent, RegistrationIntent, SourceWriteIntents } from
 import { ApiError, StaleResponseError } from "../../client/types.ts";
 import { PendingSourceWriteError, reconcileSourceWrite } from "../../client/source-operations.ts";
 
+export type SourceDefaults = { source_mode_default: "pinned" | "current"; provider_id: string | null };
+
 type Authority = Pick<ShellController, "captureDispatchAuthority" | "requireVerifiedDispatch" | "sourceWriteIntents">;
 export interface SourceConfigurationState {
   phase: "loading" | "editing" | "previewing" | "preview" | "committing" | "done" | "stale" | "error" | "pending";
   configuration: ConfigurationView | null;
   plan: ConfigurationPlanView | null;
   previewSources: SourceMapping[];
+  previewDefaults: SourceDefaults;
   expandsScope: boolean;
+  providerChange: { before: string | null; after: string | null } | null;
   reason: string | null;
   pending: { kind: "preview" | "commit"; operationId: string } | null;
 }
@@ -25,9 +29,18 @@ export function expandsSourceScope(before: SourceMapping[], after: SourceMapping
   });
 }
 
+/** One owner confirmation names the actual planned effects. Clearing a default
+ * keeps the existing explicit Apply flow without granting new provider use. */
+export function sourceConfirmation(state: Pick<SourceConfigurationState, "expandsScope" | "providerChange">): string | null {
+  const changesProvider = state.providerChange !== null && state.providerChange.after !== null;
+  if (state.expandsScope && changesProvider) return "출처/공개 범위 확대와 기본 Provider 변경 영향을 확인했습니다";
+  if (state.expandsScope) return "출처/공개 범위 확대 영향을 확인했습니다";
+  return changesProvider ? "기본 Provider 변경 영향을 확인했습니다" : null;
+}
+
 /** Revision-bound plan controller used by the normal project settings flow. */
 export class SourceConfigurationFlow {
-  #state: SourceConfigurationState = { phase: "loading", configuration: null, plan: null, previewSources: [], expandsScope: false, reason: null, pending: null };
+  #state: SourceConfigurationState = { phase: "loading", configuration: null, plan: null, previewSources: [], previewDefaults: { source_mode_default: "pinned", provider_id: null }, expandsScope: false, providerChange: null, reason: null, pending: null };
   #epoch = 0;
   #previewIntent: ConfigurationIntent | null = null;
   readonly #intents: SourceWriteIntents;
@@ -51,16 +64,23 @@ export class SourceConfigurationFlow {
       if (epoch === this.#epoch) {
         const pending = this.#intents.configurations.get(this.projectId) ?? null;
         this.#previewIntent = pending?.kind === "preview" ? pending : null;
-        this.#apply({ phase: pending ? "pending" : "editing", pending, configuration, expandsScope: false });
+        this.#apply({ phase: pending ? "pending" : "editing", pending, configuration, expandsScope: false, providerChange: null });
       }
-    } catch (error) { if (epoch === this.#epoch) this.#fail(error); }
+    } catch (error) {
+      if (epoch === this.#epoch) {
+        this.#fail(error);
+        // No configuration has been read, so there is no editable current
+        // state or mutation receipt to reconcile. Retry the actual read.
+        if (this.#state.configuration === null) this.#apply({ phase: "error" });
+      }
+    }
   }
   cancel(): void {
     const current = this.#intents.configurations.get(this.projectId);
     if (this.#state.phase === "committing" || this.#state.pending?.kind === "commit" || current?.kind === "commit") return;
     if (this.#previewIntent) this.#clearIntent(this.#previewIntent);
     this.#epoch++;
-    this.#apply({ phase: "editing", plan: null, previewSources: [], expandsScope: false, reason: null, pending: null });
+    this.#apply({ phase: "editing", plan: null, previewSources: [], previewDefaults: { source_mode_default: "pinned", provider_id: null }, expandsScope: false, providerChange: null, reason: null, pending: null });
   }
   #fail(error: unknown, pending?: { kind: "preview" | "commit"; operationId: string }): void {
     const uncertain = error instanceof PendingSourceWriteError || error instanceof StaleResponseError;
@@ -76,12 +96,17 @@ export class SourceConfigurationFlow {
     if (epoch === this.#epoch && intent.outcome.state === "failed") this.#clearIntent(intent);
   }
   #acceptPlan(plan: ConfigurationPlanView): void {
-    const projects = plan.normalized_changes.projects as Record<string, { sources: SourceMapping[] }>;
+    const projects = plan.normalized_changes.projects as Record<string, { sources: SourceMapping[]; source_mode_default?: "pinned" | "current"; provider_id?: string | null }>;
     const previewSources = projects[this.projectId]!.sources;
     const before = this.#state.configuration!.configuration.projects[this.projectId]?.sources ?? [];
-    this.#apply({ phase: "preview", plan, previewSources, expandsScope: expandsSourceScope(before, previewSources), pending: null });
+    const prior = this.#state.configuration!.configuration.projects[this.projectId];
+    const normalized = projects[this.projectId]!;
+    const previewDefaults: SourceDefaults = { source_mode_default: normalized.source_mode_default ?? prior?.source_mode_default ?? "pinned", provider_id: "provider_id" in normalized ? normalized.provider_id ?? null : prior?.provider_id ?? null };
+    const previousProvider = prior?.provider_id ?? null;
+    const providerChange = previewDefaults.provider_id === previousProvider ? null : { before: previousProvider, after: previewDefaults.provider_id };
+    this.#apply({ phase: "preview", plan, previewSources, previewDefaults, expandsScope: expandsSourceScope(before, previewSources), providerChange, pending: null });
   }
-  async preview(sources: SourceMapping[]): Promise<void> {
+  async preview(sources: SourceMapping[], defaults?: SourceDefaults): Promise<void> {
     const configuration = this.#state.configuration;
     if (!configuration || this.#intents.configurations.has(this.projectId) || ["previewing", "committing", "pending"].includes(this.#state.phase)) return;
     const authority = this.authority.captureDispatchAuthority();
@@ -90,11 +115,11 @@ export class SourceConfigurationFlow {
     const intent: ConfigurationIntent = { kind: "preview", operationId, outcome: { state: "pending" } };
     this.#previewIntent = intent;
     this.#intents.configurations.set(this.projectId, intent);
-    this.#apply({ phase: "previewing", plan: null, reason: null, previewSources: [], expandsScope: false });
+    this.#apply({ phase: "previewing", plan: null, reason: null, previewSources: [], previewDefaults: { source_mode_default: "pinned", provider_id: null }, expandsScope: false });
     try {
       const plan = await resolveWriteIntent(intent, () => {
         this.authority.requireVerifiedDispatch(authority);
-        return this.client.configurationPlan({ scope: { kind: "project", project_id: this.projectId }, expected_config_revision: configuration.config_revision, changes: { sources: structuredClone(sources) } }, operationId);
+        return this.client.configurationPlan({ scope: { kind: "project", project_id: this.projectId }, expected_config_revision: configuration.config_revision, changes: { sources: structuredClone(sources), ...(defaults ?? {}) } }, operationId);
       });
       if (epoch === this.#epoch) {
         this.#acceptPlan(plan as ConfigurationPlanView);
@@ -105,7 +130,7 @@ export class SourceConfigurationFlow {
   async commit(confirmedImpact: boolean): Promise<void> {
     const plan = this.#state.plan;
     if (!plan || this.#state.phase !== "preview") return;
-    if (this.#state.expandsScope && !confirmedImpact) { this.#apply({ reason: "출처/공개 범위 확대 영향을 확인해 주세요." }); return; }
+    if (sourceConfirmation(this.#state) && !confirmedImpact) { this.#apply({ reason: "설정 변경 영향을 확인해 주세요." }); return; }
     const authority = this.authority.captureDispatchAuthority();
     this.authority.requireVerifiedDispatch(authority);
     const epoch = ++this.#epoch, operationId = plan.plan_id;

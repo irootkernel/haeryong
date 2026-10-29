@@ -191,3 +191,24 @@ other old jobs remain held. Reviewing settings does not implement future ingress
 scheduler or provider workflows. retention.backups is enforced opportunistically after
 successful complete backup creation; indefinite keeps all, and whole-set deletion checks
 active verify/restore ownership and a current verified fallback.
+
+## Source defaults owner flow (TASK-006-02 implementation)
+
+The normal shared Sources settings editor now submits source_mode_default and
+nullable provider_id together with the existing complete source array through
+configurationView/Plan/Commit. Server normalization is shown in the preview;
+changing a non-null default provider requires the explicit visible impact
+confirmation. Null clears the remembered default. This selection does not add
+the provider to any source's provider_ids, copy credentials or change billing.
+Cancel/stale/reentry/receipt recovery retain the existing revisioned behavior.
+The browser and actual native App use the same flow and narrow existing named
+configuration facade, without a new native filesystem or source-control API.
+
+Source/disclosure expansion and a non-null default-provider change have
+distinct preview reasons, combined into one confirmation when both apply.
+Provider-only or provider-plus-source-narrowing changes do not claim source
+expansion or an unchanged allow list. The preview shows the proposed source
+mode and, when the provider changes, the old and new default provider, including
+null. An initial configuration read failure hides editable defaults and offers the ordinary
+Retry; it does not fabricate an editable configuration. Actual loaded drafts
+and retained plan/commit identities keep their existing recovery behavior.

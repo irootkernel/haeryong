@@ -631,3 +631,54 @@ def fingerprints():
     paths.update((REPO/'tests/fixtures/f12').glob('*.go'))
     paths.add(REPO/'docs/testing/two-project-knowledge.md')
     return {str(p.relative_to(REPO)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(paths)}
+
+
+def prepare_managed_purge_sources(product, owner, fixture):
+    """Normal public configuration/capture with one retained and one unretained owner."""
+    project = fixture['projects']['mulgae']
+    version = fixture['originals']['mulgae']['version_id']
+    root = product.root / 'managed-purge-source'
+    root.mkdir()
+    body = b'Labelled exact managed snapshot for actual purge dialog\x00\xff'
+    (root / 'selected.ordinary').write_bytes(body)
+    reads = {}
+    for mode in ('selected_snapshot', 'reference_only'):
+        source = key()
+        product.cli(['sources', 'approve', '--project', project, '--source-id', source,
+                     '--kind', 'files', '--root-path', str(root), '--retention-mode', mode, '--confirmed'], client=owner)
+        captured = product.data('POST', '/api/v1/projects/'+project+'/source-captures', client=owner,
+                               body={'version_id': version, 'source_mode': 'current', 'selections': [
+                                   {'source_id': source, 'paths': [{'path': 'selected.ordinary'}]}]},
+                               headers={'Idempotency-Key': key()})
+        assert captured['complete'] and captured['target_set_id']
+        view = product.data('GET', '/api/v1/source-captures/'+captured['capture_id']+'/reads', client=owner)
+        assert len(view['items']) == 1 and view['next_cursor'] is None
+        read = reads[mode] = view['items'][0]
+        assert read['bytes_sha256'] == hashlib.sha256(body).hexdigest()
+        assert read['retention_mode'] == mode and read['capture_availability'] == 'available'
+    assert reads['reference_only']['bytes_sha256'] == reads['selected_snapshot']['bytes_sha256']
+    # Independent public metadata constructs the documented impact-record hash;
+    # no internal DB, fabricated impact DTO or component renderer is used.
+    def impact_identity(read):
+        value = {'capture': read['capture_id'], 'read': read['read_id'], 'hash': read['bytes_sha256'],
+                 'retention': read['retention_mode'], 'availability': 'available'}
+        return hashlib.sha256(json.dumps(value, separators=(',', ':')).encode()).hexdigest()
+    fixture['managed_purge_sources'] = {'reads': reads, 'snapshot_impact_id': impact_identity(reads['selected_snapshot']),
+                                       'reference_impact_id': impact_identity(reads['reference_only']),
+                                       'expected_byte_size': len(body), 'sha256': hashlib.sha256(body).hexdigest()}
+    return {'same_hash': True, 'retained_owners': 1, 'reference_only_owners': 1, 'provider_calls': 0}
+
+
+def verify_managed_purge_cancel(product, owner, fixture):
+    """Actual public document/tree and retained byte checks after dialog cancellation."""
+    original = fixture['originals']['mulgae']
+    detail = product.data('GET', '/api/v1/documents/'+original['document_id'], client=owner)
+    assert detail['lifecycle'] == 'active'
+    assert published_tree(product, owner, original['version_id']) == fixture['expected_trees'][original['version_id']]
+    source = fixture['managed_purge_sources']
+    destination = product.root / 'managed-purge-retained-after-cancel'
+    product.cli(['sources', 'read', '--read', source['reads']['selected_snapshot']['read_id'], '--output', str(destination)], client=owner)
+    body = destination.read_bytes()
+    assert len(body) == source['expected_byte_size'] and hashlib.sha256(body).hexdigest() == source['sha256']
+    return {'lifecycle': 'active', 'complete_original_tree': True, 'retained_bytes_verified': True,
+            'byte_size': len(body), 'sha256': source['sha256'], 'purge_committed': False}

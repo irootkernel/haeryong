@@ -152,6 +152,14 @@ func validateCommandFlags(opt options) error {
 		}
 	case "sources":
 		switch verb {
+		case "capture":
+			add("project input operation-id")
+		case "captured":
+			add("capture cursor")
+		case "diff":
+			add("capture other cursor")
+		case "read":
+			add("read output")
 		case "status":
 			add("project")
 		case "approve":

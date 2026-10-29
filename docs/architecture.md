@@ -137,3 +137,31 @@ The viewer runs the owner's chosen HTML/CSS/JavaScript with normal browser capab
 The complete [TASK-001-05 checklist](tasks/EPIC-001/TASK-001-05.md#observable-completion-and-tests) is the G-AI closing authority: one supported real subscription path, a real cited question, actual input/verification evidence, remembered permissions and honest error/cancel/uncertainty behavior. Multi-page generation and usefulness belong to TASK-001-07; durable production provider recovery belongs to EPIC-006. Existing external agents retain their normal workflow. No mandatory worker-jail platform is added, and ambiguous external outcomes are not evidence that reruns are free or exactly once.
 
 See [security](operations/security.md), [ADRs](adr/README.md), and [roadmap](roadmap.md) for mitigation ownership and blocking gates.
+
+## Managed source capture boundary (TASK-006-02 implementation)
+
+The existing source application service owns managed capture, exact retained or
+approved-source reads and persisted-byte comparison. The source filesystem
+adapter opens only selected regular files beneath configured roots; system Git
+continues resolving immutable objects without checkout/fetch. Capture reserves
+its exact selection under the serialized writer, performs cancellable streamed
+I/O outside it, then rechecks authority and publishes once. Trusted semantic
+admission can acquire queued job-input ownership in that same final transaction;
+no second provider queue or generic filesystem service is added.
+
+Migration 16 adds staged capture/read bindings and job_inputs while generic
+object pins/references remain the sole byte-lifetime authority. Source-specific
+backup projection preserves coherent independent ownership, and version-context
+snapshot cleanup reuses the existing impact/purge/GC engine. Captures, actual
+attempt input observations and later source verification are distinct records.
+The [source contract](contracts/source-access.md#managed-capture-implementation-task-006-02)
+and [execution record](testing/managed-sources.md) describe current limits;
+production provider transport and generated/saved outputs retain their ordered
+implementing owners.
+
+Accepted managed captures detach from caller acknowledgement loss but remain
+linked to the owning daemon lifetime. The management endpoint cancels that
+lifetime before draining active requests, including verified stop and controlled
+restart; interrupted cooperative work settles while the writer is still held.
+Regular-file OS calls may be uninterruptible until the host returns; this is not
+a hard syscall-interruption or universal shutdown-duration guarantee.

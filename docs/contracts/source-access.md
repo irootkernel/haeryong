@@ -113,3 +113,123 @@ candidate impact only. No dependency completeness, semantic verdict, provider
 input observation or personal Review follows from these post-hoc checks.
 See [source observation evidence](../testing/source-observation.md) for measured
 boundaries; the dated source-access decision remains historical evidence.
+
+## Managed capture implementation (TASK-006-02)
+
+The additive migration-16 implementation extends the existing source service;
+it does not enable the production provider, generation or saved-Q&A capabilities.
+The [managed-source record](../testing/managed-sources.md) separates actual local
+source/permission evidence from the later subscription adapter's obligations.
+
+An explicit selected-source request captures a full Git revision once or streams
+selected working-copy/file bytes into immutable storage. Each selected path has
+a durable pending/result row, including missing/denied/unread units. An incomplete
+capture publishes no target set and returns complete false with null target/time;
+its original selection and per-unit reasons remain inspectable. Metadata views,
+receipt replay and captured-byte diff perform no Git, filesystem or AI read.
+Captured read and diff inventories use bounded keyset pages. Branch movement
+cannot retarget a read after the request has resolved its full revision. Files
+are opened beneath the approved root and checked against the actual regular-file
+identity; binary, hidden, large and unfamiliar ordinary files remain valid.
+
+The service rechecks current source, project, session and captured configuration
+before each further read and before publication. The provider coordinator reuses
+that current-policy guard before dispatch and result application. An explicit
+provider requires a managed capture binding and inclusion in each source's
+provider_ids; an empty list denies disclosure. Legacy foundation/post-hoc
+hash-only records cannot enter that managed path. Read-only source capture does
+not infer provider disclosure from the project's remembered default provider.
+No read prompts are added for an unchanged approved source. Normal Sources
+settings plan/confirm/commit now includes source_mode_default and nullable
+provider_id, independently of per-source disclosure lists.
+
+Capture and trusted job admission can commit in one writer transaction:
+CaptureAndAdmit publishes the exact completed capture, creates the authorized
+queued job and acquires job_inputs pins before releasing temporary capture
+ownership. A selected_snapshot reference already adopted from that same verified
+capture is also an eligible input owner. Readiness metadata alone does not grant
+reference-only attachment. Future admission owners must authenticate the semantic
+work and choose its provider/scope; a public job ID or digest is not authority.
+Execution input ownership survives queued work and uncertain effects and ends
+only at the existing terminal/all-effects-definite boundary. Original hashes,
+observations and conflict history remain after eligible physical GC.
+
+Pinned retained reuse rechecks the original capture's project before any verified
+byte consumer. The same logical source ID/path in another project cannot borrow
+its provider choice. Scoped foreign and missing read IDs receive the same
+nondisclosing refusal without foreign identity, digests or body reads.
+
+Standalone/project selected snapshots are independent explicitly retained source
+owners. A snapshot captured with version_id is version-context ownership: the
+existing purge impact includes it, and bounded purge detaches that reference only
+after in-flight captures/jobs/uncertain effects settle. Current version authority
+fences reads and provider use after Trash/Purge. Temporary readers and other
+snapshot/payload/result/backup owners continue protecting the same bytes; a
+protected purge reports remaining ownership rather than claiming deletion.
+Standalone source snapshots stay readable within their current approved project
+scope and are not silently deleted by another document's purge. No general
+source-redaction UI is introduced.
+
+A standalone reference_only capture retains identity, not permanent bytes. An
+explicit read can reread the same approved exact Git/file target and verify its
+recorded digest before supplying it; changed or absent bytes remain unavailable.
+It cannot reuse an incidental same-hash object as retention. Selected snapshots
+can be read offline after digest verification under current authority. Source
+reads return inert octet-stream attachments with nosniff; collected HTML/JS is
+not executed as a trusted-host document.
+
+Full backup projects reference-only source owners as uncopied/unavailable while
+retaining exact selection, attempt observations and uncertain-effect metadata.
+It omits only those source-specific temporary input pins, preserving independent
+owners of the same hash and the unchanged coherent required-object checks.
+Explicit retained-source export includes only additional selected snapshots
+bound to the selected version; ordinary payload remains complete unconditionally.
+Restore cannot manufacture bytes from a digest or revive source policy before
+its normal recovery review. Input/orphan inventory preserves retention and source
+version association for these guards even when an older snapshot lacks the job.
+
+Known live profile/bootstrap and configured provider-authentication store paths
+are excluded by explicit host-owned locations, including opened-file aliases;
+this is not a filename secret detector. The collector neither edits nor fetches
+source. External owner agents retain their normal host tools/environment. The
+future production adapter must record its actual working directory, permission
+mode and inherited capabilities. Current deterministic supplied-byte observations
+prove only their labelled local boundary; capture, a native path/HEAD report and
+a later post-hoc check are not original producing-attempt input observations.
+
+The production managed-file factory excludes the live profile directory, its
+known profile.json bootstrap file, configured Codex auth.json and the default
+CLI client-store directory. Main also supplies the selected profile's concrete
+credential.json location. Existing ancestor identities and known-file identities
+deny symlink, case-spelling and hard-link aliases without scanning stores or
+classifying arbitrary secret copies. Git-object reads apply the same location
+preflight before opening the blob. These exclusions do not constrain an external
+agent's independent filesystem tools or create an OS read jail.
+
+Accepted capture work keeps its existing WithoutCancel acknowledgement-loss
+semantics. There is no implicit aggregate duration quota for progressing source
+collection. An explicitly configured CheckBound remains a hang guard. Current
+authority failures settle with the existing typed status/reason; an already
+settled failed operation is not automatically retryable under the same identity.
+Capture completion and replay do not append source.changed: captured source
+bytes are distinct from a fresh owner source observation.
+
+### Managed capture lifetime and recovery clarification
+
+Accepted captures survive caller cancellation while daemon lifetime cancellation
+remains authoritative. Verified stop cancels that lifetime before HTTP drain;
+controlled restart uses the same owning cancellation. Cooperative reads settle
+with the canonical nonretryable interrupted_before_commit envelope and release
+only their capture ownership before storage closes. An explicit CheckBound is an
+internal caller-selected bound, not an implicit production duration quota. A
+blocked OS regular-file syscall is not forcibly interrupted by this contract.
+
+The daemon also excludes the canonical default profiles root resolved by the
+existing service layout, including other profiles and directory aliases. It
+neither enumerates profiles nor discovers other custom data directories. Known
+selected custom paths remain excluded; arbitrary copied secrets and unknown
+custom profiles are not classified by filename or content.
+
+Exclusive startup settles interrupted captures with the same complete error
+envelope, including a request_id generated once for the stored response. Replay
+returns that exact persisted response without re-reading source.

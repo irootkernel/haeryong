@@ -31,9 +31,11 @@ const stopPath = "/local/v1/stop"
 
 // HTTP implements service.Endpoint. Its lifetime is independent of any desktop.
 type HTTP struct {
-	Auth           *appauth.Service
-	Copies         *recovery.Service
-	Product        func(string) (http.Handler, error)
+	Auth    *appauth.Service
+	Copies  *recovery.Service
+	Product func(string) (http.Handler, error)
+	// BeforeDrain ends accepted application work before waiting for handlers.
+	BeforeDrain    func()
 	server         *http.Server
 	listener       net.Listener
 	done           chan error
@@ -166,6 +168,9 @@ func (h *HTTP) Close(ctx context.Context) error {
 	h.requestMu.Lock()
 	h.closing = true
 	h.requestMu.Unlock()
+	if h.BeforeDrain != nil {
+		h.BeforeDrain()
+	}
 	if h.cancelRequests != nil {
 		h.cancelRequests()
 	}

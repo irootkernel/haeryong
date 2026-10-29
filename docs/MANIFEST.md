@@ -4,11 +4,11 @@
 
 **Edition prepared:** 2026-10-13
 
-This inventory covers 184 other files: all Markdown documents and Python documentation-check utilities. Paths are relative to docs; sizes and SHA-256 cover exact bytes. MANIFEST.md excludes itself. This is not runtime evidence.
+This inventory covers 185 other files: all Markdown documents and Python documentation-check utilities. Paths are relative to docs; sizes and SHA-256 cover exact bytes. MANIFEST.md excludes itself. This is not runtime evidence.
 
 | File | Bytes | SHA-256 |
 | --- | --- | --- |
-| `README.md` | 23259 | `1c5f0d3134c33ac7e4c529d5404f24e561bf84222d24c9accdf079e2c8a55fd5` |
+| `README.md` | 23410 | `9bba1acd49556dcdef13e866cd6c19010634e4ec26276103acfc0022011284f0` |
 | `REVIEW-GUIDE.md` | 10105 | `8035dd9c431b7e6abc7adde3b2ae7824df2a97df3ef7b3ca7ce020e3cb0094ad` |
 | `adr/ADR-001.md` | 3239 | `02f3818c7843969ca3aa081fb252983d92f886904383d84d331a49eca57f9987` |
 | `adr/ADR-002.md` | 2987 | `2128dae47cc03f55000633c89bc4e4d06419c91a414230a45fd7e45e8bac759b` |
@@ -20,7 +20,7 @@ This inventory covers 184 other files: all Markdown documents and Python documen
 | `adr/ADR-008.md` | 2332 | `e79eee540f3f68f1e1e0d68a209f6c99231bded6e105f90f74d670bee0b5d63c` |
 | `adr/ADR-009.md` | 5383 | `d5d6f55d540a39828e2024a6dee6af16aef7b248e3568ed793e54bd2876cfdb8` |
 | `adr/README.md` | 1647 | `8b7a020b5736a8a280cc6ed216418d4871c56622950ceb4af424424c5fd9ea0e` |
-| `architecture.md` | 21672 | `ba1f7aa20ebf5e7293688ce2b805ed792bd6ebfbd8e81402fae6af33712b2c99` |
+| `architecture.md` | 23479 | `da1e66c2879718a31a5a0b6d880120f8a0104d35362c91df7aee50a49695f0ce` |
 | `changes/2026-10-10-directory-results-revision.md` | 9748 | `423d076a7b143c92d9d7d83076f9fc5d860a1764b6690d815f962568efa6f5bc` |
 | `changes/2026-10-10-personal-tool-revision.md` | 9469 | `28711c0a7ad3b0a8b375cbd66fd240a680f08dac491af5a22b8b71403d19279b` |
 | `changes/2026-10-10-review-revision.md` | 10516 | `82ba1f73ce25c87a2d2d83a00d12fa4663a1d324906d3e0872f8ac774db649f4` |
@@ -30,16 +30,16 @@ This inventory covers 184 other files: all Markdown documents and Python documen
 | `contracts/README.md` | 5429 | `53d501ff3b1ef652c3fab56c4acbca7019194a9a2b807a80e4727ad96a279abf` |
 | `contracts/ai-adapter.md` | 14739 | `0769a97e92babea2879cc897cb86d19233b9716f8c4c1f20fc00f2d7802b47b5` |
 | `contracts/authentication.md` | 24375 | `290d8131a3d5b0d61faae76abba11c11971c2f5a628be6a4400d14f0c78d619f` |
-| `contracts/cli.md` | 45703 | `dc5cfc136f895cb98cd20dfa4392384ab138402846b7595f34e2bdc66145a7e6` |
-| `contracts/configuration.md` | 27859 | `7727a7d0dc70a9ab27eb07dbbc4fed344d0c1e62291931a4c1366c2329138a1c` |
-| `contracts/http-api.md` | 101520 | `597bc9d347077a5c0bfefe655232ae54a1e63270dc944ef990a952766de0d589` |
+| `contracts/cli.md` | 47308 | `7f9a79083eeff6b5d8b1f9563a1bafae7b17a26c08aeeb57ed5ddc1e4e1652f4` |
+| `contracts/configuration.md` | 29242 | `7d02de65a06e6f314b591749d78e796d70fbdd6cb3e9db0fd6ecf05245346657` |
+| `contracts/http-api.md` | 104572 | `20aca72ea08fe2cca9993734fbc146c20722d65e379485a5ee53aaa825409ee1` |
 | `contracts/import-workflow.md` | 24687 | `d8951e4aca1d56d60cb8127d01e8fd87f0e3558c20aaea719d4e5f839570583c` |
 | `contracts/jobs-events.md` | 47940 | `89158e7f8dd4dc0dc7b9cf390a2b05ff97a150517ef74763941ed2ee14cd454d` |
 | `contracts/package.md` | 33727 | `f8730b9af605eac8e7da7a29a3be024b35b3c167580ae5c2e70dcf14d2fae0c6` |
-| `contracts/schema-registry.md` | 108685 | `17a66b1c86936be767bf0b58b980c4090c4a620713a0e0e43c5167aaa04013e4` |
-| `contracts/source-access.md` | 19579 | `f93d35bf77e83e66b1facaf249efefe52a24f9f0b9cdc0c48ed2665250f20953` |
+| `contracts/schema-registry.md` | 114798 | `bbed6c154b532db7a4c0029774a60296dcb03f8f7ba061181ef595c95b3eb17e` |
+| `contracts/source-access.md` | 27540 | `a87c3df374b31c6dcd5dfc3601f987179b4785f992e356fc1ea9db4ada6aef8c` |
 | `contracts/viewer-protocol.md` | 38391 | `633c026ad375555c121cfcead6310f4f0fc96f7dd8bf7bb493b6142599e2ddf1` |
-| `data-model.md` | 68014 | `93af6367948af4ca046f7d58455becae2fce099b515553743ae8cdb9f5a1a620` |
+| `data-model.md` | 70721 | `325b14c7f8ee64d4d76df46c420e3fb1a071fdc69f8d761f00f3ec31dbb57e8e` |
 | `decisions.md` | 21105 | `62dadaf348d95aedee1d296bbd16c1e880e92256769e1d0ce3a5b0f7ae457824` |
 | `deferred-feedback/README.md` | 3575 | `8ef7e7eecf64d967e73a06c1f16896b486eecf9a5055d42640c599c3a040849f` |
 | `design/README.md` | 1227 | `bd2d0adc8f8f465064d9d48389d39a53899620396f397391b9347c68463ba39b` |
@@ -63,7 +63,7 @@ This inventory covers 184 other files: all Markdown documents and Python documen
 | `examples/use-haeryong-skill.md` | 8726 | `8c58927cc2b6473764ff1b4fb7f16bb453b6ee10ab184ee1b18a0fd678e3192d` |
 | `execution-protocol.md` | 15275 | `fdce3da59e0f85f328a0f7ca555d072deaab22558c4b45634b858bf09a88f6c7` |
 | `glossary.md` | 8311 | `67d60e7f03caa04681e618abcfb5518d05cf9c63b385aced1148235e34032b7b` |
-| `operations/backup-recovery.md` | 34803 | `d11d31d4ae214b5553b274946052ca92add25aaaf6bf34ee986cdff9cf79af1f` |
+| `operations/backup-recovery.md` | 37188 | `a8324f9b5db6fdd47bf86f58a2a3ba6e5b4edf7c6770bcc8e53f1b0e12eec7fb` |
 | `operations/deployment.md` | 19564 | `fe5ec74efb92ed9bca4bfb9e8806837137dc41d41c1a9b8862c34f0eaea27c96` |
 | `operations/observability.md` | 8557 | `cb3b01ecdf60fe30b754e5ad2e6b6c774cac30aebe6671753d364893f2212bf3` |
 | `operations/release-checklist.md` | 11391 | `dfe96a158914807648447e3adf6afbb0c7d3a6d64e8b08cda9676a8cc02ed9cd` |
@@ -105,7 +105,7 @@ This inventory covers 184 other files: all Markdown documents and Python documen
 | `tasks/EPIC-005/TASK-005-05.md` | 6483 | `6b92c0cfdf9c912a2750c3a19ff3fa5f328992fdeb70cf5a8555451fcddde42b` |
 | `tasks/EPIC-005/TASK-005-06.md` | 2914 | `0db1136bc184d406b1014dd5f13b80593b261a3944e488eaa9556baf72c4d505` |
 | `tasks/EPIC-006/TASK-006-01.md` | 3063 | `2f199b51885901c4bd3a19f6a0985544b7f4e57a3cfcd3f1945136e7b2425f81` |
-| `tasks/EPIC-006/TASK-006-02.md` | 3595 | `78d4e1a1c674099e7b4dcd54ceb16271e943fda6039d625aabfc604505ede6d0` |
+| `tasks/EPIC-006/TASK-006-02.md` | 4129 | `cd2d03c623ecb7e3a9373922587616860f4f8177e24f2bda8d4106c8810fd8c7` |
 | `tasks/EPIC-006/TASK-006-03.md` | 1880 | `63818693c287b05b73ad296dfb52bd004f9c0662eafbf79d52acabeb7ecc88f5` |
 | `tasks/EPIC-006/TASK-006-04.md` | 3620 | `15026bd7c223ed137ba61fd6dde1f7ea17e295abdd03b7226e9125fb4cf06944` |
 | `tasks/EPIC-006/TASK-006-05.md` | 3496 | `ba609d02f2fc921384f92dc861bbf72012d6b9627db306611602361f980b785f` |
@@ -164,6 +164,7 @@ This inventory covers 184 other files: all Markdown documents and Python documen
 | `testing/frontend-shell.md` | 12266 | `74de95da13b5fd00855918ba0cecb6e123043d211f0ff47cdbbeefebc8e9d833` |
 | `testing/knowledge-quality.md` | 24137 | `bf6b2e88ba371cb0b5e8d6500acfa52687237bbe58d8b92c33008a5f0fc9f726` |
 | `testing/knowledge-value-spike.md` | 24626 | `0ad6dd2f6c1f52478447911e5444af04dba711d8dee70ac456d8a70298560f2e` |
+| `testing/managed-sources.md` | 25004 | `9ec47e9863ed32f36ed46dcb38f971666a89c69918547cda95abd290ddef1093` |
 | `testing/manual-purge.md` | 15145 | `25ac8efc81223657e16a5ff2c8d018d2c18be933d103863d1ce974af2c8a9c94` |
 | `testing/owner-records.md` | 14067 | `70e1af954d6b1286458b295b7c3c6db8e72e8212358218a6c4a3c603d238adf3` |
 | `testing/pinned-references.md` | 68520 | `a2e7819a22d49fd9259cbac87a2dcc881e00ba1541134c58bb7963c1e768f7c3` |
@@ -190,5 +191,5 @@ This inventory covers 184 other files: all Markdown documents and Python documen
 | `ui/design-system.md` | 8783 | `be8781449d510766b33d0dc871e52eb6aa4b6102baf7b04c9015f791c2780732` |
 | `ui/flows.md` | 14073 | `16e40e9d9d4cb22748bbed2249e07133329a361e37e356e6710d91154cba2601` |
 | `ui/information-architecture.md` | 12781 | `d6c1525d02c250313ba02cb6a8173dc41376e4d20822164d3cefb8e49af49bdb` |
-| `ui/screens.md` | 28764 | `a7dacff72a239838687d60037ed3a782dbb02e98883dc602c115650b0aa7a102` |
+| `ui/screens.md` | 30099 | `b4f253af2ac9936af1a64571812c9eb33cac20e27c781accbf0eb17343ce47c8` |
 | `ui/wireframes.md` | 11380 | `87971b9ad8f9bd6f5efd0700d9f0f497977b8ca02ec172649756d2359eaf38cc` |

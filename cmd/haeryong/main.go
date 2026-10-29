@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -28,6 +29,7 @@ import (
 	httpsource "haeryong.local/haeryong/internal/adapters/http/source"
 	httpv1 "haeryong.local/haeryong/internal/adapters/http/v1"
 	"haeryong.local/haeryong/internal/adapters/localcontrol"
+	sourcefiles "haeryong.local/haeryong/internal/adapters/source"
 	appauth "haeryong.local/haeryong/internal/application/auth"
 	appconfig "haeryong.local/haeryong/internal/application/configuration"
 	importer "haeryong.local/haeryong/internal/application/import"
@@ -90,7 +92,7 @@ func parse(args []string) (options, error) {
 			continue
 		}
 		switch key {
-		case "--decision", "--expected-attempt-generation", "--destination", "--metadata-destination", "--records", "--choices", "--index", "--expected-revision", "--flag", "--action", "--if-match", "--if-none-match", "--profile", "--data-dir", "--volume-root", "--port", "--endpoint", "--credential", "--client-dir", "--operation-id", "--project", "--document", "--base-version", "--metadata", "--version", "--path", "--output", "--input", "--state", "--cursor", "--limit", "--directory", "--kind", "--file", "--format", "--expected-config-revision", "--scope", "--name", "--evidence", "--expected-sha256", "--expected-excerpt-file", "--source-id", "--root-path", "--repo-id", "--retention-mode", "--provider-ids", "--plan-id", "--page", "--region", "--coverage-set", "--reference-id", "--query", "--lifecycle", "--versions":
+		case "--capture", "--other", "--read", "--decision", "--expected-attempt-generation", "--destination", "--metadata-destination", "--records", "--choices", "--index", "--expected-revision", "--flag", "--action", "--if-match", "--if-none-match", "--profile", "--data-dir", "--volume-root", "--port", "--endpoint", "--credential", "--client-dir", "--operation-id", "--project", "--document", "--base-version", "--metadata", "--version", "--path", "--output", "--input", "--state", "--cursor", "--limit", "--directory", "--kind", "--file", "--format", "--expected-config-revision", "--scope", "--name", "--evidence", "--expected-sha256", "--expected-excerpt-file", "--source-id", "--root-path", "--repo-id", "--retention-mode", "--provider-ids", "--plan-id", "--page", "--region", "--coverage-set", "--reference-id", "--query", "--lifecycle", "--versions":
 		default:
 			return opt, invalid("unsupported flag: " + key)
 		}
@@ -184,13 +186,27 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 			queries := query.New(store, core, store)
 			copyCore := recovery.New(store, core, store)
 			sourceCore := appsource.New(store, core, store, gitreader.New())
+			profile, profileErr := service.Load(opt.selection)
+			if profileErr != nil {
+				return profileErr
+			}
+			defaultClient, profileErr := clientDirectory(options{selection: opt.selection})
+			if profileErr != nil {
+				return profileErr
+			}
+			profilesRoot, profileErr := service.DefaultProfilesRoot()
+			if profileErr != nil {
+				return profileErr
+			}
+			sourceCore.Files = sourcefiles.ManagedFiles(profile.DataDir, profilesRoot, filepath.Join(defaultClient, "credential.json"))
 			var managementOrigin string
 			var externalOrigin string
 			renderFacade := newRenderFacade(store, core, store, func() string { return managementOrigin })
 			runCtx, cancelRun := context.WithCancel(ctx)
+			sourceCore.Lifetime = runCtx
 			var restart atomic.Bool
 			configurationCore.Restart = func() { restart.Store(true); cancelRun() }
-			endpoint := &localcontrol.HTTP{Auth: core, Copies: copyCore, Product: func(origin string) (http.Handler, error) {
+			endpoint := &localcontrol.HTTP{Auth: core, Copies: copyCore, BeforeDrain: cancelRun, Product: func(origin string) (http.Handler, error) {
 				// Resolve open staged checks left by a crash before serving.
 				if err := sourceCore.Recover(runCtx); err != nil {
 					return nil, err

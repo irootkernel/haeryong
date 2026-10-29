@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"strings"
@@ -29,6 +30,8 @@ import (
 func sourceCommand(ctx context.Context, opt options, api *client.Client, state *clientstate.Store, emit func(any) error) error {
 	args := opt.command
 	switch {
+	case args[0] == "sources" && len(args) == 2 && (args[1] == "capture" || args[1] == "captured" || args[1] == "diff" || args[1] == "read"):
+		return sourceCaptureCommand(ctx, opt, api, state, emit)
 	case args[0] == "projects" && len(args) == 2 && args[1] == "register":
 		name := opt.flags["name"]
 		if strings.TrimSpace(name) == "" {
@@ -758,4 +761,100 @@ func stageExpectation(ctx context.Context, api *client.Client, state *clientstat
 		return "", err
 	}
 	return journal.Result.UploadID, nil
+}
+
+// Exact-source inspection has no implicit provider call or filesystem browsing.
+func sourceCaptureCommand(ctx context.Context, opt options, api *client.Client, state *clientstate.Store, emit func(any) error) error {
+	switch opt.command[1] {
+	case "capture":
+		project, file := opt.flags["project"], opt.flags["input"]
+		if project == "" || file == "" {
+			return invalid("sources capture --project ID --input REQUEST.json [--operation-id ID]")
+		}
+		f, e := os.Open(file)
+		if e != nil {
+			return e
+		}
+		defer f.Close()
+		var input appsource.CaptureRequest
+		d := json.NewDecoder(f)
+		d.DisallowUnknownFields()
+		if e = d.Decode(&input); e != nil {
+			return invalid("invalid capture request")
+		}
+		var extra any
+		if d.Decode(&extra) != io.EOF {
+			return invalid("one capture request required")
+		}
+		return mutationCommand(ctx, opt, api, state, emit, "POST", "/api/v1/projects/"+url.PathEscape(project)+"/source-captures", input)
+	case "captured", "diff":
+		id := opt.flags["capture"]
+		if id == "" {
+			return invalid("--capture ID is required")
+		}
+		route := "/api/v1/source-captures/" + url.PathEscape(id)
+		q := url.Values{}
+		if opt.command[1] == "diff" {
+			if opt.flags["other"] == "" {
+				return invalid("--other ID is required")
+			}
+			route += "/diff"
+			q.Set("other", opt.flags["other"])
+		}
+		if opt.flags["cursor"] != "" {
+			q.Set("cursor", opt.flags["cursor"])
+		}
+		if len(q) > 0 {
+			route += "?" + q.Encode()
+		}
+		var data json.RawMessage
+		if _, e := api.JSON(ctx, "GET", route, "", nil, &data); e != nil {
+			return productError(e)
+		}
+		return emit(data)
+	case "read":
+		id, destination := opt.flags["read"], opt.flags["output"]
+		if id == "" || destination == "" {
+			return invalid("sources read --read ID --output FILE")
+		}
+		response, e := api.Call(ctx, "GET", "/api/v1/source-reads/"+url.PathEscape(id), "", nil, nil)
+		if e != nil {
+			return productError(e)
+		}
+		defer response.Body.Close()
+		expected := strings.Trim(response.Header.Get("ETag"), "\"")
+		raw, e := hex.DecodeString(expected)
+		if e != nil || len(raw) != 32 {
+			return invalid("source response omitted exact digest")
+		}
+		f, e := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if e != nil {
+			return e
+		}
+		complete := false
+		defer func() {
+			f.Close()
+			if !complete {
+				os.Remove(destination)
+			}
+		}()
+		hash := sha256.New()
+		size, e := io.Copy(io.MultiWriter(f, hash), response.Body)
+		if e != nil {
+			return e
+		}
+		actual := hex.EncodeToString(hash.Sum(nil))
+		if actual != expected {
+			return domain.ErrContentIntegrity
+		}
+		if e = f.Sync(); e != nil {
+			return e
+		}
+		if e = f.Close(); e != nil {
+			return e
+		}
+		complete = true
+		return emit(map[string]any{"read_id": id, "bytes_sha256": actual, "byte_size": size, "output": destination, "input_observation": false})
+	}
+	return invalid("unsupported source capture command")
 }

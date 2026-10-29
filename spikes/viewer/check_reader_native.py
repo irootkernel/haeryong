@@ -7,7 +7,8 @@ args=parser.parse_args()
 STAGES=set(args.stages.split(','))
 ALL_STAGES={'selfcheck','app','seed','restart','crash','evidence','search','references'}
 assert sys.platform=='darwin','this check requires the existing native macOS Wails harness'
-assert STAGES and STAGES<=ALL_STAGES|{'corpus','reference-corpus','versions','owner-records'},STAGES
+assert STAGES and STAGES<=ALL_STAGES|{'corpus','reference-corpus','versions','owner-records','sources'},STAGES
+assert 'sources' not in STAGES or STAGES=={'sources'},'sources is an explicit standalone settings campaign'
 assert 'owner-records' not in STAGES or STAGES=={'owner-records'},'owner-records is an explicit standalone local campaign'
 assert not ('restart' in STAGES and 'seed' not in STAGES),'restart requires the seed stage'
 assert not (STAGES&{'seed','restart','crash','search','corpus','reference-corpus'} and 'app' not in STAGES),'these stages require the app smoke context'
@@ -26,7 +27,7 @@ REPO=pathlib.Path(__file__).resolve().parents[2]
 RECEIPT=args.receipt.resolve()
 assert RECEIPT.parent.is_dir(),'receipt parent must exist'
 volume=pathlib.Path('/Volumes/RootKernel')
-scratch=volume/'tmp' if os.path.ismount(volume) and os.access(volume,os.W_OK) else pathlib.Path(tempfile.gettempdir())
+scratch=pathlib.Path(tempfile.gettempdir()).resolve()
 os.umask(0o077)
 work=pathlib.Path(tempfile.mkdtemp(prefix='h3n-',dir=scratch)).resolve()
 print(json.dumps({'runtime':str(work)}),flush=True)
@@ -41,6 +42,8 @@ def fingerprints():
                  +[p for p in (REPO/'desktop').rglob('*') if p.is_file()]
                  +[REPO/'spikes/viewer/desktop/main.go',REPO/'spikes/viewer/desktop/reader_mode.go',REPO/'spikes/viewer/desktop/go.mod',REPO/'spikes/viewer/desktop/go.sum']
                  +[REPO/'frontend/native.html',REPO/'frontend/vite.native.config.ts',REPO/'frontend/src/native-main.tsx',REPO/'frontend/src/client/native-bridge.ts',REPO/'frontend/src/client/native-wire.ts',REPO/'frontend/src/client/native.ts',REPO/'spikes/viewer/check_reader_native.py',REPO/'spikes/viewer/reference_native.py',REPO/'spikes/viewer/reference_corpus_native.py',REPO/'spikes/viewer/reference_corpus_probe.js',REPO/'tests/manual/search_corpus_support.py',REPO/'spikes/viewer/reference_probe.js',REPO/'tests/manual/reference_support.py'])
+    if 'sources' in STAGES:
+        paths += [REPO/name for name in ('frontend/src/app/screens/sources.tsx','frontend/src/app/screens/source-configuration.ts','frontend/src/client/types.ts')]
     result={str(p.relative_to(REPO)):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
     # Explicit new compiler/helper/fixture closure; historical lists are not
     # automatic dependency discovery. This helper performs no product setup.
@@ -134,6 +137,111 @@ for(let i=0;i<6;i++){try{await fetch('wails://denied/'+i);}catch(e){}}
     (source/'attachment.bin').write_bytes(bytes(range(256))*513)
     _,_,published=product.import_tree(owner,source);version=published['version_id'];document=published['document_id']
     credential=state/'native-session';credential.write_text(owner['token']+'\n');os.chmod(credential,0o600)
+
+    # Explicit local Sources campaign: actual compiled App and existing named
+    # configuration facade. No capture API, provider call or renderer proof.
+    if 'sources' in STAGES:
+        source_root=work/'settings-source';source_root.mkdir()
+        source_alias=work/'settings-alias';source_alias.symlink_to(source_root,target_is_directory=True)
+        project=product.data('GET','/api/v1/capabilities',client=owner)['unfiled_project_id']
+        settings_route='/settings/projects?'+urllib.parse.urlencode({'project':project})
+        settings_probe=work/'probe-source-settings.js'
+        settings_probe.write_text(r"""
+        const c=SOURCE_SETTINGS_CONSTANTS,rows=[];let done=false;
+        let pageError=false;
+        addEventListener('error',()=>{pageError=true;});
+        addEventListener('unhandledrejection',()=>{pageError=true;});
+        const report=()=>window.haeryongNativeCall(701101,[{Rows:[...rows,{name:'page.error',status:pageError?'fail':'pass',detail:{}},{name:'page.done',status:done?'pass':'pending',detail:{}}]}]);
+        setInterval(()=>void report().catch(()=>{}),2000);
+        const record=(name,ok)=>{rows.push({name,status:ok?'pass':'fail',detail:{}});if(!ok)throw Error(name);};
+        const wait=async(fn,label)=>{const end=Date.now()+25000;while(Date.now()<end){if(fn())return;await new Promise(r=>setTimeout(r,100));}throw Error(label);};
+        const button=name=>[...document.querySelectorAll('button')].find(b=>b.textContent===name);
+        const control=name=>[...document.querySelectorAll('label')].find(l=>l.textContent.startsWith(name))?.querySelector('input,select');
+        const input=(name,value)=>{const el=control(name);if(!el)throw Error('missing settings control');const proto=el.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(el,value);el.dispatchEvent(new Event(el.tagName==='SELECT'?'change':'input',{bubbles:true}));};
+        const settle=()=>new Promise(r=>setTimeout(r,0));
+        const call=async(operation,payload={})=>{const reply=await window.haeryongNativeCall(701100,[{Operation:operation,Payload:payload}]);if(!reply.ok)throw Error('native settings operation failed: '+operation);return reply.value;};
+        const read=()=>call('configurationView');
+        const preview=async()=>{await settle();button('변경 미리보기').click();await wait(()=>button('확인 후 적용'),'settings preview');};
+        const confirm=async()=>{const el=document.querySelector('[aria-label="설정 계획 미리보기"] input[type="checkbox"]');if(el)el.click();await settle();await wait(()=>!button('확인 후 적용').disabled,'confirmed settings commit');button('확인 후 적용').click();await wait(()=>document.body.textContent.includes('출처 설정 적용됨'),'settings committed');};
+        const reopen=async()=>{button('원본 목록으로').click();await wait(()=>button('출처 설정 편집'),'source list');record('sources.logical-list-no-host-path',!document.querySelector('main').textContent.includes(c.root));button('출처 설정 편집').click();await wait(()=>control('기본 Provider ID'),'reopened settings');};
+        try{
+          await wait(()=>window.__haeryongNativeTransport==='HAEYONG_NATIVE_TRANSPORT_BOUND'&&document.querySelector('.service-state[data-state="verified"]'),'native verified settings');
+          await wait(()=>control('기본 Provider ID'),'settings form');
+          record('sources.no-js-owner-credential',!Object.keys(localStorage).some(k=>k.includes('owner-session')));
+          const initial=await read();
+          if(c.phase==='configure'){
+            record('sources.initial-defaults',control('기본 소스 모드').value==='pinned'&&control('기본 Provider ID').value==='');
+            input('기본 소스 모드','current');input('기본 Provider ID','  prov-default  ');
+            button('출처 추가').click();await wait(()=>control('종류'),'new source form');
+            input('종류','files');await settle();input('승인할 원본 루트',c.alias);
+            input('기본 소스 모드','pinned');input('기본 Provider ID','');await preview();
+            record('sources.source-only-confirmation',button('확인 후 적용').disabled&&!!control('출처/공개 범위 확대 영향을 확인했습니다')&&!control('기본 Provider 변경 영향을 확인했습니다'));
+            button('취소').click();await wait(()=>control('기본 Provider ID'),'source-only preview cancelled');
+            input('기본 소스 모드','current');input('기본 Provider ID','  prov-default  ');
+            await preview();
+            const text=document.querySelector('[aria-label="설정 계획 미리보기"]').textContent;
+            record('sources.normalized-preview',text.includes(c.root)&&!text.includes(c.alias)&&text.includes('기본 소스 모드 current · 기본 Provider prov-default'));
+            record('sources.expansion-confirmation-required',button('확인 후 적용').disabled&&!!control('출처/공개 범위 확대와 기본 Provider 변경 영향을 확인했습니다'));
+            button('취소').click();await wait(()=>control('기본 Provider ID'),'cancelled settings');
+            record('sources.cancel-no-commit',(await read()).config_revision===initial.config_revision);
+            await preview();await confirm();await reopen();
+            let current=await read(),saved=current.configuration.projects[c.project];
+            record('sources.remembered-defaults',control('기본 소스 모드').value==='current'&&control('기본 Provider ID').value==='prov-default'&&saved.source_mode_default==='current'&&saved.provider_id==='prov-default');
+            record('sources.default-provider-no-disclosure',saved.sources.length===1&&saved.sources[0].provider_ids.length===0);
+            // Default provider alone is a visible owner choice, never an
+            // implicit widening of the per-source disclosure inventory.
+            input('기본 Provider ID','prov-next');await preview();
+            const providerImpact=document.querySelector('[aria-label="기본 Provider 변경 영향"]').textContent;
+            record('sources.default-provider-impact-confirmation',button('확인 후 적용').disabled&&!!control('기본 Provider 변경 영향을 확인했습니다')&&!control('출처/공개 범위 확대 영향을 확인했습니다')&&providerImpact.includes('기본 Provider: prov-default → prov-next')&&providerImpact.includes('기본 Provider 변경만으로는 출처별 공개 허용 목록이 바뀌지 않습니다.'));
+            button('취소').click();await wait(()=>control('기본 Provider ID'),'default preview cancelled');
+            record('sources.default-provider-cancel-no-commit',(await read()).config_revision===current.config_revision);
+            input('기본 소스 모드','pinned');input('기본 Provider ID','prov-stale');await preview();
+            // A distinct real owner commit makes the normal UI plan stale.
+            current=await read();
+            const other=await call('configurationPlan',{request:{scope:{kind:'project',project_id:c.project},expected_config_revision:current.config_revision,changes:{sources:current.configuration.projects[c.project].sources}},operation_id:crypto.randomUUID()});
+            if(other.kind!=='committed')throw Error('competing plan not definitive');
+            const plan=other.body;
+            const switched=await call('configurationPlanCommit',{plan_id:plan.plan_id,request:{expected_config_revision:plan.base_config_revision,confirmed:true},operation_id:plan.plan_id});
+            if(switched.kind!=='committed')throw Error('competing commit not definitive');
+            control('기본 Provider 변경 영향을 확인했습니다').click();await settle();button('확인 후 적용').click();
+            await wait(()=>button('현재 설정 다시 불러오기'),'stale settings plan');
+            record('sources.stale-plan-visible',document.body.textContent.includes('계획이 오래되었습니다.'));
+            button('현재 설정 다시 불러오기').click();await wait(()=>control('기본 Provider ID'),'stale settings reload');
+            record('sources.stale-defaults-not-applied',control('기본 소스 모드').value==='current'&&control('기본 Provider ID').value==='prov-default');
+          }else{
+            // A fresh native process reloads the same actual owner settings.
+            const prior=initial.configuration.projects[c.project];
+            record('sources.restart-remembers-defaults',control('기본 소스 모드').value==='current'&&control('기본 Provider ID').value==='prov-default'&&prior.sources[0].provider_ids.length===0);
+            input('기본 소스 모드','pinned');input('기본 Provider ID','');await preview();
+            record('sources.null-clear-preview',document.querySelector('[aria-label="설정 계획 미리보기"]').textContent.includes('기본 소스 모드 pinned · 기본 Provider 없음')&&!button('확인 후 적용').disabled);
+            await confirm();await reopen();
+            const saved=(await read()).configuration.projects[c.project];
+            record('sources.null-clear-persisted',saved.source_mode_default==='pinned'&&saved.provider_id===null&&saved.sources[0].provider_ids.length===0&&control('기본 소스 모드').value==='pinned'&&control('기본 Provider ID').value==='');
+          }
+        }catch(error){rows.push({name:'sources.probe-failed',status:'fail',detail:{message:String(error)}});}
+        done=true;await report();
+        """.replace('SOURCE_SETTINGS_CONSTANTS',json.dumps({'project':project,'root':str(source_root),'alias':str(source_alias),'phase':'configure'})))
+        for phase in ('configure','clear'):
+            probe=settings_probe
+            if phase=='clear':
+                probe=work/'probe-source-settings-clear.js'
+                probe.write_text(settings_probe.read_text().replace('"phase": "configure"','"phase": "clear"'))
+            app=launch(['--reader','--reader-port','9271','--reader-path',settings_route,'--reader-probe',str(probe),'--reader-close-on-done'],'150s')
+            rows=final_report(app.pid,140)
+            assert rows is not None,'native settings final report missing'
+            failed=[r for r in rows if r['status']!='pass']
+            assert not failed,json.dumps(failed,ensure_ascii=False)[:1200]
+            assert app.wait(timeout=180)==0,'native settings application did not close normally'
+            observations=json.loads((state/f'native-call-observations-{app.pid}.json').read_text())
+            operations={row['operation'] for row in observations}
+            assert {'configurationView','configurationPlan','configurationPlanCommit'}<=operations,'actual settings facade calls missing'
+            guard=json.loads((state/'native-guard.json').read_text())
+            assert guard.get('installed') in (1,True) and guard.get('pid')==app.pid,'native settings guard missing'
+            proof['cases'].append({'kind':'actual native Sources owner configuration '+phase,'input_method':'trusted-host DOM value/events/click; no OS keyboard or touch proof','probe_rows':[r['name'] for r in rows],'operations':sorted(operations),'provider_scope':'not exercised','capture_api_scope':'not exercised'})
+        confirmed=product.data('GET','/api/v1/configuration',client=owner)['configuration']['projects'][project]
+        assert confirmed['source_mode_default']=='pinned' and confirmed['provider_id'] is None
+        assert len(confirmed['sources'])==1 and confirmed['sources'][0]['provider_ids']==[]
+        proof['excluded_stages']=[{'stage':s,'status':'not_run','reason':'standalone Sources settings campaign; renderer/provider/managed capture scope unclaimed'} for s in sorted(ALL_STAGES)]
 
     # 1) selfcheck through the same typed ReaderService binding and guard.
     if 'selfcheck' in STAGES:

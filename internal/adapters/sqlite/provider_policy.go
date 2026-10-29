@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
 	"reflect"
 	"time"
@@ -116,6 +117,9 @@ func (t *writeTx) releaseProviderInputs(jobID string) error {
  AND NOT EXISTS(SELECT 1 FROM provider_attempts WHERE job_id=? AND state IN ('prepared','dispatching','running','outcome_unknown')) AND NOT EXISTS(SELECT 1 FROM provider_orphans WHERE json_extract(value,'$.job_id')=? AND state IN ('dispatching','running','outcome_unknown'))`, jobID, jobID, jobID, jobID); e != nil {
 		return e
 	}
+	if e := t.exec(`DELETE FROM object_pins WHERE owner_kind='job_input' AND owner_id=? AND EXISTS(SELECT 1 FROM jobs WHERE job_id=? AND state IN ('completed','failed','cancelled')) AND NOT EXISTS(SELECT 1 FROM provider_attempts WHERE job_id=? AND state IN ('prepared','dispatching','running','outcome_unknown')) AND NOT EXISTS(SELECT 1 FROM provider_orphans WHERE json_extract(value,'$.job_id')=? AND state IN ('dispatching','running','outcome_unknown'))`, jobID, jobID, jobID, jobID); e != nil {
+		return e
+	}
 	rows, e := t.tx.QueryContext(t.ctx, `SELECT value FROM provider_orphans WHERE json_extract(value,'$.job_id')=?`, jobID)
 	if e != nil {
 		return e
@@ -184,9 +188,9 @@ func (t *writeTx) releaseResolvedOrphanInputs(fact providerRestoreFact) error {
 
 func (t *writeTx) providerBlocksPurge(document string) (bool, error) {
 	var count int
-	e := t.tx.QueryRowContext(t.ctx, `SELECT
- (SELECT count(*) FROM provider_attempts a JOIN jobs j ON j.job_id=a.job_id WHERE a.state IN ('dispatching','running','outcome_unknown') AND (json_extract(j.scope,'$.target.document_id')=? OR json_extract(j.scope,'$.target.version_id') IN(SELECT version_id FROM purged_versions WHERE document_id=?)))+
- (SELECT count(*) FROM provider_orphans WHERE state IN ('dispatching','running','outcome_unknown') AND (json_extract(value,'$.target.document_id')=? OR json_extract(value,'$.target.version_id') IN(SELECT version_id FROM purged_versions WHERE document_id=?)))`, document, document, document, document).Scan(&count)
+	e := t.tx.QueryRowContext(t.ctx, `WITH versions AS(SELECT version_id FROM purged_versions WHERE document_id=?), source_jobs AS(SELECT i.job_id FROM job_inputs i JOIN source_capture_reads r ON r.read_id=i.read_id JOIN source_captures c ON c.capture_id=r.capture_id WHERE json_extract(c.requested_selection,'$.version_id') IN versions)
+ SELECT (SELECT count(*) FROM provider_attempts a JOIN jobs j ON j.job_id=a.job_id WHERE a.state IN('dispatching','running','outcome_unknown') AND(json_extract(j.scope,'$.target.document_id')=? OR json_extract(j.scope,'$.target.version_id') IN versions OR j.job_id IN source_jobs))+
+ (SELECT count(*) FROM provider_orphans o WHERE state IN('dispatching','running','outcome_unknown') AND(json_extract(value,'$.target.document_id')=? OR json_extract(value,'$.target.version_id') IN versions OR EXISTS(SELECT 1 FROM json_tree(o.value) n WHERE n.type='object' AND json_extract(n.value,'$.source_version_id') IN versions)))`, document, document, document).Scan(&count)
 	return count > 0, e
 }
 
@@ -418,6 +422,35 @@ func (t *writeTx) CheckProviderPolicy(a domain.ProviderAttempt) error {
 	j, e := t.Job(a.JobID)
 	if e != nil {
 		return e
+	}
+	var scope domain.ProviderScope
+	if json.Unmarshal(j.Scope, &scope) != nil {
+		return domain.ErrInvalidTarget
+	}
+	for _, readID := range scope.ReadIDs {
+		var sourceID, project, state, availability, sourceVersion string
+		e := t.tx.QueryRowContext(t.ctx, `SELECT r.source_id,c.project_id,c.state,r.availability,coalesce(json_extract(c.requested_selection,'$.version_id'),'') FROM source_capture_reads r JOIN source_captures c ON c.capture_id=r.capture_id WHERE r.read_id=?`, readID).Scan(&sourceID, &project, &state, &availability, &sourceVersion)
+		if errors.Is(e, sql.ErrNoRows) {
+			if scope.ProviderID != "" {
+				return domain.ErrDenied
+			}
+			continue
+		}
+		if e != nil {
+			return e
+		}
+		if scope.ProviderID == "" || state != "completed" || availability != "available" {
+			return domain.ErrDenied
+		}
+		if sourceVersion != "" {
+			target, _ := json.Marshal(map[string]string{"project_id": project, "version_id": sourceVersion})
+			if e = app.AuthorizeTarget(t, target); e != nil {
+				return e
+			}
+		}
+		if _, e = app.ManagedSourcePolicy(t, project, sourceID, scope.ProviderID); e != nil {
+			return e
+		}
 	}
 	var revision int64
 	e = t.tx.QueryRowContext(t.ctx, `SELECT config_revision FROM config_revisions WHERE config_revision=?`, j.ConfigRevision).Scan(&revision)

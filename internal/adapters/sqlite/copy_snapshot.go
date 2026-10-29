@@ -97,6 +97,9 @@ func SanitizeCopyDatabase(ctx context.Context, path string) error {
 		return e
 	}
 	defer db.Close()
+	if e = projectSourceBackup(ctx, &Store{db: db}); e != nil {
+		return e
+	}
 	// Owner IDs, historical actor IDs and nonsecret receipts remain ordinary data.
 	// Raw profile/control/provider secrets are never copied into this database.
 	_, e = db.ExecContext(ctx, `BEGIN;DELETE FROM device_sessions;DELETE FROM pairings;DELETE FROM scoped_credentials;COMMIT;VACUUM`)

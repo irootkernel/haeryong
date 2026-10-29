@@ -84,6 +84,75 @@ func verifyExportDependency(ctx context.Context, payload, view *exportView, v do
 			return e
 		}
 		state = row.State
+	case "managed_source_snapshot":
+		var row struct {
+			Kind     string          `json:"kind"`
+			Read     string          `json:"read_id"`
+			ID       string          `json:"source_id"`
+			Version  string          `json:"version_id"`
+			Source   json.RawMessage `json:"source"`
+			Location json.RawMessage `json:"location"`
+			Hash     string          `json:"sha256"`
+			Size     int64           `json:"bytes"`
+			State    string          `json:"state"`
+		}
+		if e := decodeCopyValue(raw, &row); e != nil {
+			return e
+		}
+		if !copyUUID.MatchString(row.Read) || row.ID == "" || row.Version != v.VersionID || !exportHash(row.Hash) || row.Size < 0 {
+			return domain.ErrContentIntegrity
+		}
+		var identity struct {
+			Kind     string `json:"kind"`
+			Snapshot string `json:"snapshot_sha256,omitempty"`
+			Repo     string `json:"repo_id,omitempty"`
+			Format   string `json:"object_format,omitempty"`
+			Revision string `json:"exact_revision,omitempty"`
+		}
+		if e := decodeCopyValue(row.Source, &identity); e != nil {
+			return e
+		}
+		if identity.Kind == "snapshot" {
+			if identity.Snapshot != row.Hash || identity.Repo != "" || identity.Revision != "" || identity.Format != "" {
+				return domain.ErrContentIntegrity
+			}
+		} else if identity.Kind == "git" {
+			length := 40
+			if identity.Format == "sha256" {
+				length = 64
+			} else if identity.Format != "sha1" {
+				return domain.ErrContentIntegrity
+			}
+			if identity.Repo == "" || identity.Snapshot != "" || len(identity.Revision) != length || identity.Revision != strings.ToLower(identity.Revision) {
+				return domain.ErrContentIntegrity
+			}
+			if _, e := hex.DecodeString(identity.Revision); e != nil {
+				return domain.ErrContentIntegrity
+			}
+		} else {
+			return domain.ErrContentIntegrity
+		}
+		var location struct {
+			Path string `json:"path"`
+		}
+		if e := decodeCopyValue(row.Location, &location); e != nil {
+			return e
+		}
+		if domain.ValidatePayloadPath(location.Path) != nil {
+			return domain.ErrContentIntegrity
+		}
+		if e := bindings.value("managed-source/"+v.VersionID+"/"+row.Read, raw); e != nil {
+			return e
+		}
+		state = row.State
+		if state != "included" && state != "excluded_by_scope" {
+			return domain.ErrContentIntegrity
+		}
+		if state == "included" {
+			if e := verifyMetadataObject(ctx, view, *v.MetadataRoot, domain.Object{Hash: row.Hash, Size: row.Size}); e != nil {
+				return e
+			}
+		}
 	case "verification_expectation":
 		var row struct {
 			Kind    string  `json:"kind"`

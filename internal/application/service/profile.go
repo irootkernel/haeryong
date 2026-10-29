@@ -88,13 +88,23 @@ func (s Selection) path() (string, error) {
 	if s.DataDir != "" {
 		return filepath.Abs(s.DataDir)
 	}
+	root, err := DefaultProfilesRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, s.Profile), nil
+}
+
+// DefaultProfilesRoot is the canonical default layout, without enumerating or
+// loading profiles. Explicit custom data directories have independent locations.
+func DefaultProfilesRoot() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
 	switch runtime.GOOS {
 	case "darwin":
-		return filepath.Join(home, "Library", "Application Support", "Haeryong", "profiles", s.Profile), nil
+		return filepath.Join(home, "Library", "Application Support", "Haeryong", "profiles"), nil
 	case "linux":
 		base := os.Getenv("XDG_DATA_HOME")
 		if base == "" {
@@ -103,7 +113,7 @@ func (s Selection) path() (string, error) {
 		if !filepath.IsAbs(base) {
 			return "", errors.New("XDG_DATA_HOME must be absolute")
 		}
-		return filepath.Join(base, "haeryong", "profiles", s.Profile), nil
+		return filepath.Join(base, "haeryong", "profiles"), nil
 	default:
 		return "", errors.New("service platform unsupported")
 	}

@@ -6,7 +6,7 @@ import {ApiError} from "../../client/types.ts";
 import {Sheet} from "../sheet.tsx";
 import {lifecycleJournalKey,lifecycleRejected,reconcileLifecycle,updateLifecycleJournal,type LifecycleIntent} from "./lifecycle-operations.ts";
 import {finishLifecycleRequest} from "./purge-progress.tsx";
-const impactLabels:Record<string,string>={annotation_value:"노트 내용 식별",annotation_revision:"노트 이력 식별",context_object:"저장한 상황 객체",source_history:"소스 검증 이력",version:"버전",review:"내 검토",review_event:"검토 이력",annotation:"노트",annotation_history:"노트 이력",context:"저장한 상황",revisit:"다시 볼 문서",reading_position:"마지막 읽은 위치",page_position:"페이지 위치",reader_preference:"읽기 설정",incoming:"들어오는 참조",incoming_edges:"확인된 참조",referring_documents:"참조하는 문서"};
+const impactLabels:Record<string,string>={annotation_value:"노트 내용 식별",annotation_revision:"노트 이력 식별",context_object:"저장한 상황 객체",source_history:"소스 검증 이력",managed_source_snapshot:"보관한 소스 스냅샷",version:"버전",review:"내 검토",review_event:"검토 이력",annotation:"노트",annotation_history:"노트 이력",context:"저장한 상황",revisit:"다시 볼 문서",reading_position:"마지막 읽은 위치",page_position:"페이지 위치",reader_preference:"읽기 설정",incoming:"들어오는 참조",incoming_edges:"확인된 참조",referring_documents:"참조하는 문서"};
 export const stateLabels:Record<string,string>={active:"활성",archived:"보관",trash:"휴지통",purged:"영구 삭제"};
 const operationEffects:Record<LifecycleAction,string>={
  purge:"승인 즉시 복원과 취소가 불가능합니다. 버전과 노트·내 검토·개인 이력 및 저장한 상황을 영구 삭제합니다. 들어오는 참조는 최소 식별자만 남깁니다. 원본 저장소와 다른 버전·초안·소스·업로드·작업·백업·읽기에서 사용하는 공유 파일은 보존됩니다.",

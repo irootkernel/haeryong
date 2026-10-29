@@ -179,6 +179,8 @@ export interface SourceMapping {
 }
 export interface ProjectConfiguration {
   sources: SourceMapping[];
+  source_mode_default?: "pinned" | "current";
+  provider_id?: string | null;
   [key: string]: unknown;
 }
 export interface ConfigurationView {

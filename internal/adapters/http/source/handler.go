@@ -53,6 +53,9 @@ func route(r *http.Request) []string {
 // Handles lets the existing auth router retain its frozen unimplemented-
 // feature and unknown-route responses for APIs outside this adapter.
 func (*handler) Handles(r *http.Request) bool {
+	if captureRoute(r) {
+		return true
+	}
 	if r.Method != http.MethodPost {
 		return false
 	}
@@ -91,6 +94,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if _, err := h.core.Auth.Authenticate(r.Context(), token); err != nil {
 		fail(w, err)
+		return
+	}
+	if captureRoute(r) {
+		h.capture(w, r, token)
 		return
 	}
 	if r.Method != http.MethodPost || !h.Handles(r) {
@@ -254,7 +261,7 @@ func fail(w http.ResponseWriter, err error) {
 		status int
 		code   string
 	}{
-		{session.ErrRequired, 401, "AUTH_REQUIRED"}, {session.ErrExpired, 401, "SESSION_EXPIRED"}, {session.ErrRevoked, 401, "SESSION_REVOKED"}, {session.ErrInvalid, 400, "INVALID_REQUEST"}, {session.ErrMissing, 428, "PRECONDITION_REQUIRED"}, {domain.ErrDenied, 403, "FORBIDDEN"}, {domain.ErrNotFound, 404, "NOT_FOUND"}, {domain.ErrPrecondition, 412, "PRECONDITION_FAILED"}, {domain.ErrConflict, 409, "OPERATION_CONFLICT"}, {domain.ErrTransition, 409, "INVALID_TRANSITION"}, {domain.ErrReconciliation, 409, "OPERATION_RECONCILIATION_REQUIRED"},
+		{session.ErrRequired, 401, "AUTH_REQUIRED"}, {session.ErrExpired, 401, "SESSION_EXPIRED"}, {session.ErrRevoked, 401, "SESSION_REVOKED"}, {session.ErrInvalid, 400, "INVALID_REQUEST"}, {session.ErrMissing, 428, "PRECONDITION_REQUIRED"}, {domain.ErrDenied, 403, "FORBIDDEN"}, {domain.ErrNotFound, 404, "NOT_FOUND"}, {core.ErrObjectMissing, 409, "SOURCE_UNAVAILABLE"}, {core.ErrInvalidRoot, 409, "SOURCE_UNAVAILABLE"}, {os.ErrNotExist, 409, "SOURCE_UNAVAILABLE"}, {core.ErrSourceChanged, 409, "SOURCE_UNAVAILABLE"}, {core.ErrSourceDenied, 403, "FORBIDDEN"}, {core.ErrInvalidLocation, 400, "INVALID_REQUEST"}, {domain.ErrContentIntegrity, 503, "CONTENT_INTEGRITY_ERROR"}, {domain.ErrInvalidTarget, 400, "INVALID_REQUEST"}, {domain.ErrPrecondition, 412, "PRECONDITION_FAILED"}, {domain.ErrConflict, 409, "OPERATION_CONFLICT"}, {domain.ErrTransition, 409, "INVALID_TRANSITION"}, {domain.ErrReconciliation, 409, "OPERATION_RECONCILIATION_REQUIRED"},
 		{syscall.ENOSPC, 503, "RESOURCE_EXHAUSTED"}, {syscall.EDQUOT, 503, "RESOURCE_EXHAUSTED"}, {syscall.ENOMEM, 503, "RESOURCE_EXHAUSTED"},
 		{os.ErrPermission, 503, "FILE_ACCESS_ERROR"}, {syscall.EIO, 503, "FILE_ACCESS_ERROR"}, {syscall.EROFS, 503, "FILE_ACCESS_ERROR"},
 		{io.ErrUnexpectedEOF, 503, "TRANSFER_INTERRUPTED"}, {context.Canceled, 503, "TRANSFER_INTERRUPTED"}, {context.DeadlineExceeded, 503, "TRANSFER_INTERRUPTED"},

@@ -179,3 +179,24 @@ accessible; reload reads current service state. The shared browser/native screen
 host-local CLI create/verify/export/restore/review, unsupported encryption and same-volume
 limits. Existing original-directory download is unchanged. Purge shows the same real
 status and still requires no fresh backup. No browser remote export action is invented.
+
+## Sources settings implementation extension (TASK-006-02)
+
+The existing owner editor includes pinned/current default source mode and an
+optional default Provider ID. The server-normalized preview shows both defaults
+and source/root/retention/disclosure effects. A non-null provider choice remains
+an explicit confirmed owner change, independently of each source's disclosure
+allow list. Reload and fresh native App processes restore saved choices; clearing
+the provider submits null. The ordinary source list continues showing logical
+identities rather than host roots. The editor states that the managed collector
+is not an OS jail and that production provider execution remains unavailable
+until its implementing owner. No generic filesystem browser or new per-read
+confirmation is introduced.
+
+The settings preview distinguishes source/disclosure expansion from changing
+the default provider and names both effects when combined. It shows the proposed
+source mode and, when the provider changes, old→new provider defaults with
+explicit null. Source narrowing remains visible even when a provider change also needs confirmation. Failed initial loading shows
+an error and Retry rather than invented editable values. Keyboard and
+emulated-touch browser evidence is separate from the native harness's
+trusted-host DOM interactions.

@@ -989,3 +989,95 @@ latest_state does not erase older uncertainty. Native request/session IDs and
 payloads remain server-side. Existing job_resume captures the finite eligible
 attempt set on the server; terminal reconcile_only changes operational accounting
 without reopening the terminal job or changing its current result/generation.
+
+## Additive managed-capture DTOs (TASK-006-02)
+
+The original source/citation and provider-attempt unions above remain normative.
+The migration-16 local managed capture API implements this additional bounded
+surface; it does not return a completed AI answer or create observed_input.
+
+- CaptureRequest: optional version_id, source_intent (historical/moving_target),
+  source_mode (pinned/current), provider_id, and a nonempty selections array.
+  Each selection names source_id, optional revision and working_copy, and explicit
+  paths {path,read_id?}. Pinned file/snapshot reuse requires its existing exact
+  retained read_id; current files are actually captured. No caller host root or
+  job_id is accepted. Explicit mode wins; otherwise historical uses pinned,
+  otherwise the remembered default applies, falling back to pinned.
+- Capture projection: capture_id, project_id, state, requested_selection,
+  complete, nullable target_set_id/captured_at, reason and reads_url. Complete
+  means every selected capture was committed, not provider delivery or semantic
+  assessment. Failed/partial selections preserve the original denominator.
+- Read projection: read_id, capture_id, source_id, source/location identity,
+  bytes_sha256, byte_size, retention_mode, availability and optional reason.
+  Metadata-only views add capture_availability and read_state. Its value is
+  not_read_by_view. A reference-only identity is reported not_retained; retained_snapshot availability
+  remains distinct from an actual verified_read. An explicit byte read reports
+  retained_snapshot or approved_source internally only after verification.
+  Its internal byte-consumer record sets read_state:verified_read; the HTTP
+  response remains a byte stream. Neither read_state value establishes an
+  attempt input observation.
+- Captured diff: left_capture_id, right_capture_id, changes (source_id, location,
+  before/after read records), nullable next_cursor and semantic_verdict:null.
+  This compares persisted byte digests and capture availability/reasons, not
+  semantic source truth. The cursor is bound to that exact pair of captures.
+
+Pinned read_id reuse is bound to its original project before byte consumption;
+source ID/path equality alone cannot authorize a cross-project provider policy.
+Foreign and missing scoped read IDs have the same nondisclosing error. Byte
+errors reuse canonical 409 SOURCE_UNAVAILABLE and 503 CONTENT_INTEGRITY_ERROR;
+no success payload is sent for changed, absent or corrupt exact bytes.
+
+Read and diff pages contain at most 64 records per response, with keyset
+continuation; page size is not a source/file-count limit. Scoped responses require
+that principal's capture plus current exact project/version/source access before
+returning rows, counts or bytes. Known IDs cannot reveal another principal's
+capture, revoked source or hidden version. Current authority also filters saved
+operation responses. Owner history can retain its original selection without
+returning revoked byte payload. Denied existence uses nondisclosing 404 where
+appropriate. Byte delivery uses application/octet-stream, attachment and nosniff.
+
+Private provider input/orphan metadata additionally carries optional
+retention_mode and source_version_id for lifetime/restore/lifecycle guards; it
+never substitutes for the required producing-attempt input observation. Managed
+ProviderScope requires an explicitly selected provider ID and a valid managed
+capture binding for each selected read. The earlier blank-provider internal
+foundation fixture seam is not public managed admission authority.
+
+Scoped exports can add a typed managed_source_snapshot dependency only for the
+selected version's separately retained capture. It records read/source/version,
+exact source/location, SHA-256, bytes and included/excluded_by_scope. Included
+objects must verify their exact size/hash and snapshot/revision identity. This
+neither changes original payload nor exports provider operational history.
+
+Managed metadata view and both diff sides share the same read projection.
+capture_availability preserves original capture facts, interpreting only the
+supported copied reference-only marker described below. Raw copy projection and
+current permitted byte availability remain separate; neither requires another
+source read.
+An incomplete capture projects captured units unavailable/capture_not_completed,
+preserves actual missing/denied/unread reasons, and never claims bytes_origin.
+A completed reference-only row projects unavailable/not_retained without an
+origin. Only a permitted completed retained row claims retained_snapshot; it
+still says not_read_by_view and is not an actual verified read or observation.
+Revoked owner-history rows redact source/location/hash and origin. Scoped history
+and diff retain their existing nondisclosing authority refusals.
+
+An ordinary incomplete selection has capture-level reason
+incomplete_source_capture; its per-unit reasons and requested denominator are
+retained. Version-context retention cleanup can leave version_purged as a stored
+read lifecycle reason. This does not grant visibility of a purged context or
+permission to read its bytes.
+
+The additional capture reason vocabulary is location_invalid, source_changed,
+source_unreadable, missing_source, source_denied and source_read_failed for
+per-unit failures; not_read remains an unconsumed selected unit. Operation-level
+reasons reuse current authority/configuration failures and add stage_failure,
+check_bound_exceeded, interrupted_before_commit and resource_exhausted. They are
+settled operation facts, not permission to replay or dispatch semantic work.
+
+The supported reference_only_uncopied copy marker preserves a previously
+available captured source/location/byte identity. Managed metadata projection
+reports historical capture_availability:available for that unambiguous identity;
+current availability remains unavailable/not_retained and read_state remains
+not_read_by_view. Metadata-only diffs compare the same normalized capture facts.
+Unsupported legacy or missing-identity markers do not establish past availability.

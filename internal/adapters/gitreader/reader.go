@@ -397,3 +397,24 @@ func (b *blobStream) Close() error {
 	}
 	return err
 }
+
+// ResolveRef captures an explicitly selected branch/release/revision once. The
+// end-of-options boundary treats the selected expression as data; no fetch or
+// checkout is performed, and only a full immutable commit identity is returned.
+func (r *Reader) ResolveRef(ctx context.Context, root, selection string) (string, error) {
+	if e := checkRoot(root); e != nil {
+		return "", e
+	}
+	if selection == "" {
+		selection = "HEAD"
+	}
+	out, e := r.command(ctx, root, "rev-parse", "--verify", "--quiet", "--end-of-options", selection+"^{commit}").Output()
+	if e != nil {
+		return "", commandError(ctx, e, ErrObjectMissing)
+	}
+	revision := strings.TrimSpace(string(out))
+	if !fullRevision.MatchString(revision) {
+		return "", ErrObjectMissing
+	}
+	return revision, nil
+}

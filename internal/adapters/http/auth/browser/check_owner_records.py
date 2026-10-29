@@ -22,11 +22,13 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--browser-cli', type=Path, required=True)
 parser.add_argument('--receipt', type=Path, required=True)
 parser.add_argument('--focus-context', action='store_true', help='Focused own-Save/Review and context classes only; never full campaign qualification')
+parser.add_argument('--focus-purge-sources', action='store_true', help='Only actual managed snapshot purge-plan rendering and cancellation; not the full owner campaign')
 args = parser.parse_args()
+assert not (args.focus_context and args.focus_purge_sources), 'select one bounded focus'
 receipt = args.receipt.resolve(); assert receipt.parent.is_dir()
 os.umask(0o077)
 volume = Path('/Volumes/RootKernel')
-scratch = volume/'tmp' if os.path.ismount(volume) and os.access(volume, os.W_OK) else Path(tempfile.gettempdir())
+scratch = Path('/tmp')
 work = Path(tempfile.mkdtemp(prefix='h6b-', dir=scratch)).resolve()
 sockets = work / 'sockets'; sockets.mkdir()
 env = os.environ | {'TMPDIR': str(work), 'PYTHONDONTWRITEBYTECODE': '1', 'HAERYONG_TEST_STATE_DIR': str(work/'app-state'),
@@ -36,11 +38,15 @@ os.environ['HAERYONG_TEST_STATE_DIR'] = env['HAERYONG_TEST_STATE_DIR']
 proof = {'scope': __doc__, 'complete': False, 'runtime': str(work), 'cases': [], 'client': 'Chrome',
          'reader': 'agent-only, familiar, not blinded; no human usefulness claim', 'provider_calls': 0,
          'requested': ['create','successors','loss','stale','lifecycle','reopen','interruption','recovery','export'], 'cleanup_errors': []}
-proof['focused_selection'] = args.focus_context
+proof['focused_selection'] = 'managed-purge-sources' if args.focus_purge_sources else args.focus_context
+proof['browser_path'] = 'Browser plugin not available; existing Playwright CLI fallback'
 proof['full_qualification'] = False
 if args.focus_context:
     proof['excluded'] = list(proof['requested'][1:])+['consent','normal-restart','protected-recovery']
     proof['requested'] = ['create','declared-records','context-case-inputs','context-classes']
+if args.focus_purge_sources:
+    proof['excluded'] = list(proof['requested'])
+    proof['requested'] = ['managed-source-setup', 'purge-render-cancel-keyboard-touch', 'retained-after-cancel']
 class FocusedContextFinished(Exception):
     pass
 product = None; opened = False
@@ -113,6 +119,12 @@ try:
     fixture = support.prepare(product, owner); proof['fixture'] = fixture
     call(['open', product.endpoint+'/health/live', '--browser', 'chrome', '--profile', str(work/'browser-profile')]); opened = True
     call(['run-code', 'async page=>{await page.evaluate(token=>localStorage.setItem("haeryong.owner-session.v1",token),'+json.dumps(owner['token'])+');return {setup:true};}'], True)
+    if args.focus_purge_sources:
+        check('managed-source-setup', lambda: support.prepare_managed_purge_sources(product, owner, fixture))
+        check('purge-render-cancel', lambda: phase('managed-purge-sources', ['ui.managed-purge.keyboard', 'ui.managed-purge.touch']))
+        check('retained-after-cancel', lambda: support.verify_managed_purge_cancel(product, owner, fixture))
+        proof['focused_complete'] = len(proof['cases']) == 4 and all(row.get('status','pass') == 'pass' and row.get('complete',True) for row in proof['cases'])
+        raise FocusedContextFinished
     check('create', lambda: phase('create', ['ui.save-review.'+n for n in ['mulgae','gaori','a.html','b.html','no-region.html']]+['ui.large-body-context','ui.explicit-reattach']))
     if not args.focus_context:
         check('consent',lambda:phase('consent',[name.replace('ui.notes.','ui.notes.'+size+'.') for size in ('1440x900','820x1180','844x390','390x844') for name in support.CONSENT_CASES]+['ui.notes.touch-confirmation']))
@@ -183,8 +195,8 @@ finally:
     proof['uncaptured_inputs'] = ['prepared Go module/build caches and native SDK','prepared frontend/node_modules','installed Go/Python/Node/Chrome/browser CLI tools']
     if (work/'haeryong').exists():proof['binary_sha256'] = hashlib.sha256((work/'haeryong').read_bytes()).hexdigest()
     proof['complete'] = proof['complete'] and proof['daemon_closed'] and proof['inputs_unchanged'] and not proof['cleanup_errors']
-    if args.focus_context:
+    if args.focus_context or args.focus_purge_sources:
         proof['focused_complete'] = proof.get('focused_complete',False) and proof['daemon_closed'] and proof['inputs_unchanged'] and not proof['cleanup_errors']
     receipt.write_text(json.dumps(proof,ensure_ascii=True,indent=2)+'\n'); receipt.chmod(0o600)
 print(json.dumps({'complete':proof['complete'],'cases':len(proof['cases']),'receipt':str(receipt),'cleanup_errors':proof['cleanup_errors']}))
-assert proof.get('focused_complete',False) if args.focus_context else proof['complete'], 'Task6 selected browser checks incomplete; inspect original receipt'
+assert proof.get('focused_complete',False) if (args.focus_context or args.focus_purge_sources) else proof['complete'], 'Task6 selected browser checks incomplete; inspect original receipt'
