@@ -1,4 +1,5 @@
-import type { LifecyclePlanRequest,LifecycleCommitRequest,LifecyclePlanView,LifecycleResult,LifecyclePageRequest,TrashRequest,TrashItem, AnnotationCreate, AnnotationPatch, AnnotationView, AnnotationStream, RevisitView, ReviewView, ReviewRequest, ReviewCondition, ReviewEvent, DocumentFilter,
+import { providerStatus as verifiedProviderStatus } from "./provider-status.ts";
+import type { ProviderStatus, LifecyclePlanRequest,LifecycleCommitRequest,LifecyclePlanView,LifecycleResult,LifecyclePageRequest,TrashRequest,TrashItem, AnnotationCreate, AnnotationPatch, AnnotationView, AnnotationStream, RevisitView, ReviewView, ReviewRequest, ReviewCondition, ReviewEvent, DocumentFilter,
   BacklinksRequest, BacklinkPage, IndexValidation, IndexValidationRequest, IndexRebuild, IndexRebuildRequest,
   VersionReferencesRequest, ResolveReferenceRequest, ReferencePage, ReferenceView,
   SearchRequest, SearchPage,
@@ -563,6 +564,10 @@ export class HttpHaeryongClient implements HaeryongClient {
   currentSession(): Promise<SessionInfo> {
     return this.#request("GET", "/api/v1/session");
   }
+
+  providerStatus(): Promise<ProviderStatus> {
+ return this.#request<ProviderStatus>("GET", "/api/v1/providers").then(verifiedProviderStatus);
+ }
 
   capabilities(): Promise<Capabilities> {
     return this.#request("GET", "/api/v1/capabilities");

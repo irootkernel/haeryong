@@ -96,7 +96,7 @@ func referenceSchema8(w *service.LockedProfile) ([]byte, string) {
 func referencePriorRows(db *sql.DB) map[string]string {
 	assertEmptyProviderMigrationTables(db)
 	GinkgoHelper()
-	names, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT GLOB 'search_words_*' AND name NOT GLOB 'search_grams_*' AND name NOT IN ('reference_materializations','authored_references','authored_edges','review_states','review_events','annotations','annotation_history','revisit_flags','lifecycle_plans','lifecycle_plan_items','purge_intents','purged_versions','purge_candidates','copy_sets','copy_versions','recovery_holds','provider_attempts','provider_inputs','provider_retry_authorizations','provider_linked_retry_authorizations','provider_orphans','provider_reconcile_intents','source_captures','source_capture_reads','job_inputs') ORDER BY name`)
+	names, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT GLOB 'search_words_*' AND name NOT GLOB 'search_grams_*' AND name NOT IN ('reference_materializations','authored_references','authored_edges','review_states','review_events','annotations','annotation_history','revisit_flags','lifecycle_plans','lifecycle_plan_items','purge_intents','purged_versions','purge_candidates','copy_sets','copy_versions','recovery_holds','provider_transport','provider_attempts','provider_inputs','provider_retry_authorizations','provider_linked_retry_authorizations','provider_orphans','provider_reconcile_intents','source_captures','source_capture_reads','job_inputs') ORDER BY name`)
 	Expect(err).NotTo(HaveOccurred())
 	var tables []string
 	for names.Next() {
@@ -183,7 +183,7 @@ var _ = Describe("RF06 authentic schema8 upgrade", Label("persistence"), func() 
 		var nonDefaultLifecycle int
 		Expect(ready.db.QueryRow(`SELECT count(*) FROM documents WHERE previous_lifecycle IS NOT NULL OR trashed_at IS NOT NULL OR trash_generation<>0`).Scan(&nonDefaultLifecycle)).To(Succeed())
 		Expect(nonDefaultLifecycle).To(BeZero(), "revision 12 adds only the declared empty/default lifecycle state")
-		for _, table := range []string{"reference_materializations", "authored_references", "authored_edges", "lifecycle_plans", "lifecycle_plan_items", "purge_candidates", "purge_intents", "purged_versions", "provider_attempts", "provider_inputs", "provider_retry_authorizations", "provider_linked_retry_authorizations", "provider_orphans", "provider_reconcile_intents", "source_captures", "source_capture_reads", "job_inputs"} {
+		for _, table := range []string{"reference_materializations", "authored_references", "authored_edges", "lifecycle_plans", "lifecycle_plan_items", "purge_candidates", "purge_intents", "purged_versions", "provider_transport", "provider_attempts", "provider_inputs", "provider_retry_authorizations", "provider_linked_retry_authorizations", "provider_orphans", "provider_reconcile_intents", "source_captures", "source_capture_reads", "job_inputs"} {
 			var n int
 			Expect(ready.db.QueryRow(`SELECT count(*) FROM ` + table).Scan(&n)).To(Succeed())
 			Expect(n).To(BeZero(), "DDL never backfills manifests")

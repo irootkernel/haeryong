@@ -121,4 +121,32 @@ and normal shared Sources default/provider settings. docs/testing/managed-source
 records current checks and limits. Source capture alone never proves an attempt
 received bytes. TASK-006-03/04/05 retain production transport/generation/Q&A;
 Task02's bounded delivery is complete after its actual common gate, independent
-final assessment and delegated member acceptance. TASK-006-03 is the next owner.
+final assessment and delegated member acceptance. TASK-006-03's bounded
+transport delivery is now complete; TASK-006-04 is the next ordered owner after
+normal member closeout. Later Tasks retain their explicit dependencies.
+
+TASK-006-03 adds the pinned personal host-local Codex transport under
+internal/adapters/ai/codex, revision 17 typed attempt audit, owner-only provider
+status across HTTP/CLI/shared browser/native clients, and explicit source/output
+consumer guards. docs/testing/provider-adapter.md records executed boundaries and
+qualification limits. Its same-code full common and independent final assessment
+passed, and the bounded native Task Goal is achieved. Final independent
+assessment and delegated member acceptance establish this bounded Task03
+delivery. The normal completion commit and native finalization follow under the
+same authority; this record claims no commit or Master overall Epic acceptance.
+Public generation/question admission, skill publication, saved Q&A and the assembled Epic gate retain
+TASK-006-04/05/06 ownership.
+Provider tests stay offline unless the existing live tag and an explicit scoped
+authorization/private physical evidence directory select the native fixture.
+
+
+TASK-006-03 correction semantics retain prepared no-dispatch attempts and exact
+local reasons; complete authorized output/native terminal facts survive separate
+required audit or cleanup failures. Pinned history interrupted is unresolved;
+complete saved output requires exact full history when a live event is partial.
+Effective config uses the selected CWD, and bounded inherited-capability audit
+keeps declared/observed/unknown facts distinct without raw secrets. Poll keeps
+Reader/Review available after handled accounting failure; Stop reports it.
+Current offline corrections and historical proof applicability are separated in
+[provider correction evidence](docs/testing/provider-corrections.md). Real
+provider/status/native-client operations still require their scoped authority.

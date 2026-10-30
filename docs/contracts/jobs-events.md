@@ -434,10 +434,24 @@ The driver persists accepted progress before a long wait: provider operation/tur
 ID maps to provider_request_id, thread ID to provider_session_id, and local RPC
 correlation is distinct. Verified backend completion must be explicit, never
 inferred from transport shutdown or output EOF. A known completed backend with
-unavailable/forbidden output uses local failed/result_unavailable accounting,
+definitively unsupported or forbidden output uses local
+failed/result_unavailable accounting,
 which does not assert provider failure or provider cancellation. Status-only
 reconciliation can thereby settle external uncertainty without a source read,
 forbidden result retrieval, library application or another dispatch.
+
+Temporary full-history RPC/context/spool/object-persistence failure after known
+completion keeps outcome_unknown with reason result_retrieval_pending. This
+primary reason records the observed native completion and accepted exact IDs;
+it does not assert a saved Body/result_hash. Explicit reconcile_only can recover
+the full output and then continue without Execute. Later inconclusive metadata
+cannot overwrite that known completion with generic transport_unknown. Restore
+merges compatible completion facts monotonically and retains genuine terminal
+contradictions; a reliable conflicting failure/interruption is not silently
+replaced by the earlier completion. Actual writer failure cannot claim a durable
+primary fact. A successful full response with unsupported view/phase/no public
+final, status-only output suppression or actual payload-authority refusal still
+uses failed/result_unavailable. These rules introduce no new queue or migration.
 
 ## Current saved continuation and operational carrier transitions
 
@@ -493,3 +507,98 @@ owner. TASK-006-03 owns actual adapter delivery and observed input evidence;
 preparation pins are not a substitute for queued admission lifetime. Reference-
 only bytes that are no longer available remain unavailable rather than becoming
 a manufactured snapshot. These owners remain ordered future implementation.
+
+## TASK-006-03 transport ownership
+
+The concrete Codex adapter is injected into the existing ProviderCoordinator and
+single waiting phase. Setup-thread identity and typed transport audit attach to
+the original attempt before the send fence; accepted turn/thread IDs and exact
+input observations use its synchronous durable progress callback. A cancellation
+racing accepted-ID registration is rechecked after registration. An unsuccessful
+interrupt still bounds local waiting and leaves remote outcome unknown unless a
+matching native terminal observation arrives.
+
+ProviderScope.invocation is trusted server admission state. The adapter derives
+and checks semantic identity from actual intent/options and canonically ordered
+exact source identities/locations/hashes, excluding local read/capture/snapshot
+IDs and timestamps. Actual frame order is identical. Public job/list/cancel/
+resume and stored/replayed receipt bodies omit invocation, and their ETags agree
+with that projection. A client digest or job ID supplies no admission authority.
+
+Definite pre-send preparation failures retain prepared and
+may_have_dispatched=false, with their exact local reason on the paused job.
+An internal native setup deadline with a live caller uses setup_timeout; actual
+caller cancellation/deadline and dispatch-fence refusal remain distinct from
+that local preparation timeout.
+Explicit continue revalidates the undispatched semantic work and may retire
+its old prepared local intent; it never resends an uncertain dispatch. Actual owner cancellation retains its distinct no-send
+cancellation semantics. unsupported_input_format and
+source_unavailable are bounded local preparation categories. Native
+usageLimitExceeded maps to quota_exhausted, rateLimitExceeded to
+provider_rate_limited, sessionBudgetExceeded to provider_budget_exhausted and
+contextWindowExceeded to provider_context_limit. They are not interchangeable
+quota observations. Unknown external effects retain outcome_unknown accounting.
+The revision-17 audit records native backend state separately from normalized
+result state, local drain and any later exact-ID lookup observation. Existing
+saved-result, hidden-carrier, retry and pin rules remain in force.
+
+
+The operation-time job response keeps its authoritative opaque ETag through
+receipt serialization and replay, including hidden-target reconciliation.
+Visibility filtering may mask fields further but never rebuilds an old header
+from the current job while retaining the old body. Current GET reflects actual
+later changes and supplies the validator for a new operation; replay preserves
+the historical response. Private invocation is never restored for projection.
+
+Complete authorized output and independently known native terminal facts commit
+before required final audit. A selective required audit failure preserves those
+facts while failing/pausing that query campaign visibly. The exact executing
+runtime/job-generation owner may abandon the existing finite intent and its
+pending siblings without completing a linked carrier. No remaining intent may
+automatically retry the failed campaign. With no eligible external effect,
+existing intent or restore hold, new reconcile_only fails the transition; the
+existing already-admitted settled shortcut remains unchanged. A genuine primary
+writer failure cannot claim a durable fact; persistently unavailable storage
+leaves accounting uncertain rather than reporting successful persistence.
+
+Accounting for an already-complete spool survives ordinary caller/daemon context
+cancellation only while the current runtime, generation, source policy and
+payload authority still permit it. Explicit owner cancel/revocation remains a
+refusal. Current output guards apply on each chunk; no fixed size/output cap or
+blanket total copy timeout is introduced. Handled provider accounting failure
+keeps dispatcher service available, with a bounded first failure retained for
+shutdown reporting after Poll collection. A durably handled error with positive
+owned-transport drain evidence is a historical diagnostic only after collection.
+A controlled restart may carry that first bounded diagnostic to final shutdown;
+it does not treat current phase, unknown cleanup, missing drain evidence or
+unrelated joined shutdown errors as safe. The first later unsafe accounting
+failure is retained independently, so an earlier safe diagnostic cannot hide it.
+The internal ProviderOutcome may carry a producer's explicit LocalClosed and
+LocalCleanupReason independently of complete native Transport/Lookup metadata.
+This means actual owned transport drain or known absence of an owned transport;
+its zero value and arbitrary nil CleanupError remain unknown. The same known
+successful cleanup reasons, nil CleanupError, durable settlement, collection and
+whole-error-tree guards apply. This local observation never manufactures backend
+status, accepted IDs, source delivery or complete native audit identity and adds
+no stored/wire field or schema.
+
+Recognized owner/policy refusal during result copy or Apply is ordinary refusal,
+not provider_accounting_unavailable or a shutdown failure. Already saved output
+and its pins survive; changed generation never permits the old worker to alter
+its newer owner. Genuine independent storage/audit/cleanup errors remain visible.
+Every post-start return, including initialization and undispatched preparation,
+joins owned cleanup. Complete verified audit metadata may record that result;
+incomplete setup never fabricates auth/model/CWD/disclosure/accepted identity.
+Before a complete audit is permissible, cleanup uncertainty remains an explicit
+bounded phase/shutdown diagnostic while the job retains its primary refusal.
+The undispatched attempt remains prepared, and Poll/Reader/Review stay usable.
+
+
+Explicit finite status admission binds current owner auth_epoch in the existing
+typed resource-revision attachment, atomically with its intents. Existing intent
+Claim supplies the current runtime fence after restart; no admission-runtime
+permanent equality is added. This status-only authority can reconcile an older
+producing epoch after explicit protected recovery, without rebinding payload
+scope or assuming authority from a missing legacy attachment. Epoch revocation
+still denies an executing old grant. Last successful intent completion or exact
+campaign Abandon removes the status grant with its owned intent lifetime.

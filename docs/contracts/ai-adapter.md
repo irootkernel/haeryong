@@ -65,3 +65,121 @@ Before managed dispatch, verify the effective provider/account and authenticatio
 Official documentation distinguishes subscription sign-in from API-key billing; [references](../references.md) records that narrow basis. Public/commercial distribution and a different managed deployment need their own eligibility review. A working fake does not close the real-provider condition.
 
 Do not automatically request an API key, copy account tokens, use an unsupported sign-in path or silently switch billing/provider to bypass a failure. If the chosen supported route is unavailable, show that state and let the owner choose a supported alternative. G-AI is not conditional on eliminating every ambient capability from an external owner's agent environment.
+
+## TASK-006-03 production transport
+
+The production `internal/adapters/ai/codex` factory uses Codex app-server over
+host-local stdio. Its verified deployment is Codex CLI 0.164.0 on Darwin ARM64,
+SHA-256 `d8990e3ee7acfbc26f91265b12a1a83f0fee40d0e0f8f1f40a37d4ec21f499cf`.
+The version-specific stable JSON schemas are regenerated from that installed
+binary. An unverified version/hash is unavailable; the adapter never upgrades,
+downgrades, installs or substitutes another provider. `daemon run
+--provider-binary /absolute/pinned/codex` selects an already installed executable;
+without it PATH discovery still requires the same verified pin.
+
+Before inference, account/read with refreshToken=false must identify ChatGPT
+and requiresOpenaiAuth=true. Effective configuration is read for the exact selected absolute CWD; a null
+configuration is unavailable. Effective configuration and the returned thread
+must agree with the supported OpenAI route, native read-only sandbox, disabled
+sandbox network access, approvalPolicy=never and selected working directory.
+Ordinary documented OpenAI and ChatGPT backend URLs are accepted. Unsupported
+provider declarations or nonstandard root OpenAI/ChatGPT endpoints are refused.
+API-key override
+variables are removed only from child environments. Owner account/configuration,
+instructions, plugins and the default model/effort are not rewritten. The audit
+records actual model/effort, working directory, native permission mode and
+instruction/disabled-plugin counts. A bounded pre-send snapshot distinguishes
+configured web-search mode from observed connected MCP server/tool counts.
+Unsupported, incomplete or failed telemetry remains unknown; app availability
+is unknown. Names, descriptions, raw configuration and secrets are not retained.
+This is neither a complete inherited-tool inventory nor an OS read jail.
+
+The initial supported input path supplies complete exact captured UTF-8 text;
+unsupported encoding fails that attempt before inference without changing stored
+source or directory import. Canonical source-identity order is used in both the
+semantic request digest and actual disclosure frame. Source/output reads recheck
+current intent, runtime and policy through their consumers. Full turn/start
+write plus its matching accepted turn ID precede durable daemon_supplied input
+observations. A buffered matching ACK wins over simultaneous local cancellation
+or EOF only after that complete write; absent/malformed/error ACK or an incomplete
+frame cannot invent delivery. Local RPC correlation is not provider deduplication.
+Native input
+telemetry is not claimed.
+
+Only an exact successful completed turn and explicit final_answer agent messages
+can produce a saved public result. Commentary, partial_answer, reasoning, unknown
+phase and EOF cannot complete it. Completed with no supported final result is
+result_unavailable, not backend failure. Known native failure and live interrupted events retain their terminal facts
+separately. Pinned history APIs synthesize interrupted for inactive unfinished
+turns, so persisted interrupted remains unresolved even after interrupt ACK. Cancellation requests the exact owned turn;
+interrupt acknowledgement alone proves no cessation. Local cleanup verifies the
+owned process group, leader and readers with bounded waits; cleanup uncertainty
+is explicit and independent of backend state on every post-start return,
+including no-send preparation. Available complete audit facts retain cleanup;
+early incomplete setup reports a bounded diagnostic without invented identity.
+No-send stays prepared with its primary reason. Recognized copy/Apply authority
+refusal is ordinary refusal, while genuine cleanup/storage/audit errors remain
+visible at Stop without ending Poll/Reader/Review service.
+
+Reconciliation uses persisted exact version/hash/thread/turn identity and a
+current executing intent. Metadata-only pages explicitly request itemsView
+notLoaded. Status-only/hidden/orphan carriers never load source or output bodies;
+authorized full-history/output reads recheck current policy on each page/chunk.
+A completed live event with summary/notLoaded/unknown view cannot supply saved
+output: recover the exact turn with full history. Temporary retrieval/context/
+spool/persistence failure keeps
+outcome_unknown/result_retrieval_pending with known completion and exact IDs,
+so explicit reconciliation can recover without another Execute. Definitively
+unsupported full output, status-only suppression and actual authority refusal
+remain failed/result_unavailable. Omitted itemsView has the pinned defaultFull
+meaning; explicit
+unknown/null does not. Summary contains the whole last message, but can omit
+earlier final messages. Every supported final message from the full view is
+retained. Wrong identities and missing full history cannot substitute output.
+No uncertain request is automatically resent. Saved continuation remains the
+existing verified no-Execute branch.
+
+GET/HEAD /providers, CLI providers status and the shared Settings/AI screen expose
+credential-free operational status. A fresh catalog is not entitlement. Unknown
+quota stays unknown; ordinaryUsageAllowed=false alone reports paused usage,
+without inventing an exhaustion cause. Explicit native usage-limit exhaustion,
+auth failure, rate limiting, session budget and context limits remain distinct.
+Generation/publication and saved-Q&A admission/resources remain TASK-006-04/05;
+features.provider denotes the transport, while generation/questions remain false.
+See the [implementation record](../testing/provider-adapter.md).
+
+The [official app-server authentication notes](https://learn.chatgpt.com/docs/app-server#auth-endpoints)
+preserve existing personal local/open-source authentication use. This bounded
+host-local integration does not claim vendor production support or commercial/
+hosted eligibility and does not adopt the separate token-sharing route.
+
+
+Preflight/status/lookup use bounded local operation contexts; normal model waits
+and progressing completed-output copies have no new fixed total duration cap.
+Cancellation before accepted-ID registration closes the owned stalled writer;
+after registration, one interrupt reservation targets only that owned turn.
+Unknown capability telemetry cannot permit dispatch after setup has expired.
+
+The adapter returns native outcome, complete spool and audit attachments to the
+existing coordinator. Complete authorized output is saved independently before
+final audit and application; known failed/live-interrupted facts also commit
+independently of secondary audit. Required audit failure stays visible and
+cannot become success. The exact finite reconciliation campaign is abandoned
+with its pending siblings, without running the successful carrier finalizer.
+No audit-repair RPC, automatic retry queue or fabricated carrier completion is
+introduced. A later ordinary saved-result continuation does not call Execute.
+Handled AI accounting failure does not stop Reader/Review or dispatcher service;
+Process and Stop retain it, including after Poll has collected the phase.
+Only an already-collected diagnostic whose durable settlement and owned drain
+were positively verified can pass through controlled restart; the first such
+diagnostic remains reportable at final daemon stop. Current phase errors,
+unverified cleanup and unrelated joined errors continue to refuse restart.
+The concrete producer reports explicit local cleanup/no-owned-transport facts
+before optional complete native audit is available. Internal LocalClosed with a
+known successful LocalCleanupReason is separate from backend cessation or input
+observation; default/unknown facts and nil CleanupError alone are insufficient.
+A safely closed pre-audit disclosure failure or no-observation lookup can thereby
+remain a handled historical diagnostic after durable settlement and collection,
+without fabricating a Transport, Lookup or accepted identity.
+An internal setup deadline with a live caller is setup_timeout, preserving
+prepared/no-send accounting and truthful caller/fence refusal semantics.

@@ -398,3 +398,17 @@ Source/default/provider settings continue through normal configuration
 plan/confirm/commit. The default provider does not widen any source provider_ids.
 Production provider transport and source-grounded answer/generation commands
 retain their ordered later implementing owners.
+
+## Provider transport selection and status (TASK-006-03)
+
+haeryong providers status performs the authenticated owner GET /api/v1/providers
+and returns its normalized status/nullable allowance. It cannot log in, switch
+billing, start an inference or choose a source. Existing job show/list/cancel/
+resume continue through the same receipts and exact preconditions.
+
+Only local daemon run accepts --provider-binary with an absolute path to an
+already installed pinned executable. The factory checks release version and
+SHA before executing it. Missing/unverified binaries leave AI unavailable while
+normal local functions remain usable. PATH discovery does not substitute an
+unverified newer release or automatically downgrade it. This is an ephemeral
+startup selection, not a new effective-configuration field or account change.

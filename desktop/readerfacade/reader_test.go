@@ -1685,3 +1685,27 @@ func TestBacklinkIndexNamedTransportParity(t *testing.T) {
 		})
 	}
 }
+
+func TestReaderProviderStatusUsesOnlyClosedOwnerRead(t *testing.T) {
+	calls := 0
+	service, _, _ := newReaderFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.Method == "GET" && r.URL.Path == "/api/v1/providers" {
+			calls++
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"data":{"provider_id":"codex","state":"quota_unavailable","ordinary_usage_allowed":null,"catalog_proves_access":false}}`))
+			return true
+		}
+		return false
+	})
+	value := invokeOK(t, service, "providerStatus", "{}")
+	object, ok := value.(map[string]any)
+	if !ok || object["state"] != "quota_unavailable" || object["ordinary_usage_allowed"] != nil || object["catalog_proves_access"] != false || calls != 1 {
+		t.Fatal("provider status lost its closed unknown-allowance projection")
+	}
+	for _, payload := range []string{`{"path":"/private/auth.json"}`, `null`, `[]`, `"not-an-object"`} {
+		invokeFail(t, service, "providerStatus", payload)
+	}
+	if calls != 1 {
+		t.Fatal("unknown provider payload reached HTTP")
+	}
+}

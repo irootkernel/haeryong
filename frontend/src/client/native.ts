@@ -1,7 +1,8 @@
+import { providerStatus as verifiedProviderStatus } from "./provider-status.ts";
 // Narrow native transport boundary. The desktop companion (TASK-003-05) binds
 // these named operations to a typed Go proxy. The port accepts no arbitrary
 // URLs, filesystem paths or generic method names from imported content.
-import type { LifecyclePlanRequest,LifecycleCommitRequest,LifecyclePlanView,LifecycleResult,LifecyclePageRequest,TrashRequest,TrashItem, AnnotationCreate, AnnotationPatch, AnnotationView, AnnotationStream, RevisitView, ReviewView, ReviewRequest, ReviewCondition, ReviewEvent, DocumentFilter,
+import type { ProviderStatus, LifecyclePlanRequest,LifecycleCommitRequest,LifecyclePlanView,LifecycleResult,LifecyclePageRequest,TrashRequest,TrashItem, AnnotationCreate, AnnotationPatch, AnnotationView, AnnotationStream, RevisitView, ReviewView, ReviewRequest, ReviewCondition, ReviewEvent, DocumentFilter,
   BacklinksRequest, BacklinkPage, IndexValidation, IndexValidationRequest, IndexRebuild, IndexRebuildRequest,
   VersionReferencesRequest, ResolveReferenceRequest, ReferencePage, ReferenceView,
   SearchRequest, SearchPage,
@@ -184,6 +185,7 @@ export interface NativePort {
   call(operation: "revokeSession", payload: RevokeSessionRequest): Promise<void>;
   call(operation: "revokeOwnSession", payload: {}): Promise<void>;
   call(operation: "serviceStatus", payload: {}): Promise<unknown>;
+  call(operation: "providerStatus", payload: {}): Promise<ProviderStatus>;
   call(operation: "subscribeEvents", payload: {}): Promise<EventSubscription>;
   call(operation: "versionBacklinks", payload: BacklinksCall): Promise<BacklinkPage>;
   call(operation: "validateVersionIndexes", payload: IndexValidationCall): Promise<IndexValidation>;
@@ -262,6 +264,7 @@ export const NATIVE_OPERATIONS = [
   "revokeSession",
   "revokeOwnSession",
   "serviceStatus",
+  "providerStatus",
   "subscribeEvents",
   "versionBacklinks", "validateVersionIndexes", "rebuildVersionIndexes",
   "versionReferences", "resolveReference",
@@ -461,6 +464,10 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
   revokeOwnSession(): Promise<void> {
     return this.#fresh(this.#port.call("revokeOwnSession", {}), this.#era);
   }
+
+  providerStatus(): Promise<ProviderStatus> {
+ return this.#fresh(this.#port.call("providerStatus", {}), this.#era).then(verifiedProviderStatus);
+ }
 
   serviceStatus(): Promise<unknown> {
     return this.#fresh(this.#port.call("serviceStatus", {}), this.#era);

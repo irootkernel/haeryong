@@ -3,6 +3,10 @@ package storage
 import "haeryong.local/haeryong/internal/domain"
 
 type ProviderTx interface {
+	RecordProviderTransport(string, domain.ProviderTransport) error
+	RecordProviderLookup(string, string, domain.ProviderLookup) error
+	GuardProviderPayload(string, string, bool) error
+	GuardProviderLookup(string, string) error
 	ProviderAttempt(string) (domain.ProviderAttempt, error)
 	ProviderAttempts(string) ([]domain.ProviderAttempt, error)
 	PrepareProviderAttempt(domain.ProviderAttempt, []domain.ProviderInput) error
@@ -21,5 +25,6 @@ type ProviderTx interface {
 	NextProviderReconciliation(string) (string, error)
 	ClaimProviderReconciliation(string, string) error
 	CompleteProviderReconciliation(string, string) error
+	AbandonProviderReconciliation(string, string, string, int64, string) error
 	ResumeProviderJob(string, int64, string) (domain.Job, error)
 }

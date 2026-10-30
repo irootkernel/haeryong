@@ -165,3 +165,22 @@ lifetime before draining active requests, including verified stop and controlled
 restart; interrupted cooperative work settles while the writer is still held.
 Regular-file OS calls may be uninterruptible until the host returns; this is not
 a hard syscall-interruption or universal shutdown-duration guarantee.
+
+## TASK-006-03 concrete provider integration
+
+cmd/haeryong injects internal/adapters/ai/codex.New into the existing
+ProviderCoordinator for each daemon lifetime. The same writer, exact source
+objects, attempts, progress callbacks, result store and single waiting phase own
+its work; no second queue/coordinator is introduced. Profile-private input/output
+spools are removed on completion and recovered under exclusive profile ownership.
+Only the invocation's owned native process group is signalled; historical PIDs
+are never adopted. Bounded signal/group/leader/reader verification is recorded
+separately from the remote backend outcome.
+
+The application query service exposes a domain-only status port. HTTP, CLI,
+shared browser/native clients and the typed Wails facade use one owner status
+projection; application/domain layers import no provider SDK or native UI code.
+Current operation/payload guards remain storage-owned and are rechecked outside
+short transactions during streamed consumers. The [adapter record](testing/provider-adapter.md)
+qualifies actual fixture, controlled failures, native/browser evidence and the
+remaining generation/Q&A/whole-Epic gates.

@@ -1,13 +1,16 @@
 """Actual native ReaderMode regression: reused pinned beta28 harness, typed ReaderService, fixed static origin, real tagged production daemon/auth/import/storage."""
 import argparse,importlib.util,json,os,pathlib,shutil,subprocess,tempfile,time,urllib.parse,urllib.error,urllib.request,hashlib,signal,sys
 parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--scratch-root',type=pathlib.Path,help='Explicit existing private physical parent for this driver')
 parser.add_argument('--receipt',type=pathlib.Path,required=True)
+parser.add_argument('--provider-binary',type=pathlib.Path,help='Explicit existing pinned provider binary for providers-only zero-inference stage')
 parser.add_argument('--stages',default='selfcheck,app,seed,restart,crash,evidence,search,references')
 args=parser.parse_args()
 STAGES=set(args.stages.split(','))
 ALL_STAGES={'selfcheck','app','seed','restart','crash','evidence','search','references'}
 assert sys.platform=='darwin','this check requires the existing native macOS Wails harness'
-assert STAGES and STAGES<=ALL_STAGES|{'corpus','reference-corpus','versions','owner-records','sources'},STAGES
+assert STAGES and STAGES<=ALL_STAGES|{'corpus','reference-corpus','versions','owner-records','sources','providers'},STAGES
+assert 'providers' not in STAGES or STAGES=={'providers'},'providers is a standalone zero-inference status campaign'
 assert 'sources' not in STAGES or STAGES=={'sources'},'sources is an explicit standalone settings campaign'
 assert 'owner-records' not in STAGES or STAGES=={'owner-records'},'owner-records is an explicit standalone local campaign'
 assert not ('restart' in STAGES and 'seed' not in STAGES),'restart requires the seed stage'
@@ -27,7 +30,7 @@ REPO=pathlib.Path(__file__).resolve().parents[2]
 RECEIPT=args.receipt.resolve()
 assert RECEIPT.parent.is_dir(),'receipt parent must exist'
 volume=pathlib.Path('/Volumes/RootKernel')
-scratch=pathlib.Path(tempfile.gettempdir()).resolve()
+scratch=args.scratch_root.resolve(strict=True) if args.scratch_root else pathlib.Path(tempfile.gettempdir()).resolve()
 os.umask(0o077)
 work=pathlib.Path(tempfile.mkdtemp(prefix='h3n-',dir=scratch)).resolve()
 print(json.dumps({'runtime':str(work)}),flush=True)
@@ -42,6 +45,8 @@ def fingerprints():
                  +[p for p in (REPO/'desktop').rglob('*') if p.is_file()]
                  +[REPO/'spikes/viewer/desktop/main.go',REPO/'spikes/viewer/desktop/reader_mode.go',REPO/'spikes/viewer/desktop/go.mod',REPO/'spikes/viewer/desktop/go.sum']
                  +[REPO/'frontend/native.html',REPO/'frontend/vite.native.config.ts',REPO/'frontend/src/native-main.tsx',REPO/'frontend/src/client/native-bridge.ts',REPO/'frontend/src/client/native-wire.ts',REPO/'frontend/src/client/native.ts',REPO/'spikes/viewer/check_reader_native.py',REPO/'spikes/viewer/reference_native.py',REPO/'spikes/viewer/reference_corpus_native.py',REPO/'spikes/viewer/reference_corpus_probe.js',REPO/'tests/manual/search_corpus_support.py',REPO/'spikes/viewer/reference_probe.js',REPO/'tests/manual/reference_support.py'])
+    if 'providers' in STAGES:
+        paths += [REPO/'spikes/viewer/provider_probe.js',REPO/'frontend/src/app/screens/provider.tsx']
     if 'sources' in STAGES:
         paths += [REPO/name for name in ('frontend/src/app/screens/sources.tsx','frontend/src/app/screens/source-configuration.ts','frontend/src/client/types.ts')]
     result={str(p.relative_to(REPO)):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
@@ -88,12 +93,18 @@ def launch(args,close_after,base=None):
     runs.append((process,handle))
     return process
 before=fingerprints()
+def assert_inputs_unchanged(stage):
+    current=fingerprints()
+    changes={path:{'before':before.get(path),'after':current.get(path)}
+             for path in sorted(before.keys()|current.keys()) if before.get(path)!=current.get(path)}
+    if changes:proof.setdefault('input_changes',{})[stage]=changes
+    assert not changes,f'inputs changed during {stage}; no stable-candidate proof'
 try:
     subprocess.run(['go','build','-tags','haeryong_test_state','-o',str(work/'haeryong'),'./cmd/haeryong'],cwd=REPO,env=env,capture_output=True,check=True,timeout=180)
     subprocess.run(['go','-C','spikes/viewer/desktop','build','-o',str(work/'native'),'.'],cwd=REPO,env=env,capture_output=True,check=True,timeout=240)
     subprocess.run([str(REPO/'frontend/node_modules/.bin/vite'),'build','--config','vite.native.config.ts','--outDir',str(work/'dist-native'),'--emptyOutDir'],cwd=REPO/'frontend',env=env,capture_output=True,check=True,timeout=240)
-    assert fingerprints()==before,'inputs changed during isolated build; no stable-candidate proof'
-    product=h.Product(work/'haeryong',work);product.initialize();product.start();owner=product.owner('native reader mode')
+    assert_inputs_unchanged('isolated build')
+    product=h.Product(work/'haeryong',work);product.initialize();product.start(provider_binary=args.provider_binary if 'providers' in STAGES else None);owner=product.owner('native reader mode')
     source=work/'source';(source/'nested').mkdir(parents=True)
     first="""<!doctype html><meta charset=utf-8><title>Native first</title><h1 id=heading>첫 페이지</h1><div id=framework></div><button id=increment onclick="this.textContent=String(Number(this.textContent)+1)">0</button><div style="height:2600px"></div><h2 id=part>끝</h2>
 <script>new Worker('./worker.js').onmessage=e=>{window.workerValue=e.data;window.dispatchEvent(new Event('workerready'));};</script>
@@ -137,6 +148,55 @@ for(let i=0;i<6;i++){try{await fetch('wails://denied/'+i);}catch(e){}}
     (source/'attachment.bin').write_bytes(bytes(range(256))*513)
     _,_,published=product.import_tree(owner,source);version=published['version_id'];document=published['document_id']
     credential=state/'native-session';credential.write_text(owner['token']+'\n');os.chmod(credential,0o600)
+
+    if 'providers' in STAGES:
+        probe=work/'provider-probe.js'
+        probe.write_text((REPO/'spikes/viewer/provider_probe.js').read_text())
+        app=launch(['--reader','--reader-port','9271','--reader-path','/settings','--reader-probe',str(probe),'--reader-close-on-done'],'120s')
+        rows=final_report(app.pid,110)
+        # Preserve only bounded declared probe fields before a failing assertion.
+        expected_names={'settings.general','settings.connect','settings.ai-navigation','settings.ai-connect','provider.actual-screen','provider.actual-named-status','provider.catalog-not-entitlement','provider.rendered-status','provider.no-js-owner-token','provider.no-account-secrets','provider.refresh-enabled','provider.refresh-completed','provider.future-admission-visible','page.stage','page.error','page.done'}
+        allowed_names=expected_names|{'provider.probe-failed'}
+        allowed_stages={'general-landing','connect-from-general','general-return','connect-from-ai','starting','transport-ready','provider-screen','named-status','provider-status-rendered','refresh-busy','refresh-final'}
+        allowed_states={'ready','auth_required','quota_unavailable','quota_exhausted','unsupported_version','source_unavailable','paused','provider_error','unknown'}
+        def safe_rows(observed):
+            safe=[]
+            for row in observed or []:
+                detail=row.get('detail') or {};picked={}
+                if detail.get('stage') in allowed_stages:picked['stage']=detail['stage']
+                if detail.get('state') in allowed_states:picked['state']=detail['state']
+                if detail.get('allowanceKind') in {'null','boolean','undefined','other'}:picked['allowanceKind']=detail['allowanceKind']
+                version=detail.get('version')
+                if isinstance(version,str) and len(version)<30 and (version=='unverified' or all(part.isdigit() for part in version.split('.'))):picked['version']=version
+                snapshot=detail.get('snapshot')
+                if isinstance(snapshot,dict):
+                    picked['snapshot']={key:snapshot[key] for key in ['transport','screen','status','busy','providerError'] if isinstance(snapshot.get(key),bool)}
+                    if snapshot.get('errorCategory') in {'invalid_provider_status','stale_response','other_ui_error','none'}:picked['snapshot']['errorCategory']=snapshot['errorCategory']
+                safe.append({'name':row.get('name') if row.get('name') in allowed_names else 'unknown_probe_row','status':row.get('status') if row.get('status') in {'pass','fail','pending'} else 'fail','detail':picked})
+            return safe
+        last_rows=rows
+        if last_rows is None:
+            last_path=state/f'native-reader-selfcheck-{app.pid}.json'
+            if last_path.exists():
+                try:last_rows=json.loads(last_path.read_text()).get('rows')
+                except (ValueError,KeyError):last_rows=None
+        proof['provider_probe_rows']=safe_rows(last_rows)
+        observation_path=state/f'native-call-observations-{app.pid}.json'
+        observations=json.loads(observation_path.read_text()) if observation_path.exists() else []
+        operations=[row['operation'] for row in observations if row.get('operation')=='providerStatus']
+        proof['provider_operations']=operations
+        proof['private_runtime_retained']=os.environ.get('H3N_RETAIN') is not None
+        assert rows is not None,'provider native final report missing'
+        failed=[r for r in rows if r['status']!='pass']
+        assert not failed,json.dumps(safe_rows(failed),ensure_ascii=False)[:1000]
+        assert len(rows)==len(expected_names) and {row['name'] for row in rows}==expected_names,'provider/settings probe membership mismatch'
+        assert app.wait(timeout=130)==0,'native provider App failed to close'
+        rows=safe_rows(rows)
+        assert operations.count('providerStatus')>=3,'actual narrow provider status calls missing'
+        guard=json.loads((state/'native-guard.json').read_text())
+        assert guard.get('installed') in (1,True) and guard.get('pid')==app.pid,'native provider guard missing'
+        proof['cases'].append({'kind':'TASK-006-03 actual native App provider status and refresh','input_method':'trusted-host DOM click; browser owns OS keyboard/touch evidence','probe_rows':rows,'operations':operations,'inference':False})
+        proof['excluded_stages']=[{'stage':s,'status':'not_run','reason':'standalone provider status; no renderer or inference claim'} for s in sorted(ALL_STAGES)]
 
     # Explicit local Sources campaign: actual compiled App and existing named
     # configuration facade. No capture API, provider call or renderer proof.
@@ -881,7 +941,7 @@ for(let i=0;i<6;i++){try{await fetch('wails://denied/'+i);}catch(e){}}
             assert wait_for(lambda:(lambda rows: True if rows and any(r['event']=='attachSession' for r in rows) else None)(receipts(healthy.pid)),60) is not None
             assert healthy.wait(timeout=60)==0
             proof['cases'].append({'kind':'forced crash left no fabricated close; daemon stayed healthy for the next attach','crash_pid':crash.pid})
-    assert fingerprints()==before,'inputs changed during observations'
+    assert_inputs_unchanged('observations')
     proof['daemon_alive_after_runs']=True
     proof['input_sha256']=hashlib.sha256(json.dumps(before,sort_keys=True).encode()).hexdigest()
     proof['inputs']=before

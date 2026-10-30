@@ -1,0 +1,51 @@
+const rows=[];let done=false,pageError=false,stage='starting';
+addEventListener('error',()=>{pageError=true});addEventListener('unhandledrejection',()=>{pageError=true});
+const snapshot=()=>{
+ const screen=document.querySelector('[data-provider-screen]');
+ const error=screen?.querySelector('[role="alert"]')?.textContent;
+ return {transport:window.__haeryongNativeTransport==='HAEYONG_NATIVE_TRANSPORT_BOUND',screen:!!screen,status:!!screen?.querySelector('[data-provider-status]'),busy:screen?.querySelector('button')?.getAttribute('aria-disabled')==='true',providerError:!!error,errorCategory:error==='지원되는 제공자 상태 정보를 확인할 수 없습니다'?'invalid_provider_status':error==='previous era response ignored'?'stale_response':error?'other_ui_error':'none'};
+};
+const report=()=>window.haeryongNativeCall(701101,[{Rows:[...rows,{name:'page.stage',status:'pass',detail:{stage,snapshot:snapshot()}},{name:'page.error',status:pageError?'fail':'pass',detail:{}},{name:'page.done',status:done?'pass':'pending',detail:{}}]}]).catch(()=>{});
+setInterval(()=>void report(),2000);
+const record=(name,ok,detail={})=>{rows.push({name,status:ok?'pass':'fail',detail});if(!ok)throw Error(name)};
+const wait=async(predicate,label)=>{stage=label;const end=Date.now()+45000;while(Date.now()<end){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,100))}throw Error(label)};
+(async()=>{try{
+ await wait(()=>window.__haeryongNativeTransport==='HAEYONG_NATIVE_TRANSPORT_BOUND','transport-ready');
+ await wait(()=>document.querySelector('main h1')?.textContent==='설정'&&!!document.querySelector('main a[href="/settings/ai"]'),'general-landing');
+ record('settings.general',!document.querySelector('[data-provider-screen]')&&[...document.querySelectorAll('main button')].some(button=>button.textContent==='연결 화면'));
+ [...document.querySelectorAll('main button')].find(button=>button.textContent==='연결 화면').click();
+ await wait(()=>document.querySelector('main h1')?.textContent==='Haeryong 연결'&&[...document.querySelectorAll('main h2')].some(heading=>heading.textContent==='연결된 소유자'),'connect-from-general');
+ record('settings.connect',[...document.querySelectorAll('main button')].some(button=>button.textContent==='로그아웃'));
+ document.querySelector('.shell-sidebar a[href="/settings"]').click();
+ await wait(()=>document.querySelector('main h1')?.textContent==='설정'&&!!document.querySelector('main a[href="/settings/ai"]'),'general-return');
+ window.__C03_NATIVE_DOCUMENT=true;
+ document.querySelector('main a[href="/settings/ai"]').click();
+ await wait(()=>!!document.querySelector('[data-provider-screen]'),'provider-screen');
+ record('settings.ai-navigation',location.pathname==='/settings/ai'&&window.__C03_NATIVE_DOCUMENT===true);
+ record('provider.actual-screen',true);
+ stage='named-status';
+ const reply=await window.haeryongNativeCall(701100,[{Operation:'providerStatus',Payload:{}}]);
+ const states=['ready','auth_required','quota_unavailable','quota_exhausted','unsupported_version','source_unavailable','paused','provider_error'];
+ const allowance=reply.value?.ordinary_usage_allowed;
+ record('provider.actual-named-status',reply.ok&&states.includes(reply.value?.state),{state:states.includes(reply.value?.state)?reply.value.state:'unknown',version:/^\d+\.\d+\.\d+$/.test(reply.value?.version)?reply.value.version:'unverified',allowanceKind:allowance===null?'null':typeof allowance==='boolean'?'boolean':allowance===undefined?'undefined':'other'});
+ record('provider.catalog-not-entitlement',reply.value.catalog_proves_access===false);
+ await wait(()=>!!document.querySelector('[data-provider-status]')||!!document.querySelector('[data-provider-screen] [role="alert"]'),'provider-status-rendered');
+ record('provider.rendered-status',!!document.querySelector('[data-provider-status]'),{snapshot:snapshot()});
+ record('provider.no-js-owner-token',!Object.keys(localStorage).some(key=>key.includes('owner-session')));
+ record('provider.no-account-secrets',!document.querySelector('main').textContent.includes('Bearer ')&&!document.querySelector('main').textContent.includes('auth.json'));
+ const refresh=[...document.querySelectorAll('button')].find(button=>button.textContent==='제공자 상태 새로 고침');
+ record('provider.refresh-enabled',!!refresh&&refresh.getAttribute('aria-disabled')==='false');
+ let sawBusy=false;
+ const observer=new MutationObserver(()=>{if(refresh.getAttribute('aria-disabled')==='true')sawBusy=true});
+ observer.observe(refresh,{attributes:true,attributeFilter:['aria-disabled']});
+ try{
+  refresh.click();
+  await wait(()=>sawBusy||refresh.getAttribute('aria-disabled')==='true','refresh-busy');
+  await wait(()=>!!document.querySelector('[data-provider-status]')&&refresh.getAttribute('aria-disabled')==='false','refresh-final');
+ }finally{observer.disconnect()}
+ record('provider.refresh-completed',!!document.querySelector('[data-provider-status]'));
+ record('provider.future-admission-visible',document.querySelector('main').textContent.includes('생성과 질문 기능은 아직 제공되지 않습니다.'));
+ document.querySelector('[data-provider-screen] a[href="/connect"]').click();
+ await wait(()=>document.querySelector('main h1')?.textContent==='Haeryong 연결'&&[...document.querySelectorAll('main h2')].some(heading=>heading.textContent==='연결된 소유자'),'connect-from-ai');
+ record('settings.ai-connect',[...document.querySelectorAll('main button')].some(button=>button.textContent==='로그아웃'));
+}catch(error){rows.push({name:'provider.probe-failed',status:'fail',detail:{stage,snapshot:snapshot()}})}done=true;await report()})();

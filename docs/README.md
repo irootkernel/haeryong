@@ -65,11 +65,15 @@ assembled Epic review and Master's overall acceptance.
 
 ## Start here
 
-TASK-006-01 and TASK-006-02 are complete. The [managed-source implementation record](testing/managed-sources.md) covers capture, selected snapshots and remembered Sources defaults without enabling a production provider. The [provider-attempt foundation](testing/provider-attempts.md)
-describes durable attempt/input/result accounting, one-use dispatch fencing,
-owner reconciliation and restore orphan retention at schema revision 15. Its
-real test-only subscription boundary does not enable the production provider,
-generation or saved-question capabilities owned by the later ordered Tasks.
+TASK-006-01, TASK-006-02 and TASK-006-03 are complete within their bounded
+foundation/source/transport scopes. The [managed-source implementation record](testing/managed-sources.md)
+covers capture, selected snapshots and remembered Sources defaults. The
+[provider-attempt foundation](testing/provider-attempts.md) describes durable
+attempt/input/result accounting, one-use fencing and recovery at revision 15;
+[provider transport](testing/provider-adapter.md) adds the verified personal
+subscription adapter and owner status at revision 17. Public generation/skill
+publication, saved Q&A and the assembled Epic exit retain TASK-006-04/05/06
+ownership; TASK-006-04 follows Task03's normal member closeout.
 
 | Reader | Recommended path |
 | --- | --- |
@@ -125,3 +129,37 @@ Mermaid diagrams and layout tables are editable Markdown source, not generated a
 ## Integrity inventory
 
 [MANIFEST.md](MANIFEST.md) lists all other Markdown files and the two Python documentation-check utilities with byte sizes and SHA-256 values. Run `python3 -B docs/testing/validate_docs.py` from the checkout; use `--root PATH` for another checkout. The validator requires Python 3 and PyYAML and writes no project files. `python3 -B docs/testing/test_validate_docs.py` exercises status admission and assertion ownership in disposable copies; it needs Git and cleans up its own fixtures. Its default scratch parent is the system temporary directory; `HAERYONG_DOCS_TEST_TMP_ROOT` optionally selects an existing operator-chosen parent. Agents set that variable to their verified task temporary directory under the applicable host guidance. These checks do not validate product behavior. [The historical validation report](testing/bundle-validation.md) distinguishes its snapshot from current execution.
+
+## Provider transport implementation
+
+TASK-006-03 adds the verified Codex 0.164.0 personal host-local stdio adapter,
+revision 17 attempt audit and owner provider status in HTTP/CLI/Settings/native.
+The [implementation record](testing/provider-adapter.md) documents the actual
+historical and pre-correction E01 source fixtures, controlled auth/quota/interruption/cleanup cases and
+browser/native interaction and completed common/final-assessment results. Final
+independent assessment and delegated member acceptance establish this bounded
+Task03 delivery; the normal completion commit and native finalization follow
+under the same authority. Logical source/provider choices and normal reading/Review remain independent of AI
+availability. Public generation, saved Q&A and assembled interruption/corpus
+qualification retain TASK-006-04/05/06 ownership.
+
+
+[Provider correction evidence](testing/provider-corrections.md) records R1's
+corrected settlement, full-history and provenance boundaries, a separately
+executed 1,454-byte real source fixture and shared Chrome/Wails feature checks.
+Its later Stop-only error-retention delta has separate offline proof and does
+not claim whole-core byte identity with those executions. The failed first
+common round, completed prior-candidate common2/R2, Work4 recovery/ACK/refusal/
+cleanup/General-navigation corrections and later local6 producer-fact/late-setup
+proof remain explicit. R3 and R4 completed; R4 predates the local corrections.
+The same-code full common4 passed 1,461 checks across 15 stages, including all
+197 exact feature cases once. Subsequent factual documentation overlays change
+no Go/UI/assets/tests and have separate docs-integrity/diff proof. The final
+independent assessment passed all 24 current criteria and four native Goal
+criteria, with no mandatory unmet/unverified row; the bounded Task Goal is
+achieved. Final independent assessment and delegated member acceptance establish
+this bounded Task03 delivery. The normal completion commit and native
+finalization follow under the same authority; this record claims no commit or
+Master overall Epic acceptance. Later Tasks remain separate. Historical
+real success remains qualified by exact changed-path applicability, not
+current-byte identity.

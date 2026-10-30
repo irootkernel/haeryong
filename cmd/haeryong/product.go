@@ -25,7 +25,7 @@ func isProductCommand(opt options) bool {
 		return true
 	}
 	switch opt.command[0] {
-	case "lifecycle", "trash", "revisit", "review", "backlinks", "indexes", "references", "search", "import", "package", "uploads", "documents", "files", "operations", "jobs", "config", "projects", "events", "sources", "evidence", "assessments":
+	case "providers", "lifecycle", "trash", "revisit", "review", "backlinks", "indexes", "references", "search", "import", "package", "uploads", "documents", "files", "operations", "jobs", "config", "projects", "events", "sources", "evidence", "assessments":
 		return true
 	case "doctor", "status":
 		if opt.flags["credential"] != "" || opt.flags["client-dir"] != "" {
@@ -297,6 +297,10 @@ func productCommand(ctx context.Context, opt options, emit func(any) error) erro
 	case "operations":
 		if len(args) == 3 && args[1] == "show" {
 			return call("GET", "/api/v1/operations/"+args[2], nil)
+		}
+	case "providers":
+		if len(args) == 2 && args[1] == "status" {
+			return call("GET", "/api/v1/providers", nil)
 		}
 	case "jobs":
 		if len(args) > 1 && args[1] == "resume" {

@@ -16,6 +16,7 @@ import (
 )
 
 type Service struct {
+	ProviderStatus      func(context.Context) domain.ProviderStatus
 	LifecycleNow        func() time.Time
 	Store               app.Store
 	Auth                *appauth.Service
@@ -301,7 +302,7 @@ func (s *Service) Capabilities(ctx context.Context, token string) (map[string]an
 		if err != nil {
 			return err
 		}
-		out = map[string]any{"library_id": l.ID, "api_version": "1.0", "runtime_generation": l.RuntimeGeneration, "stream_epoch": l.StreamEpoch, "unfiled_project_id": l.UnfiledProjectID, "features": map[string]bool{"resumable_uploads": true, "atomic_import": true, "cursor_files": true, "streamed_files": true, "byte_ranges": true, "source_verification": true, "html_js_v1": false, "multi_page_loader": false, "renderer": false, "preview": false, "provider": false, "scheduler": false, "search": true, "references": true, "backlinks": true, "review": true, "annotations": true, "revisit": true, "lifecycle": true, "purge": true, "backup": true}}
+		out = map[string]any{"library_id": l.ID, "api_version": "1.0", "runtime_generation": l.RuntimeGeneration, "stream_epoch": l.StreamEpoch, "unfiled_project_id": l.UnfiledProjectID, "features": map[string]bool{"resumable_uploads": true, "atomic_import": true, "cursor_files": true, "streamed_files": true, "byte_ranges": true, "source_verification": true, "html_js_v1": false, "multi_page_loader": false, "renderer": false, "preview": false, "provider": s.ProviderStatus != nil, "generation": false, "questions": false, "scheduler": false, "search": true, "references": true, "backlinks": true, "review": true, "annotations": true, "revisit": true, "lifecycle": true, "purge": true, "backup": true}}
 		return nil
 	})
 	return out, err
@@ -379,4 +380,24 @@ func (s *Service) Files(ctx context.Context, token, id string, o Options) (List[
 // check; retained snapshot bytes are the only excerpt source.
 func (s *Service) Evidence(ctx context.Context, token, id, evidenceID string) (map[string]any, error) {
 	return s.composeEvidence(ctx, token, id, evidenceID)
+}
+
+// Providers reads only current owner status; it cannot change authentication,
+// start an inference or interpret catalog presence as request entitlement.
+func (s *Service) Providers(ctx context.Context, token string) (domain.ProviderStatus, error) {
+	out := domain.ProviderStatus{Provider: "codex", State: "provider_error", Reason: "transport_unavailable", Authentication: "unknown", Models: []string{}}
+	actor, e := s.Auth.Authenticate(ctx, token)
+	if e != nil {
+		return out, e
+	}
+	if actor.Scope.Kind != "owner" {
+		return out, domain.ErrDenied
+	}
+	if s.ProviderStatus != nil {
+		out = s.ProviderStatus(ctx)
+	}
+	if e = s.Auth.Guard(ctx, token, func() error { return nil }); e != nil {
+		return domain.ProviderStatus{}, e
+	}
+	return out, nil
 }

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-const dropProviderSchema = `DROP TABLE IF EXISTS job_inputs;DROP TABLE IF EXISTS source_capture_reads;DROP TABLE IF EXISTS source_captures;DROP TABLE IF EXISTS provider_inputs;DROP TABLE IF EXISTS provider_reconcile_intents;DROP TABLE IF EXISTS provider_retry_authorizations;DROP TABLE IF EXISTS provider_linked_retry_authorizations;DROP TABLE IF EXISTS provider_orphans;DROP TABLE IF EXISTS provider_attempts;`
+const dropProviderSchema = `DROP TABLE IF EXISTS provider_transport;DROP TABLE IF EXISTS job_inputs;DROP TABLE IF EXISTS source_capture_reads;DROP TABLE IF EXISTS source_captures;DROP TABLE IF EXISTS provider_inputs;DROP TABLE IF EXISTS provider_reconcile_intents;DROP TABLE IF EXISTS provider_retry_authorizations;DROP TABLE IF EXISTS provider_linked_retry_authorizations;DROP TABLE IF EXISTS provider_orphans;DROP TABLE IF EXISTS provider_attempts;`
 
 var _ = It("PA12 revision14 migration fails atomically and upgrades to exact provider declarations", Label("persistence"), func() {
 	_, w := profile(GinkgoT())
@@ -60,7 +60,7 @@ var _ = It("PA12 revision14 migration fails atomically and upgrades to exact pro
 
 func assertEmptyProviderMigrationTables(db *sql.DB) {
 	GinkgoHelper()
-	for _, name := range []string{"provider_attempts", "provider_inputs", "provider_retry_authorizations", "provider_linked_retry_authorizations", "provider_orphans", "provider_reconcile_intents", "source_captures", "source_capture_reads", "job_inputs"} {
+	for _, name := range []string{"provider_transport", "provider_attempts", "provider_inputs", "provider_retry_authorizations", "provider_linked_retry_authorizations", "provider_orphans", "provider_reconcile_intents", "source_captures", "source_capture_reads", "job_inputs"} {
 		var exists, count int
 		Expect(db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&exists)).To(Succeed())
 		if exists == 0 {

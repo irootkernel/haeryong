@@ -17,6 +17,8 @@ type providerPhase struct {
 	result           error
 	drained          bool
 	reconcileAttempt string
+	runtime          string
+	accounted        bool
 }
 
 func (p *ProviderCoordinator) ScheduleProvider(ctx context.Context, id string) error {
@@ -40,12 +42,20 @@ func (p *ProviderCoordinator) ScheduleProvider(ctx context.Context, id string) e
 
 func (p *ProviderCoordinator) collectProvider(phase *providerPhase) error {
 	phase.cancel()
+	if phase.accounted {
+		p.rememberAccountingFailure(phase.result)
+		p.active.Store(nil)
+		return nil
+	}
 	e := p.Store.Write(context.Background(), func(tx app.WriteTx) error {
 		j, e := tx.Job(phase.jobID)
 		if e != nil {
 			return e
 		}
 		if phase.reconcileAttempt != "" {
+			if phase.result != nil {
+				return tx.AbandonProviderReconciliation(j.ID, phase.reconcileAttempt, phase.runtime, phase.generation, "provider_accounting_unavailable")
+			}
 			if e = tx.CompleteProviderReconciliation(j.ID, phase.reconcileAttempt); e != nil {
 				return e
 			}
@@ -109,7 +119,19 @@ func (p *ProviderCoordinator) PollProvider(context.Context) error {
 	return p.collectProvider(phase)
 }
 
-func (p *ProviderCoordinator) StopProviders() error {
+func (p *ProviderCoordinator) StopProviders() (result error) {
+	defer func() {
+		if first := p.accountingFailure.Load(); first != nil && !errors.Is(result, first) {
+			if first.restartSafe {
+				result = errors.Join(result, &providerShutdownDiagnostic{first})
+			} else {
+				result = errors.Join(result, first)
+			}
+		}
+		if unsafe := p.accountingUnsafe.Load(); unsafe != nil && !errors.Is(result, unsafe) {
+			result = errors.Join(result, unsafe)
+		}
+	}()
 	phase := p.active.Load()
 	if phase == nil {
 		return nil
@@ -119,9 +141,81 @@ func (p *ProviderCoordinator) StopProviders() error {
 		phase.result = <-phase.done
 		phase.drained = true
 	}
-	result := phase.result
-	if errors.Is(result, context.Canceled) || errors.Is(result, domain.ErrStaleWorker) || errors.Is(result, domain.ErrTransition) || errors.Is(result, domain.ErrDenied) || errors.Is(result, domain.ErrPrecondition) || errors.Is(result, domain.ErrReconciliation) {
+	result = phase.result
+	var accounting *providerAccountingError
+	if !errors.As(result, &accounting) && providerStopRefusal(result) {
 		result = nil
 	}
 	return errors.Join(result, p.collectProvider(phase))
+}
+
+// Retain the first required accounting failure after collection in bounded memory.
+// Its durable job pause remains the operational record; this is shutdown health.
+func (p *ProviderCoordinator) rememberAccountingFailure(e error) {
+	var accounting *providerAccountingError
+	if errors.As(e, &accounting) {
+		p.accountingFailure.CompareAndSwap(nil, accounting)
+		// A later unsafe failure must not hide behind an earlier safe diagnostic.
+		if !accounting.restartSafe {
+			p.accountingUnsafe.CompareAndSwap(nil, accounting)
+		}
+	}
+}
+
+// This wrapper is created only for an already collected, durably settled error
+// with positive owned-drain evidence. Active Stop errors remain unwrapped.
+type providerShutdownDiagnostic struct{ cause *providerAccountingError }
+
+func (e *providerShutdownDiagnostic) Error() string { return e.cause.Error() }
+func (e *providerShutdownDiagnostic) Unwrap() error { return e.cause }
+
+// ProviderRestartDiagnostics permits only entire trees of typed historical
+// diagnostics. A joined current drain, storage, endpoint or output leaf refuses.
+func ProviderRestartDiagnostics(cause error) bool {
+	if cause == nil {
+		return false
+	}
+	if _, ok := cause.(*providerShutdownDiagnostic); ok {
+		return true
+	}
+	if many, ok := cause.(interface{ Unwrap() []error }); ok {
+		children := many.Unwrap()
+		if len(children) == 0 {
+			return false
+		}
+		for _, e := range children {
+			if !ProviderRestartDiagnostics(e) {
+				return false
+			}
+		}
+		return true
+	}
+	if one, ok := cause.(interface{ Unwrap() error }); ok {
+		return ProviderRestartDiagnostics(one.Unwrap())
+	}
+	return false
+}
+
+// Preserve the existing benign set, but require every joined leaf to qualify.
+// An independent current I/O error cannot disappear beside cancellation/refusal.
+func providerStopRefusal(cause error) bool {
+	if cause == nil {
+		return false
+	}
+	if many, ok := cause.(interface{ Unwrap() []error }); ok {
+		children := many.Unwrap()
+		if len(children) == 0 {
+			return false
+		}
+		for _, e := range children {
+			if !providerStopRefusal(e) {
+				return false
+			}
+		}
+		return true
+	}
+	if one, ok := cause.(interface{ Unwrap() error }); ok {
+		return providerStopRefusal(one.Unwrap())
+	}
+	return cause == context.Canceled || cause == domain.ErrTransition || ProviderAuthorityRefusal(cause)
 }

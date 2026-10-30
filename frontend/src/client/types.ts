@@ -824,6 +824,7 @@ export interface HaeryongClient {
   decidePairing(request: PairingDecisionRequest): Promise<DecisionResult>;
   currentSession(): Promise<SessionInfo>;
   capabilities(): Promise<Capabilities>;
+  providerStatus(): Promise<ProviderStatus>;
   listSessions(): Promise<DeviceSession[]>;
   pendingPairings(): Promise<PairingView[]>;
   operation(operationId: string): Promise<OperationView>;
@@ -944,3 +945,23 @@ export interface BackupAttempt {job_id:string;state:string;stage:string;complete
 export interface TrialRestore {state:"not_run"|"passed"|"failed";completed_at:string|null;error?:string}
 export interface BackupStatus {mode:"manual";available:boolean;reason?:string;last_complete_verified:BackupComplete|null;last_attempt:BackupAttempt|null;last_trial_restore:TrialRestore}
 export interface PurgeBackup {state:"not_created"|"verified"|"unavailable";set_id:string|null;last_complete_at:string|null;reason:string|null;last_attempt:BackupAttempt|null;last_trial_restore:TrialRestore}
+
+export type ProviderState = "ready" | "auth_required" | "quota_unavailable" | "quota_exhausted" | "unsupported_version" | "source_unavailable" | "paused" | "provider_error";
+export interface ProviderStatus {
+ input_formats: string[] | null;
+ output_format: string;
+ native_input_telemetry: boolean;
+ reason?: string;
+ provider_id: string;
+ state: ProviderState;
+ version?: string;
+ authentication_mode: string;
+ model?: string;
+ effort?: string;
+ ordinary_usage_allowed: boolean | null;
+ read_only: boolean;
+ lookup_supported: boolean;
+ cancellation_supported: boolean;
+ models: string[];
+ catalog_proves_access: false;
+}

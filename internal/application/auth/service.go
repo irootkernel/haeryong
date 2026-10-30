@@ -595,6 +595,10 @@ func (s *Service) CancelJob(ctx context.Context, token, id, operationID string) 
 		if err != nil {
 			return domain.Response{}, err
 		}
+		j, err = projectProviderJob(tx, record, j)
+		if err != nil {
+			return domain.Response{}, err
+		}
 		body, _ := json.Marshal(j)
 		return domain.Response{Status: 200, Body: body}, nil
 	})
@@ -713,18 +717,28 @@ func (a *Authority) Filter(ctx context.Context, r domain.Request, response domai
 				if e = json.Unmarshal(response.Body, &job); e != nil {
 					return e
 				}
-				job, e = projectProviderJob(tx, record, job)
+				current, e := tx.Job(job.ID)
 				if e != nil {
 					return e
 				}
+				projected, e := projectProviderJob(tx, record, current)
+				if e != nil {
+					return e
+				}
+				// The receipt keeps its operation-time snapshot and opaque validator.
+				// Current authority may mask it further, never restore hidden fields.
+				job = redactProviderInvocation(job)
+				if projected.ProjectionETag != "" {
+					job.Scope = json.RawMessage(`{}`)
+					job.Result = nil
+					job.Permissions = nil
+					job.ParentID = ""
+					job.UploadID = ""
+				}
+				if response.Headers["ETag"] == "" {
+					return domain.ErrInvalidTarget
+				}
 				response.Body, _ = json.Marshal(job)
-				if response.Headers == nil {
-					response.Headers = map[string]string{}
-				}
-				response.Headers["ETag"] = JobETag(job)
-				if job.ProjectionETag != "" {
-					response.Headers["ETag"] = job.ProjectionETag
-				}
 				return nil
 			}
 		}
@@ -758,6 +772,13 @@ func (a *Authority) Filter(ctx context.Context, r domain.Request, response domai
 			}
 			if err := visibleJob(tx, job); err != nil {
 				return err
+			}
+			var returned domain.Job
+			if json.Unmarshal(response.Body, &returned) == nil && domain.ProviderJob(returned.Kind) {
+				response.Body, _ = json.Marshal(redactProviderInvocation(returned))
+				if response.Headers != nil && response.Headers["ETag"] != "" {
+					response.Headers["ETag"] = JobETag(redactProviderInvocation(returned))
+				}
 			}
 		}
 		if data.VersionID != "" {

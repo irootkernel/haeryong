@@ -738,6 +738,12 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 			s.receipt("revokeOwnSession", map[string]any{"status": result.status})
 		}
 		return result.value, result.werr
+	case "providerStatus":
+		var in struct{}
+		if werr := decodeReferencePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+		return plain(s.request("GET", "/api/v1/providers", nil, nil, nil, auth))
 	case "serviceStatus":
 		return plain(s.request("GET", "/api/v1/status", nil, nil, nil, auth))
 	case "listProjects":

@@ -21,7 +21,7 @@ func (t *writeTx) ProviderAttempt(id string) (domain.ProviderAttempt, error) {
 		if e = json.Unmarshal(raw, &fact); e != nil {
 			return a, e
 		}
-		a = domain.ProviderAttempt{ID: id, JobID: fact.JobID, Generation: fact.Generation, State: fact.State, RequestSHA: fact.SHA, RequestID: fact.RequestID, SessionID: fact.SessionID, ResultHash: fact.ResultHash, Reason: fact.Reason, MayHaveDispatched: fact.MayHaveDispatched == nil || *fact.MayHaveDispatched || fact.State == "dispatching" || fact.State == "running" || fact.State == "outcome_unknown"}
+		a = domain.ProviderAttempt{ID: id, JobID: fact.JobID, Generation: fact.Generation, State: fact.State, RequestSHA: fact.SHA, RequestID: fact.RequestID, SessionID: fact.SessionID, ResultHash: fact.ResultHash, Reason: fact.Reason, Transport: fact.Transport, MayHaveDispatched: fact.MayHaveDispatched == nil || *fact.MayHaveDispatched || fact.State == "dispatching" || fact.State == "running" || fact.State == "outcome_unknown"}
 	}
 	if e == nil {
 		var raw []byte
@@ -40,11 +40,26 @@ func (t *writeTx) ProviderAttempt(id string) (domain.ProviderAttempt, error) {
 					a.ResultHash = fact.ResultHash
 				}
 			}
+			if a.Transport == nil {
+				a.Transport = fact.Transport
+			}
 			if a.RequestID == "" {
 				a.RequestID = fact.RequestID
 			}
 			if a.SessionID == "" {
 				a.SessionID = fact.SessionID
+			}
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return a, err
+		}
+	}
+	if e == nil && a.Transport == nil {
+		var raw []byte
+		err := t.tx.QueryRowContext(t.ctx, `SELECT value FROM provider_transport WHERE attempt_id=?`, id).Scan(&raw)
+		if err == nil {
+			a.Transport = new(domain.ProviderTransport)
+			if err = json.Unmarshal(raw, a.Transport); err != nil {
+				return a, err
 			}
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return a, err
@@ -222,12 +237,22 @@ func (t *writeTx) ObserveProviderAttempt(id, state, requestID, sessionID, reason
 	if sessionID == "" {
 		sessionID = a.SessionID
 	}
+	if a.Transport != nil && a.Transport.SetupThread != "" && sessionID != "" && a.Transport.SetupThread != sessionID {
+		return domain.ErrConflict
+	}
 	if a.RequestID != "" && requestID != a.RequestID || a.SessionID != "" && sessionID != a.SessionID {
 		return domain.ErrConflict
 	}
+	if a.Reason == "result_retrieval_pending" && (state == "failed" && reason != "result_unavailable" || state == "cancelled" && reason == "cancel_confirmed") {
+		return domain.ErrConflict
+	}
+	// A later inconclusive lookup cannot erase a committed native completion.
+	if a.Reason == "result_retrieval_pending" && state == "outcome_unknown" {
+		reason = a.Reason
+	}
 	// Caller supplies normalized categories, never provider error prose.
 	switch reason {
-	case "", "transport_unknown", "provider_unavailable", "auth_required", "quota_exhausted", "cancel_confirmed", "cancel_before_dispatch", "provider_failed", "result_unavailable":
+	case "", "transport_unknown", "source_unavailable", "unsupported_input_format", "provider_rate_limited", "provider_budget_exhausted", "provider_context_limit", "provider_unavailable", "auth_required", "quota_exhausted", "cancel_confirmed", "cancel_before_dispatch", "provider_failed", "result_unavailable", "result_retrieval_pending":
 	default:
 		return domain.ErrInvalidTarget
 	}
@@ -414,6 +439,15 @@ func (t *writeTx) ResumeProviderJob(id string, generation int64, decision string
 	var selectedSaved string
 	switch decision {
 	case "reconcile_only":
+		eligible := false
+		for _, a := range rows {
+			if a.State == "dispatching" || a.State == "running" || a.State == "outcome_unknown" {
+				eligible = true
+			}
+		}
+		if !eligible && restoreHeld == 0 && (j.ProviderAttempts == nil || j.ProviderAttempts.ReconciliationPending == 0) {
+			return j, domain.ErrTransition
+		}
 		if terminalReconcile && !unknown && restoreHeld == 0 && (j.ProviderAttempts == nil || j.ProviderAttempts.ReconciliationPending == 0) {
 			return j, domain.ErrTransition
 		}

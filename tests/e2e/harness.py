@@ -84,12 +84,12 @@ class Product:
         self.initial = value
         return value
 
-    def start(self, *, configured=False):
+    def start(self, *, configured=False, provider_binary=None):
         assert self.process is None
         assert self.data_dir.is_relative_to(self.root)
         assert not self.data_dir.is_symlink()
         self.process = subprocess.Popen(
-            [self.binary, "daemon", "run", *([] if configured else ["--port", str(self.address)]), *self.local_flags],
+            [self.binary, "daemon", "run", *([] if configured else ["--port", str(self.address)]), *(["--provider-binary", str(provider_binary)] if provider_binary else []), *self.local_flags],
             stdout=subprocess.PIPE, stderr=getattr(self, 'diagnostic_stderr', subprocess.DEVNULL), text=True,
         )
         process = self.process

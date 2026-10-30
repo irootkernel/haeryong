@@ -18,6 +18,7 @@ type ResumeJobRequest struct {
 }
 
 func JobETag(j domain.Job) string {
+	j = redactProviderInvocation(j)
 	b, _ := json.Marshal(j)
 	h := sha256.Sum256(b)
 	return fmt.Sprintf(`"job-%s-%x"`, j.ID, h[:])
@@ -28,7 +29,7 @@ func JobETag(j domain.Job) string {
 func projectProviderJob(tx app.WriteTx, actor domain.Session, j domain.Job) (domain.Job, error) {
 	e := visibleJob(tx, j)
 	if e == nil {
-		return j, nil
+		return redactProviderInvocation(j), nil
 	}
 	if !domain.ProviderJob(j.Kind) || actor.Scope.Kind != "owner" || (!errors.Is(e, domain.ErrNotFound) && !errors.Is(e, domain.ErrDenied)) {
 		return j, e
@@ -108,7 +109,24 @@ func (s *Service) ResumeJob(ctx context.Context, token, id, key, match string, i
 		if e != nil {
 			return domain.Response{}, e
 		}
+		tag := JobETag(j)
+		j, e = projectProviderJob(tx, actor, j)
+		if e != nil {
+			return domain.Response{}, e
+		}
 		body, _ := json.Marshal(j)
-		return domain.Response{Status: 200, Body: body, Headers: map[string]string{"ETag": JobETag(j)}}, nil
+		return domain.Response{Status: 200, Body: body, Headers: map[string]string{"ETag": tag}}, nil
 	})
+}
+
+func redactProviderInvocation(j domain.Job) domain.Job {
+	if !domain.ProviderJob(j.Kind) {
+		return j
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(j.Scope, &fields) == nil {
+		delete(fields, "invocation")
+		j.Scope, _ = json.Marshal(fields)
+	}
+	return j
 }

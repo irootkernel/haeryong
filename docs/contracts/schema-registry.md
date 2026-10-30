@@ -1081,3 +1081,41 @@ reports historical capture_availability:available for that unambiguous identity;
 current availability remains unavailable/not_retained and read_state remains
 not_read_by_view. Metadata-only diffs compare the same normalized capture facts.
 Unsupported legacy or missing-identity markers do not establish past availability.
+
+## Provider status addition (TASK-006-03)
+
+GET/HEAD /api/v1/providers is an authenticated owner-only read. It creates no
+inference, source capture or account/configuration mutation. Its data object is:
+
+| Field | Wire meaning |
+| --- | --- |
+| provider_id, version | codex and the verified pin when known |
+| state | ready, auth_required, quota_unavailable, quota_exhausted, unsupported_version, source_unavailable, paused or provider_error |
+| reason | Optional bounded cause; never native error prose |
+| authentication_mode | Native account mode or unknown; no email, token or account-store path |
+| model, effort, models | Effective native choice when verified and fresh catalog; never entitlement proof |
+| ordinary_usage_allowed | Backend-disclosed boolean or null; false alone does not identify the cause of unavailable usage |
+| read_only | Supported native mode was verified; no universal OS containment claim |
+| lookup_supported, cancellation_supported | Pinned protocol supports the operation; interrupt acknowledgement is not terminal proof |
+| catalog_proves_access | Always false |
+| input_formats, output_format, native_input_telemetry | Initial adapter supports utf8_text/public_final_text and no exact native-read telemetry; unavailable wiring may report no format knowledge |
+
+features.provider indicates installed production transport support, not account
+readiness or public question/generation admission. features.generation and
+features.questions remain false. The shared native operation providerStatus
+accepts exactly an empty JSON object and forwards only this GET. Unknown or
+malformed payload cannot reach HTTP. No native IDs, CWD, private invocation,
+source bodies, raw configuration, credentials or reasoning enter this projection.
+The existing job summary/resume and source/citation unions are unchanged.
+
+
+The provider status route accepts no query parameters. Unknown cursor/limit or
+other query keys fail GET/HEAD before a native probe; unsupported methods retain
+the ordinary dispatcher refusal. Authentication and current owner authority are
+checked before and after a potentially slow probe. Both shared clients reject
+unknown authority-bearing state values and a missing/non-boolean/non-null usage
+allowance. False remains false; null remains unknown. The UI renders bounded
+reason labels and supported authentication modes without exposing native prose.
+The refresh action retains keyboard focus while busy and a stable polite status
+region announces changes. Settings links use shared SPA navigation and existing
+44 px action targets.

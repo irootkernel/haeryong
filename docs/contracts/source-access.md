@@ -233,3 +233,20 @@ custom profiles are not classified by filename or content.
 Exclusive startup settles interrupted captures with the same complete error
 envelope, including a request_id generated once for the stored response. Replay
 returns that exact persisted response without re-reading source.
+
+## TASK-006-03 provider input boundary
+
+The production adapter reads the exact already captured objects through verified
+contentstore reads and execution pins, under current source/project/provider
+policy before further chunks. It never reopens a moving source path to reinterpret
+an old capture. Canonical identity order matches the actual transmitted text
+items. Complete native acceptance precedes an attempt-linked daemon_supplied
+observation; capture, spooling, local exit and model catalog are insufficient.
+
+The initial text adapter explicitly refuses invalid UTF-8 before dispatch. It
+does not omit the file or reject/modify its stored source or result-directory
+payload. Provider context/rate/session limits are affected-operation outcomes,
+not storage size/count/depth limits. Exact native-read telemetry is unsupported;
+ambient/native reads remain unobserved. Reasoning is neither result material nor
+retained evidence. Current executing-intent guards apply to every reconciliation
+page and output consumer; hidden/status-only carriers perform no body read.

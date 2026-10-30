@@ -3,7 +3,10 @@ import importlib.util,json,os,pathlib,re,subprocess,tempfile,urllib.parse,hashli
 import argparse,shutil,time
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--browser-cli',type=pathlib.Path,required=True)
+parser.add_argument('--scratch-root',type=pathlib.Path,help='Explicit existing private physical parent for this driver')
 parser.add_argument('--receipt',type=pathlib.Path,required=True)
+parser.add_argument('--provider-only',action='store_true',help='Bounded TASK-006-03 provider status and local-reader usability; no inference')
+parser.add_argument('--provider-binary',type=pathlib.Path,help='Explicit already installed pinned native binary; provider-only')
 parser.add_argument('--backup-only',action='store_true',help='Bounded TASK-005-05 Settings keyboard and hasTouch tap status proof')
 parser.add_argument('--lifecycle-only',action='store_true',help='Bounded TASK-005-03/04 lifecycle/purge proof; no external CDN')
 parser.add_argument('--notes-only',action='store_true',help='Bounded TASK-005-02 Notes/Revisit proof; no external CDN')
@@ -14,15 +17,15 @@ REPO=pathlib.Path(__file__).resolve().parents[5]
 RECEIPT=args.receipt.resolve()
 assert RECEIPT.parent.is_dir(), 'receipt parent must exist'
 volume=pathlib.Path('/Volumes/RootKernel')
-base=volume/'tmp' if os.path.ismount(volume) and os.access(volume,os.W_OK) else pathlib.Path(tempfile.gettempdir())
+base=args.scratch_root.resolve(strict=True) if args.scratch_root else (volume/'tmp' if os.path.ismount(volume) and os.access(volume,os.W_OK) else pathlib.Path(tempfile.gettempdir()))
 os.umask(0o077);work=pathlib.Path(tempfile.mkdtemp(prefix='h3r-',dir=base)).resolve()
 env=os.environ|{'TMPDIR':str(work),'HAERYONG_TEST_STATE_DIR':str(work/'app-state'),'PYTHONDONTWRITEBYTECODE':'1'}
 os.environ['HAERYONG_TEST_STATE_DIR']=env['HAERYONG_TEST_STATE_DIR']
-if args.review_only or args.notes_only or args.lifecycle_only or args.backup_only:env['PLAYWRIGHT_DAEMON_SOCKETS_DIR']=str(work/'sockets')
+if args.provider_only or args.review_only or args.notes_only or args.lifecycle_only or args.backup_only:env['PLAYWRIGHT_DAEMON_SOCKETS_DIR']=str(work/'sockets')
 spec=importlib.util.spec_from_file_location('h',REPO/'tests/e2e/harness.py');h=importlib.util.module_from_spec(spec);spec.loader.exec_module(h)
 cli=str(args.browser_cli.resolve(strict=True))
 session=work.name;product=None;opened=False
-if args.review_only or args.notes_only or args.lifecycle_only or args.backup_only:pathlib.Path(env['PLAYWRIGHT_DAEMON_SOCKETS_DIR']).mkdir(mode=0o700)
+if args.provider_only or args.review_only or args.notes_only or args.lifecycle_only or args.backup_only:pathlib.Path(env['PLAYWRIGHT_DAEMON_SOCKETS_DIR']).mkdir(mode=0o700)
 proof={'scope':__doc__,'runtime':str(work),'complete':False,'cases':[],'driver_sha256':hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest()}
 def fingerprints():
  paths=sorted([p for folder in ['cmd','internal'] for p in (REPO/folder).rglob('*.go') if not p.name.endswith('_test.go')]+[REPO/'go.mod',REPO/'go.sum']+[p for p in (REPO/'internal/webassets/dist').rglob('*') if p.is_file()])
@@ -44,11 +47,11 @@ before=fingerprints()
 try:
  subprocess.run(['go','build','-tags','haeryong_test_state','-o',str(work/'haeryong'),'./cmd/haeryong'],cwd=REPO,env=env,capture_output=True,check=True,timeout=90)
  assert fingerprints()==before,'Go/embed inputs changed during isolated build; no stable-candidate proof'
- product=h.Product(work/'haeryong',work);product.initialize();product.start();owner=product.owner('Reader browser regression')
+ product=h.Product(work/'haeryong',work);product.initialize();product.start(provider_binary=args.provider_binary if args.provider_only else None);owner=product.owner('Reader browser regression')
  source=work/'source';(source/'nested').mkdir(parents=True)
  first="""<!doctype html><meta charset=utf-8><title>Reader first</title><h1 id=heading>첫 페이지</h1><div id=framework></div><button id=increment onclick="this.textContent=String(Number(this.textContent)+1)">0</button><a id=next href="nested/둘째.html?scenario=2#part">next</a><a id=popup target=_blank href="nested/둘째.html?popup=1#part">popup</a><div style="height:2600px"></div><h2 id=part>끝</h2><script type=module>import {value} from './module.js';window.moduleValue=value;import('https://esm.sh/preact@10.27.2').then(({h,render})=>{render(h('strong',{},'External Preact rendered'),document.querySelector('#framework'));window.cdnFramework='pass';}).catch(()=>window.cdnFramework='unavailable');new Worker('./worker.js').onmessage=e=>window.workerValue=e.data;</script>"""
  second="""<!doctype html><meta charset=utf-8><title>Reader second</title><h1>둘째 페이지</h1><a href='../first.html'>first</a><div style='height:2600px'></div><h2 id=part>둘째 끝</h2>"""
- if args.review_only or args.notes_only or args.lifecycle_only or args.backup_only:
+ if args.provider_only or args.review_only or args.notes_only or args.lifecycle_only or args.backup_only:
   first="<h1 id='review-fixture'>Review fixture</h1><h2 id='retry'>Page-local note anchor</h2><p>Labelled synthetic AI minor-change assessment, no Review authority.</p><a id='next' href='nested/둘째.html'>next</a><div style='height:2600px'></div>"
   second="<h1 id='second-review-page'>Second Review page</h1>"
  (source/'first.html').write_text(first);(source/'nested/둘째.html').write_text(second)
@@ -72,7 +75,12 @@ try:
  call(['open',product.endpoint+'/health/live','--browser','chrome','--profile',str(work/'profile')]);opened=True
  js("async page=>{await page.evaluate(token=>localStorage.setItem('haeryong.owner-session.v1',token),"+json.dumps(owner['token'])+");return true;}")
  route=product.endpoint+f'/documents/{document}/versions/{version}?'+urllib.parse.urlencode({'page':'first.html','page_query':'scenario=1','page_fragment':''})
- if args.backup_only:
+ if args.provider_only:
+  code=pathlib.Path(__file__).with_name('check_provider.js').read_text()
+  proof['provider_driver_sha256']=hashlib.sha256(code.encode()).hexdigest()
+  actual=js(code.replace('INPUT',json.dumps({'origin':product.endpoint,'route':route,'version':version,'screenshot':str(args.screenshot.resolve()) if args.screenshot else None})))
+  proof['cases'].append({'kind':'TASK-006-03 actual production daemon/HTTP status and rendered keyboard/touch; explicitly controlled auth/quota UI states; no inference','actual':actual})
+ elif args.backup_only:
   code=pathlib.Path(__file__).with_name('check_backup.js').read_text()
   proof['backup_driver_sha256']=hashlib.sha256(code.encode()).hexdigest()
   def backup_ui(phase):

@@ -134,7 +134,7 @@ func searchPriorRows(db *sql.DB) map[string]string {
 	assertEmptyProviderMigrationTables(db)
 	GinkgoHelper()
 	assertSearchTwoProjects(db)
-	names, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'search_%' AND name NOT IN ('derived_work','page_anchors','reference_materializations','authored_references','authored_edges','review_states','review_events','annotations','annotation_history','revisit_flags','lifecycle_plans','lifecycle_plan_items','purge_intents','purged_versions','purge_candidates','copy_sets','copy_versions','recovery_holds','provider_attempts','provider_inputs','provider_retry_authorizations','provider_linked_retry_authorizations','provider_orphans','provider_reconcile_intents','source_captures','source_capture_reads','job_inputs') ORDER BY name`)
+	names, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'search_%' AND name NOT IN ('derived_work','page_anchors','reference_materializations','authored_references','authored_edges','review_states','review_events','annotations','annotation_history','revisit_flags','lifecycle_plans','lifecycle_plan_items','purge_intents','purged_versions','purge_candidates','copy_sets','copy_versions','recovery_holds','provider_transport','provider_attempts','provider_inputs','provider_retry_authorizations','provider_linked_retry_authorizations','provider_orphans','provider_reconcile_intents','source_captures','source_capture_reads','job_inputs') ORDER BY name`)
 	Expect(err).NotTo(HaveOccurred())
 	var tables []string
 	for names.Next() {
@@ -282,7 +282,7 @@ var _ = Describe("SC10 schema8 recovery and postings", Label("persistence"), fun
 			var nonDefaultLifecycle int
 			Expect(ready.db.QueryRow(`SELECT count(*) FROM documents WHERE previous_lifecycle IS NOT NULL OR trashed_at IS NOT NULL OR trash_generation<>0`).Scan(&nonDefaultLifecycle)).To(Succeed())
 			Expect(nonDefaultLifecycle).To(BeZero(), "revision 12 adds only the declared empty/default lifecycle state")
-			for _, table := range []string{"annotation_history", "annotations", "revisit_flags", "review_states", "review_events", "lifecycle_plans", "lifecycle_plan_items", "purge_candidates", "purge_intents", "purged_versions", "provider_attempts", "provider_inputs", "provider_retry_authorizations", "provider_linked_retry_authorizations", "provider_orphans", "provider_reconcile_intents", "source_captures", "source_capture_reads", "job_inputs"} {
+			for _, table := range []string{"annotation_history", "annotations", "revisit_flags", "review_states", "review_events", "lifecycle_plans", "lifecycle_plan_items", "purge_candidates", "purge_intents", "purged_versions", "provider_transport", "provider_attempts", "provider_inputs", "provider_retry_authorizations", "provider_linked_retry_authorizations", "provider_orphans", "provider_reconcile_intents", "source_captures", "source_capture_reads", "job_inputs"} {
 				Expect(ready.db.QueryRow(`SELECT count(*) FROM ` + table).Scan(&count)).To(Succeed())
 				Expect(count).To(BeZero(), "additive migrations create empty personal and lifecycle plan tables")
 			}

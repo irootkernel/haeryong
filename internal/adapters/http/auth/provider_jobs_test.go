@@ -230,7 +230,7 @@ var _ = It("PA11 owner resume uses exact generation and validator, preserves rec
 	Expect(status).To(Equal(400))
 })
 
-var _ = It("PA16 hidden provider targets retain minimal owner status and reconcile-only receipts without payload access", Label("persistence"), func() {
+var _ = It("PA16 C03HTTP hidden provider targets retain minimal owner status and reconcile-only receipts without payload access", Label("persistence"), func() {
 	f := newFixture(GinkgoT())
 	token, owner := f.owner(GinkgoT())
 	jobID, document := newOperation(GinkgoT()), newOperation(GinkgoT())
@@ -243,8 +243,26 @@ var _ = It("PA16 hidden provider targets retain minimal owner status and reconci
 			return e
 		}
 		target, _ := json.Marshal(map[string]string{"document_id": document, "project_id": lib.UnfiledProjectID})
-		scope, _ := json.Marshal(domain.ProviderScope{PrincipalID: owner.PrincipalID, Target: target})
+		auth, e := tx.AuthState()
+		if e != nil {
+			return e
+		}
+		scope, _ := json.Marshal(domain.ProviderScope{PrincipalID: owner.PrincipalID, AuthEpoch: auth.AuthEpoch, Target: target, RequestSHA: strings.Repeat("a", 64), Invocation: &domain.ProviderInvocation{Prompt: "HIDDEN_PRIVATE_PROMPT", CWD: "/private/fixture"}})
 		if e = tx.CreateJob(domain.Job{ID: jobID, Kind: "question", Scope: scope}); e != nil {
+			return e
+		}
+		claimed, e := tx.ClaimJob(jobID)
+		if e != nil {
+			return e
+		}
+		attempt := domain.ProviderAttempt{ID: newOperation(GinkgoT()), JobID: jobID, Generation: claimed.AttemptGeneration, Runtime: lib.RuntimeGeneration, State: "prepared", RequestSHA: strings.Repeat("a", 64)}
+		if e = tx.PrepareProviderAttempt(attempt, nil); e != nil {
+			return e
+		}
+		if e = tx.DispatchProviderAttempt(attempt.ID); e != nil {
+			return e
+		}
+		if e = tx.ObserveProviderAttempt(attempt.ID, "outcome_unknown", "private-turn", "private-thread", "transport_unknown"); e != nil {
 			return e
 		}
 		if e = tx.SetJobResult(jobID, []byte(`{"private_text":"forbidden-result-body"}`)); e != nil {
@@ -264,11 +282,33 @@ var _ = It("PA16 hidden provider targets retain minimal owner status and reconci
 	body := map[string]any{"decision": "reconcile_only", "expected_attempt_generation": j["attempt_generation"]}
 	key := newOperation(GinkgoT())
 	headers := map[string]string{"Idempotency-Key": key, "If-Match": h.Get("ETag")}
-	status, _, b = f.request(GinkgoT(), "POST", path+"/resume", token, body, headers)
+	status, resumedHeaders, resumedBody := f.request(GinkgoT(), "POST", path+"/resume", token, body, headers)
+	b = resumedBody
 	Expect(status).To(Equal(200))
 	Expect(string(b)).NotTo(ContainSubstring(document))
 	Expect(string(b)).NotTo(ContainSubstring("forbidden-result-body"))
-	status, _, b = f.request(GinkgoT(), "POST", path+"/resume", token, body, headers)
+	Expect(dataAs[map[string]any](GinkgoT(), resumedBody)["etag"]).To(Equal(resumedHeaders.Get("ETag")))
+	Expect(string(resumedBody)).NotTo(ContainSubstring("HIDDEN_PRIVATE"))
+	status, currentHeaders, currentBody := f.request(GinkgoT(), "GET", path, token, nil, nil)
+	Expect(status).To(Equal(200))
+	Expect(currentHeaders.Get("ETag")).To(Equal(resumedHeaders.Get("ETag")))
+	Expect(dataAs[map[string]any](GinkgoT(), currentBody)["etag"]).To(Equal(resumedHeaders.Get("ETag")))
+	Expect(f.store.Write(context.Background(), func(tx storage.WriteTx) error { return tx.PauseProviderJob(jobID, "current-resource-changed") })).To(Succeed())
+	status, replayedHeaders, replayedBody := f.request(GinkgoT(), "POST", path+"/resume", token, body, headers)
+	b = replayedBody
+	Expect(replayedHeaders.Get("ETag")).To(Equal(resumedHeaders.Get("ETag")))
+	Expect(dataAs[map[string]any](GinkgoT(), replayedBody)).To(Equal(dataAs[map[string]any](GinkgoT(), resumedBody)))
+	status, currentHeaders, currentBody = f.request(GinkgoT(), "GET", path, token, nil, nil)
+	Expect(status).To(Equal(200))
+	Expect(currentHeaders.Get("ETag")).NotTo(Equal(resumedHeaders.Get("ETag")))
+	newHeaders := map[string]string{"Idempotency-Key": newOperation(GinkgoT()), "If-Match": resumedHeaders.Get("ETag")}
+	status, _, _ = f.request(GinkgoT(), "POST", path+"/resume", token, body, newHeaders)
+	Expect(status).To(Equal(412))
+	newHeaders["Idempotency-Key"] = newOperation(GinkgoT())
+	newHeaders["If-Match"] = currentHeaders.Get("ETag")
+	status, _, _ = f.request(GinkgoT(), "POST", path+"/resume", token, body, newHeaders)
+	Expect(status).To(Equal(200))
+
 	Expect(status).To(Equal(200))
 	Expect(string(b)).NotTo(ContainSubstring("forbidden-result-body"))
 	status, _, b = f.request(GinkgoT(), "GET", "/api/v1/operations/"+key, token, nil, nil)

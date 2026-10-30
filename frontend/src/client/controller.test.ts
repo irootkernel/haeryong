@@ -136,6 +136,8 @@ async trashList():Promise<never>{throw new Error("not used in controller tests")
     this.calls.push("revokeOwnSession");
     return this.ownRevokeHandler();
   }
+  providerStatus(): Promise<import("./types.ts").ProviderStatus> { return Promise.reject(new Error("provider unavailable")); }
+
   serviceStatus(): Promise<unknown> {
     this.calls.push("serviceStatus");
     return Promise.resolve({});

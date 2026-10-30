@@ -214,7 +214,7 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
               <option value="all">전체</option>
             </select>
           </label>
-          <button type="button" disabled={!featureEnabled(features, "provider")} title={featureEnabled(features, "provider") ? undefined : "AI 기능은 아직 제공되지 않습니다."}>
+          <button type="button" disabled={!featureEnabled(features, "questions")} title={featureEnabled(features, "questions") ? undefined : "AI 기능은 아직 제공되지 않습니다."}>
             AI 질문
           </button>
           <button type="button" className="primary" onClick={() => setImportOpen(true)}>

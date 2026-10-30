@@ -24,3 +24,22 @@ var _ = It("PA13 CLI resume preserves exact expected generation and requires an 
 		Expect(validateCommandFlags(opt)).NotTo(Succeed())
 	}
 })
+
+var _ = It("C03CLI provider status is read-only and the binary selection belongs only to local daemon startup", Label("unit"), func() {
+	opt, e := parse([]string{"providers", "status"})
+	Expect(e).NotTo(HaveOccurred())
+	Expect(validateCommandFlags(opt)).To(Succeed())
+	Expect(isProductCommand(opt)).To(BeTrue())
+	opt, e = parse([]string{"daemon", "run", "--provider-binary", "/selected/codex"})
+	Expect(e).NotTo(HaveOccurred())
+	binary, e := providerBinarySelection(opt)
+	Expect(e).NotTo(HaveOccurred())
+	Expect(binary).To(Equal("/selected/codex"))
+	opt.command = []string{"providers", "status"}
+	_, e = providerBinarySelection(opt)
+	Expect(e).To(HaveOccurred())
+	opt.command = []string{"daemon", "run"}
+	opt.flags["provider-binary"] = "relative/codex"
+	_, e = providerBinarySelection(opt)
+	Expect(e).To(HaveOccurred())
+})

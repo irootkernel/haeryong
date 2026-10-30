@@ -487,3 +487,11 @@ test("HTTP verification forwards a typed excerpt upload reference object", async
     assert.deepEqual(received, request);
   } finally { restore(); }
 });
+
+
+test("HTTP provider status rejects unknown authority state or missing allowance and preserves false/null",async()=>{
+ for(const [state,allowance,valid] of [["paused",false,true],["quota_unavailable",null,true],["future_state",true,false],["ready",undefined,false]] as const){
+  const restore=stubFetch(async()=>new Response(JSON.stringify({data:{provider_id:"codex",state,ordinary_usage_allowed:allowance}})));
+  try{const request=new HttpHaeryongClient().providerStatus();if(valid){assert.equal((await request).ordinary_usage_allowed,allowance)}else{await assert.rejects(request,/지원되는 제공자 상태/);}}finally{restore()}
+ }
+});

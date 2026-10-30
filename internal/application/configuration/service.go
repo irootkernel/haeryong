@@ -25,16 +25,17 @@ type Paths interface {
 	Canonical(string, bool) (string, error)
 }
 type Service struct {
-	Store              app.Store
-	Auth               *auth.Service
-	Paths              Paths
-	Now                func() time.Time
-	Restart            func()
-	RuntimeEndpoint    string
-	ListenerOverride   bool
-	RestoreReviewID    string
-	RestoreCleanupJobs []string
-	Backup             func(context.Context) (domain.BackupStatus, error)
+	ProviderTransportAvailable bool
+	Store                      app.Store
+	Auth                       *auth.Service
+	Paths                      Paths
+	Now                        func() time.Time
+	Restart                    func()
+	RuntimeEndpoint            string
+	ListenerOverride           bool
+	RestoreReviewID            string
+	RestoreCleanupJobs         []string
+	Backup                     func(context.Context) (domain.BackupStatus, error)
 }
 
 func New(store app.Store, a *auth.Service, paths Paths) *Service {
@@ -380,7 +381,7 @@ func (s *Service) Plan(ctx context.Context, token, key string, input PlanRequest
 		}
 	}
 	restart := !reflect.DeepEqual(old["network"], next["network"])
-	impact := map[string]any{"controlled_restart_required": restart, "security": "immediate", "workflow_scope": "new capture; current restrictions apply", "provider_execution": "not_ready"}
+	impact := map[string]any{"controlled_restart_required": restart, "security": "immediate", "workflow_scope": "new capture; current restrictions apply", "provider_execution": "admission_not_ready"}
 	if old, next := networkPool(old), networkPool(next); old != next {
 		// A pool fully inside 9000..9999 is preferred; any other valid
 		// choice is accepted with an explicit preference note in the plan

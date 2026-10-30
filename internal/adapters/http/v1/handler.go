@@ -116,7 +116,7 @@ func (h *Handler) Handles(r *http.Request) bool {
 		return false
 	}
 	if len(p) == 1 {
-		return p[0] == "search" || p[0] == "capabilities" || p[0] == "projects" || p[0] == "documents"
+		return p[0] == "providers" || p[0] == "search" || p[0] == "capabilities" || p[0] == "projects" || p[0] == "documents"
 	}
 	if p[0] == "documents" {
 		return len(p) == 2 || len(p) == 3 && p[2] == "versions"
@@ -195,6 +195,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	allowed := []string{"cursor", "limit"}
+	if len(p) == 1 && p[0] == "providers" {
+		allowed = []string{}
+	}
 	if p[0] == "documents" && len(p) == 1 {
 		allowed = append(allowed, "project_id", "lifecycle", "review", "revisit")
 	}
@@ -257,6 +260,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	etag := ""
 	version := ""
 	switch {
+	case len(p) == 1 && p[0] == "providers":
+		data, err = h.Core.Providers(r.Context(), token)
 	case len(p) == 1 && p[0] == "capabilities":
 		var capabilities map[string]any
 		capabilities, err = h.Core.Capabilities(r.Context(), token)

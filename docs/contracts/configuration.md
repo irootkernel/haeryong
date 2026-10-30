@@ -70,7 +70,7 @@ session_idle_seconds and session_absolute_seconds are null by default, meaning n
 
 CLI startup selects a profile/data directory and listener settings through explicit validated configuration. Ephemeral overrides are shown in effective policy and cannot silently enable remote ingress. The DB is authoritative for ordinary policy; YAML is a snapshot. Import uses the same preview/commit validator as UI edits. There is no file-watcher/API race deciding the effective policy.
 
-config_revision is the one effective configuration counter, exposed with the configuration resource's opaque ETag. Every committed effective library/project setting change advances it atomically with audit/outbox records. Jobs, assessments, findings and plans capture that counter; policy_revision is not a synonym. Each project also has permissions_revision, a distinct positive access generation initially 1. Changes to its selected roots, disclosure providers, retention permissions or permitted output destination advance that generation; presentation-only changes do not. Workflow credentials/jobs record the relevant project generations and captured scopes, and current policy is rechecked before new reads, submissions and application. A later expansion never enlarges an existing workflow. A validated listener/host change shows restart and reachability effects before owner confirmation, then uses a controlled restart with a recovery path. Starting an OS service or configuring an external proxy may need local OS access; this is not a second Haeryong owner role.
+config_revision is the one effective configuration counter, exposed with the configuration resource's opaque ETag. Every committed effective library/project setting change advances it atomically with audit/outbox records. Jobs, assessments, findings and plans capture that counter; policy_revision is not a synonym. Each project also has permissions_revision, a distinct positive access generation initially 1. Changes to its selected roots, disclosure providers, retention permissions or permitted output destination advance that generation; presentation-only changes do not. Workflow credentials/jobs record the relevant project generations and captured scopes, and current policy is rechecked before new reads, submissions and application. A later expansion never enlarges an existing workflow. A validated listener/host change shows restart and reachability effects before owner confirmation, then uses a controlled restart with a recovery path. A previously collected provider accounting diagnostic does not prevent that restart when durable settlement and owned drain were positively verified. The daemon retains its first historical diagnostic until final stop; current/unknown cleanup and any unrelated joined endpoint, dependent, storage or output error still stop restart. Starting an OS service or configuring an external proxy may need local OS access; this is not a second Haeryong owner role.
 
 Schedule mode is manual/interval/calendar. Manual has no active interval/cron. Interval requires interval_seconds and no cron; calendar requires a validated five-field cron plus IANA timezone and no interval_seconds. Proposed minimum interval is 60 seconds. Run once per unique scheduled instant, skip nonexistent local time, and do not duplicate a repeated wall time without an explicit defined policy. Missed runs use coalesce_one; a sleeping host does not invent completed checks.
 
@@ -212,3 +212,20 @@ mode and, when the provider changes, the old and new default provider, including
 null. An initial configuration read failure hides editable defaults and offers the ordinary
 Retry; it does not fabricate an editable configuration. Actual loaded drafts
 and retained plan/commit identities keep their existing recovery behavior.
+
+## Provider transport status (TASK-006-03 implementation)
+
+The provider transport uses the existing logical provider/source disclosure
+choices. No provider credential, binary path or new policy field is added to
+schema-v1 effective configuration. An optional absolute --provider-binary on
+local daemon startup selects an already installed verified executable only.
+The normal Settings/AI screen reads the same owner provider status as CLI and
+native clients. It does not expose login/account/billing mutation controls.
+
+Service health reports transport_available separately from nullable current
+availability and supplies status_url=/api/v1/providers. Pending generation and
+question admission remain unavailable. Current native authentication/usage and
+permission limitations are reported without modifying remembered source or
+provider settings, inferring entitlement from catalog entries, or overriding
+owner model/effort defaults. Existing current-policy and restore-hold fences
+still govern every job payload and dispatch.

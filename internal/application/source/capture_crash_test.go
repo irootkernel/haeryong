@@ -16,6 +16,7 @@ import (
 	. "github.com/onsi/gomega"
 	"haeryong.local/haeryong/internal/adapters/foundation"
 	adapter "haeryong.local/haeryong/internal/adapters/source"
+	"haeryong.local/haeryong/internal/adapters/sqlite"
 	appauth "haeryong.local/haeryong/internal/application/auth"
 	"haeryong.local/haeryong/internal/application/service"
 	"haeryong.local/haeryong/internal/application/source"
@@ -218,7 +219,7 @@ var _ = It("SCAP10 actual process kill/reap and exclusive reopen settle interrup
 			}
 			return e
 		})).To(Succeed())
-		Expect(health.Library.SchemaRevision).To(Equal(16))
+		Expect(health.Library.SchemaRevision).To(Equal(sqlite.SchemaRevision))
 		object := domain.Object{Hash: vsha(body), Size: int64(len(body))}
 		if mode == "capture" {
 			Expect(capture.State).To(Equal("failed"))

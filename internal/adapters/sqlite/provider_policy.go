@@ -151,7 +151,7 @@ func (t *writeTx) releaseProviderInputs(jobID string) error {
 }
 
 func (t *writeTx) releaseResolvedOrphanInputs(fact providerRestoreFact) error {
-	if len(fact.Conflict) > 0 || !(providerExternalTerminal(fact) || providerLocalTerminal(fact)) {
+	if hasProviderConflict(fact.Conflict) || !(providerExternalTerminal(fact) || providerLocalTerminal(fact)) {
 		return nil
 	}
 	var live int
@@ -240,6 +240,9 @@ func (t *writeTx) CompleteProviderReconciliation(jobID, id string) error {
 	if e != nil || n == 0 {
 		return e
 	}
+	if e = t.exec(`DELETE FROM resource_revisions WHERE resource_kind='provider_reconciliation_authority' AND resource_id=? AND NOT EXISTS(SELECT 1 FROM provider_reconcile_intents WHERE job_id=?)`, jobID, jobID); e != nil {
+		return e
+	}
 	if e = t.finishProviderStatusCarrier(jobID); e != nil {
 		return e
 	}
@@ -293,7 +296,7 @@ func (t *writeTx) finishProviderStatusCarrier(jobID string) error {
 		return domain.ErrInvalidTarget
 	}
 	for _, fact := range facts {
-		if fact.State != "failed" && fact.State != "cancelled" && fact.State != "result_saved" || len(fact.Conflict) > 0 {
+		if fact.State != "failed" && fact.State != "cancelled" && fact.State != "result_saved" || hasProviderConflict(fact.Conflict) {
 			return nil
 		}
 		var unknown int
@@ -403,6 +406,14 @@ func sameProviderTarget(a, b json.RawMessage) bool {
 }
 
 func (t *writeTx) queueProviderReconciliation(jobID, id string) error {
+	auth, e := t.AuthState()
+	if e != nil {
+		return e
+	}
+	grant := providerReconciliationAuthority{AuthEpoch: auth.AuthEpoch}
+	if e = t.exec(`INSERT INTO resource_revisions(resource_kind,resource_id,revision,value) VALUES('provider_reconciliation_authority',?,1,?) ON CONFLICT(resource_kind,resource_id) DO UPDATE SET revision=revision+1,value=excluded.value`, jobID, jsonBytes(grant)); e != nil {
+		return e
+	}
 	return t.exec(`INSERT INTO provider_reconcile_intents(job_id,attempt_id,ledger_attempt_id,orphan_attempt_id,state,runtime_generation)
  SELECT ?,?,CASE WHEN EXISTS(SELECT 1 FROM provider_attempts WHERE attempt_id=?) THEN ? END,CASE WHEN NOT EXISTS(SELECT 1 FROM provider_attempts WHERE attempt_id=?) THEN ? END,'pending',''
  ON CONFLICT(job_id,attempt_id) DO UPDATE SET state='pending',runtime_generation=''`, jobID, id, id, id, id, id)
@@ -493,4 +504,57 @@ func (t *writeTx) providerJobEffects(jobID string) ([]domain.ProviderAttempt, er
 		rows = append(rows, a)
 	}
 	return rows, nil
+}
+
+// AbandonProviderReconciliation ends only the finite campaign owned by this
+// executing phase. It never runs the successful status-carrier finalizer.
+func (t *writeTx) AbandonProviderReconciliation(jobID, id, runtime string, generation int64, reason string) error {
+	var actual string
+	e := t.tx.QueryRowContext(t.ctx, `SELECT runtime_generation FROM provider_reconcile_intents WHERE job_id=? AND attempt_id=? AND state='executing'`, jobID, id).Scan(&actual)
+	if errors.Is(e, sql.ErrNoRows) {
+		return domain.ErrNotFound
+	}
+	if e != nil {
+		return e
+	}
+	library, e := t.Library()
+	if e != nil {
+		return e
+	}
+	if runtime == "" || actual != runtime || library.RuntimeGeneration != runtime {
+		return domain.ErrStaleWorker
+	}
+	j, e := t.Job(jobID)
+	if e != nil {
+		return e
+	}
+	if j.AttemptGeneration != generation && !(j.CancelRequested && j.AttemptGeneration == generation+1) {
+		return domain.ErrStaleWorker
+	}
+	if reason != "provider_accounting_unavailable" {
+		return domain.ErrInvalidTarget
+	}
+	if e = t.exec(`DELETE FROM provider_reconcile_intents WHERE job_id=?`, jobID); e != nil {
+		return e
+	}
+	if e = t.exec(`DELETE FROM resource_revisions WHERE resource_kind='provider_reconciliation_authority' AND resource_id=?`, jobID); e != nil {
+		return e
+	}
+
+	a, e := t.ProviderAttempt(id)
+	if e != nil {
+		return e
+	}
+	if a.State == "dispatching" || a.State == "running" {
+		if e = t.ObserveProviderAttempt(id, "outcome_unknown", "", "", "transport_unknown"); e != nil {
+			return e
+		}
+	}
+	if !terminal(j.State) {
+		if j.CancelRequested {
+			return t.ConfirmStop(jobID, j.AttemptGeneration)
+		}
+		return t.PauseProviderJob(jobID, reason)
+	}
+	return t.providerUpdated(jobID)
 }

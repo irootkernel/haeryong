@@ -13,7 +13,7 @@ import (
 	"haeryong.local/haeryong/internal/domain"
 )
 
-var _ = It("SCAP12 exact revision15 to16 migration is atomic and legacy captured hashes gain no invented objects, bindings or observations", Label("persistence"), func() {
+var _ = It("SCAP12 exact revision15 through current migration is atomic and legacy captured hashes gain no invented objects, bindings or observations", Label("persistence"), func() {
 	_, w := profile(GinkgoT())
 	referenceSchema8(w)
 	db := readDB(GinkgoT(), w.Profile)
@@ -48,7 +48,7 @@ var _ = It("SCAP12 exact revision15 to16 migration is atomic and legacy captured
 	Expect(n).To(BeZero())
 	Expect(db.Close()).To(Succeed())
 	s := openStore(GinkgoT(), w, nil)
-	Expect(s.validateTables(ctx, 16)).To(Succeed())
+	Expect(s.validateTables(ctx, SchemaRevision)).To(Succeed())
 	assertEmptyProviderMigrationTables(s.db)
 	Expect(s.db.QueryRow(`SELECT count(*) FROM captured_reads WHERE read_id='historical-read' AND bytes_sha256=?`, strings.Repeat("a", 64)).Scan(&n)).To(Succeed())
 	Expect(n).To(Equal(1))
@@ -60,7 +60,7 @@ var _ = It("SCAP12 exact revision15 to16 migration is atomic and legacy captured
 	Expect(e).NotTo(HaveOccurred())
 	_, e = probe.Exec(`DROP INDEX source_capture_reads_capture`)
 	Expect(e).NotTo(HaveOccurred())
-	Expect((&Store{db: probe}).validateTables(ctx, 16)).To(MatchError("missing source capture schema declaration"))
+	Expect((&Store{db: probe}).validateTables(ctx, SchemaRevision)).To(MatchError("missing source capture schema declaration"))
 	Expect(probe.Close()).To(Succeed())
 })
 

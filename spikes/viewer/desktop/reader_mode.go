@@ -217,7 +217,7 @@ func runReader(base, state, dist, port string, appPath string, selfcheck bool, p
 				if json.Unmarshal(envelope.Args, &invocation) == nil && len(invocation.Args) == 1 {
 					invoked := invocation.Args[0]
 					switch invoked.Operation {
-					case "annotationCreate", "annotationPatch", "annotationDelete", "reviewPut", "lifecyclePlan", "lifecyclePlanCommit", "revisitPut", "configurationView", "configurationPlan", "configurationPlanCommit":
+					case "providerStatus", "annotationCreate", "annotationPatch", "annotationDelete", "reviewPut", "lifecyclePlan", "lifecyclePlanCommit", "revisitPut", "configurationView", "configurationPlan", "configurationPlanCommit":
 						var payload map[string]json.RawMessage
 						_ = json.Unmarshal(invoked.Payload, &payload)
 						row := map[string]any{"pid": os.Getpid(), "call_id": envelope.ID, "operation": invoked.Operation, "forwarded": 1, "returned_error": err != nil}

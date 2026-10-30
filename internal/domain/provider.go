@@ -5,19 +5,20 @@ import "encoding/json"
 // ProviderAttempt retains possible external effects independently of the job's
 // current generation. An obsolete result may reconcile its attempt, never apply.
 type ProviderAttempt struct {
-	ID                string `json:"attempt_id"`
-	JobID             string `json:"job_id"`
-	Generation        int64  `json:"attempt_generation"`
-	ApplyGeneration   int64  `json:"application_generation,omitempty"`
-	State             string `json:"state"`
-	Runtime           string `json:"runtime_generation"`
-	MayHaveDispatched bool   `json:"may_have_dispatched"`
-	RequestSHA        string `json:"request_sha256"`
-	TargetSetID       string `json:"target_set_id"`
-	RequestID         string `json:"provider_request_id,omitempty"`
-	SessionID         string `json:"provider_session_id,omitempty"`
-	ResultHash        string `json:"result_sha256,omitempty"`
-	Reason            string `json:"reason,omitempty"`
+	ID                string             `json:"attempt_id"`
+	JobID             string             `json:"job_id"`
+	Generation        int64              `json:"attempt_generation"`
+	ApplyGeneration   int64              `json:"application_generation,omitempty"`
+	State             string             `json:"state"`
+	Runtime           string             `json:"runtime_generation"`
+	MayHaveDispatched bool               `json:"may_have_dispatched"`
+	RequestSHA        string             `json:"request_sha256"`
+	TargetSetID       string             `json:"target_set_id"`
+	RequestID         string             `json:"provider_request_id,omitempty"`
+	SessionID         string             `json:"provider_session_id,omitempty"`
+	ResultHash        string             `json:"result_sha256,omitempty"`
+	Reason            string             `json:"reason,omitempty"`
+	Transport         *ProviderTransport `json:"transport,omitempty"`
 }
 
 // ProviderInput is a captured exact object. ObservedOrigin is set only after
@@ -35,14 +36,15 @@ type ProviderInput struct {
 }
 
 type ProviderScope struct {
-	ProviderID      string          `json:"provider_id,omitempty"`
-	PrincipalID     string          `json:"principal_id"`
-	AuthEpoch       string          `json:"auth_epoch"`
-	CredentialScope CredentialScope `json:"credential_scope"`
-	Target          json.RawMessage `json:"target"`
-	TargetSetID     string          `json:"target_set_id"`
-	RequestSHA      string          `json:"request_sha256"`
-	ReadIDs         []string        `json:"read_ids"`
+	Invocation      *ProviderInvocation `json:"invocation,omitempty"`
+	ProviderID      string              `json:"provider_id,omitempty"`
+	PrincipalID     string              `json:"principal_id"`
+	AuthEpoch       string              `json:"auth_epoch"`
+	CredentialScope CredentialScope     `json:"credential_scope"`
+	Target          json.RawMessage     `json:"target"`
+	TargetSetID     string              `json:"target_set_id"`
+	RequestSHA      string              `json:"request_sha256"`
+	ReadIDs         []string            `json:"read_ids"`
 }
 
 func ProviderJob(kind string) bool { return kind == "generation" || kind == "question" }
@@ -54,4 +56,74 @@ type ProviderAttemptSummary struct {
 	LatestState           string `json:"latest_state,omitempty"`
 	ReconciliationPending int    `json:"reconciliation_pending"`
 	UnknownReason         string `json:"unknown_outcome_reason,omitempty"`
+}
+
+// ProviderInvocation is trusted admission state. Public job projections omit it.
+// Task04/05 own construction from their authenticated generation/question input.
+type ProviderInvocation struct {
+	Prompt string `json:"prompt"`
+	CWD    string `json:"cwd"`
+	Model  string `json:"model,omitempty"`
+	Effort string `json:"effort,omitempty"`
+}
+
+type ProviderDisclosure struct {
+	ReadID   string          `json:"read_id"`
+	Hash     string          `json:"bytes_sha256"`
+	Size     int64           `json:"byte_size"`
+	Source   json.RawMessage `json:"source"`
+	Location json.RawMessage `json:"location"`
+}
+
+type ProviderLookup struct {
+	Source        string `json:"observation_source,omitempty"`
+	ObservedAt    string `json:"observed_at"`
+	BackendState  string `json:"backend_state"`
+	LocalClosed   bool   `json:"local_transport_closed"`
+	CleanupReason string `json:"cleanup_reason,omitempty"`
+}
+
+// ProviderCapabilities contains bounded observed declarations and native runtime counts.
+// It never retains configuration, tool catalogs, server names or credentials.
+type ProviderCapabilities struct {
+	WebSearch     string `json:"configured_web_search"`
+	MCPConnected  *int   `json:"observed_connected_mcp_servers"`
+	MCPTools      *int   `json:"reported_tools_in_connected_mcp_servers"`
+	MCPComplete   bool   `json:"mcp_enumeration_complete"`
+	AppsAvailable *bool  `json:"apps_available"`
+	ObservedAt    string `json:"observed_at"`
+}
+
+type ProviderTransport struct {
+	Capabilities  *ProviderCapabilities `json:"inherited_capabilities,omitempty"`
+	BackendSource string                `json:"backend_observation_source,omitempty"`
+	DriverOutcome string                `json:"driver_outcome,omitempty"`
+	LastLookup    *ProviderLookup       `json:"last_lookup,omitempty"`
+
+	// Outcome retains an existing historical label; new drivers use DriverOutcome.
+	Outcome              string               `json:"normalized_outcome,omitempty"`
+	CleanupState         string               `json:"cleanup_state,omitempty"`
+	CleanupReason        string               `json:"cleanup_reason,omitempty"`
+	Disclosure           []ProviderDisclosure `json:"disclosure"`
+	OrdinaryUsageAllowed *bool                `json:"ordinary_usage_allowed"`
+
+	Provider            string `json:"provider"`
+	Version             string `json:"version"`
+	BinarySHA           string `json:"binary_sha256"`
+	PreparedAt          string `json:"prepared_at"`
+	SetupThread         string `json:"setup_thread_id,omitempty"`
+	AuthMode            string `json:"authentication_mode"`
+	Model               string `json:"model,omitempty"`
+	Effort              string `json:"effort,omitempty"`
+	CWD                 string `json:"cwd"`
+	Approval            string `json:"approval_policy"`
+	Sandbox             string `json:"sandbox"`
+	InstructionCount    int    `json:"instruction_count"`
+	DisabledPluginCount int    `json:"disabled_plugin_count"`
+	FrameSHA            string `json:"frame_sha256,omitempty"`
+	AcceptedAt          string `json:"accepted_at,omitempty"`
+	FinishedAt          string `json:"finished_at,omitempty"`
+	BackendState        string `json:"backend_state,omitempty"`
+	LocalClosed         bool   `json:"local_transport_closed"`
+	AllowanceKnown      bool   `json:"allowance_known"`
 }

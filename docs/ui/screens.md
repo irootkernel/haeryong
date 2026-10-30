@@ -90,6 +90,12 @@ Show source-change observation separately from semantic freshness and include th
 
 ## S07 Settings
 
+Current TASK-006-03 keeps /settings and /settings/general on the existing General
+placeholder, with explicit AI navigation to /settings/ai and the existing
+/connect owner tools. The AI screen also links to General and Connect. General
+does not mount or probe provider status. These navigation controls do not deliver
+the future General/Sessions editors or change owner approval/revoke/logout.
+
 Sections: General/appearance, Connection, Sessions, Projects/source scope, AI provider, Maintenance, Retention, Storage/uploads, Backup status, About/compatibility. Editable operating policy reads the same daemon revision in web and Wails. Provider credentials and native bootstrap secrets are never shown. UI displays unsupported settings as unavailable until implemented.
 
 Backup status shows the last complete checksum-verified set and its time/age, the latest attempt separately, and the last actual trial-restore result/time. No complete set is Not yet created; no trial restore is Not run. A failed latest attempt does not erase the prior usable set. These observations are informational and do not impose a new scheduler or backup gate.

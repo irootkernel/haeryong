@@ -140,12 +140,21 @@ func RetainProviderOrphans(ctx context.Context, path string, input io.Reader, av
 			_ = json.Unmarshal(old["reason"], &oldReason)
 			_ = json.Unmarshal(now["reason"], &newReason)
 			completed := func(state, reason string) bool {
-				return state == "result_saved" || state == "failed" && reason == "result_unavailable"
+				return state == "result_saved" || state == "failed" && reason == "result_unavailable" || state == "outcome_unknown" && reason == "result_retrieval_pending"
 			}
 			bothComplete := completed(oldState, oldReason) && completed(a.State, newReason)
+			completeRank := func(state string) int {
+				if state == "result_saved" {
+					return 3
+				}
+				if state == "failed" {
+					return 2
+				}
+				return 1
+			}
 
 			incoming := now
-			if (oldState == "dispatching" || oldState == "running" || oldState == "outcome_unknown") && providerLocalTerminal(current) || providerExternalTerminal(prior) && !providerExternalTerminal(current) || providerLocalTerminal(prior) && current.State == "prepared" || bothComplete && oldState == "result_saved" {
+			if (oldState == "dispatching" || oldState == "running" || oldState == "outcome_unknown") && providerLocalTerminal(current) || providerExternalTerminal(prior) && !providerExternalTerminal(current) || providerLocalTerminal(prior) && current.State == "prepared" || bothComplete && completeRank(oldState) >= completeRank(a.State) {
 				now = make(map[string]json.RawMessage, len(old))
 				for key, value := range old {
 					now[key] = value
@@ -181,6 +190,18 @@ func RetainProviderOrphans(ctx context.Context, path string, input io.Reader, av
 				} else if len(old[key]) > 0 && !bytes.Equal(old[key], []byte(`""`)) && !bytes.Equal(old[key], []byte("null")) && !bytes.Equal(old[key], now[key]) {
 					return domain.ErrConflict
 				}
+			}
+			transport, conflict, e := mergeProviderTransport(prior.Transport, current.Transport)
+			if e != nil {
+				return e
+			}
+			if transport != nil {
+				now["transport"], _ = json.Marshal(transport)
+			}
+			if conflict {
+				now["conflicting_prior_fact"] = previous
+				now["state"] = json.RawMessage(`"outcome_unknown"`)
+				a.State = "outcome_unknown"
 			}
 			var mergedState string
 			_ = json.Unmarshal(now["state"], &mergedState)
@@ -295,6 +316,11 @@ func RetainProviderOrphans(ctx context.Context, path string, input io.Reader, av
 				return e
 			}
 		}
+		if a.State == "outcome_unknown" && a.Reason == "result_retrieval_pending" && !hasProviderConflict(a.Conflict) {
+			if _, e = tx.ExecContext(ctx, `UPDATE provider_attempts SET state='outcome_unknown',reason='result_retrieval_pending',may_have_dispatched=1 WHERE attempt_id=? AND state IN ('prepared','dispatching','running','outcome_unknown')`, a.ID); e != nil {
+				return e
+			}
+		}
 		if _, e = tx.ExecContext(ctx, `UPDATE provider_attempts SET provider_request_id=CASE WHEN provider_request_id='' THEN ? ELSE provider_request_id END,provider_session_id=CASE WHEN provider_session_id='' THEN ? ELSE provider_session_id END WHERE attempt_id=?`, a.RequestID, a.SessionID, a.ID); e != nil {
 			return e
 		}
@@ -323,7 +349,7 @@ func RetainProviderOrphans(ctx context.Context, path string, input io.Reader, av
 		}
 		// Explicit no-call evidence settles only an older un-crossed local intent.
 		// Unknown/conflicting evidence already dominated the merge above.
-		if len(a.Conflict) == 0 && providerLocalTerminal(a) {
+		if !hasProviderConflict(a.Conflict) && providerLocalTerminal(a) {
 			if _, e = tx.ExecContext(ctx, `UPDATE provider_attempts SET state=?,reason=? WHERE attempt_id=? AND may_have_dispatched=0 AND state='prepared'`, a.State, a.Reason, a.ID); e != nil {
 				return e
 			}
@@ -389,7 +415,7 @@ func RetainProviderOrphans(ctx context.Context, path string, input io.Reader, av
 				return e
 			}
 			pending = pending[1:]
-			if len(fact.Conflict) > 0 {
+			if hasProviderConflict(fact.Conflict) {
 				pending = append(pending, fact.Conflict)
 			}
 			if fact.ResultHash != "" {
@@ -463,24 +489,25 @@ func validateProviderObservation(input domain.ProviderInput) error {
 
 // This inventory is metadata, not a credential or a substitute for missing bytes.
 type providerRestoreFact struct {
-	ID                string                 `json:"attempt_id"`
-	SHA               string                 `json:"request_sha256"`
-	State             string                 `json:"state"`
-	Generation        int64                  `json:"attempt_generation"`
-	RequestID         string                 `json:"provider_request_id"`
-	SessionID         string                 `json:"provider_session_id"`
-	Reason            string                 `json:"reason"`
-	Target            json.RawMessage        `json:"target"`
-	JobID             string                 `json:"job_id"`
-	PrincipalID       string                 `json:"principal_id"`
-	JobState          string                 `json:"job_state"`
-	CancelRequested   bool                   `json:"cancel_requested"`
-	Inputs            []domain.ProviderInput `json:"inputs"`
-	ResultHash        string                 `json:"result_hash"`
-	Conflict          json.RawMessage        `json:"conflicting_prior_fact"`
-	MayHaveDispatched *bool                  `json:"may_have_dispatched,omitempty"`
-	ResolutionJobID   string                 `json:"resolution_job_id"`
-	Resolution        *providerResolution    `json:"resolution"`
+	Transport         *domain.ProviderTransport `json:"transport,omitempty"`
+	ID                string                    `json:"attempt_id"`
+	SHA               string                    `json:"request_sha256"`
+	State             string                    `json:"state"`
+	Generation        int64                     `json:"attempt_generation"`
+	RequestID         string                    `json:"provider_request_id"`
+	SessionID         string                    `json:"provider_session_id"`
+	Reason            string                    `json:"reason"`
+	Target            json.RawMessage           `json:"target"`
+	JobID             string                    `json:"job_id"`
+	PrincipalID       string                    `json:"principal_id"`
+	JobState          string                    `json:"job_state"`
+	CancelRequested   bool                      `json:"cancel_requested"`
+	Inputs            []domain.ProviderInput    `json:"inputs"`
+	ResultHash        string                    `json:"result_hash"`
+	Conflict          json.RawMessage           `json:"conflicting_prior_fact"`
+	MayHaveDispatched *bool                     `json:"may_have_dispatched,omitempty"`
+	ResolutionJobID   string                    `json:"resolution_job_id"`
+	Resolution        *providerResolution       `json:"resolution"`
 }
 
 type providerResolution struct {
@@ -499,7 +526,7 @@ type providerResolution struct {
 
 func providerResolutionSettled(f providerRestoreFact) bool {
 	r := f.Resolution
-	if r == nil || len(f.Conflict) > 0 || !(f.State == "failed" || f.State == "cancelled" || f.State == "result_saved") || r.JobID == "" || r.JobID != f.ResolutionJobID || r.State != "completed" || r.Kind != "provider_reconciliation" || r.PrincipalID == "" || r.PrincipalID != f.PrincipalID || r.RequestSHA != f.SHA || r.AttemptID != f.ID || r.RequestID != f.RequestID || r.SessionID != f.SessionID {
+	if r == nil || hasProviderConflict(f.Conflict) || !(f.State == "failed" || f.State == "cancelled" || f.State == "result_saved") || r.JobID == "" || r.JobID != f.ResolutionJobID || r.State != "completed" || r.Kind != "provider_reconciliation" || r.PrincipalID == "" || r.PrincipalID != f.PrincipalID || r.RequestSHA != f.SHA || r.AttemptID != f.ID || r.RequestID != f.RequestID || r.SessionID != f.SessionID {
 		return false
 	}
 	if r.Outcome != f.State && !(r.Outcome == "failed" && r.Reason == "result_unavailable" && f.State == "result_saved" || r.Outcome == "result_saved" && f.State == "failed" && f.Reason == "result_unavailable") {
@@ -537,7 +564,7 @@ func (t *writeTx) observeRetainedOrphan(id, state, requestID, sessionID, reason 
 	if (fact.State == "dispatching" || fact.State == "running" || fact.State == "outcome_unknown") && state == "cancelled" && reason == "cancel_before_dispatch" {
 		return domain.ErrReconciliation
 	}
-	if len(fact.Conflict) > 0 {
+	if hasProviderConflict(fact.Conflict) {
 		state = "outcome_unknown"
 	}
 	return t.exec(`UPDATE provider_orphans SET state=?,value=json_set(value,'$.state',?,'$.provider_request_id',?,'$.provider_session_id',?,'$.reason',?,'$.may_have_dispatched',json(?)) WHERE attempt_id=?`, state, state, requestID, sessionID, reason, fmt.Sprint(fact.State == "dispatching" || fact.State == "running" || fact.State == "outcome_unknown" || fact.MayHaveDispatched != nil && *fact.MayHaveDispatched), id)
@@ -549,6 +576,9 @@ func providerLocalTerminal(f providerRestoreFact) bool {
 	return f.MayHaveDispatched != nil && !*f.MayHaveDispatched && (f.State == "failed" || f.State == "cancelled" && f.Reason == "cancel_before_dispatch")
 }
 func providerExternalTerminal(f providerRestoreFact) bool {
+	if f.State == "outcome_unknown" && f.Reason == "result_retrieval_pending" {
+		return true
+	}
 	if f.State == "result_saved" {
 		return true
 	}
@@ -577,6 +607,10 @@ func normalizeProviderRestoreFact(raw json.RawMessage) (json.RawMessage, error) 
 // Each node is a complete retained fact with only its chain link removed.
 // Rebuilding a canonical set prevents identical restore replay from appending
 // nested copies forever, while both incoming and prior chains remain evidence.
+func hasProviderConflict(raw json.RawMessage) bool {
+	return len(raw) > 0 && !bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
+}
+
 func providerConflictNodes(raw json.RawMessage) ([]json.RawMessage, error) {
 	out := []json.RawMessage{}
 	for len(raw) > 0 && !bytes.Equal(raw, []byte("null")) {
@@ -597,7 +631,7 @@ func providerConflictNodes(raw json.RawMessage) ([]json.RawMessage, error) {
 }
 
 func preserveProviderConflicts(previous, incoming json.RawMessage, merged map[string]json.RawMessage) (map[string]json.RawMessage, error) {
-	conflict := len(merged["conflicting_prior_fact"]) > 0
+	conflict := hasProviderConflict(merged["conflicting_prior_fact"])
 	all := map[string]json.RawMessage{}
 	for _, raw := range []json.RawMessage{previous, incoming} {
 		if len(raw) == 0 {
@@ -607,7 +641,7 @@ func preserveProviderConflicts(previous, incoming json.RawMessage, merged map[st
 		if e := json.Unmarshal(raw, &fields); e != nil {
 			return nil, e
 		}
-		conflict = conflict || len(fields["conflicting_prior_fact"]) > 0
+		conflict = conflict || hasProviderConflict(fields["conflicting_prior_fact"])
 		nodes, e := providerConflictNodes(raw)
 		if e != nil {
 			return nil, e

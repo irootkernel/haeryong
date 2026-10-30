@@ -1,3 +1,4 @@
+import { ProviderScreen } from "./screens/provider.tsx";
 import { BackupScreen } from "./screens/backup.tsx";
 import {TrashScreen} from "./screens/trash.tsx";
 import { connectionDestination } from "./routes.ts";
@@ -121,6 +122,10 @@ function PlaceholderScreen({ screen }: { screen: ScreenId }) {
         <button type="button" className="primary" onClick={() => navigate("/")}>
           홈으로
         </button>
+        {screen === "settings" && <a className="action-link" href="/settings/ai" onClick={event => {
+          if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          event.preventDefault(); navigate("/settings/ai");
+        }}>AI 제공자</a>}
         <button type="button" onClick={() => navigate("/connect")}>
           연결 화면
         </button>
@@ -245,6 +250,7 @@ export function App({ controller }: { controller: ShellController }) {
             <SourcesScreen key={route.path.split("/")[2]} controller={controller} projectId={route.path.split("/")[2]!} />
           ) : screen === "settings" && route.section === "projects" ? (
             <SourceSettings key={new URLSearchParams(location.search).get("project")} controller={controller} projectId={new URLSearchParams(location.search).get("project")!} />
+          ) : screen === "settings" && route.section === "ai" ? (<ProviderScreen controller={controller} />
           ) : screen === "settings" && route.section === "backup" ? (<BackupScreen controller={controller} />
 ) : screen === "settings" && route.section === "storage" ? (
             <StorageScreen controller={controller} />

@@ -316,7 +316,8 @@ var _ = It("PA39 result persistence barriers isolate cancellation reassignment a
 		p := work.ProviderCoordinator{Store: s, Driver: driver, Bytes: boundary, Apply: func(app.WriteTx, domain.ProviderAttempt) error { applied++; return nil }}
 		e := p.Process(ctx, a.JobID)
 		if mode == "permission" {
-			Expect(e).To(MatchError(domain.ErrDenied))
+			Expect(e).NotTo(HaveOccurred())
+			Expect(p.StopProviders()).To(Succeed())
 		} else if mode == "reassign" {
 			Expect(e).To(MatchError(domain.ErrStaleWorker))
 		} else {
@@ -975,8 +976,8 @@ var _ = It("PA21 output persistence failure retains accepted identities and paus
 		if e != nil {
 			return e
 		}
-		Expect(v[0].State).To(Equal("failed"))
-		Expect(v[0].Reason).To(Equal("result_unavailable"))
+		Expect(v[0].State).To(Equal("outcome_unknown"))
+		Expect(v[0].Reason).To(Equal("result_retrieval_pending"))
 		Expect(v[0].RequestID).To(Equal("observed-request"))
 		Expect(v[0].ResultHash).To(BeEmpty())
 		_, e = tx.ResumeProviderJob(j.ID, j.AttemptGeneration, "continue")

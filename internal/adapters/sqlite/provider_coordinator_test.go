@@ -15,6 +15,8 @@ import (
 )
 
 type providerFake struct {
+	preparationError     error
+	preparationReason    string
 	before               func()
 	calls                int
 	failure              bool
@@ -35,6 +37,9 @@ type providerFake struct {
 func (d *providerFake) Execute(ctx context.Context, a domain.ProviderAttempt, inputs []domain.ProviderInput, send func() error, observe func(work.ProviderProgress) error) (work.ProviderOutcome, error) {
 	if d.before != nil {
 		d.before()
+	}
+	if d.preparationError != nil {
+		return work.ProviderOutcome{Reason: d.preparationReason}, d.preparationError
 	}
 	if e := send(); e != nil {
 		return work.ProviderOutcome{}, e

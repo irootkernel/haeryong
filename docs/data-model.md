@@ -79,8 +79,8 @@ The logical `provider_attempts` inventory below includes later adapter metadata.
 TASK-006-01 persists attempt/generation/state, exact request/input identities,
 actual input observation times, observed request/session IDs, result hashes and
 ownership. Provider identity, attempt lifecycle timestamps, disclosure-inventory
-integration and allowance observations remain with TASK-006-03's production
-adapter and its required schema migration before enabling that capability.
+integration and allowance observations are TASK-006-03 responsibilities,
+implemented by the revision-17 attachment below before enabling that capability.
 Unknown allowance is not zero; no missing native input observation is inferred.
 
 **Source:** Revision 4 storage/state separation. **Proposal:** logical schema v1, documentation baseline 1.6.1, clarified by [shared wire registry](contracts/schema-registry.md). [TASK-002-02](testing/storage-foundation.md) implements and exercises the current storage/local-operation subset. TASK-002-03 adds schema revision 3 owner/session/pairing records and a verified DB-plus-required-object pre-migration recovery set; current auth evidence is [separate](testing/authenticated-sessions.md). TASK-002-04 adds schema revision 4 upload entries, import intents and internal metadata preparation/index ownership, with [atomic-import evidence](testing/atomic-import.md). Complete generated metadata remains in an immutable manifest object; current version rows keep its hash and a compact summary, while supplied metadata retains its separate immutable identity. This logical model also lists future feature-owned tables; it does not assert that all of them exist.
@@ -568,3 +568,71 @@ hash-only captured_reads are preserved without invented content objects,
 job_inputs, managed bindings or input observations. Backup compatibility retains
 the exact schema/fingerprint requirement; an older software backup is not
 silently relabelled as schema 16. See [managed-source evidence](testing/managed-sources.md).
+
+## Provider transport audit (revision 17)
+
+The existing provider_attempts reason value result_retrieval_pending means a
+native completed turn was observed but its complete authorized public output is
+not yet saved because local retrieval/persistence was interrupted. State remains
+outcome_unknown; accepted IDs and this primary fact commit independently of the
+secondary transport/lookup audit. No result_hash or Body is fabricated. An
+inconclusive later lookup cannot erase it. Compatible copy/restore preserves it
+in either order, a saved result is stronger, definitive output refusal remains
+failed/result_unavailable, and genuine native contradictions remain explicit.
+This uses existing fields and preserves revision 17 DDL and migration checksums.
+
+Migration 17 adds provider_transport(attempt_id,value) as a one-to-one typed JSON
+audit attachment to provider_attempts, not another request ledger or queue.
+Migrations 1–16 retain their bytes/checksums. Existing attempts receive no invented
+provider identities, timestamps, input observations or transport facts.
+
+The attachment retains verified provider/version/binary hash, setup-thread ID,
+actual model/effort/CWD/approval/sandbox, inherited instruction and disabled-plugin
+counts, exact disclosure identities/locations/hashes/sizes, and nullable ordinary
+usage permission with known/unknown disclosure. frame_sha256 identifies the exact
+serialized turn/start **params** bytes; RPC envelope/correlation is excluded.
+prepared_at, accepted_at and finished_at are local observed lifecycle times,
+not invented provider timestamps. backend_state uses native TurnStatus;
+backend_observation_source distinguishes live_event from history.
+New driver_outcome describes the driver result (result_ready before persistence),
+independent from the durable attempt state. Existing normalized_outcome is
+retained as historical typed audit, never upgraded into new evidence. local_transport_closed/cleanup_state report only
+verified owned local drain. last_lookup separately records a later native state,
+local observation time, observation_source and that lookup client's cleanup result. History interrupted is not reliable cessation.
+An optional inherited_capabilities snapshot records configured web-search mode,
+observed connected MCP server/tool counts with enumeration completeness, nullable
+app availability and local observation time; failed/incomplete telemetry stays
+unknown. It never retains names, descriptions, credentials or raw configuration.
+
+Identity/disclosure facts cannot be rewritten after capture; lifecycle fields
+advance without backdating actual input observation. Public operational jobs
+omit the attachment and private invocation. Restore outstanding inventory and
+orphan/conflict retention carry this audit with its existing attempt facts,
+including metadata-only cases where source/result bytes are absent. A status
+lookup never acquires source/result permission merely because the audit exists.
+Strict declaration validation refuses missing/altered transport DDL. Atomic
+migration/recovery and the existing protected-restore review barrier remain the
+rollback boundary. See [provider adapter verification](testing/provider-adapter.md).
+
+
+Protected restore merges compatible transport observations independently of
+attempt-state precedence: absent core observations cannot dominate actual later
+observations, reliable completed/failed facts dominate uncertain history views,
+and compatible newer lookups survive both restore directions. Genuine identity
+or terminal contradictions retain their original conflict facts. An absent/null
+conflict link is not conflict evidence. The pre-send capability snapshot is not
+refreshed by a later lookup, and replay is idempotent. No migration or invented
+legacy telemetry is required for these additive typed audit fields.
+
+
+The existing resource_revisions table also holds one typed
+provider_reconciliation_authority attachment per admitted finite job campaign.
+It records the current owner auth_epoch at explicit Resume/status admission in
+the same transaction as its intents. The immutable producing scope/epoch stays
+unchanged. Current executing intent/runtime plus this current-epoch grant may
+account an old effect after explicit protected-recovery release; it grants no
+source/output access. A missing legacy attachment does not invent restore
+authority; an already matching producing epoch retains its existing allowance.
+The grant survives ordinary restart with the finite intents, while a changed
+auth epoch revokes it. Completing the last intent or abandoning the campaign
+removes it atomically. No schema migration or new retry ledger is introduced.

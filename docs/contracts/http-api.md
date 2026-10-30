@@ -848,3 +848,17 @@ restart settles interrupted unpublished capture as interrupted_before_commit,
 retaining its original selection and receipt. These failures cannot be retried
 automatically under the original operation ID. Metadata view and both diff sides
 use the registry's same current-availability projection without reading bytes.
+
+## Provider transport status (TASK-006-03)
+
+GET/HEAD /api/v1/providers returns the owner-only credential-free
+[provider status](schema-registry.md#provider-status-addition-task-006-03).
+The service authenticates before native preflight and rechecks the current
+owner session before response. It reads native account/effective mode/catalog/
+allowance without inference, source disclosure, login/logout or configuration
+changes. HEAD returns the same status/headers without a body. Existing Reader,
+file and personal Review routes do not depend on provider availability.
+
+/api/v1/status distinguishes installed transport from as-yet unobserved native
+availability and points to /providers. Generation/question admission remains
+unavailable; transport support does not enable an unimplemented paid action.

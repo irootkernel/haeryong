@@ -33,9 +33,20 @@ type ProviderProgress struct {
 	Observed             []domain.ProviderInput
 }
 type ProviderOutcome struct {
+	// LocalClosed is an explicit producer observation: owned transport was
+	// drained, or no owned transport was created. Its zero value is unknown.
+	// It carries no backend, source-delivery or complete native audit identity.
+	LocalClosed        bool
+	LocalCleanupReason string
+	Transport          *domain.ProviderTransport
+	// CleanupError is independent owned-process uncertainty, even before verified
+	// setup permits a complete typed transport audit. It contains no native prose.
+	CleanupError                 error
+	Lookup                       *domain.ProviderLookup
 	State                        string
 	RequestID, SessionID, Reason string
-	// CompletionObserved requires explicit verified backend completion, never EOF.
+	// CompletionObserved means a successful native completed turn, never EOF.
+	// Explicit failed/interrupted outcomes use State without this result flag.
 	CompletionObserved bool
 	Body               io.ReadCloser
 	Observed           []domain.ProviderInput
@@ -47,15 +58,19 @@ type ProviderBytes interface {
 // ProviderCoordinator uses the existing writer and job ledger. Nil transport
 // reports unavailable, never substitutes a mock or executes a configured shell.
 type ProviderCoordinator struct {
-	Store  app.Store
-	Bytes  ProviderBytes
-	Driver ProviderDriver
-	Apply  func(app.WriteTx, domain.ProviderAttempt) error
-	active atomic.Pointer[providerPhase]
+	Store             app.Store
+	Bytes             ProviderBytes
+	Driver            ProviderDriver
+	Apply             func(app.WriteTx, domain.ProviderAttempt) error
+	active            atomic.Pointer[providerPhase]
+	accountingFailure atomic.Pointer[providerAccountingError]
+	accountingUnsafe  atomic.Pointer[providerAccountingError]
 }
 
 func (p *ProviderCoordinator) Process(ctx context.Context, id string) error {
-	return p.process(ctx, id, nil)
+	e := p.process(ctx, id, nil)
+	p.rememberAccountingFailure(e)
+	return e
 }
 
 func (p *ProviderCoordinator) process(ctx context.Context, id string, phase *providerPhase) error {
@@ -63,6 +78,7 @@ func (p *ProviderCoordinator) process(ctx context.Context, id string, phase *pro
 	var inputs []domain.ProviderInput
 	var j domain.Job
 	var reconcile bool
+	var ownerRuntime string
 	var normalizing bool
 	var cached *domain.ProviderAttempt
 	var cachedObjects []domain.Object
@@ -106,6 +122,11 @@ func (p *ProviderCoordinator) process(ctx context.Context, id string, phase *pro
 				return nil
 			}
 			reconcile = true
+			library, e := tx.Library()
+			if e != nil {
+				return e
+			}
+			ownerRuntime = library.RuntimeGeneration
 			// Reconciliation is owned by this authorized carrier job.
 			originalJob := a.JobID
 			a.JobID = id
@@ -190,6 +211,7 @@ func (p *ProviderCoordinator) process(ctx context.Context, id string, phase *pro
 		if e != nil {
 			return e
 		}
+		ownerRuntime = l.RuntimeGeneration
 		a = domain.ProviderAttempt{ID: attemptID, JobID: id, Generation: j.AttemptGeneration, State: "prepared", Runtime: l.RuntimeGeneration, TargetSetID: scope.TargetSetID, RequestSHA: scope.RequestSHA}
 		// Captures identify exact objects; constructing these rows does not mark
 		// input observed. The dispatching adapter supplies that separate evidence.
@@ -222,6 +244,7 @@ func (p *ProviderCoordinator) process(ctx context.Context, id string, phase *pro
 	}
 	if phase != nil {
 		if reconcile {
+			phase.runtime = ownerRuntime
 			phase.reconcileAttempt = a.ID
 		} else {
 			phase.generation = a.Generation
@@ -243,6 +266,7 @@ func (p *ProviderCoordinator) process(ctx context.Context, id string, phase *pro
 		defer func() { cancel(); close(watchDone); <-watchStopped }()
 		go func() {
 			defer close(watchStopped)
+			registrationDeadline := time.Time{}
 			ticker := time.NewTicker(50 * time.Millisecond)
 			defer ticker.Stop()
 			for {
@@ -254,8 +278,20 @@ func (p *ProviderCoordinator) process(ctx context.Context, id string, phase *pro
 				case <-ticker.C:
 					current, err := p.Store.Job(callCtx, id)
 					if err == nil && (current.CancelRequested || current.AttemptGeneration != a.Generation) {
-						_ = p.Driver.Cancel(callCtx, a)
-						return
+						if !dispatched.Load() {
+							cancel()
+							return
+						}
+						if registrationDeadline.IsZero() {
+							registrationDeadline = time.Now().Add(5 * time.Second)
+						}
+						if !time.Now().Before(registrationDeadline) {
+							cancel()
+							return
+						}
+						if err := p.Driver.Cancel(callCtx, a); !errors.Is(err, domain.ErrReconciliation) {
+							return
+						}
 					}
 				}
 			}
@@ -276,124 +312,9 @@ func (p *ProviderCoordinator) process(ctx context.Context, id string, phase *pro
 			return p.observeProgress(context.WithoutCancel(ctx), a, progress)
 		})
 	}
-	if out.Body != nil {
-		defer out.Body.Close()
-	}
-	if !reconcile && !dispatched.Load() {
-		return p.Store.Write(context.WithoutCancel(ctx), func(tx app.WriteTx) error {
-			current, e := tx.Job(id)
-			if e != nil {
-				return e
-			}
-			if current.CancelRequested {
-				return tx.ConfirmStop(id, current.AttemptGeneration)
-			}
-			return tx.PauseProviderJob(id, "dispatch_not_authorized")
-		})
-	}
-	if len(out.Observed) > 0 || out.RequestID != "" || out.SessionID != "" {
-		if err := p.observeProgress(context.WithoutCancel(ctx), a, ProviderProgress{RequestID: out.RequestID, SessionID: out.SessionID, Observed: out.Observed}); err != nil {
-			return err
-		}
-	}
-
-	if e != nil {
-		out.State = "outcome_unknown"
-		out.Reason = "transport_unknown"
-	}
-	if out.CompletionObserved && outputAllowed && out.State == "result_saved" && out.Body != nil && p.Bytes != nil {
-		_, e = p.Bytes.Put(ctx, out.Body, func(tx app.WriteTx, o domain.Object) error {
-			return tx.SaveProviderResult(a.ID, o)
-		})
-		if e != nil {
-			return errors.Join(e, p.recordUnavailable(context.WithoutCancel(ctx), a, out.CompletionObserved, reconcile, j.AttemptGeneration))
-		}
-		return p.Store.Write(ctx, func(tx app.WriteTx) error {
-			current, e := tx.Job(id)
-			if e != nil {
-				return e
-			}
-			if reconcile {
-				if e = tx.CompleteProviderReconciliation(id, a.ID); e != nil {
-					return e
-				}
-				current, e = tx.Job(id)
-				if e != nil {
-					return e
-				}
-			}
-			if terminalProviderJob(current.State) {
-				return nil
-			}
-			if current.CancelRequested {
-				return tx.ConfirmStop(id, current.AttemptGeneration)
-			}
-			if reconcile {
-				return tx.PauseProviderJob(id, "saved_result_requires_continuation")
-			}
-			if current.AttemptGeneration != a.Generation {
-				return domain.ErrStaleWorker
-			}
-			return tx.ApplyProviderResult(a.ID, func(tx app.WriteTx) error {
-				if p.Apply != nil {
-					return p.Apply(tx, a)
-				}
-				return nil
-			})
-		})
-	}
-	if out.CompletionObserved {
-		out.State, out.Reason = "failed", "result_unavailable"
-	}
-	if out.State != "failed" && out.State != "cancelled" {
-		out.State = "outcome_unknown"
-		if out.Reason == "" {
-			out.Reason = "transport_unknown"
-		}
-	}
-	return p.Store.Write(context.WithoutCancel(ctx), func(tx app.WriteTx) error {
-		if e := tx.ObserveProviderAttempt(a.ID, out.State, out.RequestID, out.SessionID, out.Reason); e != nil {
-			return e
-		}
-		current, e := tx.Job(id)
-		if e != nil {
-			return e
-		}
-		if reconcile {
-			if e = tx.CompleteProviderReconciliation(id, a.ID); e != nil {
-				return e
-			}
-			current, e = tx.Job(id)
-			if e != nil {
-				return e
-			}
-		}
-		if terminalProviderJob(current.State) {
-			return nil
-		}
-		if current.CancelRequested {
-			return tx.ConfirmStop(id, current.AttemptGeneration)
-		}
-		expected := a.Generation
-		if reconcile {
-			expected = j.AttemptGeneration
-		}
-		if current.AttemptGeneration != expected {
-			return domain.ErrStaleWorker
-		}
-		if reconcile {
-			if _, e := tx.NextProviderReconciliation(id); e == nil {
-				return nil
-			} else if !errors.Is(e, domain.ErrNotFound) {
-				return e
-			}
-		}
-		if current.ProviderAttempts != nil && current.ProviderAttempts.Unknown > 0 {
-			return tx.PauseProviderJob(id, "outcome_unknown")
-		}
-		return tx.PauseProviderJob(id, out.State)
-	})
+	return p.settleProvider(ctx, a, j, out, e, reconcile, outputAllowed, dispatched.Load(), ownerRuntime, phase)
 }
+
 func (p *ProviderCoordinator) pause(ctx context.Context, id, reason string) error {
 	return p.Store.Write(ctx, func(tx app.WriteTx) error { return tx.PauseProviderJob(id, reason) })
 }
@@ -419,44 +340,6 @@ func (p *ProviderCoordinator) observeProgress(ctx context.Context, a domain.Prov
 		return tx.ObserveProviderAttempt(a.ID, state, progress.RequestID, progress.SessionID, reason)
 	})
 }
-func (p *ProviderCoordinator) recordUnavailable(ctx context.Context, a domain.ProviderAttempt, completed, reconcile bool, generation int64) error {
-	state, reason := "outcome_unknown", "transport_unknown"
-	if completed {
-		state, reason = "failed", "result_unavailable"
-	}
-	return p.Store.Write(ctx, func(tx app.WriteTx) error {
-		if e := tx.ObserveProviderAttempt(a.ID, state, "", "", reason); e != nil {
-			return e
-		}
-		current, e := tx.Job(a.JobID)
-		if e != nil {
-			return e
-		}
-		if reconcile {
-			if e = tx.CompleteProviderReconciliation(a.JobID, a.ID); e != nil {
-				return e
-			}
-			current, e = tx.Job(a.JobID)
-			if e != nil {
-				return e
-			}
-		}
-		if terminalProviderJob(current.State) {
-			return nil
-		}
-		if current.CancelRequested {
-			return tx.ConfirmStop(current.ID, current.AttemptGeneration)
-		}
-		if current.AttemptGeneration != generation {
-			return domain.ErrStaleWorker
-		}
-		return tx.PauseProviderJob(current.ID, reason)
-	})
-}
-
-// Continue a previously authorized exact result, never fall through to Execute.
-// The foundation Read port checks actual bytes and owns a separate read pin;
-// no byte/provider wait occurs while the application writer is held.
 func (p *ProviderCoordinator) continueSaved(ctx context.Context, expected domain.Job, saved domain.ProviderAttempt, objects []domain.Object) error {
 	if e := ctx.Err(); e != nil {
 		return e

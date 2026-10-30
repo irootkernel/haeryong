@@ -167,3 +167,9 @@ func ProviderSavedObjects(tx WriteTx, a domain.ProviderAttempt) ([]domain.Object
 	}
 	return append(objects, result), nil
 }
+
+// GuardProviderReconciliation is used only after the storage adapter verifies
+// the current executing reconciliation intent. It grants no dispatch authority.
+func GuardProviderReconciliation(tx WriteTx, j domain.Job, a domain.ProviderAttempt) error {
+	return guardProviderAuthority(tx, j, a)
+}

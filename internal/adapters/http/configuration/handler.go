@@ -104,7 +104,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					return err
 				}
 			}
-			return json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"library_id": health.Library.ID, "schema_revision": health.Library.SchemaRevision, "runtime_generation": health.Library.RuntimeGeneration, "storage": map[string]any{"state": "ready", "journal": health.Journal, "foreign_keys": health.ForeignKeys, "staging_bytes": staging.Bytes, "pending_upload_count": staging.PendingUploads, "pending_uploads_url": staging.PendingUploadsURL}, "source": source, "config_revision": view.ConfigRevision, "listener": map[string]any{"endpoint": h.Core.RuntimeEndpoint, "ephemeral_override": h.Core.ListenerOverride, "configured": configured.Network.Listener}, "provider": map[string]any{"available": false, "reason": "feature_not_ready"}, "scheduler": map[string]any{"available": false, "reason": "feature_not_ready"}, "backup": backup}, "request_id": requestID})
+			provider := map[string]any{"available": false, "reason": "feature_not_ready"}
+			if h.Core.ProviderTransportAvailable {
+				provider = map[string]any{"transport_available": true, "available": nil, "reason": "status_not_observed", "status_url": "/api/v1/providers", "generation_available": false, "question_available": false}
+			}
+			return json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"library_id": health.Library.ID, "schema_revision": health.Library.SchemaRevision, "runtime_generation": health.Library.RuntimeGeneration, "storage": map[string]any{"state": "ready", "journal": health.Journal, "foreign_keys": health.ForeignKeys, "staging_bytes": staging.Bytes, "pending_upload_count": staging.PendingUploads, "pending_uploads_url": staging.PendingUploadsURL}, "source": source, "config_revision": view.ConfigRevision, "listener": map[string]any{"endpoint": h.Core.RuntimeEndpoint, "ephemeral_override": h.Core.ListenerOverride, "configured": configured.Network.Listener}, "provider": provider, "scheduler": map[string]any{"available": false, "reason": "feature_not_ready"}, "backup": backup}, "request_id": requestID})
 		})
 		if e != nil {
 			fail(e)

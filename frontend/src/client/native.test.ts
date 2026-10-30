@@ -460,3 +460,20 @@ test("native verification and observation reconcile accepted and uncertain write
     assert.deepEqual(fake.calls.at(-1), ["operation", { operation_id: "key" }]);
   }
 });
+
+test("provider status uses a closed named operation without copying account credentials", async () => {
+  const fake = port();
+  const status = { provider_id: "codex", state: "auth_required", authentication_mode: "unknown", ordinary_usage_allowed: null, models: [], read_only: false, lookup_supported: false, cancellation_supported: false, catalog_proves_access: false };
+  fake.handlers.set("providerStatus", () => status);
+  const client = new NativeHaeryongClient(fake as unknown as NativePort);
+  assert.deepEqual(await client.providerStatus(), status);
+  assert.deepEqual(fake.calls, [["providerStatus", {}]]);
+});
+
+
+test("native provider status refuses unknown authority state and preserves an explicit false allowance",async()=>{
+ const fake=port();const client=new NativeHaeryongClient(fake as unknown as NativePort);
+ fake.handlers.set("providerStatus",()=>({state:"paused",ordinary_usage_allowed:false}));assert.equal((await client.providerStatus()).ordinary_usage_allowed,false);
+ fake.handlers.set("providerStatus",()=>({state:"future_state",ordinary_usage_allowed:true}));await assert.rejects(client.providerStatus(),/지원되는 제공자 상태/);
+ fake.handlers.set("providerStatus",()=>({state:"ready"}));await assert.rejects(client.providerStatus(),/지원되는 제공자 상태/);
+});

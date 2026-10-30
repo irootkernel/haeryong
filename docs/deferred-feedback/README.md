@@ -65,3 +65,25 @@ The Reader treats every 404 from the supplied-metadata read as absent metadata
 another reason, such as lost access to the version, therefore shows as absent.
 The Versions view accepts only the `metadata_not_supplied` reason as absence;
 align the Reader so other 404s show its error state.
+
+
+### DF-07 Provider executable path replacement
+
+The personal trusted-host adapter verifies the selected installed Codex binary
+version/hash before use, but does not atomically bind that pathname across an
+owner-controlled replacement between verification and spawn. Existing supported
+pin checks remain required. If mutable upgrade/replacement reentry becomes a
+supported deployment feature, or an actual concurrent replacement is observed,
+evaluate a proportionate platform-supported mitigation then. No installation/copy supervisor, OS jail or atomic containment
+claim is part of this Task. This optional R1 Low hardening does not defer the
+current effective-route, permission, identity or output correctness fixes.
+
+### DF-08 Repeated provider status probes
+
+Independent status reads currently perform their own bounded host-local probe.
+Coalescing concurrent equivalent status reads may reduce local process work when
+future public consumers create repeated demand. Any future implementation must
+preserve current owner/epoch/runtime/CWD authority, unknown quota semantics and
+freshness, and must not cache account entitlement. This independent refinement
+adds no cache or new scheduler now; M07's separate scheduling/coalescing/budget
+obligations retain their ordered EPIC-009 owners (TASK-009-02/03).

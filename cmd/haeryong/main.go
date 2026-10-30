@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"haeryong.local/haeryong/internal/adapters/ai/codex"
 	"haeryong.local/haeryong/internal/application/work"
+	"haeryong.local/haeryong/internal/domain"
 	"io"
 	"net"
 	"net/http"
@@ -92,7 +94,7 @@ func parse(args []string) (options, error) {
 			continue
 		}
 		switch key {
-		case "--capture", "--other", "--read", "--decision", "--expected-attempt-generation", "--destination", "--metadata-destination", "--records", "--choices", "--index", "--expected-revision", "--flag", "--action", "--if-match", "--if-none-match", "--profile", "--data-dir", "--volume-root", "--port", "--endpoint", "--credential", "--client-dir", "--operation-id", "--project", "--document", "--base-version", "--metadata", "--version", "--path", "--output", "--input", "--state", "--cursor", "--limit", "--directory", "--kind", "--file", "--format", "--expected-config-revision", "--scope", "--name", "--evidence", "--expected-sha256", "--expected-excerpt-file", "--source-id", "--root-path", "--repo-id", "--retention-mode", "--provider-ids", "--plan-id", "--page", "--region", "--coverage-set", "--reference-id", "--query", "--lifecycle", "--versions":
+		case "--provider-binary", "--capture", "--other", "--read", "--decision", "--expected-attempt-generation", "--destination", "--metadata-destination", "--records", "--choices", "--index", "--expected-revision", "--flag", "--action", "--if-match", "--if-none-match", "--profile", "--data-dir", "--volume-root", "--port", "--endpoint", "--credential", "--client-dir", "--operation-id", "--project", "--document", "--base-version", "--metadata", "--version", "--path", "--output", "--input", "--state", "--cursor", "--limit", "--directory", "--kind", "--file", "--format", "--expected-config-revision", "--scope", "--name", "--evidence", "--expected-sha256", "--expected-excerpt-file", "--source-id", "--root-path", "--repo-id", "--retention-mode", "--provider-ids", "--plan-id", "--page", "--region", "--coverage-set", "--reference-id", "--query", "--lifecycle", "--versions":
 		default:
 			return opt, invalid("unsupported flag: " + key)
 		}
@@ -139,6 +141,10 @@ func parse(args []string) (options, error) {
 
 func execute(ctx context.Context, opt options, emit func(any) error) error {
 	command := strings.Join(opt.command, " ")
+	selectedBinary, e := providerBinarySelection(opt)
+	if e != nil {
+		return e
+	}
 	if opt.endpoint != "" && (command == "init" || command == "daemon run") {
 		return invalid("initialization and daemon startup require local profile settings")
 	}
@@ -176,6 +182,7 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 		}
 		return emit(map[string]string{"library_id": p.LibraryID, "profile_id": p.ProfileID, "profile": p.Name, "data_dir": p.DataDir})
 	case "daemon run":
+		var historicalDiagnostic error
 		for {
 			var outputErr error
 			store := foundation.New(nil)
@@ -188,26 +195,33 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 			sourceCore := appsource.New(store, core, store, gitreader.New())
 			profile, profileErr := service.Load(opt.selection)
 			if profileErr != nil {
-				return profileErr
+				return errors.Join(historicalDiagnostic, profileErr)
 			}
 			defaultClient, profileErr := clientDirectory(options{selection: opt.selection})
 			if profileErr != nil {
-				return profileErr
+				return errors.Join(historicalDiagnostic, profileErr)
 			}
 			profilesRoot, profileErr := service.DefaultProfilesRoot()
 			if profileErr != nil {
-				return profileErr
+				return errors.Join(historicalDiagnostic, profileErr)
 			}
 			sourceCore.Files = sourcefiles.ManagedFiles(profile.DataDir, profilesRoot, filepath.Join(defaultClient, "credential.json"))
 			var managementOrigin string
 			var externalOrigin string
 			renderFacade := newRenderFacade(store, core, store, func() string { return managementOrigin })
+			providerDriver := codex.New(store, store, filepath.Join(profile.DataDir, "storage", "provider-spool"))
+			providerDriver.Binary = selectedBinary
+			configurationCore.ProviderTransportAvailable = true
+			queries.ProviderStatus = func(ctx context.Context) domain.ProviderStatus { return providerDriver.Status(ctx, profile.DataDir) }
 			runCtx, cancelRun := context.WithCancel(ctx)
 			sourceCore.Lifetime = runCtx
 			var restart atomic.Bool
 			configurationCore.Restart = func() { restart.Store(true); cancelRun() }
 			endpoint := &localcontrol.HTTP{Auth: core, Copies: copyCore, BeforeDrain: cancelRun, Product: func(origin string) (http.Handler, error) {
 				// Resolve open staged checks left by a crash before serving.
+				if err := providerDriver.RecoverSpool(); err != nil {
+					return nil, err
+				}
 				if err := sourceCore.Recover(runCtx); err != nil {
 					return nil, err
 				}
@@ -221,7 +235,7 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 				externalOrigin = configuredExternalOrigin(configuration.Value)
 				return productHandler(core, origin, configuration.Value, productRoutes{httpsource.New(sourceCore), httpimports.New(imports), httpv1.New(queries, renderFacade, func() (string, string) { return managementOrigin, externalOrigin }), httpconfig.New(configurationCore)})
 			}}
-			runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: store, Endpoint: endpoint, Work: (work.Dispatcher{Provider: &work.ProviderCoordinator{Store: store, Bytes: store}, Copies: copyCore, Purge: &work.Purger{Store: store, Bytes: store}, Store: store, Imports: imports, Derived: work.NewMaintenance(store, store)}).Run, CloseDependents: renderFacade.Shutdown, ListenerPort: func(ctx context.Context) (int, error) {
+			runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: store, Endpoint: endpoint, Work: (work.Dispatcher{Provider: &work.ProviderCoordinator{Store: store, Bytes: store, Driver: providerDriver}, Copies: copyCore, Purge: &work.Purger{Store: store, Bytes: store}, Store: store, Imports: imports, Derived: work.NewMaintenance(store, store)}).Run, CloseDependents: renderFacade.Shutdown, ListenerPort: func(ctx context.Context) (int, error) {
 				configuration, e := store.Configuration(ctx)
 				if e != nil {
 					return 0, e
@@ -250,11 +264,9 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 			}}
 			err := runner.Run(runCtx, func(id service.Identity) { outputErr = emit(id) })
 			cancelRun()
-			if err != nil || outputErr != nil {
-				return errors.Join(err, outputErr)
-			}
-			if !restart.Load() || ctx.Err() != nil {
-				return nil
+			again, final := daemonRestartResult(ctx, restart.Load(), err, outputErr, &historicalDiagnostic)
+			if !again {
+				return final
 			}
 		}
 	case "service status", "status", "doctor", "service stop":
@@ -290,6 +302,23 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 	default:
 		return commandError{5, errors.New("command capability is not implemented: " + command)}
 	}
+}
+
+// The daemon loop uses this decision only after Runner has joined all owners.
+func daemonRestartResult(ctx context.Context, requested bool, runErr, outputErr error, historical *error) (bool, error) {
+	if requested && ctx.Err() == nil && outputErr == nil && work.ProviderRestartDiagnostics(runErr) {
+		if *historical == nil {
+			*historical = runErr
+		}
+		return true, nil
+	}
+	if runErr != nil || outputErr != nil {
+		return false, errors.Join(*historical, runErr, outputErr)
+	}
+	if !requested || ctx.Err() != nil {
+		return false, *historical
+	}
+	return true, nil
 }
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -354,4 +383,18 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	os.Exit(run(ctx, os.Args[1:], os.Stdout, os.Stderr))
+}
+
+func providerBinarySelection(opt options) (string, error) {
+	binary := opt.flags["provider-binary"]
+	if binary == "" {
+		return "", nil
+	}
+	if strings.Join(opt.command, " ") != "daemon run" {
+		return "", invalid("--provider-binary belongs to local daemon run")
+	}
+	if !filepath.IsAbs(binary) {
+		return "", invalid("--provider-binary requires an absolute path")
+	}
+	return filepath.Clean(binary), nil
 }

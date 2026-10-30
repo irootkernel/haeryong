@@ -219,3 +219,30 @@ read cancellation, supersession, scope retirement and unrelated typing/resize.
 The standalone Wails owner campaign completed its selected saved-context,
 consent and recovery cases. Broader native qualification retains its stage
 boundaries; see [owner records](../docs/testing/owner-records.md).
+
+## Provider status
+
+TASK-006-03 adds Settings/AI at /settings/ai. Both /settings and
+/settings/general retain the existing General placeholder with an explicit AI
+link and the existing /connect owner-tools action. AI also links back to General
+and Connect. General entry does not request provider status; that operation is
+limited to explicit AI entry/refresh. General/Sessions editing remains future
+work.
+HTTP and the closed native providerStatus operation share its credential-free
+status. Keyboard/touch refresh, unknown allowance, auth/quota failures and
+provider-independent Reader/Review behavior are covered by the provider-only
+browser campaign. features.questions remains false, so installing the transport
+cannot enable the future Library question action. See
+[the implementation record](../docs/testing/provider-adapter.md).
+
+
+The provider correction uses the closed ProviderState union in both transports.
+Unknown states/missing usage allowance fail safely; nullable usage is unknown,
+and explicit false remains unavailable rather than becoming zero allowance.
+Bounded reason/authentication labels distinguish paused route/mode refusal from
+confirmed exhaustion. Refresh retains focus with aria-disabled/busy suppression,
+a stable polite region announces state, and Settings links reuse SPA navigation
+and existing 44 px targets. The browser observer correlates each expected exact
+supplied-metadata GET 404 to one device/request/response; unrelated query/method,
+status, reason and duplicate reuse controls fail. See
+[correction evidence](../docs/testing/provider-corrections.md).
