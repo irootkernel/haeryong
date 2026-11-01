@@ -26,31 +26,11 @@ type Eligibility struct {
 // documents are never visible; archived documents and projects remain
 // eligible (project archival is categorization only).
 func Check(tx app.WriteTx, record domain.Session, versionID string) (Eligibility, error) {
-	v, err := tx.PublishedVersion(versionID)
+	v, d, err := app.CheckSourceVersion(tx, record, versionID)
 	if err != nil {
 		return Eligibility{}, err
 	}
-	d, err := tx.QueryDocument(v.DocumentID)
-	if err != nil {
-		return Eligibility{}, err
-	}
-	if d.Lifecycle == "trash" || d.Lifecycle == "purged" {
-		return Eligibility{}, domain.ErrNotFound
-	}
-	if _, err := tx.Scope(d.ProjectID); err != nil {
-		return Eligibility{}, err
-	}
-	if record.Scope.Kind != "owner" {
-		if !containsID(record.Scope.ProjectIDs, d.ProjectID) {
-			return Eligibility{}, domain.ErrNotFound
-		}
-		if !containsID(record.Scope.VersionIDs, v.ID) {
-			return Eligibility{}, domain.ErrNotFound
-		}
-		if !containsAction(record.Scope.Actions, "version.read") {
-			return Eligibility{}, domain.ErrDenied
-		}
-	}
+
 	return Eligibility{Session: record, Version: v, Document: d, ProjectID: d.ProjectID}, nil
 }
 

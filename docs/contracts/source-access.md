@@ -154,10 +154,29 @@ Execution input ownership survives queued work and uncertain effects and ends
 only at the existing terminal/all-effects-definite boundary. Original hashes,
 observations and conflict history remain after eligible physical GC.
 
-Pinned retained reuse rechecks the original capture's project before any verified
-byte consumer. The same logical source ID/path in another project cannot borrow
-its provider choice. Scoped foreign and missing read IDs receive the same
-nondisclosing refusal without foreign identity, digests or body reads.
+Pinned retained reuse preserves the original capture's project, principal and
+version-context restrictions through every copied read. Immutable selected
+read_id links identify that ancestry; a new project-only capture does not make
+inherited version-owned bytes independent. Current source/version visibility and
+captured/current principal scope are checked before copying, on each requested
+read, at adoption/admission, before provider use and at result application.
+Accepted work uses its captured principal and current restrictions without
+requiring the original bearer to remain unexpired. Scoped foreign and missing
+read IDs receive nondisclosing refusal without foreign identity, digests or bytes.
+
+Accepted generation intent and active public capture retain private read-ID
+ownership projections from the exact effective mapping at reservation. They
+protect the interval before copied rows or job_inputs exist. Current-mode and
+non-working pinned Git selections do not acquire dependencies from ignored
+read_id fields. Trash cancels dependent accepted work; later restore does not
+revive its cancelled execution. Purge and recovery preserve all inherited
+contexts and independent owners. Safe owner history keeps its existing scrubbed
+metadata projection after source revocation; that projection grants no byte read.
+
+An export with explicit retained-source inclusion binds the exact selected
+snapshot read IDs and rechecks their current inherited authority before copy and
+publication. A visible child version cannot export source bytes hidden by an
+original context. Ordinary payload export and whole-backup policy are unchanged.
 
 Standalone/project selected snapshots are independent explicitly retained source
 owners. A snapshot captured with version_id is version-context ownership: the
@@ -250,3 +269,24 @@ not storage size/count/depth limits. Exact native-read telemetry is unsupported;
 ambient/native reads remain unobserved. Reasoning is neither result material nor
 retained evidence. Current executing-intent guards apply to every reconciliation
 page and output consumer; hidden/status-only carriers perform no body read.
+
+## Generation explanation context ownership (TASK-006-04)
+
+Selected prior explanations retain exact immutable version/page/optional region
+and the registry bytes identity. Current and captured version/project scope is
+checked separately from project-source read authority. The service supplies the
+selected page bytes or whole-version manifest as labelled explanation context;
+its typed object pins are not captured_reads/job_inputs/observed_input rows.
+Actual frame delivery and matching ACK retain context identity without promoting
+it to project-source support. Useful service-derived pinned navigation preserves
+the exact selected target, never substitutes latest, and does not prove semantic
+reuse, source verification or an inter-project runtime dependency. Material
+source claims still require relevant actual source checks and the independent
+knowledge-quality method.
+
+Prior-context project read anchors do not authorize fresh output or fresh source
+capture in those projects. Protected workflow issuance separately captures the
+selected mutation project; fresh capture requires it and the current selection
+to match. Already accepted generation capture still uses its frozen job authority
+with current epoch/binding/source-policy guards, independently of bearer expiry.
+Changing a remembered selection does not reinterpret an old capture or receipt.

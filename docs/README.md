@@ -163,3 +163,30 @@ finalization follow under the same authority; this record claims no commit or
 Master overall Epic acceptance. Later Tasks remain separate. Historical
 real success remains qualified by exact changed-path applicability, not
 current-byte identity.
+
+## Generation implementation
+
+TASK-006-04 adds schema revision 18 typed generation intent, complete saved-tree
+application, draft/history consumers, remembered owner-derived workflow grants,
+`haeryong generate` and `drafts` commands, and shared Library controls. The one
+[owned skill](../skills/use-haeryong/SKILL.md) is version 1.0.0.
+[The workflow record](testing/generation-workflow.md) owns the executed evidence,
+historical failures and source applicability. Actual managed/standalone use and
+all four real explanations retain their scoped corpus and Reader assessments;
+the fourth result's bounded assessment met all nine original criteria.
+
+The first two independent technical rounds requested six and four corrections;
+the completed third round requested three. The workflow record separates their
+focused checks, Node 453 and controlled Browser 11 evidence from earlier common
+and native results. A subsequent test-only relocation corrected the common
+prepare layer boundary without changing test bodies or product inputs. The
+affected current native cohort passed seven bounded observations with natural
+owned cleanup. The replacement canonical common passed on the corrected source.
+The factual documentation overlay has separate documentation and whitespace
+checks. Independent final assessment passed the bounded Task04 outcome and
+judged its original Goal achieved. The bounded delivery is complete; delegated
+member acceptance, the normal completion commit and native finalization follow.
+C01's matched-request procedure is unverified with TASK-006-06, and the existing
+Task03 transport qualifications remain. TASK-006-05/06 retain saved Q&A and the
+assembled Epic gate. This record claims no Master overall Epic acceptance or
+physical-device proof.

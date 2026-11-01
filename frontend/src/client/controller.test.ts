@@ -57,6 +57,14 @@ function operationView(id: string, state = "completed"): OperationView {
 }
 
 class FakeClient implements HaeryongClient, CredentialAware {
+ jobResume():Promise<unknown>{return Promise.reject(new Error("not bound"));}
+async retainedSourceReads():Promise<never>{throw new Error("not provided by controller fixture");}
+async generationStart():Promise<never>{throw new Error("not provided by controller fixture");}
+async draftList():Promise<never>{throw new Error("not provided by controller fixture");}
+async draftGet():Promise<never>{throw new Error("not provided by controller fixture");}
+async draftHistory():Promise<never>{throw new Error("not provided by controller fixture");}
+async draftPatch():Promise<never>{throw new Error("not provided by controller fixture");}
+async draftPublish():Promise<never>{throw new Error("not provided by controller fixture");}
 async lifecyclePlan():Promise<never>{throw new Error("not used in controller tests");}
 async lifecyclePlanGet():Promise<never>{throw new Error("not used in controller tests");}
 async lifecyclePlanCommit():Promise<never>{throw new Error("not used in controller tests");}

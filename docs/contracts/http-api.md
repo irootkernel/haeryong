@@ -860,5 +860,112 @@ changes. HEAD returns the same status/headers without a body. Existing Reader,
 file and personal Review routes do not depend on provider availability.
 
 /api/v1/status distinguishes installed transport from as-yet unobserved native
-availability and points to /providers. Generation/question admission remains
-unavailable; transport support does not enable an unimplemented paid action.
+availability and points to /providers. Task03 did not implement generation or
+question admission. Task04 now separately exposes generation_available through
+its wired factory; question_available remains false. Transport support alone
+does not establish actual availability or grant an unimplemented paid action.
+
+## Generation and drafts implementation (TASK-006-04)
+
+POST /generations accepts the closed JSON object
+`{project_id,document_id,base_version_id?,intent,prompt?|body_ref?,title?,provider_id?,model?,effort?,source_selection,explanation_references?}`.
+`document_id` is required and explicitly nullable. A non-null document requires
+its captured existing published base; a new document cannot name another base.
+`intent` is exactly `publish` or `draft`. Exactly one prompt selector is required;
+blank/non-UTF-8 body input is invalid. `source_selection` uses the existing
+capture selection/mode/intent/provider shape with no `version_id` override.
+An empty selection is supported and never establishes source verification.
+Unknown, duplicate and invalid-null fields fail before admission.
+
+Large text is automatically staged with purpose=body, input_mode=object and
+`target={operation_id,action:generation,project_id,document_id}` under distinct
+preparation keys. `body_ref={object_id,bytes_sha256,byte_size,media_type:text/plain}`
+names sealed exact UTF-8 bytes. Inline and body_ref normalize by actual content
+identity, not handle. Receipt-first replay uses the original key/body before
+fresh preparation; current authority is still checked. Accepted work retains its
+captured principal/binding/current epoch and project/source restrictions; ordinary
+bearer expiry after acceptance is not inferred revocation. Invalid workflow
+authentication never falls back to an owner credential.
+
+A locally issued workflow credential privately captures its selected mutation
+project independently of prior-explanation read projects in the public scope.
+Fresh generation, generation-body staging, result/import-metadata staging,
+source capture and import admission require both that captured project and the
+current remembered project selection. Changing selections without revoking an
+older credential cannot expand its output authority. Missing captured facts
+refuse fresh effects; they are not guessed from the current selection or a
+union of read projects. Exact prior-version reads and draft-specific anchors
+keep their own scope rules. Existing receipts retain fingerprint/current-scope
+checks, and accepted work retains its captured authority and current
+principal/epoch/project restrictions. A remembered document remains a default,
+not an additional immutable credential target.
+
+The creation response is 202 with
+`{operation_id,job_id,draft_id,intent,job_url}`. It means durable admission, not
+publication or completed AI work. The existing operation/job routes own status,
+unknown effects, cancellation and explicit resume decisions. features.generation
+is set only by the wired production factory; it is not provider entitlement or
+quota availability. features.questions remains false.
+
+GET /drafts supports optional project_id/cursor; GET /drafts/{id}/history supports
+cursor. Lists are `{items,next_cursor}` with cursors bound to library, runtime,
+principal/current scope, current visible-project permission generations, filter
+and resource. Individual drafts expose the registry projection and strong ETag;
+GET/HEAD share the representation media type. Missing required If-Match is 428;
+malformed/weak/multiple/wildcard validators are 400, while an exact stale
+individual validator is 412. Reject/replace/publish retain their existing exact
+upload-purpose/target, current authority and lifecycle rules. A ready candidate
+replacement fences its old linked generation: continuing that job cannot publish
+the old prepared candidate or label the replacement published. History retains
+prior candidate inventories. Publication is atomic with its receipt and outbox.
+
+Closed shared native operations are generationStart, draftList, draftGet,
+draftHistory, draftPatch, draftPublish and jobResume. Their operation-specific
+payloads contain no arbitrary URL/method. Unknown/duplicate/malformed fields do
+not reach HTTP. Owner-only resume retains the existing job ETag, exact expected
+attempt generation and original operation key; no new resume authority is given
+to a generation workflow bearer.
+
+
+### Generation caller recovery and source chooser
+
+The shared generation/draft clients journal the original runtime generation
+before dispatch. A job-resume subrequest captures its own runtime, exact decision,
+expected generation, key and job ETag before POST; it does not inherit the parent
+generation's runtime. Pending resume recovery first GETs its original receipt.
+Current-authority receipt lookup remains available after a runtime change;
+receipt 404 permits no POST/PATCH when that subrequest's original runtime is
+different or absent. Same-runtime recovery reuses its exact saved key/body and
+validator. Completed receipt recovery followed by a current job read sends no
+new mutation. Pending/refused resume remains visible when the job is no longer
+paused.
+
+Draft PRECONDITION_FAILED 412 or VERSION_CONFLICT 409, job-resume
+PRECONDITION_FAILED 412 or INVALID_TRANSITION 409, and confirmed failed receipts
+permit explicit acknowledgement/new action. The old request is retained as
+history before only its exact active slot is released under the journal lock.
+Operation-identity conflicts and network/lookup uncertainty retain the original
+request. A newer journal slot cannot be cleared by an older callback. Replacing
+a ready result retains its original base; changing base requires explicit new
+linked generation/draft work, never automatic rebasing.
+
+`GET/HEAD /projects/{id}/source-reads` requires a single nonempty source_id and
+optional cursor, with no other query fields. It projects the existing completed
+managed capture inventory as `{items,next_cursor}` using the existing read DTO
+plus its original capture timestamp `captured_at`, under current capture/source
+authority. The timestamp is copied from that capture, not invented at listing. It does not read source/object bytes or
+create observed_input. Pages contain at most 64 records; the opaque continuation
+is bound to current library/runtime/auth/principal/scope/project/configuration
+and source selection. GET/HEAD share the representation media type; HEAD has no
+body. The closed native operation is retainedSourceReads with only
+`{project_id,source_id,cursor?}`. Unknown/duplicate payload fields do not reach
+HTTP. Its selection feeds the already defined exact pinned files read_id
+contract rather than changing capture or generation authority.
+
+The owner-authenticated local workflow-grant route carries complete source and
+prior-context selections, unlike the bounded pairing/session control DTOs. It
+authenticates the owner before complete-body processing and verifies the exact
+nonce/request/body proof; complete responses retain their nonce/status/body
+proof. It imposes no total selection-length limit. Pairing/session control
+limits remain unchanged. Logical-body tamper, changed-body/same-key replay, scoped-current
+authority and private verifier/credential rules remain in force.

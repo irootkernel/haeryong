@@ -738,6 +738,8 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 			s.receipt("revokeOwnSession", map[string]any{"status": result.status})
 		}
 		return result.value, result.werr
+	case "generationStart", "draftList", "draftGet", "draftHistory", "draftPatch", "draftPublish", "jobResume":
+		return s.generationOperation(operation, payload, auth)
 	case "providerStatus":
 		var in struct{}
 		if werr := decodeReferencePayload(payload, &in); werr != nil {
@@ -948,6 +950,16 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 			return nil, werr
 		}
 		return decision(s.request("POST", "/api/v1/projects", nil, map[string]string{"Idempotency-Key": in.OperationID}, jsonBody(map[string]string{"name": in.Name}), auth))
+	case "retainedSourceReads":
+		var in struct {
+			ProjectID string `json:"project_id"`
+			SourceID  string `json:"source_id"`
+			Cursor    string `json:"cursor"`
+		}
+		if werr := decodeGenerationPayload(payload, &in, "project_id", "source_id"); werr != nil {
+			return nil, werr
+		}
+		return plain(s.request("GET", "/api/v1/projects/"+url.PathEscape(in.ProjectID)+"/source-reads", collection(map[string]string{"source_id": in.SourceID, "cursor": in.Cursor}), nil, nil, auth))
 	case "projectSources":
 		var in struct {
 			ProjectID string `json:"project_id"`

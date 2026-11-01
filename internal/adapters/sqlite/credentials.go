@@ -9,6 +9,22 @@ import (
 	"time"
 )
 
+// The existing scope blob retains the issuer's private admission fact without
+// adding it to the public CredentialScope or changing the SQLite schema.
+type storedCredentialScope struct {
+	domain.CredentialScope
+	MutationProjectID string `json:"mutation_project_id,omitempty"`
+}
+
+func decodeCredentialScope(raw []byte, c *domain.ScopedCredential) error {
+	var stored storedCredentialScope
+	if e := json.Unmarshal(raw, &stored); e != nil {
+		return e
+	}
+	c.Scope, c.MutationProjectID = stored.CredentialScope, stored.MutationProjectID
+	return nil
+}
+
 func (t *writeTx) WorkflowPrincipal(id string) (domain.WorkflowPrincipal, error) {
 	var p domain.WorkflowPrincipal
 	var scope []byte
@@ -39,7 +55,7 @@ func (t *writeTx) ScopedCredential(id string) (domain.ScopedCredential, error) {
 		v := time.UnixMilli(expires.Int64).UTC()
 		c.ExpiresAt = &v
 	}
-	if e = json.Unmarshal(scope, &c.Scope); e != nil {
+	if e = decodeCredentialScope(scope, &c); e != nil {
 		return c, e
 	}
 	e = json.Unmarshal(permissions, &c.Permissions)
@@ -59,7 +75,7 @@ func (t *writeTx) ScopedCredentialByHash(hash string) (domain.ScopedCredential, 
 		v := time.UnixMilli(expires.Int64).UTC()
 		c.ExpiresAt = &v
 	}
-	if e = json.Unmarshal(scope, &c.Scope); e != nil {
+	if e = decodeCredentialScope(scope, &c); e != nil {
 		return c, e
 	}
 	e = json.Unmarshal(permissions, &c.Permissions)
@@ -69,6 +85,15 @@ func (t *writeTx) PutScopedCredential(c domain.ScopedCredential) error {
 	if c.ID == "" || c.PrincipalID == "" || c.TokenHash == "" || c.Scope.Kind != "workflow" {
 		return domain.ErrInvalidTarget
 	}
+	if c.MutationProjectID != "" {
+		found := false
+		for _, id := range c.Scope.ProjectIDs {
+			found = found || id == c.MutationProjectID
+		}
+		if !found {
+			return domain.ErrInvalidTarget
+		}
+	}
 
 	var oldHash string
 	e := t.tx.QueryRowContext(t.ctx, "SELECT token_hash FROM scoped_credentials WHERE credential_id=?", c.ID).Scan(&oldHash)
@@ -77,7 +102,7 @@ func (t *writeTx) PutScopedCredential(c domain.ScopedCredential) error {
 		if e != nil {
 			return e
 		}
-		if old.PrincipalID != c.PrincipalID || old.TokenHash != c.TokenHash || old.AuthEpoch != c.AuthEpoch || !reflect.DeepEqual(old.Scope, c.Scope) || !reflect.DeepEqual(old.Permissions, c.Permissions) || old.ConfigRevision != c.ConfigRevision || !old.CreatedAt.Equal(c.CreatedAt) || !reflect.DeepEqual(old.ExpiresAt, c.ExpiresAt) {
+		if old.PrincipalID != c.PrincipalID || old.TokenHash != c.TokenHash || old.AuthEpoch != c.AuthEpoch || old.MutationProjectID != c.MutationProjectID || !reflect.DeepEqual(old.Scope, c.Scope) || !reflect.DeepEqual(old.Permissions, c.Permissions) || old.ConfigRevision != c.ConfigRevision || !old.CreatedAt.Equal(c.CreatedAt) || !reflect.DeepEqual(old.ExpiresAt, c.ExpiresAt) {
 			return domain.ErrConflict
 		}
 	} else if !errors.Is(e, sql.ErrNoRows) {
@@ -136,5 +161,5 @@ func (t *writeTx) PutScopedCredential(c domain.ScopedCredential) error {
 	if c.ExpiresAt != nil {
 		expiry = c.ExpiresAt.UnixMilli()
 	}
-	return t.exec("INSERT INTO scoped_credentials VALUES(?,?,?,?,?,?,?,?,?,?,1) ON CONFLICT(credential_id) DO UPDATE SET revoked=max(scoped_credentials.revoked,excluded.revoked),revision=scoped_credentials.revision+CASE WHEN excluded.revoked>scoped_credentials.revoked THEN 1 ELSE 0 END", c.ID, c.PrincipalID, c.TokenHash, c.AuthEpoch, jsonBytes(c.Scope), jsonBytes(c.Permissions), c.ConfigRevision, c.CreatedAt.UnixMilli(), expiry, c.Revoked)
+	return t.exec("INSERT INTO scoped_credentials VALUES(?,?,?,?,?,?,?,?,?,?,1) ON CONFLICT(credential_id) DO UPDATE SET revoked=max(scoped_credentials.revoked,excluded.revoked),revision=scoped_credentials.revision+CASE WHEN excluded.revoked>scoped_credentials.revoked THEN 1 ELSE 0 END", c.ID, c.PrincipalID, c.TokenHash, c.AuthEpoch, jsonBytes(storedCredentialScope{c.Scope, c.MutationProjectID}), jsonBytes(c.Permissions), c.ConfigRevision, c.CreatedAt.UnixMilli(), expiry, c.Revoked)
 }

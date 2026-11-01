@@ -25,15 +25,13 @@ var _ = It("TestProductionScopedCredentialDraftWriteAndAcceptedWork", Label("per
 	t := GinkgoT()
 
 	f := newFixture(t)
-	draft, principal, binding, credential := key(t), key(t), key(t), key(t)
+	g := generationJob(f, "draft", nil, nil)
+	draft, principal, binding, credential := g.DraftID, key(t), key(t), key(t)
 	token, e := sec.Secret()
 	Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 
 	scope := domain.CredentialScope{Kind: "workflow", Actions: []string{"draft.write"}, ProjectIDs: []string{f.project}, DraftIDs: []string{draft}}
 	e = f.store.Write(ctx, func(tx app.WriteTx) error {
-		if _, e := tx.MutateResource(domain.Resource{Kind: "draft", ID: draft, Value: encodedTest(map[string]any{"project_id": f.project, "document_id": nil, "state": "ready"})}, 0, "resource.invalidated"); e != nil {
-			return e
-		}
 		if e := tx.PutWorkflowPrincipal(domain.WorkflowPrincipal{ID: principal, BindingID: binding, Active: true, Scope: scope}); e != nil {
 			return e
 		}

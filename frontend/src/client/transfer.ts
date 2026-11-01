@@ -24,6 +24,7 @@
 //   result_metadata; the top-level job_id stays null on the real wire.
 import type {
   DecisionResult,
+  CreateUploadRequest,
   HaeryongClient,
   ImportTargetMode,
   JobView,
@@ -136,11 +137,13 @@ export type JournalPhase =
   | "published";
 
 interface TransferJournalData {
+  /** Exact typed preparation intent; these records never authorize POST /imports. */
+  uploadRequest?: CreateUploadRequest;
   libraryId: string;
   principalId: string;
   uploadId: string | null;
   completeKey: string;
-  inputMode: "directory" | "archive" | "file";
+  inputMode: "directory" | "archive" | "file" | "object";
   selectionName: string | null;
   phase: JournalPhase;
   entries: Record<string, JournalEntryRecord>;
@@ -201,8 +204,10 @@ interface JournalBucket {
 
 /** localStorage-backed journal; any unavailable storage blocks dispatch. */
 export class BrowserJournalStore implements JournalStore {
+  readonly namespace:string;
+  constructor(namespace="haeryong.import-journal.v1") {this.namespace=namespace;}
   #key(authority: string): string {
-    return `haeryong.import-journal.v1:${authority}`;
+    return `${this.namespace}:${authority}`;
   }
   #read(authority: string): JournalBucket {
     let raw: string | null | undefined;
@@ -276,7 +281,7 @@ export interface PlannedEntry {
 }
 
 export interface PlannedInput {
-  mode: "directory" | "archive" | "file";
+  mode: "directory" | "archive" | "file" | "object";
   selectionName: string;
   entries: PlannedEntry[];
   limits: InputLimits;
@@ -451,6 +456,7 @@ export class TransferEngine {
    * leaves nothing dispatched.
    */
   async begin(libraryId: string, principalId: string, target: ImportTargetMode, input: PlannedInput, callbacks: TransferCallbacks = {}): Promise<ImportJournal> {
+    if(input.mode==="object")throw new TargetMismatchError("import requires a result directory, archive or HTML");
     let documentId: string | null = null;
     let baseVersionId: string | null = null;
     if (target.kind === "existing") {
@@ -511,6 +517,23 @@ export class TransferEngine {
       // caller offers the ORIGINAL U replay, never a new begin/identity.
       throw new DispatchRecordError(record, error);
     }
+  }
+
+  /** Stage one typed generation/draft input through the existing upload engine. */
+  async beginOwnedUpload(libraryId: string, principalId: string, request: CreateUploadRequest, input: PlannedInput, callbacks: TransferCallbacks = {}): Promise<ImportJournal> {
+    if (request.input_mode !== input.mode || !("project_id" in request.target || "draft_id" in request.target)) throw new TargetMismatchError("preparation target/mode mismatch");
+    const now = new Date().toISOString();
+    const target = request.target;
+    const record: ImportJournal = {
+      stagingOnly: false, libraryId, principalId, uploadId: null,
+      createKey: crypto.randomUUID(), completeKey: crypto.randomUUID(), importKey: crypto.randomUUID(),
+      target: { projectId: "project_id" in target ? target.project_id : "", documentId: "document_id" in target ? target.document_id : null, baseVersionId: null },
+      uploadRequest: structuredClone(request), inputMode: input.mode, selectionName: input.selectionName,
+      phase: "prepared", entries: {}, createdAt: now, updatedAt: now, jobId: null, versionId: null, completeCheckpoint: null,
+    };
+    callbacks.guard?.(); this.#journal.save(record);
+    this.#journal.setActive(journalAuthority(libraryId, principalId), record.importKey);
+    return record;
   }
 
   /** Continue or restart the acknowledgement-driven transfer loop. */
@@ -747,9 +770,9 @@ export class TransferEngine {
     if (record.stagingOnly || record.createKey === null) throw new Error("this record has no original upload creation intent");
     callbacks.guard?.();
     const created = await this.#client.createUpload(
-      {
+      record.uploadRequest ?? {
         purpose: "result",
-        input_mode: record.inputMode,
+        input_mode: record.inputMode as "directory" | "archive" | "file",
         selection_name: record.selectionName ?? undefined,
         target: { project_id: record.target.projectId, document_id: record.target.documentId },
       },
@@ -803,6 +826,7 @@ export class TransferEngine {
    * only when the import job completes and the version view is confirmed.
    */
   async publish(record: ImportJournal, callbacks: TransferCallbacks = {}, waitMs: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))): Promise<ImportJournal> {
+    if (record.uploadRequest) throw new Error("owned preparation carries no import publication intent");
     if (record.uploadId === null) throw new Error("publish requires an upload");
     if (record.stagingOnly || record.importKey === null) {
       // Staging-only recovery has no publication intent: publishing it would

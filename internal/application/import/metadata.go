@@ -609,6 +609,27 @@ func writeGenerated(out io.Writer, i domain.ImportIntent, v domain.Version, meta
 			}
 		}
 	}
+	if metadata == nil && len(i.ExplanationReferences) > 0 {
+		if e := write(`,"references":[`); e != nil {
+			return e
+		}
+		for index, ref := range i.ExplanationReferences {
+			if index > 0 {
+				if e := write(","); e != nil {
+					return e
+				}
+			}
+			// These are immutable explanation navigation declarations, never
+			// project-source citations or an assertion of claim support.
+			record := map[string]any{"id": fmt.Sprintf("context-%d", index+1), "document_id": ref.DocumentID, "version_id": ref.VersionID, "page_path": ref.PagePath, "region_id": ref.RegionID, "label": "Prior explanation"}
+			if _, e := w.Write(encoded(record)); e != nil {
+				return e
+			}
+		}
+		if e := write("]"); e != nil {
+			return e
+		}
+	}
 	if e := write(`}`); e != nil {
 		return e
 	}

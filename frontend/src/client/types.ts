@@ -464,6 +464,9 @@ export interface UploadPin {
 }
 
 export interface JobView {
+ etag?:string;
+ attempt_generation?:number;
+ provider_attempts?:{count:number;unknown:number;latest_state:string;reconciliation_pending:number};
   job_id: string;
   kind: string;
   state: string;
@@ -483,10 +486,12 @@ export interface ResultUploadRequest {
   purpose: "result";
   input_mode: "directory" | "archive" | "file";
   selection_name?: string;
-  target: { project_id: string; document_id: string | null };
+  target: { project_id: string; document_id: string | null; draft_id?: string };
 }
 
-export type CreateUploadRequest = ResultUploadRequest | {purpose:"body";input_mode:"object";target:({operation_id:string;action:"annotation_create";version_id:string;page_path:string|null}|{operation_id:string;action:"annotation_edit";annotation_id:string})};
+export type GenerationBodyUpload = {purpose:"body";input_mode:"object";target:{operation_id:string;action:"generation";project_id:string;document_id:string|null}};
+export type DraftMetadataUpload = {purpose:"metadata";input_mode:"object";target:{operation_id:string;action:"draft_replace";draft_id:string}};
+export type CreateUploadRequest = ResultUploadRequest | GenerationBodyUpload | DraftMetadataUpload | {purpose:"body";input_mode:"object";target:({operation_id:string;action:"annotation_create";version_id:string;page_path:string|null}|{operation_id:string;action:"annotation_edit";annotation_id:string})};
 
 /** Binary payload for one streamed entry chunk. */
 export interface EntryChunk {
@@ -814,7 +819,40 @@ export interface IndexRebuild { version_id: string; kind: "search" | "references
 export interface IndexValidationRequest { versionId: string; kind: "search" | "references" }
 export interface IndexRebuildRequest { versionId: string; kind: "search" | "references" | "all"; operationId: string }
 
+/** Metadata-only historical read; enumeration is not byte delivery or observed_input. */
+export interface RetainedSourceRead {
+ read_id:string;capture_id:string;captured_at:string;source_id:string;source:Record<string,unknown>|null;
+ location:{path:string}|null;bytes_sha256:string;byte_size:number;retention_mode:string;
+ availability:string;capture_availability?:string;read_state?:string;bytes_origin?:string;reason?:string;
+}
+export interface GenerationReference {version_id:string;page_path:string|null;region_id:string|null;bytes_sha256:string}
+export interface BodyReference {object_id:string;bytes_sha256:string;byte_size:string;media_type:string}
+export interface GenerationSourceSelection {
+ source_mode?:"pinned"|"current";source_intent?:"historical"|"moving_target";provider_id?:string;
+ selections:{source_id:string;revision?:string;working_copy?:boolean;paths:{path:string;read_id?:string}[]}[];
+}
+export interface GenerationRequest {
+ project_id:string;document_id:string|null;base_version_id?:string|null;intent:"publish"|"draft";
+ prompt?:string;body_ref?:BodyReference;title?:string;provider_id?:string;model?:string;effort?:string;
+ source_selection:GenerationSourceSelection;explanation_references?:GenerationReference[];
+}
+export interface GenerationAccepted {operation_id:string;job_id:string;draft_id:string;intent:"publish"|"draft";job_url:string}
+export interface DraftView {
+ draft_id:string;project_id:string;document_id:string|null;base_version_id:string|null;job_id:string;
+ state:"preparing"|"ready"|"published"|"rejected"|"failed";intent:"draft"|"publish";revision:number;
+ created_at:string;updated_at:string;payload_sha256:string|null;metadata_sha256:string|null;
+ published_version_id:string|null;failure_reason:string|null;etag:string;
+}
+export type DraftPatch={action:"reject"}|{action:"replace";upload_id:string;metadata_ref?:BodyReference};
+
 export interface HaeryongClient {
+  retainedSourceReads(projectId:string,sourceId:string,cursor?:string):Promise<ListPage<RetainedSourceRead>>;
+  generationStart(request:GenerationRequest,operationId:string):Promise<GenerationAccepted>;
+  draftList(projectId?:string,cursor?:string):Promise<ListPage<DraftView>>;
+  draftGet(id:string):Promise<DraftView>;
+  draftHistory(id:string,cursor?:string):Promise<ListPage<DraftView>>;
+  draftPatch(id:string,body:DraftPatch,etag:string,operationId:string):Promise<DraftView>;
+  draftPublish(id:string,etag:string,operationId:string):Promise<DraftView>;
   /** Trusted public browser origin, never a child-supplied navigation host. */
   readonly publicOrigin?: string | null;
   /** Browser clients receive the full creation reply; the native Go-held flow returns the reduced secret-free shape. */
@@ -896,6 +934,7 @@ export interface HaeryongClient {
   importPublish(request: ImportPublishRequest, operationId: string): Promise<DecisionResult>;
   // Jobs and archive export
   jobGet(jobId: string): Promise<JobView>;
+  jobResume(jobId:string,decision:"reconcile_only"|"continue"|"retry",expectedGeneration:number,etag:string,operationId:string):Promise<unknown>;
   jobCancel(jobId: string, operationId: string): Promise<DecisionResult>;
   packageStream(versionId: string): Promise<PackageStream>;
   fileStream?(versionId: string, path: string): Promise<PackageStream>;

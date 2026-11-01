@@ -7,6 +7,54 @@ import (
 	"haeryong.local/haeryong/internal/domain"
 )
 
+// The immutable requested read_id links are the ownership relation; copying
+// bytes never makes an inherited version context independent. UNION deduplicates
+// shared ancestry without imposing a content/traversal quota.
+const sourceReadDependencies = `WITH RECURSIVE source_read_edges(child,parent) AS (
+ SELECT r.read_id,json_extract(p.value,'$.read_id')
+ FROM source_capture_reads r JOIN source_captures c ON c.capture_id=r.capture_id,
+ json_each(c.requested_selection,'$.selections') s,json_each(s.value,'$.paths') p
+ WHERE json_extract(c.requested_selection,'$.source_mode')='pinned'
+ AND json_extract(r.source_json,'$.kind')='snapshot'
+ AND json_extract(s.value,'$.source_id')=r.source_id
+ AND json_extract(p.value,'$.path')=json_extract(r.location_json,'$.path')
+ AND coalesce(json_extract(p.value,'$.read_id'),'')<>''
+), source_read_ancestors(read_id,ancestor) AS (
+ SELECT read_id,read_id FROM source_capture_reads
+ UNION SELECT a.read_id,e.parent FROM source_read_ancestors a JOIN source_read_edges e ON e.child=a.ancestor
+), source_read_contexts(read_id,version_id) AS (
+ SELECT DISTINCT a.read_id,json_extract(c.requested_selection,'$.version_id')
+ FROM source_read_ancestors a JOIN source_capture_reads r ON r.read_id=a.ancestor JOIN source_captures c ON c.capture_id=r.capture_id
+ WHERE coalesce(json_extract(c.requested_selection,'$.version_id'),'')<>''
+) `
+
+const sourceJobDependencies = sourceReadDependencies + `, generation_source_contexts(job_id,version_id) AS (
+ SELECT DISTINCT g.job_id,c.version_id FROM generation_intents g,json_each(g.value,'$.SourceReadIDs') r
+ JOIN source_read_contexts c ON c.read_id=r.value
+ UNION SELECT DISTINCT g.job_id,ctx.version_id FROM generation_intents g JOIN jobs j ON j.job_id=g.job_id JOIN source_captures capture ON capture.operation_id=json_extract(g.value,'$.CaptureOperationID') AND capture.principal_id=json_extract(j.scope,'$.principal_id') AND capture.project_id=json_extract(g.value,'$.ProjectID'),json_each(capture.requested_selection,'$._retained_read_ids') r
+ JOIN source_read_contexts ctx ON ctx.read_id=r.value WHERE capture.state='capturing'
+), source_job_contexts(job_id,version_id) AS (
+ SELECT i.job_id,c.version_id FROM job_inputs i JOIN source_read_contexts c ON c.read_id=i.read_id
+ UNION SELECT job_id,version_id FROM generation_source_contexts
+) `
+
+func (t *writeTx) sourceReadVersions(id string) ([]string, error) {
+	rows, err := t.tx.QueryContext(t.ctx, sourceReadDependencies+`SELECT version_id FROM source_read_contexts WHERE read_id=? ORDER BY version_id`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func (t *writeTx) CreateSourceCapture(c domain.SourceCapture) error {
 	if c.ID == "" || c.State != "capturing" || c.TargetSetID == "" {
 		return domain.ErrInvalidTarget
@@ -174,7 +222,14 @@ func (t *writeTx) AttachSourceInputs(jobID string, reads []string) error {
 		if e != nil {
 			return e
 		}
-		if scope.PrincipalID != owner.OwnerID || scope.AuthEpoch != owner.AuthEpoch || project != c.ProjectID {
+		if scope.AuthEpoch != owner.AuthEpoch || project != c.ProjectID {
+			return domain.ErrDenied
+		}
+		if j.Kind == "generation" && scope.Purpose == "body" {
+			if e = app.AuthorizeGeneration(t, scope); e != nil {
+				return e
+			}
+		} else if scope.PrincipalID != owner.OwnerID {
 			return domain.ErrDenied
 		}
 		current, e := t.Scope(project)
@@ -190,6 +245,9 @@ func (t *writeTx) AttachSourceInputs(jobID string, reads []string) error {
 		}
 		if pinned == 0 {
 			return domain.ErrReconciliation
+		}
+		if e = app.GuardSourceInput(t, scope, id); e != nil {
+			return e
 		}
 		if e = t.exec(`INSERT INTO job_inputs VALUES(?,?)`, jobID, id); e != nil {
 			return e

@@ -253,7 +253,7 @@ func TestReaderNativeOperationsParity(t *testing.T) {
 		t.Fatalf("Go operation cases missing from the TypeScript declarations: %s", strings.Join(extra, ", "))
 	}
 	// The source/configuration family must stay exposed in all transports.
-	for _, required := range []string{"versionBacklinks", "validateVersionIndexes", "rebuildVersionIndexes", "versionReferences", "resolveReference", "search", "configurationView", "configurationPlan", "configurationPlanCommit", "projectRegister", "projectSources", "verifySourceEvidence", "runSourceObservation"} {
+	for _, required := range []string{"versionBacklinks", "validateVersionIndexes", "rebuildVersionIndexes", "versionReferences", "resolveReference", "search", "configurationView", "configurationPlan", "configurationPlanCommit", "projectRegister", "projectSources", "retainedSourceReads", "verifySourceEvidence", "runSourceObservation"} {
 		found := false
 		for _, name := range public {
 			if name == required {

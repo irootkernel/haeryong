@@ -195,10 +195,14 @@ def test_port_boundaries_and_warnings(binaries, value, valid, warning):
 @pytest.mark.parametrize("args,code", [
     (["service", "install"], 5), (["auth", "pair"], 5),
     (["init", "--endpoint", "https://example.invalid"], 2),
-    (["auth", "grant"], 5),
 ])
 def test_unsupported_capabilities_fail_honestly(binaries, tmp_path, args, code):
     Product(binaries / "haeryong", tmp_path).cli(args, code=code)
+
+
+def test_workflow_grant_missing_action_fails_with_invalid_input(binaries, tmp_path):
+    response = Product(binaries / "haeryong", tmp_path).cli(["auth", "grant"], code=2)
+    assert response["error"]["code"] == "INVALID_INPUT"
 
 
 def test_import_query_retry_exact_files_and_restart(product, owner, tmp_path):

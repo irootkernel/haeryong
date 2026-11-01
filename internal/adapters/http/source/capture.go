@@ -15,6 +15,9 @@ import (
 
 func captureRoute(r *http.Request) bool {
 	p := route(r)
+	if len(p) == 3 && p[0] == "projects" && p[2] == "source-reads" {
+		return r.Method == http.MethodGet || r.Method == http.MethodHead
+	}
 	if len(p) == 3 && p[0] == "projects" && p[2] == "source-captures" {
 		return r.Method == http.MethodPost
 	}
@@ -28,6 +31,23 @@ func (h *handler) capture(w http.ResponseWriter, r *http.Request, token string) 
 	q, e := url.ParseQuery(r.URL.RawQuery)
 	if e != nil {
 		fail(w, session.ErrInvalid)
+		return
+	}
+	if len(p) == 3 && p[0] == "projects" && p[2] == "source-reads" {
+		if len(q["source_id"]) != 1 || q.Get("source_id") == "" || len(q["cursor"]) > 1 || len(q) > 2 || len(q) == 2 && len(q["cursor"]) != 1 {
+			fail(w, session.ErrInvalid)
+			return
+		}
+		out, e := h.core.RetainedReads(r.Context(), token, p[1], q.Get("source_id"), q.Get("cursor"))
+		if e != nil {
+			fail(w, e)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Cache-Control", "private, no-store")
+		if r.Method != http.MethodHead {
+			json.NewEncoder(w).Encode(map[string]any{"data": out, "error": nil})
+		}
 		return
 	}
 	if len(p) == 3 && p[0] == "projects" {

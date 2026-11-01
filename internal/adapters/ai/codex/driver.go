@@ -220,7 +220,11 @@ func startThread(ctx context.Context, t *transport, inv domain.ProviderInvocatio
 	if !filepath.IsAbs(inv.CWD) {
 		return result, domain.ErrInvalidTarget
 	}
-	params := map[string]any{"cwd": inv.CWD, "modelProvider": "openai", "approvalPolicy": "never", "sandbox": "read-only", "ephemeral": ephemeral}
+	mode, expected := "read-only", "readOnly"
+	if inv.Generation != nil {
+		mode, expected = "workspace-write", "workspaceWrite"
+	}
+	params := map[string]any{"cwd": inv.CWD, "modelProvider": "openai", "approvalPolicy": "never", "sandbox": mode, "ephemeral": ephemeral}
 	if inv.Model != "" {
 		params["model"] = inv.Model
 	}
@@ -230,7 +234,7 @@ func startThread(ctx context.Context, t *transport, inv domain.ProviderInvocatio
 	if e := t.call(ctx, "thread/start", params, &result); e != nil {
 		return result, e
 	}
-	if result.Thread.ID == "" || result.Provider != "openai" || result.Approval != "never" || result.Sandbox.Type != "readOnly" || result.Sandbox.Network || filepath.Clean(result.CWD) != filepath.Clean(inv.CWD) || inv.Model != "" && result.Model != inv.Model || inv.Effort != "" && result.Effort != inv.Effort {
+	if result.Thread.ID == "" || result.Provider != "openai" || result.Approval != "never" || result.Sandbox.Type != expected || result.Sandbox.Network || filepath.Clean(result.CWD) != filepath.Clean(inv.CWD) || inv.Model != "" && result.Model != inv.Model || inv.Effort != "" && result.Effort != inv.Effort {
 		return result, domain.ErrDenied
 	}
 	return result, nil
@@ -295,6 +299,11 @@ func (d *Driver) execute(ctx context.Context, setupTimeout time.Duration, a doma
 	}
 	setupCtx, setupCancel := context.WithTimeout(ctx, setupTimeout)
 	defer setupCancel()
+	generation, e := d.prepareGeneration(a, &inv)
+	if e != nil {
+		out.Reason = "generation_setup_failed"
+		return out, e
+	}
 	// Preserve the actual local preparation deadline, independently of caller
 	// cancellation and the later one-use dispatch fence.
 	defer func() {
@@ -348,6 +357,15 @@ func (d *Driver) execute(ctx context.Context, setupTimeout time.Duration, a doma
 			metadata.DriverOutcome = "result_ready"
 		}
 		out.Transport = metadata
+		if generation != nil && out.Body != nil {
+			var captureErr error
+			out, captureErr = d.captureGeneration(ctx, a, out, generation, false)
+			err = errors.Join(err, captureErr)
+			metadata.DriverOutcome = out.State
+			if out.State == "result_saved" {
+				metadata.DriverOutcome = "result_ready"
+			}
+		}
 	}()
 	stop := context.AfterFunc(ctx, func() { _ = t.close() })
 	defer stop()
@@ -371,6 +389,13 @@ func (d *Driver) execute(ctx context.Context, setupTimeout time.Duration, a doma
 			return out, setupCtx.Err()
 		}
 		return out, nil
+	}
+	if e = discoverGenerationSkill(setupCtx, t, inv.CWD, generation); e != nil {
+		out.Reason = "skill_unavailable"
+		if setupCtx.Err() != nil {
+			return out, setupCtx.Err()
+		}
+		return out, e
 	}
 	capabilities := inheritedCapabilities(setupCtx, t, inv.CWD, actual.Thread.ID)
 	if setupCtx.Err() != nil {
@@ -411,7 +436,11 @@ func (d *Driver) execute(ctx context.Context, setupTimeout time.Duration, a doma
 		}
 		return out, e
 	}
-	metadata = &domain.ProviderTransport{Capabilities: &capabilities, Disclosure: disclosures, OrdinaryUsageAllowed: status.OrdinaryUsageAllowed, Provider: "codex", Version: Version, BinarySHA: binarySHA, PreparedAt: time.Now().UTC().Format(time.RFC3339Nano), SetupThread: actual.Thread.ID, AuthMode: "chatgpt", Model: actual.Model, Effort: actual.Effort, CWD: actual.CWD, Approval: actual.Approval, Sandbox: "read-only", InstructionCount: len(actual.Instructions), DisabledPluginCount: len(actual.DisabledPlugins), FrameSHA: "", AllowanceKnown: status.OrdinaryUsageAllowed != nil}
+	mode := "read-only"
+	if generation != nil {
+		mode = "workspace-write"
+	}
+	metadata = &domain.ProviderTransport{Generation: generation, Capabilities: &capabilities, Disclosure: disclosures, OrdinaryUsageAllowed: status.OrdinaryUsageAllowed, Provider: "codex", Version: Version, BinarySHA: binarySHA, PreparedAt: time.Now().UTC().Format(time.RFC3339Nano), SetupThread: actual.Thread.ID, AuthMode: "chatgpt", Model: actual.Model, Effort: actual.Effort, CWD: actual.CWD, Approval: actual.Approval, Sandbox: mode, InstructionCount: len(actual.Instructions), DisabledPluginCount: len(actual.DisabledPlugins), FrameSHA: "", AllowanceKnown: status.OrdinaryUsageAllowed != nil}
 	record := func() error {
 		e := d.Store.Write(context.WithoutCancel(ctx), func(tx app.WriteTx) error { return tx.RecordProviderTransport(a.ID, *metadata) })
 		if e != nil && out.State == "" && !work.ProviderAuthorityRefusal(e) {
@@ -450,6 +479,11 @@ func (d *Driver) execute(ctx context.Context, setupTimeout time.Duration, a doma
 	out.RequestID = accepted.ID
 	out.SessionID = actual.Thread.ID
 	metadata.AcceptedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	if generation != nil {
+		generation.SkillInputAcknowledged = true
+		generation.PromptInputAcknowledged = generation.Prompt != nil
+		generation.ReferencesAcknowledged = len(generation.References) > 0
+	}
 	observed := append([]domain.ProviderInput(nil), inputs...)
 	for i := range observed {
 		observed[i].ObservedOrigin = "daemon_supplied"
@@ -684,6 +718,23 @@ func (d *Driver) Reconcile(ctx context.Context, a domain.ProviderAttempt, output
 			observation := domain.ProviderLookup{ObservedAt: time.Now().UTC().Format(time.RFC3339Nano), BackendState: backendState, LocalClosed: cleanup == nil, CleanupReason: t.cleanupReason}
 			observation.Source = "history"
 			out.Lookup = &observation
+		}
+		if outputAllowed && a.Transport.Generation != nil && out.Body != nil {
+			if !a.Transport.LocalClosed || a.Transport.CleanupState != "drained" {
+				closeErr := out.Body.Close()
+				out.Body = nil
+				out.CleanupError = errors.Join(out.CleanupError, errCleanup, closeErr)
+				out, _ = completedUnavailable(out, errCleanup)
+				err = errors.Join(err, errCleanup, closeErr)
+				return
+			}
+			copied := *a.Transport
+			generation := *a.Transport.Generation
+			copied.Generation = &generation
+			var captureErr error
+			out, captureErr = d.captureGeneration(ctx, a, out, &generation, true)
+			out.Transport = &copied
+			err = errors.Join(err, captureErr)
 		}
 	}()
 	stop := context.AfterFunc(ctx, func() { _ = t.close() })

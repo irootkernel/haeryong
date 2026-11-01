@@ -26,16 +26,20 @@ type ProviderAttempt struct {
 // ObservedAt is the first local durable acknowledgement time, not capture time.
 // A nil timestamp in retained historical evidence remains unknown.
 type ProviderInput struct {
-	SourceVersionID string  `json:"source_version_id,omitempty"`
-	RetentionMode   string  `json:"retention_mode,omitempty"`
-	AttemptID       string  `json:"attempt_id"`
-	ReadID          string  `json:"read_id"`
-	Hash            string  `json:"bytes_sha256"`
-	ObservedOrigin  string  `json:"input_origin,omitempty"`
-	ObservedAt      *string `json:"observed_at"`
+	// All inherited version-context owners, separately from the immediate
+	// capture's literal SourceVersionID and actual delivery observations.
+	SourceVersionIDs []string `json:"source_version_ids,omitempty"`
+	SourceVersionID  string   `json:"source_version_id,omitempty"`
+	RetentionMode    string   `json:"retention_mode,omitempty"`
+	AttemptID        string   `json:"attempt_id"`
+	ReadID           string   `json:"read_id"`
+	Hash             string   `json:"bytes_sha256"`
+	ObservedOrigin   string   `json:"input_origin,omitempty"`
+	ObservedAt       *string  `json:"observed_at"`
 }
 
 type ProviderScope struct {
+	Purpose         string              `json:"purpose,omitempty"`
 	Invocation      *ProviderInvocation `json:"invocation,omitempty"`
 	ProviderID      string              `json:"provider_id,omitempty"`
 	PrincipalID     string              `json:"principal_id"`
@@ -60,11 +64,20 @@ type ProviderAttemptSummary struct {
 
 // ProviderInvocation is trusted admission state. Public job projections omit it.
 // Task04/05 own construction from their authenticated generation/question input.
+// ProviderText is a retained exact UTF-8 request object, separate from project
+// source captures and their observation ledger.
+type ProviderText struct {
+	Hash string `json:"bytes_sha256"`
+	Size int64  `json:"byte_size"`
+}
+
 type ProviderInvocation struct {
-	Prompt string `json:"prompt"`
-	CWD    string `json:"cwd"`
-	Model  string `json:"model,omitempty"`
-	Effort string `json:"effort,omitempty"`
+	PromptRef  *ProviderText         `json:"prompt_ref,omitempty"`
+	Prompt     string                `json:"prompt"`
+	CWD        string                `json:"cwd"`
+	Model      string                `json:"model,omitempty"`
+	Effort     string                `json:"effort,omitempty"`
+	Generation *GenerationInvocation `json:"generation,omitempty"`
 }
 
 type ProviderDisclosure struct {
@@ -95,6 +108,7 @@ type ProviderCapabilities struct {
 }
 
 type ProviderTransport struct {
+	Generation    *GenerationTransport  `json:"generation_output,omitempty"`
 	Capabilities  *ProviderCapabilities `json:"inherited_capabilities,omitempty"`
 	BackendSource string                `json:"backend_observation_source,omitempty"`
 	DriverOutcome string                `json:"driver_outcome,omitempty"`

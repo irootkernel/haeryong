@@ -18,21 +18,25 @@ import (
 	"syscall"
 	"time"
 
+	generation "haeryong.local/haeryong/internal/application/generation"
 	importer "haeryong.local/haeryong/internal/application/import"
 	appstorage "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
 	"haeryong.local/haeryong/internal/security/session"
 )
 
-type handler struct{ core *importer.Service }
+type handler struct {
+	core       *importer.Service
+	generation *generation.Service
+}
 
 func New(core *importer.Service) http.Handler { return &handler{core: core} }
 
 // Handles lets the existing auth router retain its frozen unimplemented-feature
 // and unknown-route responses for APIs outside this adapter's ownership.
-func (*handler) Handles(r *http.Request) bool {
+func (h *handler) Handles(r *http.Request) bool {
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/")
-	return path == "uploads" || strings.HasPrefix(path, "uploads/") || path == "imports" || path == "packages/validate" || path == "contexts" || strings.HasPrefix(path, "contexts/")
+	return h.generation != nil && (path == "generations" || path == "drafts" || strings.HasPrefix(path, "drafts/")) || path == "uploads" || strings.HasPrefix(path, "uploads/") || path == "imports" || path == "packages/validate" || path == "contexts" || strings.HasPrefix(path, "contexts/")
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -53,6 +57,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fail(w, session.ErrInvalid)
 			return
 		}
+	}
+	if h.generationRoutes(w, r, token, path, parts, query) {
+		return
 	}
 	if r.Method == http.MethodPost && (path == "uploads" || path == "imports" || path == "packages/validate" || (len(parts) == 3 && parts[0] == "uploads" && (parts[2] == "complete" || parts[2] == "abandon"))) {
 		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))

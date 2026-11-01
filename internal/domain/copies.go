@@ -37,6 +37,9 @@ type CopySet struct {
 	ExpectedIndexSHA                                     string
 	ExpectedOutputSHA, ExpectedMetadataSHA               string
 	Permissions                                          map[string]int64
+	// Exact retained source rows selected from the immutable export snapshot.
+	// This is private copy ownership, never an expansion of payload selection.
+	RetainedReadIDs []string
 }
 
 type CopyVersion struct {

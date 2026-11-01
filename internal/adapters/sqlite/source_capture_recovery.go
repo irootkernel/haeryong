@@ -148,6 +148,23 @@ func projectOrphanSourceInputs(ctx context.Context, tx *sql.Tx) error {
 						return e
 					}
 					if e == nil {
+						dependencyRows, err := tx.QueryContext(ctx, sourceReadDependencies+`SELECT version_id FROM source_read_contexts WHERE read_id=? ORDER BY version_id`, i.ReadID)
+						if err != nil {
+							return err
+						}
+						derived := domain.ProviderInput{SourceVersionID: version}
+						for dependencyRows.Next() {
+							var version string
+							if err = dependencyRows.Scan(&version); err != nil {
+								dependencyRows.Close()
+								return err
+							}
+							derived.SourceVersionIDs = append(derived.SourceVersionIDs, version)
+						}
+						if err = errors.Join(dependencyRows.Err(), dependencyRows.Close()); err != nil {
+							return err
+						}
+						i.SourceVersionIDs = mergeSourceVersions(*i, derived)
 						i.RetentionMode = mode
 						if i.SourceVersionID == "" {
 							i.SourceVersionID = version

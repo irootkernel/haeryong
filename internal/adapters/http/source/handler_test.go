@@ -298,11 +298,16 @@ func (f *httpFixture) seedScoped(t GinkgoTInterface, withVersionRead, withSource
 		if e := tx.PutWorkflowPrincipal(domain.WorkflowPrincipal{ID: principal, BindingID: principal, Active: true, Scope: scope, Revision: 1}); e != nil {
 			return e
 		}
+		// This fixture performs fresh capture, so retain both issuer-selected
+		// output authority and its current remembered project restriction.
+		if e := tx.PutWorkflowSelection(domain.WorkflowSelection{BindingID: principal, PrincipalID: principal, ProjectID: f.project, ProviderID: "codex", SourceSelection: []byte(`{}`)}, 0); e != nil {
+			return e
+		}
 		project, e := tx.Scope(f.project)
 		if e != nil {
 			return e
 		}
-		return tx.PutScopedCredential(domain.ScopedCredential{ID: principal, PrincipalID: principal, TokenHash: sec.Verifier("workflow", token), AuthEpoch: state.AuthEpoch, Scope: scope, Permissions: map[string]int64{f.project: project.Project.PermissionsRevision}, ConfigRevision: project.ConfigRevision, CreatedAt: time.Now().UTC().Truncate(time.Millisecond), Revision: 1})
+		return tx.PutScopedCredential(domain.ScopedCredential{ID: principal, PrincipalID: principal, TokenHash: sec.Verifier("workflow", token), AuthEpoch: state.AuthEpoch, Scope: scope, MutationProjectID: f.project, Permissions: map[string]int64{f.project: project.Project.PermissionsRevision}, ConfigRevision: project.ConfigRevision, CreatedAt: time.Now().UTC().Truncate(time.Millisecond), Revision: 1})
 	})).To(Succeed())
 	return token
 }

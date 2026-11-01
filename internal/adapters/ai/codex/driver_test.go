@@ -53,6 +53,7 @@ type testTx struct {
 	guardCalls, failGuardAt int
 	recordError             error
 	reads                   map[string]domain.CapturedRead
+	objects                 map[string]domain.Object
 }
 
 func (t *testTx) GuardProviderPayload(string, string, bool) error {
@@ -92,6 +93,9 @@ func (t *testTx) CapturedRead(id string) (domain.CapturedRead, error) {
 	return domain.CapturedRead{ID: id, TargetSetID: "target", SourceJSON: []byte(`{"kind":"git","repo_id":"repo","exact_revision":"revision"}`), LocationJSON: []byte(`{"path":"a.txt"}`), BytesSHA: strings.Repeat("a", 64)}, nil
 }
 func (t *testTx) Object(hash string) (domain.Object, error) {
+	if object, ok := t.objects[hash]; ok {
+		return object, nil
+	}
 	return domain.Object{Hash: hash, State: "ready"}, nil
 }
 

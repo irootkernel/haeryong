@@ -48,7 +48,7 @@ func (t *writeTx) PurgeImpact(document string) ([]domain.LifecycleItem, error) {
 		{"annotation_value", `SELECT a.value FROM annotations a WHERE a.document_id=? ORDER BY annotation_id`},
 		{"annotation_revision", `SELECT h.value FROM annotation_history h JOIN annotations a USING(annotation_id) WHERE a.document_id=? ORDER BY h.annotation_id,h.revision`},
 		{"source_history", `SELECT value FROM (SELECT json_object('id',verification_id,'excerpt',hex(expected_excerpt),'ref',expected_excerpt_ref,'read',read_id,'outcome',outcome) AS value FROM citation_verifications WHERE version_id IN(SELECT version_id FROM document_versions WHERE document_id=?) ORDER BY verification_id)`},
-		{"managed_source_snapshot", `SELECT json_object('capture',c.capture_id,'read',r.read_id,'hash',r.content_hash,'retention',r.retention_mode,'availability',r.availability) FROM source_capture_reads r JOIN source_captures c ON c.capture_id=r.capture_id WHERE json_extract(c.requested_selection,'$.version_id') IN(SELECT version_id FROM document_versions WHERE document_id=?) AND EXISTS(SELECT 1 FROM object_references own WHERE own.owner_kind='selected_snapshot' AND own.owner_id=r.read_id AND own.content_hash=r.content_hash) ORDER BY c.capture_id,r.read_id`},
+		{"managed_source_snapshot", sourceReadDependencies + `SELECT json_object('capture',c.capture_id,'read',r.read_id,'hash',r.content_hash,'retention',r.retention_mode,'availability',r.availability) FROM source_capture_reads r JOIN source_captures c ON c.capture_id=r.capture_id WHERE r.read_id IN(SELECT read_id FROM source_read_contexts WHERE version_id IN(SELECT version_id FROM document_versions WHERE document_id=?)) AND EXISTS(SELECT 1 FROM object_references own WHERE own.owner_kind='selected_snapshot' AND own.owner_id=r.read_id AND own.content_hash=r.content_hash) ORDER BY c.capture_id,r.read_id`},
 	} {
 		rs, e := t.tx.QueryContext(t.ctx, q.sql, document)
 		if e != nil {
@@ -313,7 +313,7 @@ func (t *writeTx) PurgeStep(id string, generation int64, limit int) (bool, error
 	// Do not remove a running worker's ownership ledger before it confirms
 	// stop. The serial dispatcher gives accepted cancellation its normal turn.
 	var active int
-	if err = t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM jobs WHERE state NOT IN('completed','failed','cancelled') AND job_id IN(SELECT job_id FROM derived_work WHERE version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?) UNION SELECT job_id FROM import_intents WHERE json_extract(value,'$.DocumentID')=? UNION SELECT job_id FROM jobs WHERE kind IN ('generation','question') AND (json_extract(scope,'$.target.document_id')=? OR json_extract(scope,'$.target.version_id') IN(SELECT version_id FROM purged_versions WHERE document_id=?)) UNION SELECT i.job_id FROM job_inputs i JOIN source_capture_reads r ON r.read_id=i.read_id JOIN source_captures c ON c.capture_id=r.capture_id WHERE json_extract(c.requested_selection,'$.version_id') IN(SELECT version_id FROM purged_versions WHERE document_id=?))`, i.DocumentID, i.DocumentID, i.DocumentID, i.DocumentID, i.DocumentID).Scan(&active); err != nil {
+	if err = t.tx.QueryRowContext(t.ctx, sourceJobDependencies+`SELECT count(*) FROM jobs WHERE state NOT IN('completed','failed','cancelled') AND job_id IN(SELECT job_id FROM derived_work WHERE version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?) UNION SELECT job_id FROM import_intents WHERE json_extract(value,'$.DocumentID')=? UNION SELECT job_id FROM jobs WHERE kind IN ('generation','question') AND (json_extract(scope,'$.target.document_id')=? OR json_extract(scope,'$.target.version_id') IN(SELECT version_id FROM purged_versions WHERE document_id=?)) UNION SELECT job_id FROM source_job_contexts WHERE version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?))`, i.DocumentID, i.DocumentID, i.DocumentID, i.DocumentID, i.DocumentID).Scan(&active); err != nil {
 		return false, err
 	}
 	if active > 0 {
@@ -325,7 +325,7 @@ func (t *writeTx) PurgeStep(id string, generation int64, limit int) (bool, error
 	if active > 0 {
 		return false, nil
 	}
-	if err = t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM source_captures WHERE state='capturing' AND json_extract(requested_selection,'$.version_id') IN(SELECT version_id FROM purged_versions WHERE document_id=?)`, i.DocumentID).Scan(&active); err != nil {
+	if err = t.tx.QueryRowContext(t.ctx, sourceReadDependencies+`SELECT count(*) FROM source_captures c WHERE state='capturing' AND (json_extract(requested_selection,'$.version_id') IN(SELECT version_id FROM purged_versions WHERE document_id=?) OR EXISTS(SELECT 1 FROM json_each(c.requested_selection,'$._retained_read_ids') r JOIN source_read_contexts ctx ON ctx.read_id=r.value WHERE ctx.version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?)))`, i.DocumentID, i.DocumentID).Scan(&active); err != nil {
 		return false, err
 	}
 	if active > 0 {
@@ -513,7 +513,11 @@ func (t *writeTx) PurgeStep(id string, generation int64, limit int) (bool, error
 func (t *writeTx) purgeSetOwners(set string) (int, error) {
 	var retained int
 	err := t.tx.QueryRowContext(t.ctx, `SELECT (SELECT count(*) FROM document_versions WHERE content_set_id=?)+(SELECT count(*) FROM uploads WHERE sealed_content_set_id=? AND state<>'abandoned')+(SELECT count(*) FROM metadata_indexes WHERE content_set_id=?)+(SELECT count(*) FROM import_intents i JOIN jobs j USING(job_id) WHERE json_extract(i.value,'$.ContentSetID')=? AND j.state NOT IN('completed','failed','cancelled'))`, set, set, set, set).Scan(&retained)
-	return retained, err
+	if err != nil {
+		return 0, err
+	}
+	generated, err := t.generationSetOwners(set)
+	return retained + generated, err
 }
 
 func (t *writeTx) reclaimPurgeSet(i *domain.PurgeIntent, limit int) error {
@@ -800,7 +804,7 @@ func purgeStage(i domain.PurgeIntent) string {
 }
 
 func (t *writeTx) detachManagedSnapshots(job, document string, limit int) (bool, error) {
-	rows, e := t.tx.QueryContext(t.ctx, `SELECT r.read_id,r.content_hash FROM source_capture_reads r JOIN source_captures c ON c.capture_id=r.capture_id WHERE json_extract(c.requested_selection,'$.version_id') IN(SELECT version_id FROM purged_versions WHERE document_id=?) AND EXISTS(SELECT 1 FROM object_references own WHERE own.owner_kind='selected_snapshot' AND own.owner_id=r.read_id AND own.content_hash=r.content_hash) ORDER BY r.read_id LIMIT ?`, document, batch(limit))
+	rows, e := t.tx.QueryContext(t.ctx, sourceReadDependencies+`SELECT r.read_id,r.content_hash FROM source_capture_reads r JOIN source_captures c ON c.capture_id=r.capture_id WHERE r.read_id IN(SELECT read_id FROM source_read_contexts WHERE version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?)) AND EXISTS(SELECT 1 FROM object_references own WHERE own.owner_kind='selected_snapshot' AND own.owner_id=r.read_id AND own.content_hash=r.content_hash) ORDER BY r.read_id LIMIT ?`, document, batch(limit))
 	if e != nil {
 		return false, e
 	}

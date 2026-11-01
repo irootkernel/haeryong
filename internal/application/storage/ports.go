@@ -31,6 +31,7 @@ type Store interface {
 type WriteTx interface {
 	SourceCaptureTx
 	ProviderTx
+	GenerationTx
 	CopyTx
 	PurgeImpact(string) ([]domain.LifecycleItem, error)
 	StartPurge(domain.LifecyclePlan, domain.LifecycleResult) error

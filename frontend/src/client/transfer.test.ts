@@ -5,6 +5,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
+import { GenerationSubmission } from "./generation.ts";
+import type { GenerationRecord } from "./generation.ts";
 
 import {
   BrowserJournalStore,
@@ -26,7 +28,7 @@ import {
   verifyReselection,
 } from "./transfer.ts";
 import type { ImportJournal, JournalStore } from "./transfer.ts";
-import type { HaeryongClient, ListPage, OperationView, UploadCheckpoint, UploadDetail } from "./types.ts";
+import type { HaeryongClient, ListPage, OperationView, UploadCheckpoint, UploadDetail, GenerationRequest } from "./types.ts";
 import { ApiError } from "./types.ts";
 import type { FileLike, PlannedEntry, PlannedInput } from "./transfer.ts";
 
@@ -126,7 +128,7 @@ class FakeClient {
   async documentDetail(id: string): Promise<typeof this.document> {
     return { ...this.document, document_id: id };
   }
-  async createUpload(): Promise<{ upload_id: string; checkpoint: UploadCheckpoint }> {
+  async createUpload(_request?:unknown,_key?:unknown): Promise<{ upload_id: string; checkpoint: UploadCheckpoint }> {
     this.createdUploads += 1;
     return { upload_id: "up-" + this.createdUploads, checkpoint: emptyCheckpoint() };
   }
@@ -816,4 +818,89 @@ test("the first-completion gate runs only for a new first S and blocks before an
   assert.equal(gateCalls, beforeGate + 1);
   assert.equal(fake.completeCalls.length, 2);
   assert.notEqual(fake.completeCalls[1].key, "s-kept");
+});
+
+test("GCLIENT03 generation/draft preparation journals before upload, replays exact U and never enters the import publisher", async()=>{
+ const fake=new FakeClient(),journal=new FakeJournal(),engine=new TransferEngine(client(fake),journal);
+ const bytes=new Uint8Array([1,2,3]),file=new Blob([bytes]);
+ const input:PlannedInput={mode:"object",selectionName:"request",entries:[{path:"request.txt",kind:"file",size:3,file}],limits:{emptyDirectoriesRepresented:true,symlinksRepresented:true}};
+ const request={purpose:"body" as const,input_mode:"object" as const,target:{operation_id:"generation-K",action:"generation" as const,project_id:"p",document_id:null}};
+ const record=await engine.beginOwnedUpload("l","p",request,input);
+ assert.equal(fake.createdUploads,0);assert.deepEqual(journal.records.get(record.importKey!)!.uploadRequest,request);
+ const seen:unknown[]=[];fake.createUpload=async(request:unknown,key:unknown)=>{seen.push([request,key]);return {upload_id:"u",checkpoint:emptyCheckpoint()};};
+ await engine.attachUpload(record);assert.deepEqual(seen,[[request,record.createKey]]);
+ await assert.rejects(engine.publish(record),/no import publication intent/);
+ journal.failNextSave=true;
+ await assert.rejects(engine.beginOwnedUpload("l","p",request,input),JournalWriteError);
+ assert.equal(seen.length,1);
+});
+
+// The fake below enforces the service's opaque-object transport contract;
+// GenerationSubmission and TransferEngine remain the real production clients.
+test("GCLIENT16 fresh generation seals exact UTF-8 object bytes before original-key dispatch and accepted replay sends nothing", async () => {
+  const fake = new FakeClient(), uploads = new FakeJournal();
+  const rows = new Map<string, GenerationRecord>();
+  const journal = {
+    read: () => [...rows.values()].map(row => structuredClone(row)),
+    save: (row: GenerationRecord) => { rows.set(row.operationId, structuredClone(row)); },
+  };
+  const prompt = "Explain α\nkeep exact \u0000 bytes";
+  const expected = new TextEncoder().encode(prompt);
+  const hash = createHash("sha256").update(expected).digest("hex");
+  const creates: { request: unknown; key: unknown }[] = [];
+  const dispatched: { body: GenerationRequest; key: string }[] = [];
+  let received = new Uint8Array();
+  const port = client(fake);
+  const submission = new GenerationSubmission(port, journal, "l1", "p1", uploads,
+    async <T>(_name: string, action: () => Promise<T>) => action(), () => "original-runtime");
+  const record = submission.capture({project_id: "proj-1", document_id: null, intent: "draft", source_selection: {selections: []}}, prompt, () => {});
+  const originalRequest = structuredClone(record.request);
+  const target = {operation_id: record.operationId, action: "generation", project_id: "proj-1", document_id: null};
+  fake.createUpload = async (request, key) => {
+    assert.deepEqual(request, {purpose: "body", input_mode: "object", target});
+    creates.push({request: structuredClone(request), key});
+    fake.createdUploads++;
+    fake.detail = {...fake.detail, purpose: "body", input_mode: "object", target,
+      selection_name: null, reusable: false, transport_entry: "_input"};
+    return {upload_id: fake.detail.upload_id, checkpoint: structuredClone(fake.detail.checkpoint)};
+  };
+  fake.putUploadEntry = async (id, chunk) => {
+    assert.equal(id, fake.detail.upload_id);
+    // Matches the real importer/HTTP boundary, independently of promptPlan.
+    if (fake.detail.input_mode !== "directory" && (chunk.kind !== "file" || chunk.path !== fake.detail.transport_entry)) {
+      throw new ApiError(400, "INVALID_REQUEST", false);
+    }
+    assert.equal(fake.detail.state, "open");
+    assert.equal(chunk.offset, 0);assert.equal(chunk.totalLength, expected.byteLength);assert.equal(chunk.final, true);
+    assert.equal(chunk.chunkSha256, createHash("sha256").update(chunk.bytes).digest("hex"));
+    received = new Uint8Array(chunk.bytes);
+    fake.puts.push(chunk);
+    fake.detail.checkpoint = {generation: 2, inventory_sha256: hash, accepted_bytes: String(received.byteLength), complete_input: false};
+    return {accepted_offset: String(received.byteLength), checkpoint: structuredClone(fake.detail.checkpoint)};
+  };
+  fake.completeUpload = async (id, checkpoint, key) => {
+    assert.equal(id, fake.detail.upload_id);
+    assert.deepEqual(checkpoint, {...fake.detail.checkpoint, generation: fake.detail.checkpoint.generation + 1, complete_input: true});
+    assert.deepEqual(received, expected);
+    fake.completeCalls.push({checkpoint: structuredClone(checkpoint), key});
+    fake.detail = {...fake.detail, state: "sealed", reusable: true, checkpoint,
+      sealed_object_ref: {object_id: id, bytes_sha256: hash, byte_size: String(received.byteLength), media_type: "application/octet-stream"}};
+    return {kind: "accepted", body: {job_id: "seal-job"}};
+  };
+  port.generationStart = async (body, key) => {
+    assert.equal(fake.detail.state, "sealed");
+    assert.equal(key, record.operationId);
+    assert.deepEqual(body, {...originalRequest, body_ref: {object_id: fake.detail.upload_id, bytes_sha256: hash, byte_size: String(expected.byteLength), media_type: "text/plain"}});
+    assert.equal(Object.hasOwn(body, "prompt"), false);
+    dispatched.push({body: structuredClone(body), key});
+    return {operation_id: key, job_id: "generation-job", draft_id: "draft", intent: "draft", job_url: "/api/v1/jobs/generation-job"};
+  };
+  assert.equal((await submission.send(record, prompt, {})).job_id, "generation-job");
+  assert.equal(record.promptSHA, hash);assert.equal(record.promptSize, expected.byteLength);
+  assert.deepEqual(received, expected);assert.equal(fake.puts.length, 1);
+  assert.equal(creates.length, 1);assert.equal(fake.completeCalls.length, 1);assert.equal(dispatched.length, 1);
+  assert.equal(new Set([creates[0]!.key, fake.completeCalls[0]!.key, record.operationId]).size, 3);
+  assert.equal(fake.importCalls, 0);assert.equal(rows.get(record.operationId)?.accepted?.job_id, "generation-job");
+  await submission.send(record, "accepted replay ignores current text", {});
+  assert.equal(creates.length, 1);assert.equal(fake.puts.length, 1);assert.equal(fake.completeCalls.length, 1);assert.equal(dispatched.length, 1);
 });

@@ -15,7 +15,12 @@ func mergeProviderTransport(old, incoming *domain.ProviderTransport) (*domain.Pr
 	if incoming == nil {
 		return old, false, nil
 	}
+	generation, genConflict := mergeGenerationTransport(old.Generation, incoming.Generation)
+	if genConflict {
+		return incoming, true, nil
+	}
 	before, after := *old, *incoming
+	before.Generation, after.Generation = generation, generation
 	before.LastLookup = nil
 	after.LastLookup = nil
 	before.AcceptedAt = ""
@@ -60,6 +65,7 @@ func mergeProviderTransport(old, incoming *domain.ProviderTransport) (*domain.Pr
 		return incoming, true, nil
 	}
 	merged := *old
+	merged.Generation = generation
 	merged.FrameSHA = before.FrameSHA
 	merged.Capabilities = before.Capabilities
 	first := func(a, b string) string {

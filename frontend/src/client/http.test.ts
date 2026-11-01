@@ -495,3 +495,74 @@ test("HTTP provider status rejects unknown authority state or missing allowance 
   try{const request=new HttpHaeryongClient().providerStatus();if(valid){assert.equal((await request).ordinary_usage_allowed,allowance)}else{await assert.rejects(request,/지원되는 제공자 상태/);}}finally{restore()}
  }
 });
+
+test("GCLIENT01 generation response loss reconciles the original key and draft mutations retain exact validators", async () => {
+  const seen: Array<{path:string; method:string; headers:Headers; body:unknown}> = [];
+  const key = "11111111-1111-4111-8111-111111111111";
+  const accepted = { operation_id:key,job_id:"job",draft_id:"draft",intent:"draft",job_url:"/api/v1/jobs/job" };
+  const restore = stubFetch(async (input, init) => {
+    const path=String(input); seen.push({path,method:init?.method??"GET",headers:new Headers(init?.headers),body:init?.body?JSON.parse(String(init.body)):null});
+    if(path==="/api/v1/generations") throw new TypeError("response lost after dispatch");
+    if(path===`/api/v1/operations/${key}`) return new Response(JSON.stringify({data:{operation_id:key,state:"completed",original_status:202,result_metadata:accepted}}));
+    return new Response(JSON.stringify({data:{draft_id:"draft",state:"ready"}}));
+  });
+  try {
+    const client=new HttpHaeryongClient();
+    assert.deepEqual(await client.generationStart({project_id:"p",document_id:null,intent:"draft",prompt:"explain",source_selection:{selections:[]}},key),accepted);
+    assert.deepEqual(seen.map(x=>[x.path,x.method]),[["/api/v1/generations","POST"],[`/api/v1/operations/${key}`,"GET"]]);
+    assert.equal(seen[0]!.headers.get("Idempotency-Key"),key);
+    await client.draftPatch("d/+%",{action:"reject"},'"exact"',key);
+    assert.equal(seen[2]!.path,"/api/v1/drafts/d%2F%2B%25");
+    assert.equal(seen[2]!.headers.get("If-Match"),'"exact"');
+    assert.deepEqual(seen[2]!.body,{action:"reject"});
+    await client.draftPublish("d/+%",'"next"',key);
+    assert.equal(seen[3]!.method,"POST");assert.deepEqual(seen[3]!.body,{});
+    assert.equal(seen[3]!.headers.get("If-Match"),'"next"');
+    await client.draftList("p/+%","c/+%");
+    const url=new URL(seen[4]!.path,"http://local.invalid");
+    assert.equal(url.searchParams.get("project_id"),"p/+%");assert.equal(url.searchParams.get("cursor"),"c/+%");
+  } finally {restore();}
+});
+
+test("GCLIENT04 generation submission freezes prompt identity, preserves original K after uncertainty and blocks changed re-selection before upload",async()=>{
+ const {GenerationSubmission}=await import("./generation.ts");
+ const records=new Map<string,import("./generation.ts").GenerationRecord>();
+ const journal={read:()=>[...records.values()].map(v=>structuredClone(v)),save:(r:import("./generation.ts").GenerationRecord)=>{records.set(r.operationId,structuredClone(r));}};
+ const uploads={save:()=>{},load:()=>({active:null,records:[]}),setActive:()=>{},discard:()=>{}};
+ let dispatches=0;
+ const accepted={operation_id:"",job_id:"j",draft_id:"d",intent:"draft" as const,job_url:"/api/v1/jobs/j"};
+ const fake={generationStart:async()=>{dispatches++;throw new Error("unexpected new dispatch");},operation:async(id:string)=>({operation_id:id,state:"completed",original_status:202,result_metadata:{...accepted,operation_id:id}})};
+ const submit=new GenerationSubmission(fake as unknown as import("./types.ts").HaeryongClient,journal,"lib","owner",uploads,async(_name,action)=>action(),()=>"runtime-before");
+ const request={project_id:"p",document_id:null,intent:"draft" as const,source_selection:{selections:[]}};
+ const record=submit.capture(request,"original prompt",()=>{});
+ assert.equal(JSON.stringify(records.get(record.operationId)).includes("original prompt"),false);
+ await assert.rejects(submit.send(record,"changed prompt",{}),/원래 요청/);assert.equal(dispatches,0);
+ record.dispatchReady=true;journal.save(record);
+ const result=await submit.send(record,"",{});assert.equal(result.operation_id,record.operationId);assert.equal(dispatches,0);
+ assert.equal(records.get(record.operationId)!.accepted!.job_id,"j");
+ let saves=0;const failing={read:()=>[],save:()=>{saves++;throw new Error("storage unavailable");}};
+ const blocked=new GenerationSubmission(fake as unknown as import("./types.ts").HaeryongClient,failing,"lib","owner",uploads,async(_name,action)=>action(),()=>"runtime-before");
+ assert.throws(()=>blocked.capture(request,"request",()=>{}),/storage unavailable/);assert.equal(saves,1);assert.equal(dispatches,0);
+});
+
+
+test("GCLIENT06 resume uses only the saved job decision, generation, opaque validator and original key",async()=>{
+ const seen:unknown[]=[];const restore=stubFetch(async(input,init)=>{seen.push([String(input),init?.method,new Headers(init?.headers).get("If-Match"),new Headers(init?.headers).get("Idempotency-Key"),JSON.parse(String(init?.body))]);return new Response(JSON.stringify({data:{job_id:"j",decision:"continue"}}));});
+ try{await new HttpHaeryongClient().jobResume("j/+%","continue",7,'"opaque-job"',"K");assert.deepEqual(seen,[["/api/v1/jobs/j%2F%2B%25/resume","POST",'"opaque-job"',"K",{decision:"continue",expected_attempt_generation:7}]]);}finally{restore();}
+});
+
+
+test("T4R2RESUME07 the actual HTTP client recovers a resume receipt across runtime with no resume POST",async()=>{
+ const {recoverGenerationResume}=await import("./generation.ts");
+ const seen:unknown[]=[];let found=false;
+ const restore=stubFetch(async(input,init)=>{
+  seen.push([String(input),init?.method??"GET"]);
+  return found?new Response(JSON.stringify({data:{operation_id:"resume",state:"completed",original_status:200,result_metadata:{job_id:"job"}}})):new Response(JSON.stringify({error:{code:"NOT_FOUND",retryable:false}}),{status:404});
+ });
+ const record={operationId:"parent",request:{project_id:"p",document_id:null,intent:"draft" as const,source_selection:{selections:[]}},promptSHA:"",promptSize:0,dispatchReady:true,accepted:{operation_id:"parent",job_id:"job",draft_id:"d",intent:"draft" as const,job_url:"/api/v1/jobs/job"},resume:{key:"resume",decision:"retry" as const,generation:3,etag:'"original"',runtimeGeneration:"old",dispatchReady:true}};
+ try{
+  const client=new HttpHaeryongClient();await assert.rejects(recoverGenerationResume(client,record,"new",()=>{},()=>{}),/세대/);
+  found=true;assert.equal(await recoverGenerationResume(client,record,"new",()=>{},()=>{}),true);
+  assert.deepEqual(seen,[["/api/v1/operations/resume","GET"],["/api/v1/operations/resume","GET"]]);
+ }finally{restore();}
+});

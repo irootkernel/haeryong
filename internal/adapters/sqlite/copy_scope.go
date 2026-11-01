@@ -1,5 +1,7 @@
 package sqlite
 
+import "context"
+
 // Scoped immutable ownership is derived from the same snapshot as selection.
 // Ordinary payload files are unconditional; additional retained sources and
 // note/history context require their explicit selected record family.
@@ -23,3 +25,27 @@ UNION SELECT c.content_hash FROM contexts c JOIN note_values n ON c.context_id=j
 UNION SELECT x.expected_excerpt_ref FROM citation_verifications x JOIN picked p ON p.version_id=x.version_id WHERE x.expected_excerpt_ref IS NOT NULL AND (SELECT json_extract(value,'$.Request.include_retained_sources') FROM choice)=1
 UNION SELECT r.content_hash FROM source_capture_reads r JOIN source_captures c ON c.capture_id=r.capture_id JOIN picked p ON p.version_id=json_extract(c.requested_selection,'$.version_id') JOIN object_references own ON own.owner_kind='selected_snapshot' AND own.owner_id=r.read_id AND own.content_hash=r.content_hash WHERE c.state='completed' AND r.retention_mode='selected_snapshot' AND r.availability='available' AND (SELECT json_extract(value,'$.Request.include_retained_sources') FROM choice)=1
 ) SELECT hash FROM hashes WHERE hash IS NOT NULL AND hash!=''`
+
+// CopyRetainedReads binds source authority to exactly this captured export
+// selection. Whole backups retain their existing independent copy policy.
+func CopyRetainedReads(ctx context.Context, path, set string) ([]string, error) {
+	db, e := openCopy(path)
+	if e != nil {
+		return nil, e
+	}
+	defer db.Close()
+	rows, e := db.QueryContext(ctx, `SELECT DISTINCT r.read_id FROM source_capture_reads r JOIN source_captures c ON c.capture_id=r.capture_id JOIN copy_versions p ON p.set_id=? AND p.version_id=json_extract(c.requested_selection,'$.version_id') JOIN object_references own ON own.owner_kind='selected_snapshot' AND own.owner_id=r.read_id AND own.content_hash=r.content_hash WHERE c.state='completed' AND r.retention_mode='selected_snapshot' AND r.availability='available' ORDER BY r.read_id`, set)
+	if e != nil {
+		return nil, e
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if e = rows.Scan(&id); e != nil {
+			return nil, e
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}

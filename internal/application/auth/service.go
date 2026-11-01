@@ -663,6 +663,9 @@ func authorizeAuthenticated(tx app.WriteTx, record domain.Session, r domain.Requ
 	if err := authorizeScope(tx, record, r); err != nil {
 		return err
 	}
+	if err := AuthorizeFreshWorkflowMutation(tx, record, r); err != nil {
+		return err
+	}
 	if ok, e := providerReconcileOnly(tx, record, r); e != nil || ok {
 		return e
 	}

@@ -331,6 +331,13 @@ func (t *writeTx) UploadStats(id string) (domain.UploadStats, error) {
 }
 
 func (t *writeTx) DiscardContentSet(id string) error {
+	retained, err := t.generationSetOwners(id)
+	if err != nil {
+		return err
+	}
+	if retained != 0 {
+		return domain.ErrPinned
+	}
 	var n int
 	if err := t.tx.QueryRowContext(t.ctx, "SELECT count(*) FROM document_versions WHERE content_set_id=?", id).Scan(&n); err != nil {
 		return err
@@ -450,31 +457,8 @@ func (t *writeTx) ReleaseOwnerPins(kind, id string) error {
 	return t.exec("DELETE FROM object_pins WHERE owner_kind=? AND owner_id=?", kind, id)
 }
 func (t *writeTx) DraftTarget(id string) (domain.DraftTarget, error) {
-	out := domain.DraftTarget{ID: id}
-	r, e := resource(t.ctx, t.tx, "draft", id)
-	if e != nil {
-		return out, e
-	}
-	var value struct {
-		ProjectID  string  `json:"project_id"`
-		DocumentID *string `json:"document_id"`
-		State      string  `json:"state"`
-	}
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(r.Value, &fields) != nil {
-		return out, domain.ErrNotFound
-	}
-	if _, ok := fields["document_id"]; !ok {
-		return out, domain.ErrNotFound
-	}
-	if json.Unmarshal(r.Value, &value) != nil || value.ProjectID == "" || value.State == "" {
-		return out, domain.ErrNotFound
-	}
-	out.ProjectID = value.ProjectID
-	out.DocumentID = value.DocumentID
-	out.State = value.State
-	out.Revision = r.Revision
-	return out, nil
+	d, e := t.Draft(id)
+	return domain.DraftTarget{ID: id, ProjectID: d.ProjectID, DocumentID: d.DocumentID, State: d.State, Revision: d.Revision}, e
 }
 func (t *writeTx) AnnotationTarget(id string) (domain.AnnotationTarget, error) {
 	n, err := t.Annotation(id)
@@ -509,6 +493,13 @@ func (t *writeTx) ReclaimAbandonedUpload(id string) error {
 		return e
 	}
 	if n > 0 {
+		return nil
+	}
+	retained, e := t.generationSetOwners(set)
+	if e != nil {
+		return e
+	}
+	if retained > 0 {
 		return nil
 	}
 	if e := t.exec("DELETE FROM version_entries WHERE content_set_id=?", set); e != nil {

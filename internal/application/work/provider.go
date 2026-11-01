@@ -58,9 +58,12 @@ type ProviderBytes interface {
 // ProviderCoordinator uses the existing writer and job ledger. Nil transport
 // reports unavailable, never substitutes a mock or executes a configured shell.
 type ProviderCoordinator struct {
-	Store             app.Store
-	Bytes             ProviderBytes
-	Driver            ProviderDriver
+	Store  app.Store
+	Bytes  ProviderBytes
+	Driver ProviderDriver
+	// Prepare verifies and stages a saved whole result outside the writer. It
+	// cannot dispatch; final application still rechecks the same authority.
+	Prepare           func(context.Context, domain.ProviderAttempt) error
 	Apply             func(app.WriteTx, domain.ProviderAttempt) error
 	active            atomic.Pointer[providerPhase]
 	accountingFailure atomic.Pointer[providerAccountingError]
@@ -80,6 +83,7 @@ func (p *ProviderCoordinator) process(ctx context.Context, id string, phase *pro
 	var reconcile bool
 	var ownerRuntime string
 	var normalizing bool
+	var runningSaved *domain.ProviderAttempt
 	var cached *domain.ProviderAttempt
 	var cachedObjects []domain.Object
 	outputAllowed := true
@@ -160,12 +164,8 @@ func (p *ProviderCoordinator) process(ctx context.Context, id string, phase *pro
 		if j.State == "running" {
 			for _, saved := range rows {
 				if saved.State == "result_saved" && saved.ApplyGeneration == j.AttemptGeneration {
-					return tx.ApplyProviderResult(saved.ID, func(tx app.WriteTx) error {
-						if p.Apply != nil {
-							return p.Apply(tx, saved)
-						}
-						return nil
-					})
+					runningSaved = &saved
+					return nil
 				}
 			}
 			return domain.ErrTransition
@@ -228,6 +228,21 @@ func (p *ProviderCoordinator) process(ctx context.Context, id string, phase *pro
 		}
 		return nil
 	})
+	if e == nil && runningSaved != nil {
+		if p.Prepare != nil {
+			if e = p.Prepare(ctx, *runningSaved); e != nil {
+				return errors.Join(e, p.pause(context.WithoutCancel(ctx), id, providerPreparationReason(e)))
+			}
+		}
+		return p.Store.Write(ctx, func(tx app.WriteTx) error {
+			return tx.ApplyProviderResult(runningSaved.ID, func(tx app.WriteTx) error {
+				if p.Apply != nil {
+					return p.Apply(tx, *runningSaved)
+				}
+				return nil
+			})
+		})
+	}
 	if e == nil && cached != nil {
 		return p.continueSaved(ctx, j, *cached, cachedObjects)
 	}
@@ -352,6 +367,11 @@ func (p *ProviderCoordinator) continueSaved(ctx context.Context, expected domain
 		return domain.ErrReconciliation
 	}
 	claim := func() error {
+		if p.Prepare != nil {
+			if e := p.Prepare(ctx, saved); e != nil {
+				return e
+			}
+		}
 		return p.Store.Write(ctx, func(tx app.WriteTx) error {
 			j, e := tx.Job(expected.ID)
 			if e != nil {

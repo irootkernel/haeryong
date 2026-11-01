@@ -12,21 +12,22 @@ type CredentialScope struct {
 }
 
 type Session struct {
-	Revision    int64           `json:"revision"`
-	ETag        string          `json:"etag"`
-	Scope       CredentialScope `json:"scope"`
-	ID          string          `json:"session_id"`
-	PrincipalID string          `json:"principal_id"`
-	LibraryID   string          `json:"library_id"`
-	DeviceLabel string          `json:"device_label"`
-	Origin      string          `json:"origin"`
-	CreatedAt   time.Time       `json:"created_at"`
-	LastSeenAt  time.Time       `json:"last_seen_at"`
-	ExpiresAt   *time.Time      `json:"expires_at"`
-	State       string          `json:"state"`
-	TokenHash   string          `json:"-"`
-	AuthEpoch   string          `json:"-"`
-	Revoked     bool            `json:"-"`
+	Revision          int64           `json:"revision"`
+	ETag              string          `json:"etag"`
+	Scope             CredentialScope `json:"scope"`
+	ID                string          `json:"session_id"`
+	PrincipalID       string          `json:"principal_id"`
+	LibraryID         string          `json:"library_id"`
+	DeviceLabel       string          `json:"device_label"`
+	Origin            string          `json:"origin"`
+	CreatedAt         time.Time       `json:"created_at"`
+	LastSeenAt        time.Time       `json:"last_seen_at"`
+	ExpiresAt         *time.Time      `json:"expires_at"`
+	State             string          `json:"state"`
+	TokenHash         string          `json:"-"`
+	AuthEpoch         string          `json:"-"`
+	MutationProjectID string          `json:"-"`
+	Revoked           bool            `json:"-"`
 }
 type Pairing struct {
 	ID          string    `json:"pairing_id"`
@@ -76,15 +77,18 @@ type WorkflowPrincipal struct {
 	Revision  int64
 }
 type ScopedCredential struct {
-	ID             string
-	PrincipalID    string
-	TokenHash      string
-	AuthEpoch      string
-	Scope          CredentialScope
-	Permissions    map[string]int64
-	ConfigRevision int64
-	CreatedAt      time.Time
-	ExpiresAt      *time.Time
-	Revoked        bool
-	Revision       int64
+	ID          string
+	PrincipalID string
+	TokenHash   string
+	AuthEpoch   string
+	Scope       CredentialScope
+	// MutationProjectID is the immutable issuer-selected output project. Prior
+	// read projects in Scope do not extend this private admission authority.
+	MutationProjectID string
+	Permissions       map[string]int64
+	ConfigRevision    int64
+	CreatedAt         time.Time
+	ExpiresAt         *time.Time
+	Revoked           bool
+	Revision          int64
 }

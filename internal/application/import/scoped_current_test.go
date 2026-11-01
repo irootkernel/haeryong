@@ -26,7 +26,8 @@ var _ = It("TestAcceptedScopedSealUsesCapturedAndCurrentAuthority", Label("persi
 		func() {
 			By(change)
 			f := newFixture(t)
-			draft, secondDraft, principal, binding := key(t), key(t), key(t), key(t)
+			first, second := generationJob(f, "draft", nil, nil), generationJob(f, "draft", nil, nil)
+			draft, secondDraft, principal, binding := first.DraftID, second.DraftID, key(t), key(t)
 			token, e := sec.Secret()
 			Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 
@@ -35,11 +36,6 @@ var _ = It("TestAcceptedScopedSealUsesCapturedAndCurrentAuthority", Label("persi
 			var permissions int64
 			{
 				e = f.store.Write(ctx, func(tx app.WriteTx) error {
-					for _, id := range []string{draft, secondDraft} {
-						if _, e := tx.MutateResource(domain.Resource{Kind: "draft", ID: id, Value: encodedTest(map[string]any{"project_id": f.project, "document_id": nil, "state": "ready"})}, 0, "resource.invalidated"); e != nil {
-							return e
-						}
-					}
 					if e := tx.PutWorkflowPrincipal(p); e != nil {
 						return e
 					}

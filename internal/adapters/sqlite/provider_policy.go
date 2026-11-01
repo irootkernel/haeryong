@@ -112,9 +112,11 @@ func (t *writeTx) AuthorizeProviderRetry(jobID string, predecessors []string) er
 // pins are released, and only after all of this terminal job's effects settle.
 func (t *writeTx) releaseProviderInputs(jobID string) error {
 	if e := t.exec(`DELETE FROM object_pins WHERE owner_kind='provider_attempt'
- AND pin_id IN (SELECT a.attempt_id||':'||i.read_id FROM provider_attempts a JOIN provider_inputs i ON i.attempt_id=a.attempt_id WHERE a.job_id=?)
+ AND pin_id IN (
+ SELECT a.attempt_id||':'||i.read_id FROM provider_attempts a JOIN provider_inputs i ON i.attempt_id=a.attempt_id WHERE a.job_id=?
+ UNION ALL SELECT a.attempt_id||':owned:'||p.content_hash FROM provider_attempts a JOIN object_pins p ON p.owner_id=a.attempt_id AND p.owner_kind='provider_attempt' WHERE a.job_id=?)
  AND EXISTS(SELECT 1 FROM jobs WHERE job_id=? AND state IN ('completed','failed','cancelled'))
- AND NOT EXISTS(SELECT 1 FROM provider_attempts WHERE job_id=? AND state IN ('prepared','dispatching','running','outcome_unknown')) AND NOT EXISTS(SELECT 1 FROM provider_orphans WHERE json_extract(value,'$.job_id')=? AND state IN ('dispatching','running','outcome_unknown'))`, jobID, jobID, jobID, jobID); e != nil {
+ AND NOT EXISTS(SELECT 1 FROM provider_attempts WHERE job_id=? AND state IN ('prepared','dispatching','running','outcome_unknown')) AND NOT EXISTS(SELECT 1 FROM provider_orphans WHERE json_extract(value,'$.job_id')=? AND state IN ('dispatching','running','outcome_unknown'))`, jobID, jobID, jobID, jobID, jobID); e != nil {
 		return e
 	}
 	if e := t.exec(`DELETE FROM object_pins WHERE owner_kind='job_input' AND owner_id=? AND EXISTS(SELECT 1 FROM jobs WHERE job_id=? AND state IN ('completed','failed','cancelled')) AND NOT EXISTS(SELECT 1 FROM provider_attempts WHERE job_id=? AND state IN ('prepared','dispatching','running','outcome_unknown')) AND NOT EXISTS(SELECT 1 FROM provider_orphans WHERE json_extract(value,'$.job_id')=? AND state IN ('dispatching','running','outcome_unknown'))`, jobID, jobID, jobID, jobID); e != nil {
@@ -150,37 +152,55 @@ func (t *writeTx) releaseProviderInputs(jobID string) error {
 	return nil
 }
 
-func (t *writeTx) releaseResolvedOrphanInputs(fact providerRestoreFact) error {
+func (t *writeTx) orphanInputsSettled(fact providerRestoreFact) (bool, error) {
 	if hasProviderConflict(fact.Conflict) || !(providerExternalTerminal(fact) || providerLocalTerminal(fact)) {
-		return nil
+		return false, nil
 	}
 	var live int
 	if e := t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM jobs WHERE job_id=? AND state NOT IN ('completed','failed','cancelled')`, fact.JobID).Scan(&live); e != nil {
-		return e
+		return false, e
 	}
 	if live > 0 {
-		return nil
+		return false, nil
 	}
 	if !providerResolutionSettled(fact) {
 		var raw []byte
 		err := t.tx.QueryRowContext(t.ctx, providerAttemptInventory+` WHERE a.attempt_id=? AND j.job_id=? AND j.state IN ('completed','failed','cancelled')`, fact.ID, fact.JobID).Scan(&raw)
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil
+			return false, nil
 		}
 		if err != nil {
-			return err
+			return false, err
 		}
 		var actual providerRestoreFact
 		if err = json.Unmarshal(raw, &actual); err != nil {
-			return err
+			return false, err
 		}
 		if !(providerExternalTerminal(actual) || providerLocalTerminal(actual)) || actual.RequestID != fact.RequestID || actual.SessionID != fact.SessionID {
-			return nil
+			return false, nil
 		}
+	}
+	return true, nil
+}
+
+func (t *writeTx) releaseResolvedOrphanInputs(fact providerRestoreFact) error {
+	settled, e := t.orphanInputsSettled(fact)
+	if e != nil {
+		return e
+	}
+	if !settled {
+		return nil
 	}
 	for _, input := range fact.Inputs {
 		if e := t.exec(`DELETE FROM object_pins WHERE pin_id=? AND owner_kind='provider_orphan' AND owner_id=? AND content_hash=?`, "provider-orphan:"+fact.ID+":"+input.ReadID+":"+input.Hash, fact.ID, input.Hash); e != nil {
 			return e
+		}
+	}
+	if fact.Transport != nil && fact.Transport.Generation != nil {
+		for _, object := range generationTransportObjects(fact.Transport.Generation) {
+			if e := t.exec(`DELETE FROM object_pins WHERE pin_id=? AND owner_kind='provider_orphan' AND owner_id=? AND content_hash=?`, "provider-orphan:"+fact.ID+":owned:"+object.Hash, fact.ID, object.Hash); e != nil {
+				return e
+			}
 		}
 	}
 	return nil
@@ -188,9 +208,9 @@ func (t *writeTx) releaseResolvedOrphanInputs(fact providerRestoreFact) error {
 
 func (t *writeTx) providerBlocksPurge(document string) (bool, error) {
 	var count int
-	e := t.tx.QueryRowContext(t.ctx, `WITH versions AS(SELECT version_id FROM purged_versions WHERE document_id=?), source_jobs AS(SELECT i.job_id FROM job_inputs i JOIN source_capture_reads r ON r.read_id=i.read_id JOIN source_captures c ON c.capture_id=r.capture_id WHERE json_extract(c.requested_selection,'$.version_id') IN versions)
+	e := t.tx.QueryRowContext(t.ctx, sourceJobDependencies+`, versions AS(SELECT version_id FROM purged_versions WHERE document_id=?), source_jobs AS(SELECT job_id FROM source_job_contexts WHERE version_id IN versions)
  SELECT (SELECT count(*) FROM provider_attempts a JOIN jobs j ON j.job_id=a.job_id WHERE a.state IN('dispatching','running','outcome_unknown') AND(json_extract(j.scope,'$.target.document_id')=? OR json_extract(j.scope,'$.target.version_id') IN versions OR j.job_id IN source_jobs))+
- (SELECT count(*) FROM provider_orphans o WHERE state IN('dispatching','running','outcome_unknown') AND(json_extract(value,'$.target.document_id')=? OR json_extract(value,'$.target.version_id') IN versions OR EXISTS(SELECT 1 FROM json_tree(o.value) n WHERE n.type='object' AND json_extract(n.value,'$.source_version_id') IN versions)))`, document, document, document).Scan(&count)
+ (SELECT count(*) FROM provider_orphans o WHERE state IN('dispatching','running','outcome_unknown') AND(json_extract(value,'$.target.document_id')=? OR json_extract(value,'$.target.version_id') IN versions OR EXISTS(SELECT 1 FROM json_tree(o.value) n WHERE n.type='object' AND (json_extract(n.value,'$.source_version_id') IN versions OR EXISTS(SELECT 1 FROM json_each(n.value,'$.source_version_ids') v WHERE v.value IN versions)))))`, document, document, document).Scan(&count)
 	return count > 0, e
 }
 
@@ -452,6 +472,9 @@ func (t *writeTx) CheckProviderPolicy(a domain.ProviderAttempt) error {
 		}
 		if scope.ProviderID == "" || state != "completed" || availability != "available" {
 			return domain.ErrDenied
+		}
+		if e = app.GuardSourceInput(t, scope, readID); e != nil {
+			return e
 		}
 		if sourceVersion != "" {
 			target, _ := json.Marshal(map[string]string{"project_id": project, "version_id": sourceVersion})

@@ -23,13 +23,14 @@ type CommandIntent struct {
 	Method           string `json:"method"`
 	Target           string `json:"target"`
 	SourcePath       string `json:"source_path,omitempty"`
+	MetadataPath     string `json:"metadata_path,omitempty"`
 	ProjectID        string `json:"explicit_project_id,omitempty"`
 	SourceID         string `json:"explicit_source_id,omitempty"`
 	ExpectedRevision string `json:"explicit_expected_revision,omitempty"`
 }
 
 func commandKey(identity transfer.Identity, intent CommandIntent) (string, error) {
-	if identity.LibraryID == "" || identity.PrincipalID == "" || intent.Method == "" || intent.Method != strings.ToUpper(intent.Method) || (!strings.HasPrefix(intent.Target, "/api/v1/") && intent.Target != "/local/v1/copy-requests") || strings.ContainsAny(intent.Target, "\r\n") {
+	if identity.LibraryID == "" || identity.PrincipalID == "" || intent.Method == "" || intent.Method != strings.ToUpper(intent.Method) || (!strings.HasPrefix(intent.Target, "/api/v1/") && intent.Target != "/local/v1/copy-requests" && intent.Target != "/local/v1/workflow-grants" && !(strings.HasPrefix(intent.Target, "/local/v1/workflow-grants/") && strings.HasSuffix(intent.Target, "/revoke"))) || strings.ContainsAny(intent.Target, "\r\n") {
 		return "", fmt.Errorf("invalid pending command binding")
 	}
 	if intent.CopyAction != "" {

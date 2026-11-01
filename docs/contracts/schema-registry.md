@@ -1037,8 +1037,18 @@ returning revoked byte payload. Denied existence uses nondisclosing 404 where
 appropriate. Byte delivery uses application/octet-stream, attachment and nosniff.
 
 Private provider input/orphan metadata additionally carries optional
-retention_mode and source_version_id for lifetime/restore/lifecycle guards; it
-never substitutes for the required producing-attempt input observation. Managed
+retention_mode and source_version_id for lifetime/restore/lifecycle guards.
+source_version_id retains the immediate capture's literal context; optional
+source_version_ids is a sorted/deduplicated array of known inherited context
+version IDs. Ownership merges independently of observed-origin/time conflict
+selection, preserving unknown historical facts. Neither field substitutes for
+the required producing-attempt input observation or grants dispatch authority.
+
+Private accepted-generation SourceReadIDs, capturing-selection _retained_read_ids
+and export RetainedReadIDs freeze actual retained-read dependencies in existing
+JSON storage. They are not accepted public request fields, new source facts or
+new observed_input rows. Capture requested_selection omits its private projection.
+Ignored current/non-working Git read_id values do not create ownership edges. Managed
 ProviderScope requires an explicitly selected provider ID and a valid managed
 capture binding for each selected read. The earlier blank-provider internal
 foundation fixture seam is not public managed admission authority.
@@ -1101,8 +1111,8 @@ inference, source capture or account/configuration mutation. Its data object is:
 | input_formats, output_format, native_input_telemetry | Initial adapter supports utf8_text/public_final_text and no exact native-read telemetry; unavailable wiring may report no format knowledge |
 
 features.provider indicates installed production transport support, not account
-readiness or public question/generation admission. features.generation and
-features.questions remain false. The shared native operation providerStatus
+readiness or public question/generation admission. Task03 did not expose generation or questions. Task04 now separately wires
+features.generation; features.questions remains false. The shared native operation providerStatus
 accepts exactly an empty JSON object and forwards only this GET. Unknown or
 malformed payload cannot reach HTTP. No native IDs, CWD, private invocation,
 source bodies, raw configuration, credentials or reasoning enter this projection.
@@ -1119,3 +1129,76 @@ reason labels and supported authentication modes without exposing native prose.
 The refresh action retains keyboard focus while busy and a stable polite status
 region announces changes. Settings links use shared SPA navigation and existing
 44 px action targets.
+
+## Generation implementation projection (TASK-006-04)
+
+Generation request and body staging follow the [HTTP generation contract](http-api.md#generation-and-drafts-implementation-task-006-04).
+Each explanation reference is exactly
+`{version_id,page_path,region_id,bytes_sha256}` with explicit nullable page/region;
+a non-null region requires its page. For a page reference, bytes_sha256 is the
+exact selected HTML file digest. A whole-version reference uses the canonical
+payload inventory digest; its supplied context bytes are the service manifest,
+with their own separately retained object identity. Neither form creates a
+project-source capture/read/input observation. When useful, service-derived
+manifest references preserve the selected immutable navigation target without
+claiming semantic support or rewriting author file bytes.
+
+The draft projection is
+`{draft_id,project_id,document_id,base_version_id,job_id,state,intent,revision,created_at,updated_at,payload_sha256,metadata_sha256,published_version_id,failure_reason,etag}`.
+Document/base, output digests, published version and failure reason are nullable.
+The reserved new-document identity and private output paths are not exposed.
+Revision is a positive integer and the validator covers the complete projected
+snapshot. Existing draft state/action unions and ready-only replacement remain
+unchanged. History returns these snapshots in revision order.
+
+GenerationStart native payload is `{request,operation_id}`. Draft list accepts
+only optional project_id/cursor; get takes draft_id; history adds optional cursor.
+DraftPatch takes `{draft_id,body,etag,operation_id}`; DraftPublish takes
+`{draft_id,etag,operation_id}`. JobResume takes
+`{job_id,decision,expected_attempt_generation,etag,operation_id}` with the existing
+resume decision union and positive generation. No payload permits a generic
+route, native credential or source-management handle.
+
+Task04 enables features.generation only when its real factory is wired. The
+provider status input/output format describes the native provider transport;
+the generation service's separately captured directory ZIP does not redefine
+native public-final text as ZIP output. Questions remain unavailable.
+
+
+### Generation caller recovery and retained-file selection
+
+Generation and draft caller journals persist the original runtime generation
+before dispatch, in addition to their existing operation key, original body and
+semantic validator. Each job-resume subrequest captures its own runtime before
+POST; the parent generation's older runtime cannot substitute for that fact.
+Pending resume recovery reads its original operation receipt first, even when
+the current job is no longer paused. Receipt recovery uses current authority and may read an
+existing receipt across restore. A missing receipt is not authority to resend
+under a different runtime; a legacy record without the original runtime remains
+receipt-only. A same-runtime missing receipt permits only the exact saved
+request. Current login or a freshly captured authority cannot fill the old fact.
+
+Definitive stale-validator/base refusal or a confirmed failed receipt is distinct
+from network uncertainty. An explicit acknowledgement may retain the refused
+request as caller history and release its active slot for a new explicit action
+with a new key. Uncertain requests retain their original key/body/validator.
+Acknowledgement does not retry or rebase: ready replacement retains its original
+base, and a changed base requires an explicit new linked generation/draft.
+For job resume, direct PRECONDITION_FAILED 412 and INVALID_TRANSITION 409 are
+definitive refusals. Operation-identity/reconciliation conflicts remain pending.
+The explicit resume acknowledgement rereads current state and atomically archives
+the old subrequest before releasing only that exact journal slot. A fresh decision
+gets its own key/current validator. A missing receipt under a changed or unknown
+original runtime permits no POST.
+
+The generation retained-files chooser projects existing completed capture/read
+metadata through `GET/HEAD /api/v1/projects/{id}/source-reads?source_id=...`.
+Its `{items,next_cursor}` uses the existing read projection above plus
+`captured_at` from the original capture. It is not a new observation time. The cursor
+binds library/runtime/auth epoch, current principal/scope and generations,
+project permissions, configuration and source filter. It is not a capture or
+provider observation. Current source access and that principal's capture access
+are required before rows are returned. Page size does not limit total selection.
+The chooser uses exact retained path/read identities; missing or unavailable
+bytes never select current files implicitly. Existing pinned-byte admission
+rechecks project/source/path and actual retained bytes.

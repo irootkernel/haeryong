@@ -272,3 +272,20 @@ label.choice input { width: 18px; height: 18px; }
 .note-context-text:focus-visible { outline: 2px solid var(--accent, #2558d6); outline-offset: 2px; }
 .note-context-controls { display: flex; flex-wrap: wrap; gap: .5rem; }
 .note-context-controls button { min-width: 44px; min-height: 44px; }
+
+/* Generation uses the existing modal sheet and ordinary shared controls. */
+.generation-sheet { width: min(54rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow: auto; padding: 1.25rem; border: 1px solid var(--border); border-radius: 1rem; background:var(--surface); color:var(--text-primary); }
+.generation-sheet::backdrop { background: rgb(0 0 0 / .45); }
+.generation-sheet header { display:flex; justify-content:space-between; align-items:center; gap:1rem; }
+.generation-sheet label { display:flex; flex-direction:column; gap:.4rem; margin-block:.7rem; min-width:0; }
+.generation-sheet input, .generation-sheet textarea, .generation-sheet select { min-height:44px; max-width:100%; width:100%; box-sizing:border-box; }
+.generation-sheet input[type="text"], .generation-sheet input[type="search"], .generation-sheet textarea { background:var(--surface); color:var(--text-primary); border:1px solid var(--border); border-radius:8px; padding:8px 12px; }
+.generation-sheet button, .generation-sheet .action-link { min-height:44px; }
+.generation-sheet button { margin:.25rem; }
+.generation-sheet fieldset { min-width:0; margin-block:1rem; }
+.generation-sheet p, .generation-sheet li { overflow-wrap:anywhere; }
+
+/* Exact draft identities must remain readable in the narrow shared sheet. */
+.draft-choice { text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.draft-target { overflow-wrap: anywhere; }
+.draft-target dd { margin-inline-start: 0; margin-block-end: 0.5rem; }

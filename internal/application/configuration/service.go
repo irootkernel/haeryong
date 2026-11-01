@@ -26,6 +26,7 @@ type Paths interface {
 }
 type Service struct {
 	ProviderTransportAvailable bool
+	GenerationAvailable        bool
 	Store                      app.Store
 	Auth                       *auth.Service
 	Paths                      Paths

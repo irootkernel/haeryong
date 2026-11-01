@@ -63,6 +63,23 @@ func GuardCopy(tx WriteTx, set domain.CopySet, jobID string, generation int64) e
 			return domain.ErrDenied
 		}
 	}
+	if set.Kind == "export" && set.Request.RetainedSources {
+		actor := domain.Session{PrincipalID: set.OwnerID, Scope: domain.CredentialScope{Kind: "owner"}}
+		for _, id := range set.RetainedReadIDs {
+			r, e := tx.SourceCaptureRead(id)
+			if e != nil {
+				return e
+			}
+			c, e := tx.SourceCapture(r.CaptureID)
+			if e != nil {
+				return e
+			}
+			if e = CheckSourceReadAuthority(tx, actor, id, c.ProjectID, ""); e != nil {
+				return e
+			}
+		}
+	}
+
 	return nil
 }
 

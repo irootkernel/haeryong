@@ -516,6 +516,11 @@ checkpoint JSON with a normal backup/export job identity. copy_versions freezes 
 ordered selection's document/version/content-set and payload/manifest/supplied hashes.
 The capture flag conservatively prevents new GC reservations until snapshot-derived
 backup pins are durable. It does not block ordinary publication or personal writes.
+For an export that explicitly includes retained sources, copy_sets checkpoint
+JSON retains the exact snapshot-selected RetainedReadIDs. Current read ancestry
+is checked from these IDs at copy checkpoints and publication, without expanding
+selection from later captures. A resumed export resolves the same saved snapshot;
+whole backups retain their existing policy.
 The snapshot contains all operational receipts, lifecycle/purge checkpoints and permanent
 version reservations. Sessions/pairings/workflow verifiers are sanitized before hashing.
 
@@ -555,8 +560,13 @@ exclusive locked startup reclaims only provably dead capture/reader ownership
 and settles interrupted captures without altering job/attempt/orphan owners.
 
 Provider input/orphan inventory derives optional retention_mode and
-source_version_id from the exact managed read binding. These are lifetime/scope
-facts, separate from actual input_origin/observed_at. Full backup marks
+source_version_id from the exact managed read binding. source_version_id keeps
+the immediate capture's literal context. Optional source_version_ids is the
+sorted, deduplicated set of inherited version-context owners, including any
+known immediate context. Merge retains this ownership union independently of
+which input_origin/observed_at observation or conflict fact is selected; missing
+historical ancestry is not invented. These are lifetime/scope facts, separate
+from actual input observation. Full backup marks
 reference-only source reads uncopied and removes only their temporary source/input
 owners. Independent same-hash payload, selected snapshots, result and other
 owners remain required objects. Protected restore retains that metadata and
@@ -636,3 +646,55 @@ authority; an already matching producing epoch retains its existing allowance.
 The grant survives ordinary restart with the finite intents, while a changed
 auth epoch revokes it. Completing the last intent or abandoning the campaign
 removes it atomically. No schema migration or new retry ledger is introduced.
+
+## Schema revision 18 generation ownership (TASK-006-04)
+
+Migration 18 appends exact validated generation declarations without changing
+historical migrations: generation_intents keyed by existing job_id, drafts keyed
+by draft_id, revisioned draft_history, and workflow_selections keyed by the
+existing workflow_binding/principal. Intent/draft/history content_set_id foreign
+keys and their indices retain candidate inventory, including non-file entries.
+Each typed draft keeps original project/document/base, linked job, private
+allocated IDs, current candidate/revision, optional metadata and publication or
+failure facts. Prior snapshots retain their complete candidate ownership.
+
+Generation intent freezes source selection, requested target/base, publication
+intent, operation/request identity, exact owned skill and optional pinned prior
+contexts. Its private SourceReadIDs records only retained snapshot reads actually
+selected under the captured effective mode/mapping. A capturing source selection
+similarly records private _retained_read_ids before adoption; public requested_selection
+omits that internal field. Both use existing JSON storage, without a new author
+field, relation or schema revision. Original request/receipt identity is unchanged. The existing job/provider ledgers still own execution, finite dispatch,
+ACK, result/uncertainty, retry and restore; no second queue is added. Complete
+saved output uses the existing result object and pins. Imported candidate
+preparation is separately recorded so restart/continue can consume it without
+Execute; ready draft replacement must match candidate identity before an old
+job can apply anything.
+
+Prompt/context admission adopts ready exact objects with existing job_input
+pins, without creating source job_inputs rows. Executing attempts and restored
+orphans retain their typed owned input pins. Existing terminal-job/settled-attempt
+and conflict/unresolved-orphan predicates govern release; source input rows and
+observations remain independent. Abandon/discard/purge ownership checks include
+generation intent, drafts and draft_history before any destructive batch, not
+only at the final foreign-key delete. Workflow selection stores remembered
+resource choices, not credentials or a base to reuse for new operations.
+
+The existing scoped_credentials.scope JSON additionally retains a private,
+immutable mutation_project_id captured by the protected issuer. The public
+CredentialScope/action union and SQLite declarations are unchanged. Private
+session projection carries this fact only for server-side fresh admission;
+API session/scope responses and provider frames do not serialize it. Current
+selection and the captured mutation project must both match a fresh output or
+source-capture project. Rows without this fact remain usable for their existing
+read/receipt/accepted-work semantics but cannot acquire fresh mutation authority
+from remembered defaults. Import jobs now capture credential_scope just as seal
+jobs do, so accepted publication checks the actual captured/current binding
+instead of an absent scope. No new queue, table or retry mechanism is added.
+
+Generation transport extends the typed attempt audit with skill version/hash,
+admitted/discovered skill paths, fresh output directory, prompt/context exact
+identities and matching-frame ACK flags. Native public-final SHA/size and the
+service-derived captured directory ZIP remain distinct. These private audit
+paths are absent from public draft/status projections. Backups/restore preserve
+typed facts without inventing newer input observations or authority.

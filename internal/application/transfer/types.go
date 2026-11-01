@@ -78,7 +78,28 @@ type Preparation struct {
 	Phase       string            `json:"phase"`
 	JobID       string            `json:"job_id,omitempty"`
 }
+
+// GenerationLaunch fixes the trusted caller association and dispatch identity
+// before any staged transfer. Request excludes prompt bytes after capture.
+type GenerationLaunch struct {
+	SourcePath      string          `json:"source_path"`
+	ExplicitProject string          `json:"explicit_project,omitempty"`
+	Launcher        Identity        `json:"launcher"`
+	Request         json.RawMessage `json:"request"`
+	CredentialPath  string          `json:"credential_path,omitempty"`
+	DispatchReady   bool            `json:"dispatch_ready"`
+}
+type DraftLaunch struct {
+	ID           string `json:"draft_id"`
+	Action       string `json:"action"`
+	SourcePath   string `json:"source_path,omitempty"`
+	MetadataPath string `json:"metadata_path,omitempty"`
+	ExplicitETag string `json:"explicit_etag,omitempty"`
+}
+
 type Journal struct {
+	Draft         *DraftLaunch      `json:"draft,omitempty"`
+	Generation    *GenerationLaunch `json:"generation,omitempty"`
 	Preconditions map[string]string `json:"preconditions,omitempty"`
 	Method        string            `json:"method,omitempty"`
 	Target        string            `json:"target,omitempty"`

@@ -1,9 +1,11 @@
 package source
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	appauth "haeryong.local/haeryong/internal/application/auth"
 	"io"
 	"os"
 	"syscall"
@@ -31,6 +33,30 @@ type CaptureRequest struct {
 	ProviderID   string             `json:"provider_id,omitempty"`
 	Selections   []CaptureSelection `json:"selections"`
 }
+
+// RetainedReadIDs is an internal ownership projection of the exact effective
+// mapping at reservation. Ignored IDs never become lifecycle dependencies.
+func RetainedReadIDs(input CaptureRequest, mappings map[string]domain.ManagedSourceMapping) []string {
+	ids := []string{}
+	seen := map[string]bool{}
+	if input.SourceMode != "pinned" {
+		return ids
+	}
+	for _, selection := range input.Selections {
+		mapping := mappings[selection.SourceID]
+		if mapping.Kind != "files" && !selection.WorkingCopy {
+			continue
+		}
+		for _, path := range selection.Paths {
+			if path.ReadID != "" && !seen[path.ReadID] {
+				ids = append(ids, path.ReadID)
+				seen[path.ReadID] = true
+			}
+		}
+	}
+	return ids
+}
+
 type CaptureBytes interface {
 	Bytes
 	Put(context.Context, io.Reader, func(app.WriteTx, domain.Object) error) (domain.Object, error)
@@ -73,7 +99,95 @@ func (s *Service) Capture(ctx context.Context, token, key, project string, input
 	return s.CaptureAndAdmit(ctx, token, key, project, input, nil)
 }
 func (s *Service) CaptureAndAdmit(ctx context.Context, token, key, project string, input CaptureRequest, admit CaptureAdmission) (domain.Response, error) {
-	actor, e := s.Auth.Authenticate(ctx, token)
+	return s.captureAndAdmit(ctx, token, key, project, input, admit, "")
+}
+
+// CaptureGenerationAndAdmit reads only an already accepted generation's frozen
+// selection. Current binding/epoch/policy remain required; bearer expiry alone
+// does not cancel this local preparation. The private preparation receipt has
+// its own operation key and is not an additional HTTP endpoint.
+func (s *Service) CaptureGenerationAndAdmit(ctx context.Context, jobID string, admit CaptureAdmission) (domain.Response, error) {
+	var g domain.GenerationIntent
+	e := s.Store.Write(ctx, func(tx app.WriteTx) error { var e error; g, e = tx.GenerationIntent(jobID); return e })
+	if e != nil {
+		return domain.Response{}, e
+	}
+	var input CaptureRequest
+	if json.Unmarshal(g.SourceSelection, &input) != nil || admit == nil {
+		return domain.Response{}, domain.ErrInvalidTarget
+	}
+	return s.captureAndAdmit(ctx, "", g.CaptureOperationID, g.ProjectID, input, admit, jobID)
+}
+func generationCapturePrincipal(tx app.WriteTx, actor domain.Session, project string) error {
+	if _, e := tx.Scope(project); e != nil {
+		return e
+	}
+	if actor.Scope.Kind == "owner" {
+		return nil
+	}
+	has := func(values []string, want string) bool {
+		for _, v := range values {
+			if v == want {
+				return true
+			}
+		}
+		return false
+	}
+	if !has(actor.Scope.ProjectIDs, project) {
+		return domain.ErrNotFound
+	}
+	if !has(actor.Scope.Actions, "generation.request") || !has(actor.Scope.Actions, "source.read") {
+		return domain.ErrDenied
+	}
+	return nil
+}
+func (s *Service) captureAndAdmit(ctx context.Context, token, key, project string, input CaptureRequest, admit CaptureAdmission, generationJob string) (domain.Response, error) {
+	requestedSelection := encoded(input)
+	authenticate := func(ctx context.Context, tx app.WriteTx) (domain.Session, error) {
+		if generationJob == "" {
+			return s.Auth.AuthenticateWrite(ctx, tx, token)
+		}
+		j, e := tx.Job(generationJob)
+		if e != nil {
+			return domain.Session{}, e
+		}
+		g, e := tx.GenerationIntent(j.ID)
+		if e != nil {
+			return domain.Session{}, e
+		}
+		if j.Kind != "generation" || j.State != "paused" || j.Error != "source_capture_pending" || j.CancelRequested || g.AdmissionReady || g.ProjectID != project || g.CaptureOperationID != key || !bytes.Equal(g.SourceSelection, requestedSelection) {
+			return domain.Session{}, domain.ErrStaleWorker
+		}
+		var scope domain.ProviderScope
+		if json.Unmarshal(j.Scope, &scope) != nil || scope.Purpose != "body" {
+			return domain.Session{}, domain.ErrInvalidTarget
+		}
+		if e = appauth.AuthorizeAccepted(tx, scope.PrincipalID, scope.AuthEpoch, "body", scope.Target, scope.CredentialScope); e != nil {
+			return domain.Session{}, e
+		}
+		captured := scope.CredentialScope
+		if captured.Kind != "owner" {
+			p, e := tx.WorkflowPrincipal(scope.PrincipalID)
+			if e != nil {
+				return domain.Session{}, e
+			}
+			captured = appauth.RestrictScope(captured, p.Scope)
+		}
+		return domain.Session{PrincipalID: scope.PrincipalID, AuthEpoch: scope.AuthEpoch, Scope: captured}, nil
+	}
+	principal := func(tx app.WriteTx, actor domain.Session) error {
+		if generationJob != "" {
+			return generationCapturePrincipal(tx, actor, project)
+		}
+		return s.capturePrincipal(tx, actor, project, input.VersionID)
+	}
+	var actor domain.Session
+	var e error
+	if generationJob == "" {
+		actor, e = s.Auth.Authenticate(ctx, token)
+	} else {
+		e = s.Store.Write(ctx, func(tx app.WriteTx) error { var e error; actor, e = authenticate(ctx, tx); return e })
+	}
 	if e != nil {
 		return domain.Response{}, e
 	}
@@ -98,18 +212,22 @@ func (s *Service) CaptureAndAdmit(ctx context.Context, token, key, project strin
 		}
 	}
 	body := encoded(input)
-	request := domain.Request{Key: domain.OperationKey{PrincipalID: actor.PrincipalID, OperationID: key}, Method: "POST", Target: "/api/v1/projects/" + project + "/source-captures", Body: body}
+	route := "/source-captures"
+	if generationJob != "" {
+		route = "/generation-source-captures"
+	}
+	request := domain.Request{Key: domain.OperationKey{PrincipalID: actor.PrincipalID, OperationID: key}, Method: "POST", Target: "/api/v1/projects/" + project + route, Body: body}
 	var capture domain.SourceCapture
 	var response domain.Response
 	done := false
 	maps := map[string]domain.ManagedSourceMapping{}
 	prepared := map[string]string{}
 	e = s.Store.Write(ctx, func(tx app.WriteTx) error {
-		current, e := s.Auth.AuthenticateWrite(ctx, tx, token)
+		current, e := authenticate(ctx, tx)
 		if e != nil {
 			return e
 		}
-		if e = s.capturePrincipal(tx, current, project, input.VersionID); e != nil {
+		if e = principal(tx, current); e != nil {
 			return e
 		}
 		cfg, e := tx.Configuration()
@@ -126,6 +244,11 @@ func (s *Service) CaptureAndAdmit(ctx context.Context, token, key, project strin
 				return e
 			}
 			maps[m.SourceID] = m
+		}
+		if generationJob == "" {
+			if e = appauth.AuthorizeFreshWorkflowMutation(tx, current, request); e != nil {
+				return e
+			}
 		}
 		receipt, exists, e := tx.ReserveOperation(request, func() ([]byte, error) {
 			id, e := service.NewID()
@@ -174,7 +297,12 @@ func (s *Service) CaptureAndAdmit(ctx context.Context, token, key, project strin
 		if input.SourceMode != "pinned" && input.SourceMode != "current" {
 			return domain.ErrInvalidTarget
 		}
-		capture = domain.SourceCapture{ID: ids["capture_id"], PrincipalID: current.PrincipalID, ProjectID: project, TargetSetID: ids["target_set_id"], State: "capturing", Selection: encoded(input), ConfigRevision: cfg.Revision, PermissionsRevision: scope.Project.PermissionsRevision, CapturedAt: s.now(), OperationID: key}
+		var savedSelection map[string]json.RawMessage
+		if e = json.Unmarshal(encoded(input), &savedSelection); e != nil {
+			return e
+		}
+		savedSelection["_retained_read_ids"] = encoded(RetainedReadIDs(input, maps))
+		capture = domain.SourceCapture{ID: ids["capture_id"], PrincipalID: current.PrincipalID, ProjectID: project, TargetSetID: ids["target_set_id"], State: "capturing", Selection: encoded(savedSelection), ConfigRevision: cfg.Revision, PermissionsRevision: scope.Project.PermissionsRevision, CapturedAt: s.now(), OperationID: key}
 		if e = tx.CreateSourceCapture(capture); e != nil {
 			return e
 		}
@@ -216,11 +344,11 @@ func (s *Service) CaptureAndAdmit(ctx context.Context, token, key, project strin
 		return s.failCapture(turn, capture, ErrObjectMissing)
 	}
 	guard := func(tx app.WriteTx) error {
-		current, e := s.Auth.AuthenticateWrite(turn, tx, token)
+		current, e := authenticate(turn, tx)
 		if e != nil {
 			return e
 		}
-		if e = s.capturePrincipal(tx, current, project, input.VersionID); e != nil {
+		if e = principal(tx, current); e != nil {
 			return e
 		}
 		cfg, e := tx.Configuration()
@@ -241,6 +369,7 @@ func (s *Service) CaptureAndAdmit(ctx context.Context, token, key, project strin
 		}
 		return nil
 	}
+
 	targets := []json.RawMessage{}
 	complete := true
 	for _, selection := range input.Selections {
@@ -290,9 +419,25 @@ func (s *Service) CaptureAndAdmit(ctx context.Context, token, key, project strin
 			if readErr == nil {
 				switch {
 				case input.SourceMode == "pinned" && (mapping.Kind == "files" || selection.WorkingCopy):
-					readErr = s.readPinnedCapture(turn, token, project, mapping, path, func(reader io.Reader) error {
+					pinnedGuard := func(tx app.WriteTx) error {
+						if err := guard(tx); err != nil {
+							return err
+						}
+						current, err := authenticate(turn, tx)
+						if err != nil {
+							return err
+						}
+						return app.CheckSourceReadAuthority(tx, current, path.ReadID, project, input.ProviderID)
+					}
+					readPinned := func(consume func(io.Reader) error) error {
+						if generationJob != "" {
+							return s.readPinnedGeneration(turn, project, mapping, path, pinnedGuard, consume)
+						}
+						return s.readPinnedCapture(turn, token, project, mapping, path, consume)
+					}
+					readErr = readPinned(func(reader io.Reader) error {
 						_, e = bytes.Put(turn, reader, func(tx app.WriteTx, o domain.Object) error {
-							if e := guard(tx); e != nil {
+							if e := pinnedGuard(tx); e != nil {
 								return e
 							}
 							row.Hash, row.Size = o.Hash, o.Size
@@ -368,11 +513,11 @@ func (s *Service) CaptureAndAdmit(ctx context.Context, token, key, project strin
 		}
 	}
 	e = s.Store.Write(turn, func(tx app.WriteTx) error {
-		current, e := s.Auth.AuthenticateWrite(turn, tx, token)
+		current, e := authenticate(turn, tx)
 		if e != nil {
 			return e
 		}
-		if e = s.capturePrincipal(tx, current, project, input.VersionID); e != nil {
+		if e = principal(tx, current); e != nil {
 			return e
 		}
 		cfg, e := tx.Configuration()
@@ -387,8 +532,16 @@ func (s *Service) CaptureAndAdmit(ctx context.Context, token, key, project strin
 			return domain.ErrPrecondition
 		}
 		for _, selection := range input.Selections {
-			if _, e = app.ManagedSourcePolicy(tx, project, selection.SourceID, input.ProviderID); e != nil {
-				return e
+			mapping, err := app.ManagedSourcePolicy(tx, project, selection.SourceID, input.ProviderID)
+			if err != nil {
+				return err
+			}
+			if input.SourceMode == "pinned" && (mapping.Kind == "files" || selection.WorkingCopy) {
+				for _, path := range selection.Paths {
+					if err = app.CheckSourceReadAuthority(tx, current, path.ReadID, project, input.ProviderID); err != nil {
+						return err
+					}
+				}
 			}
 		}
 		state, reason := "failed", "incomplete_source_capture"
@@ -419,7 +572,11 @@ func (s *Service) CaptureAndAdmit(ctx context.Context, token, key, project strin
 	return response, nil
 }
 func captureProjection(c domain.SourceCapture) map[string]any {
-	out := map[string]any{"capture_id": c.ID, "project_id": c.ProjectID, "state": c.State, "requested_selection": json.RawMessage(c.Selection), "captured_at": nil, "target_set_id": nil, "complete": c.State == "completed", "reason": c.Reason, "reads_url": "/api/v1/source-captures/" + c.ID + "/reads"}
+	// Private derived ownership is not a new public author request field.
+	var publicSelection map[string]json.RawMessage
+	_ = json.Unmarshal(c.Selection, &publicSelection)
+	delete(publicSelection, "_retained_read_ids")
+	out := map[string]any{"capture_id": c.ID, "project_id": c.ProjectID, "state": c.State, "requested_selection": json.RawMessage(encoded(publicSelection)), "captured_at": nil, "target_set_id": nil, "complete": c.State == "completed", "reason": c.Reason, "reads_url": "/api/v1/source-captures/" + c.ID + "/reads"}
 	if c.State == "completed" {
 		out["captured_at"] = c.CapturedAt
 		out["target_set_id"] = c.TargetSetID
@@ -482,7 +639,7 @@ func (s *Service) readPinnedCapture(ctx context.Context, token, project string, 
 		if e != nil {
 			return e
 		}
-		capture, e := s.captureAccess(ctx, tx, token, row.CaptureID)
+		capture, e := s.captureAccess(ctx, tx, token, row.CaptureID, false)
 		if e != nil {
 			return e
 		}
@@ -501,5 +658,39 @@ func (s *Service) readPinnedCapture(ctx context.Context, token, project string, 
 			return domain.ErrDenied
 		}
 		return consume(reader)
+	})
+}
+
+// A retained selected snapshot is read under the accepted job's current
+// authority. Reference-only/missing bytes are unavailable; there is no fallback
+// to a different path, project or current working copy for a pinned snapshot.
+func (s *Service) readPinnedGeneration(ctx context.Context, project string, mapping domain.ManagedSourceMapping, path CapturePath, guard func(app.WriteTx) error, consume func(io.Reader) error) error {
+	var object domain.Object
+	e := s.Store.Write(ctx, func(tx app.WriteTx) error {
+		if e := guard(tx); e != nil {
+			return e
+		}
+		row, e := tx.SourceCaptureRead(path.ReadID)
+		if e != nil {
+			return e
+		}
+		capture, e := tx.SourceCapture(row.CaptureID)
+		if e != nil {
+			return e
+		}
+		if capture.ProjectID != project || capture.State != "completed" || row.SourceID != mapping.SourceID || !bytes.Equal(row.LocationJSON, encoded(map[string]any{"path": path.Path})) {
+			return domain.ErrDenied
+		}
+		if row.RetentionMode != "selected_snapshot" || row.Availability != "available" || row.Hash == "" {
+			return ErrObjectMissing
+		}
+		object, e = tx.Object(row.Hash)
+		return e
+	})
+	if e != nil {
+		return e
+	}
+	return s.Bytes.Read(ctx, object, domain.Pin{Kind: "source_capture_read", OwnerID: path.ReadID}, func(r io.ReadSeeker) error {
+		return consume(checkedSourceReader{ReadSeeker: r, check: func() error { return s.Store.Write(ctx, guard) }})
 	})
 }

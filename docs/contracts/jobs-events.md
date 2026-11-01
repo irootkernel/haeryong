@@ -602,3 +602,53 @@ producing epoch after explicit protected recovery, without rebinding payload
 scope or assuming authority from a missing legacy attachment. Epoch revocation
 still denies an executing old grant. Last successful intent completion or exact
 campaign Abandon removes the status grant with its owned intent lifetime.
+
+## Generation saved-tree application (TASK-006-04)
+
+Public generation creates one existing generation job and a preparing typed
+draft with explicit target/base/intent. Selected source capture is handed to that
+job atomically; incomplete capture keeps the full failed selection and cannot
+dispatch a partial request. Source-free input remains unverified. Exact prompt
+and prior explanation objects are distinct from project-source job inputs.
+
+Native completion is a primary fact; safe owned-process drain is additionally
+required before the host captures the ordinary output directory. Its complete
+service-derived ZIP is saved as the existing result object before validation or
+application. Native final text identity is separate. Unknown output cannot be
+replaced with a final-text prefix or an old partial tree. Resume/reconcile uses
+existing finite job/intent authority; saved continuation never calls Execute.
+
+New heavy ZIP/import preparation uses the caller/phase cancellation context
+outside the writer. Required result/accounting writes retain their existing
+bounded detached accounting behavior. Preparation error/cancellation preserves
+the durable result and current generation/owner guards; it does not bypass typed
+cleanup/protocol diagnostics or reverse a winning explicit cancel. Reader,
+Review and unrelated dispatcher work stay usable after handled AI failures;
+unsafe/current/joined shutdown failures remain visible at Stop.
+
+The final short application transaction checks exact current candidate,
+permissions/epoch, lifecycle, runtime/generation and base, then atomically records
+publication or a ready draft plus receipt/outbox. Reject fences linked work;
+ready replacement preserves base/history and prevents the old saved generation
+from applying a different candidate. Stale-base publication is an explicit
+conflict with the candidate retained, never silent rebasing or a new document.
+
+### Caller recovery of a generation job-resume decision
+
+A resume/retry/reconcile decision is a separate durable request from initial
+generation admission. The shared caller journals its own runtime, key, decision,
+expected attempt generation and job ETag before POST. A pending decision first
+reads its original receipt with current authority. Completed receipts remain
+readable across runtime change; a missing receipt under a changed or unknown
+legacy runtime never permits POST. Same-runtime retry retains the exact saved
+identity and still uses the existing owner/ETag/restore-hold/orphan guards.
+
+Definitive PRECONDITION_FAILED 412 or INVALID_TRANSITION 409 and confirmed failed
+receipts can be explicitly acknowledged after a current job read. One journal
+write preserves the complete refused subrequest as history and releases only
+the matching active slot under the original journal lock. A new decision uses
+current state and a new key. Operation conflicts and uncertain outcomes stay
+pending; no implicit rebase or paid retry is introduced. A stopped older action
+cannot authorize a later callback, and a new explicit acknowledgement has its
+own cancellation lifetime after the old promise settles. These caller records
+change no job-resume route, decision union or server authority.

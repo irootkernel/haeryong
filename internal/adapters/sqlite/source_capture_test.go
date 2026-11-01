@@ -115,3 +115,47 @@ var _ = It("SCAP13 source omission follows orphan-only retention provenance thro
 	Expect(other.QueryRow(`SELECT json_extract(value,'$.inputs[0].source_version_id') FROM provider_orphans WHERE attempt_id='retention-orphan'`).Scan(&retainedVersion)).To(Succeed())
 	Expect(retainedVersion).To(Equal(input.SourceVersionID), "source-version identity survives absent-job re-export/older restore")
 })
+
+var _ = It("T4R2SNAPSHOT01 orphan merge and re-export retain multiple source owners independently of chosen observation history", Label("persistence"), func() {
+	s, a := providerFixture()
+	var inputs []domain.ProviderInput
+	Expect(s.Write(ctx, func(tx app.WriteTx) error { var e error; inputs, e = tx.ProviderInputs(a.ID); return e })).To(Succeed())
+	prior := inputs[0]
+	prior.SourceVersionID = "d6000000-0000-4000-8000-000000000021"
+	prior.SourceVersionIDs = []string{"d6000000-0000-4000-8000-000000000022"}
+	prior.RetentionMode = "selected_snapshot"
+	prior.ObservedOrigin = "daemon_supplied" // controlled retained observation fact, not a new provider call
+	newer := prior
+	newer.SourceVersionID = ""
+	newer.SourceVersionIDs = []string{"d6000000-0000-4000-8000-000000000023"}
+	newer.ObservedOrigin = ""
+	path := filepath.Join(GinkgoT().TempDir(), "multi-context.sqlite")
+	Expect(s.SnapshotDatabase(ctx, path)).To(Succeed())
+	fact := map[string]any{"attempt_id": "multi-context-orphan", "job_id": "absent", "principal_id": "owner", "target": json.RawMessage(`{}`), "job_state": "paused", "request_sha256": strings.Repeat("a", 64), "state": "outcome_unknown", "may_have_dispatched": true}
+	for _, input := range []domain.ProviderInput{prior, newer} {
+		fact["inputs"] = []domain.ProviderInput{input}
+		raw, e := json.Marshal(fact)
+		Expect(e).NotTo(HaveOccurred())
+		Expect(RetainProviderOrphans(ctx, path, bytes.NewReader(raw), providerFixtureCopiedAvailability(path))).To(Succeed())
+	}
+	Expect(SanitizeCopyDatabase(ctx, path)).To(Succeed())
+	var inventory bytes.Buffer
+	Expect(RestoreOutstanding(ctx, path, func(raw json.RawMessage) error { _, e := inventory.Write(append(raw, '\n')); return e })).To(Succeed())
+	again := filepath.Join(GinkgoT().TempDir(), "re-export.sqlite")
+	Expect(s.SnapshotDatabase(ctx, again)).To(Succeed())
+	Expect(RetainProviderOrphans(ctx, again, bytes.NewReader(inventory.Bytes()), providerFixtureCopiedAvailability(again))).To(Succeed())
+	db, e := openCopy(again)
+	Expect(e).NotTo(HaveOccurred())
+	defer db.Close()
+	var raw []byte
+	Expect(db.QueryRow(`SELECT value FROM provider_orphans WHERE attempt_id='multi-context-orphan'`).Scan(&raw)).To(Succeed())
+	var retained struct {
+		Inputs []domain.ProviderInput `json:"inputs"`
+	}
+	Expect(json.Unmarshal(raw, &retained)).To(Succeed())
+	Expect(retained.Inputs).To(HaveLen(1))
+	Expect(retained.Inputs[0].SourceVersionID).To(Equal(prior.SourceVersionID))
+	Expect(retained.Inputs[0].SourceVersionIDs).To(Equal([]string{prior.SourceVersionID, prior.SourceVersionIDs[0], newer.SourceVersionIDs[0]}))
+	Expect(retained.Inputs[0].ObservedOrigin).To(Equal("daemon_supplied"))
+	Expect(retained.Inputs[0].ObservedAt).To(BeNil(), "unknown observation time is not invented while dependencies merge")
+})

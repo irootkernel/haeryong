@@ -291,6 +291,12 @@ func (s *Store) ProcessCopy(ctx context.Context, id string) (result error) {
 		if e = s.copyFault("snapshot"); e != nil {
 			return e
 		}
+		if set.Kind == "export" && set.Request.RetainedSources {
+			set.RetainedReadIDs, e = sqlite.CopyRetainedReads(ctx, set.Snapshot, set.ID)
+			if e != nil {
+				return e
+			}
+		}
 		if e = s.InstallCopyPins(ctx, set.ID, set.Snapshot, func(tx app.WriteTx) error { return app.GuardCopy(tx, set, job.ID, job.AttemptGeneration) }, scope...); e != nil {
 			return e
 		}
@@ -314,6 +320,21 @@ func (s *Store) ProcessCopy(ctx context.Context, id string) (result error) {
 			return e
 		}
 		return nil
+	}
+	if set.Kind == "export" && set.Request.RetainedSources && set.RetainedReadIDs == nil {
+		// Resume resolves the same frozen snapshot, never a current selection.
+		set.RetainedReadIDs, e = sqlite.CopyRetainedReads(ctx, set.Snapshot, set.ID)
+		if e != nil {
+			return e
+		}
+		if e = s.Write(ctx, func(tx app.WriteTx) error {
+			if err := app.GuardCopy(tx, set, job.ID, job.AttemptGeneration); err != nil {
+				return err
+			}
+			return tx.PutCopySet(set)
+		}); e != nil {
+			return e
+		}
 	}
 	if set.Stage != "copying" && set.Stage != "finalizing" && set.Stage != "publishing" {
 		return domain.ErrTransition

@@ -87,7 +87,8 @@ attempt/input/result accounting, acknowledged provider progress, one
 dispatcher-owned waiting phase, explicit linked retry accounting, owner-only job
 resume, verified queued saved-result continuation, hidden-target status-only
 reconciliation and restore orphan retention. docs/testing/provider-attempts.md owns
-its current proof and limits. The production provider capability remains false;
+its current proof and limits. At that checkpoint, the production provider
+capability was false;
 TASK-006-03/04/05 retain transport, generation and saved-Q&A ownership. Canonical
 tests make no provider calls; the separate haeryong_provider_live build tag
 requires explicit scoped execution and a private physical evidence directory.
@@ -150,3 +151,35 @@ Reader/Review available after handled accounting failure; Stop reports it.
 Current offline corrections and historical proof applicability are separated in
 [provider correction evidence](docs/testing/provider-corrections.md). Real
 provider/status/native-client operations still require their scoped authority.
+
+TASK-006-04 implements generation and typed drafts at schema revision 18.
+One owned versioned skill is embedded from
+skills/use-haeryong/SKILL.md and materialized privately for managed use. Each
+attempt writes a fresh complete result directory; positive owned-process drain
+precedes service-derived ZIP storage, preparation outside the writer and guarded
+atomic import. Native public-final identity stays separate from ZIP identity.
+Saved continuation never repeats Execute. Pinned prior explanations stay separate
+from project-source reads and cannot fabricate observed_input. Remembered
+owner-authenticated workflow issuance keeps credentials out of provider input.
+HTTP, CLI and shared browser/native generation and draft consumers are implemented.
+
+[The generation record](docs/testing/generation-workflow.md) owns actual evidence,
+historical failures and applicability limits. Managed and standalone use shared
+the same owned guidance; the four real explanations retain their bounded corpus
+and Reader assessments. Three independent technical rounds have completed.
+The third requested three corrections to prepared-result retry, CLI failure
+acknowledgement and saved-request target presentation. Their focused checks,
+Node selection and controlled browser evidence retain their tested-source
+qualifications. A test-only layer-placement correction leaves product and
+frontend inputs unchanged. Seven affected native observations passed with
+natural owned cleanup; their controlled scope and earlier failures remain
+explicit. The replacement canonical common passed on the corrected source.
+The factual documentation overlay has separate affected checks. Independent
+final assessment passed the bounded Task04 outcome and judged its original Goal
+achieved. Earlier common successes and failures remain in the generation record.
+C01's matched-request procedure is still
+unverified with TASK-006-06. Saved Q&A and the assembled Epic
+exit retain TASK-006-05/06 ownership. The bounded Task04 delivery is complete.
+Delegated member acceptance, the normal completion commit and native
+finalization follow. No Master overall Epic acceptance or physical-device proof
+is claimed here.

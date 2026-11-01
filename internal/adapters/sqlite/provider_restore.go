@@ -231,6 +231,7 @@ func RetainProviderOrphans(ctx context.Context, path string, input io.Reader, av
 				}
 				key := input.ReadID + ":" + input.Hash
 				oldInput, exists := inputs[key]
+				dependencies := mergeSourceVersions(oldInput, input)
 				if exists && oldInput.ObservedOrigin != "" {
 					if input.ObservedOrigin == "" {
 						input = oldInput
@@ -252,6 +253,8 @@ func RetainProviderOrphans(ctx context.Context, path string, input io.Reader, av
 						}
 					}
 				}
+				// Observation choice must not drop an independently retained owner.
+				input.SourceVersionIDs = dependencies
 				inputs[key] = input
 			}
 			keys := make([]string, 0, len(inputs))
@@ -390,6 +393,32 @@ func RetainProviderOrphans(ctx context.Context, path string, input io.Reader, av
 				previous, exists := retainedInputs[key]
 				if !exists || previous.RetentionMode == "reference_only" {
 					retainedInputs[key] = input
+				}
+			}
+		}
+		ownedSettled, e := (&writeTx{ctx: ctx, tx: tx}).orphanInputsSettled(a)
+		if e != nil {
+			return e
+		}
+		// Typed generation request objects are retained separately from source
+		// input facts. Restore never invents an observed source capture.
+		for _, node := range nodes {
+			var fact providerRestoreFact
+			if e = json.Unmarshal(node, &fact); e != nil {
+				return e
+			}
+			if fact.Transport != nil && fact.Transport.Generation != nil {
+				owned := generationTransportObjects(fact.Transport.Generation)
+				for _, object := range owned {
+					if len(object.Hash) != 64 || object.Size < 0 {
+						return domain.ErrInvalidTarget
+					}
+					pinID := "provider-orphan:" + a.ID + ":owned:" + object.Hash
+					if !ownedSettled {
+						if e = retainPin(a.ID, pinID, object.Hash); e != nil {
+							return e
+						}
+					}
 				}
 			}
 		}
@@ -685,4 +714,23 @@ func preserveProviderConflicts(previous, incoming json.RawMessage, merged map[st
 	}
 	merged["conflicting_prior_fact"] = chain
 	return merged, nil
+}
+
+// Conservative ownership union is independent of delivery/category conflicts.
+// It does not make an unavailable input dispatchable or invent missing history.
+func mergeSourceVersions(inputs ...domain.ProviderInput) []string {
+	seen := map[string]bool{}
+	for _, input := range inputs {
+		for _, id := range append(append([]string{}, input.SourceVersionIDs...), input.SourceVersionID) {
+			if id != "" {
+				seen[id] = true
+			}
+		}
+	}
+	ids := []string{}
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }

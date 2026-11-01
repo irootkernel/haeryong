@@ -34,11 +34,13 @@ import (
 	sourcefiles "haeryong.local/haeryong/internal/adapters/source"
 	appauth "haeryong.local/haeryong/internal/application/auth"
 	appconfig "haeryong.local/haeryong/internal/application/configuration"
+	generation "haeryong.local/haeryong/internal/application/generation"
 	importer "haeryong.local/haeryong/internal/application/import"
 	"haeryong.local/haeryong/internal/application/query"
 	"haeryong.local/haeryong/internal/application/recovery"
 	"haeryong.local/haeryong/internal/application/service"
 	appsource "haeryong.local/haeryong/internal/application/source"
+	"haeryong.local/haeryong/skills"
 )
 
 type options struct {
@@ -94,7 +96,7 @@ func parse(args []string) (options, error) {
 			continue
 		}
 		switch key {
-		case "--provider-binary", "--capture", "--other", "--read", "--decision", "--expected-attempt-generation", "--destination", "--metadata-destination", "--records", "--choices", "--index", "--expected-revision", "--flag", "--action", "--if-match", "--if-none-match", "--profile", "--data-dir", "--volume-root", "--port", "--endpoint", "--credential", "--client-dir", "--operation-id", "--project", "--document", "--base-version", "--metadata", "--version", "--path", "--output", "--input", "--state", "--cursor", "--limit", "--directory", "--kind", "--file", "--format", "--expected-config-revision", "--scope", "--name", "--evidence", "--expected-sha256", "--expected-excerpt-file", "--source-id", "--root-path", "--repo-id", "--retention-mode", "--provider-ids", "--plan-id", "--page", "--region", "--coverage-set", "--reference-id", "--query", "--lifecycle", "--versions":
+		case "--request-file", "--provider-binary", "--capture", "--other", "--read", "--decision", "--expected-attempt-generation", "--destination", "--metadata-destination", "--records", "--choices", "--index", "--expected-revision", "--flag", "--action", "--if-match", "--if-none-match", "--profile", "--data-dir", "--volume-root", "--port", "--endpoint", "--credential", "--client-dir", "--operation-id", "--project", "--document", "--base-version", "--metadata", "--version", "--path", "--output", "--input", "--state", "--cursor", "--limit", "--directory", "--kind", "--file", "--format", "--expected-config-revision", "--scope", "--name", "--evidence", "--expected-sha256", "--expected-excerpt-file", "--source-id", "--root-path", "--repo-id", "--retention-mode", "--provider-ids", "--plan-id", "--page", "--region", "--coverage-set", "--reference-id", "--query", "--lifecycle", "--versions":
 		default:
 			return opt, invalid("unsupported flag: " + key)
 		}
@@ -155,13 +157,28 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 		return connectCommand(ctx, opt, emit)
 	}
 	if len(opt.command) >= 2 && opt.command[0] == "auth" && opt.command[1] == "grant" {
-		return commandError{5, errors.New("FEATURE_NOT_READY: workflow credential issuance")}
+		if e := validateCommandFlags(opt); e != nil {
+			return e
+		}
+		return grantCommand(ctx, opt, emit)
 	}
 	if opt.command[0] == "backup" || opt.command[0] == "restore" || opt.command[0] == "export" {
 		if e := validateCommandFlags(opt); e != nil {
 			return e
 		}
 		return copyCommand(ctx, opt, emit)
+	}
+	if opt.command[0] == "drafts" {
+		if e := validateCommandFlags(opt); e != nil {
+			return e
+		}
+		return draftCommand(ctx, opt, emit)
+	}
+	if opt.command[0] == "generate" {
+		if e := validateCommandFlags(opt); e != nil {
+			return e
+		}
+		return generationCommand(ctx, opt, emit)
 	}
 	if isProductCommand(opt) {
 		if e := validateCommandFlags(opt); e != nil {
@@ -174,7 +191,11 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 	}
 	switch command {
 	case "version":
-		return emit(map[string]string{"binary": "development", "local_control_api": service.APIVersion, "product_api": "query_cli_configuration_v1", "package": "1.0", "skill": "not_implemented"})
+		owned, e := skills.Owned()
+		if e != nil {
+			return e
+		}
+		return emit(map[string]string{"binary": "development", "local_control_api": service.APIVersion, "product_api": "query_cli_configuration_v1", "package": "1.0", "skill": owned.Version, "skill_sha256": owned.SHA256})
 	case "init":
 		p, err := service.Initialize(opt.selection)
 		if err != nil {
@@ -211,6 +232,7 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 			renderFacade := newRenderFacade(store, core, store, func() string { return managementOrigin })
 			providerDriver := codex.New(store, store, filepath.Join(profile.DataDir, "storage", "provider-spool"))
 			providerDriver.Binary = selectedBinary
+
 			configurationCore.ProviderTransportAvailable = true
 			queries.ProviderStatus = func(ctx context.Context) domain.ProviderStatus { return providerDriver.Status(ctx, profile.DataDir) }
 			runCtx, cancelRun := context.WithCancel(ctx)
@@ -225,6 +247,13 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 				if err := sourceCore.Recover(runCtx); err != nil {
 					return nil, err
 				}
+				skillPath, ownedSkill, err := skills.Materialize(filepath.Join(profile.DataDir, "storage", "owned-skills"))
+				if err != nil {
+					return nil, err
+				}
+				generationCore := generation.New(store, core, sourceCore, domain.GenerationInvocation{SkillPath: skillPath, SkillSHA: ownedSkill.SHA256, SkillVersion: ownedSkill.Version}, codex.SemanticRequestSHA)
+				queries.GenerationAvailable = true
+				configurationCore.GenerationAvailable = true
 				managementOrigin = origin
 				configurationCore.RuntimeEndpoint = origin
 				configurationCore.ListenerOverride = opt.portSelected
@@ -233,9 +262,9 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 					return nil, err
 				}
 				externalOrigin = configuredExternalOrigin(configuration.Value)
-				return productHandler(core, origin, configuration.Value, productRoutes{httpsource.New(sourceCore), httpimports.New(imports), httpv1.New(queries, renderFacade, func() (string, string) { return managementOrigin, externalOrigin }), httpconfig.New(configurationCore)})
+				return productHandler(core, origin, configuration.Value, productRoutes{httpsource.New(sourceCore), httpimports.NewGeneration(imports, generationCore), httpv1.New(queries, renderFacade, func() (string, string) { return managementOrigin, externalOrigin }), httpconfig.New(configurationCore)})
 			}}
-			runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: store, Endpoint: endpoint, Work: (work.Dispatcher{Provider: &work.ProviderCoordinator{Store: store, Bytes: store, Driver: providerDriver}, Copies: copyCore, Purge: &work.Purger{Store: store, Bytes: store}, Store: store, Imports: imports, Derived: work.NewMaintenance(store, store)}).Run, CloseDependents: renderFacade.Shutdown, ListenerPort: func(ctx context.Context) (int, error) {
+			runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: store, Endpoint: endpoint, Work: (work.Dispatcher{Provider: &work.ProviderCoordinator{Store: store, Bytes: store, Driver: providerDriver, Prepare: imports.PrepareGeneration, Apply: imports.ApplyGeneration}, Copies: copyCore, Purge: &work.Purger{Store: store, Bytes: store}, Store: store, Imports: imports, Derived: work.NewMaintenance(store, store)}).Run, CloseDependents: renderFacade.Shutdown, ListenerPort: func(ctx context.Context) (int, error) {
 				configuration, e := store.Configuration(ctx)
 				if e != nil {
 					return 0, e

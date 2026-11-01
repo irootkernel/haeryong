@@ -477,3 +477,34 @@ test("native provider status refuses unknown authority state and preserves an ex
  fake.handlers.set("providerStatus",()=>({state:"future_state",ordinary_usage_allowed:true}));await assert.rejects(client.providerStatus(),/지원되는 제공자 상태/);
  fake.handlers.set("providerStatus",()=>({state:"ready"}));await assert.rejects(client.providerStatus(),/지원되는 제공자 상태/);
 });
+
+test("GCLIENT02 generation/draft named calls retain identity, conditional writes and stale read refusal", async () => {
+  const fake=port(), key="key", request={project_id:"p",document_id:null,intent:"draft" as const,prompt:"explain",source_selection:{selections:[]}};
+  const accepted={operation_id:key,job_id:"job",draft_id:"draft",intent:"draft",job_url:"/api/v1/jobs/job"};
+  fake.handlers.set("generationStart",()=>({kind:"accepted",body:accepted}));
+  fake.handlers.set("operation",()=>({operation_id:key,state:"completed",original_status:202,result_metadata:accepted}));
+  fake.handlers.set("draftPatch",()=>({kind:"committed",body:{draft_id:"d",state:"rejected"}}));
+  fake.handlers.set("draftPublish",()=>({kind:"committed",body:{draft_id:"d",state:"published"}}));
+  fake.handlers.set("draftList",()=>({items:[],next_cursor:null}));
+  fake.handlers.set("draftGet",()=>({draft_id:"d",state:"ready"}));
+  fake.handlers.set("draftHistory",()=>({items:[],next_cursor:null}));
+  const client=new NativeHaeryongClient(fake as unknown as NativePort);
+  assert.deepEqual(await client.generationStart(request,key),accepted);
+  await client.draftPatch("d",{action:"reject"},'"exact"',key);
+  await client.draftPublish("d",'"next"',key);
+  await client.draftList("p","opaque");await client.draftHistory("d","next");
+  assert.deepEqual(fake.calls.slice(0,6),[["generationStart",{request,operation_id:key}],["operation",{operation_id:key}],["draftPatch",{draft_id:"d",body:{action:"reject"},etag:'"exact"',operation_id:key}],["draftPublish",{draft_id:"d",etag:'"next"',operation_id:key}],["draftList",{project_id:"p",cursor:"opaque"}],["draftHistory",{draft_id:"d",cursor:"next"}]]);
+  const pending=client.draftGet("d");client.invalidate();await assert.rejects(pending,StaleResponseError);
+});
+
+
+test("T4R2RESUME06 the actual native client keeps changed-runtime404 recovery on the operation port and consumes200 without jobResume",async()=>{
+ const {recoverGenerationResume}=await import("./generation.ts");
+ const fake=port();let found=false;
+ fake.handlers.set("operation",()=>{if(!found)throw new ApiError(404,"NOT_FOUND",false);return{operation_id:"resume",state:"completed",original_status:200,result_metadata:{job_id:"job"}};});
+ const client=new NativeHaeryongClient(fake as unknown as NativePort);
+ const record={operationId:"parent",request:{project_id:"p",document_id:null,intent:"draft" as const,source_selection:{selections:[]}},promptSHA:"",promptSize:0,dispatchReady:true,accepted:{operation_id:"parent",job_id:"job",draft_id:"d",intent:"draft" as const,job_url:"/api/v1/jobs/job"},runtimeGeneration:"parent",resume:{key:"resume",decision:"retry" as const,generation:3,etag:'"original"',runtimeGeneration:"old",dispatchReady:true}};
+ await assert.rejects(recoverGenerationResume(client,record,"changed",()=>{},()=>{}),/세대/);
+ found=true;assert.equal(await recoverGenerationResume(client,record,"changed",()=>{},()=>{}),true);
+ assert.deepEqual(fake.calls,[["operation",{operation_id:"resume"}],["operation",{operation_id:"resume"}]]);
+});

@@ -79,9 +79,10 @@ type daemon struct {
 	stderr *bytes.Buffer
 }
 
-func startDaemon(t GinkgoTInterface, s service.Selection, port int) *daemon {
+func startDaemon(t GinkgoTInterface, s service.Selection, port int, extra ...string) *daemon {
 	GinkgoHelper()
 	args := append([]string{"daemon", "run", "--port", fmt.Sprint(port)}, profileArgs(s)...)
+	args = append(args, extra...)
 	cmd := exec.Command(testBinary, args...)
 	stderr := new(bytes.Buffer)
 	cmd.Stderr = stderr

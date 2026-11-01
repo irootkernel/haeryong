@@ -544,35 +544,26 @@ var _ = It("TestTypedDraftAndAnnotationCurrentTargetScope", Label("persistence")
 
 	f := newFixture(t)
 	doc, version := f.imported(t, f.sealed(t, nil, "<html>anchor</html>"), "")
-	draft, annotation := key(t), key(t)
-	seed := func(kind, id string, value any, revision int64) {
+	generation, _ := readyGeneration(f, &doc, &version)
+	draft, annotation := generation.DraftID, key(t)
+	seedAnnotation := func(id string, value map[string]any, revision int64) {
 		GinkgoHelper()
-		{
-			e := f.store.Write(ctx, func(tx app.WriteTx) error {
-				if kind == "annotation" {
-					state, e := tx.AuthState()
-					if e != nil {
-						return e
-					}
-					v := value.(map[string]any)
-					page := v["page_path"].(string)
-					anchor := domain.AnnotationAnchor{VersionID: v["version_id"].(string), PagePath: &page}
-					n := domain.Annotation{ID: id, OwnerID: state.OwnerID, DocumentID: doc, Anchor: anchor, OriginalAnchor: anchor, Revision: revision + 1, Action: "create", ActorSession: "fixture", OperationID: key(t), CreatedAt: "2026-10-24T00:00:00Z", UpdatedAt: "2026-10-24T00:00:00Z"}
-					if v["deleted"] == true {
-						n.DeletedAt = &n.UpdatedAt
-						n.Action = "delete"
-					}
-					return tx.SaveAnnotation(n)
-				}
-				_, e := tx.MutateResource(domain.Resource{Kind: kind, ID: id, Value: encodedTest(value)}, revision, "resource.invalidated")
+		Expect(f.store.Write(ctx, func(tx app.WriteTx) error {
+			state, e := tx.AuthState()
+			if e != nil {
 				return e
-			})
-			Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
-		}
-
+			}
+			page := value["page_path"].(string)
+			anchor := domain.AnnotationAnchor{VersionID: value["version_id"].(string), PagePath: &page}
+			n := domain.Annotation{ID: id, OwnerID: state.OwnerID, DocumentID: doc, Anchor: anchor, OriginalAnchor: anchor, Revision: revision + 1, Action: "create", ActorSession: "fixture", OperationID: key(t), CreatedAt: "2026-10-24T00:00:00Z", UpdatedAt: "2026-10-24T00:00:00Z"}
+			if value["deleted"] == true {
+				n.DeletedAt = &n.UpdatedAt
+				n.Action = "delete"
+			}
+			return tx.SaveAnnotation(n)
+		})).To(Succeed())
 	}
-	seed("draft", draft, map[string]any{"project_id": f.project, "document_id": doc, "state": "ready"}, 0)
-	seed("annotation", annotation, map[string]any{"version_id": version, "page_path": "hello.html", "deleted": false}, 0)
+	seedAnnotation(annotation, map[string]any{"version_id": version, "page_path": "hello.html", "deleted": false}, 0)
 	create := func(purpose string, target any, keyID string) (domain.Response, error) {
 		return f.core.Create(ctx, f.token, keyID, importer.CreateRequest{Purpose: purpose, InputMode: map[bool]string{true: "directory", false: "object"}[purpose == "result"], Target: encodedTest(target)})
 	}
@@ -612,14 +603,21 @@ var _ = It("TestTypedDraftAndAnnotationCurrentTargetScope", Label("persistence")
 		Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 	}
 
-	badDraft := key(t)
-	seed("draft", badDraft, map[string]any{"project_id": secondProject, "document_id": doc, "state": "ready"}, 0)
-	{
-		_, e := create("metadata", map[string]any{"operation_id": key(t), "action": "draft_replace", "draft_id": badDraft}, key(t))
-		Expect(!errors.Is(e, domain.ErrInvalidTarget)).To(BeFalse(), func() string {
-			return fmt.Sprint("draft_replace accepted inconsistent current project/document binding", e)
-		})
-	}
+	// Typed storage rejects the inconsistent project/document state that the
+	// former generic-resource fixture could manufacture. Keep that invariant
+	// and independently reject a caller's mismatching upload target.
+	invalid := generationJob(f, "draft", &doc, &version)
+	Expect(f.store.Write(ctx, func(tx app.WriteTx) error {
+		d, e := tx.Draft(invalid.DraftID)
+		if e != nil {
+			return e
+		}
+		d.ID = key(t)
+		d.ProjectID = secondProject
+		return tx.CreateDraft(d)
+	})).To(MatchError(domain.ErrInvalidTarget))
+	_, e = create("result", map[string]any{"project_id": secondProject, "document_id": doc, "draft_id": draft}, key(t))
+	Expect(errors.Is(e, domain.ErrInvalidTarget)).To(BeTrue(), "draft upload target cannot change the current project")
 
 	content := "<html>draft only</html>"
 	sum := sha256.Sum256([]byte(content))
@@ -650,13 +648,17 @@ var _ = It("TestTypedDraftAndAnnotationCurrentTargetScope", Label("persistence")
 		Expect(e != nil).To(BeFalse(), func() string { return fmt.Sprint(e) })
 	}
 
-	seed("annotation", annotation, map[string]any{"version_id": version, "page_path": "hello.html", "deleted": true}, 1)
+	seedAnnotation(annotation, map[string]any{"version_id": version, "page_path": "hello.html", "deleted": true}, 1)
 	{
 		_, e := create("body", annotationInput, annotationOp)
 		Expect(!errors.Is(e, domain.ErrNotFound)).To(BeFalse(), func() string { return fmt.Sprint("annotation replay bypassed current hidden/deleted anchor", e) })
 	}
 
-	seed("draft", draft, map[string]any{"project_id": f.project, "document_id": doc, "state": "rejected"}, 1)
+	currentDraft, e := f.core.Draft(ctx, f.token, draft)
+	Expect(e).NotTo(HaveOccurred())
+	Expect(currentDraft.State).To(Equal("ready"))
+	_, e = f.core.RejectDraft(ctx, f.token, key(t), draft, currentDraft.ETag)
+	Expect(e).NotTo(HaveOccurred())
 	{
 		_, e := create("result", map[string]any{"project_id": f.project, "document_id": doc, "draft_id": draft}, op)
 		Expect(!errors.Is(e, domain.ErrNotFound)).To(BeFalse(), func() string { return fmt.Sprint("saved draft receipt bypassed current lifecycle", e) })

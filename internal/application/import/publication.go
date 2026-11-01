@@ -344,7 +344,7 @@ func (s *Service) Import(ctx context.Context, token, key string, input ImportReq
 			return domain.Response{}, e
 		}
 		intent := domain.ImportIntent{JobID: job, PrincipalID: r.Key.PrincipalID, UploadID: u.ID, ContentSetID: u.ContentSetID, PayloadSHA: payload, MetadataHash: metadata.Hash, ProjectID: n.ProjectID, DocumentID: n.DocumentID, VersionID: n.VersionID, BaseVersionID: value(n.BaseVersionID), Title: n.Title, CreatedAt: n.CreatedAt, AuthEpoch: library.AuthEpoch, NewDocument: input.DocumentID == nil, DocumentRevision: revision, PermissionsRevision: scope.Project.PermissionsRevision, ConfigRevision: scope.ConfigRevision, Normalization: receipt.Normalization}
-		if e := tx.CreateJob(domain.Job{ID: job, Kind: "import", UploadID: u.ID, Scope: encoded(map[string]any{"principal_id": r.Key.PrincipalID, "auth_epoch": library.AuthEpoch, "purpose": "result", "target": json.RawMessage(u.Target)}), ConfigRevision: scope.ConfigRevision, Permissions: map[string]int64{n.ProjectID: scope.Project.PermissionsRevision}}); e != nil {
+		if e := tx.CreateJob(domain.Job{ID: job, Kind: "import", UploadID: u.ID, Scope: encoded(map[string]any{"principal_id": r.Key.PrincipalID, "auth_epoch": library.AuthEpoch, "purpose": "result", "target": json.RawMessage(u.Target), "credential_scope": record.Scope}), ConfigRevision: scope.ConfigRevision, Permissions: map[string]int64{n.ProjectID: scope.Project.PermissionsRevision}}); e != nil {
 			return domain.Response{}, e
 		}
 		if preparation != "" {

@@ -78,6 +78,9 @@ func (s *Service) Run(ctx context.Context, input Input) (Journal, error) {
 	defer release()
 	j, e := s.State.Load(id)
 	if e == nil {
+		if j.Purpose != "import" && j.Purpose != "validate" {
+			return j, ErrIntent
+		}
 		if j.Identity.LibraryID != identity.LibraryID || j.Identity.PrincipalID != identity.PrincipalID {
 			return j, ErrIntent
 		}

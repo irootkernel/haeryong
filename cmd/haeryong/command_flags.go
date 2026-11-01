@@ -21,6 +21,28 @@ func validateCommandFlags(opt options) error {
 		verb = args[1]
 	}
 	switch args[0] {
+	case "drafts":
+		switch verb {
+		case "list":
+			add("project cursor")
+		case "history":
+			add("cursor")
+		case "reject", "publish":
+			add("if-match operation-id")
+		case "replace":
+			add("input metadata if-match operation-id")
+		}
+	case "generate":
+		add("project request-file operation-id")
+	case "auth":
+		if len(args) >= 3 && args[1] == "grant" {
+			switch args[2] {
+			case "create", "rotate":
+				add("input operation-id")
+			case "revoke":
+				add("operation-id")
+			}
+		}
 	case "backup":
 		switch verb {
 		case "create":

@@ -134,7 +134,7 @@ func searchPriorRows(db *sql.DB) map[string]string {
 	assertEmptyProviderMigrationTables(db)
 	GinkgoHelper()
 	assertSearchTwoProjects(db)
-	names, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'search_%' AND name NOT IN ('derived_work','page_anchors','reference_materializations','authored_references','authored_edges','review_states','review_events','annotations','annotation_history','revisit_flags','lifecycle_plans','lifecycle_plan_items','purge_intents','purged_versions','purge_candidates','copy_sets','copy_versions','recovery_holds','provider_transport','provider_attempts','provider_inputs','provider_retry_authorizations','provider_linked_retry_authorizations','provider_orphans','provider_reconcile_intents','source_captures','source_capture_reads','job_inputs') ORDER BY name`)
+	names, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'search_%' AND name NOT IN ('derived_work','page_anchors','reference_materializations','authored_references','authored_edges','review_states','review_events','annotations','annotation_history','revisit_flags','lifecycle_plans','lifecycle_plan_items','purge_intents','purged_versions','purge_candidates','copy_sets','copy_versions','recovery_holds','provider_transport','provider_attempts','provider_inputs','provider_retry_authorizations','provider_linked_retry_authorizations','provider_orphans','provider_reconcile_intents','source_captures','source_capture_reads','job_inputs','generation_intents','drafts','draft_history','workflow_selections') ORDER BY name`)
 	Expect(err).NotTo(HaveOccurred())
 	var tables []string
 	for names.Next() {

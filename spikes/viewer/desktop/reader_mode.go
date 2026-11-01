@@ -217,7 +217,7 @@ func runReader(base, state, dist, port string, appPath string, selfcheck bool, p
 				if json.Unmarshal(envelope.Args, &invocation) == nil && len(invocation.Args) == 1 {
 					invoked := invocation.Args[0]
 					switch invoked.Operation {
-					case "providerStatus", "annotationCreate", "annotationPatch", "annotationDelete", "reviewPut", "lifecyclePlan", "lifecyclePlanCommit", "revisitPut", "configurationView", "configurationPlan", "configurationPlanCommit":
+					case "providerStatus", "generationStart", "draftList", "draftGet", "draftHistory", "draftPatch", "draftPublish", "annotationCreate", "annotationPatch", "annotationDelete", "reviewPut", "lifecyclePlan", "lifecyclePlanCommit", "revisitPut", "configurationView", "configurationPlan", "configurationPlanCommit":
 						var payload map[string]json.RawMessage
 						_ = json.Unmarshal(invoked.Payload, &payload)
 						row := map[string]any{"pid": os.Getpid(), "call_id": envelope.ID, "operation": invoked.Operation, "forwarded": 1, "returned_error": err != nil}
@@ -302,8 +302,15 @@ func runReader(base, state, dist, port string, appPath string, selfcheck bool, p
 			// The facade exists only after the guard: the bridge bootstrap is
 			// injected here, once per navigation, without replacing the guard.
 			guardReady.Store(true)
-			// Activate only the initial owned Reader, once its guard is ready.
-			focusOwnedReader.Do(func() { window.Focus() })
+			// Explicitly show and focus the initial guarded Reader before the bridge/probe.
+			// Capture startup visibility separately from the later close guard.
+			focusOwnedReader.Do(func() {
+				window.Show()
+				window.Focus()
+				startup := map[string]any{"pid": os.Getpid(), "guard_ready": guardReady.Load(), "window_visible": window.IsVisible(), "window_focused": window.IsFocused()}
+				encoded, _ := json.Marshal(startup)
+				_ = os.WriteFile(filepath.Join(state, fmt.Sprintf("native-reader-startup-%d.json", os.Getpid())), encoded, 0600)
+			})
 			facade.EvalNative(window, nativeBootstrapReader)
 			stats := facade.GuardStats()
 			stats["pid"] = os.Getpid()

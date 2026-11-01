@@ -144,8 +144,10 @@ credential-free operational status. A fresh catalog is not entitlement. Unknown
 quota stays unknown; ordinaryUsageAllowed=false alone reports paused usage,
 without inventing an exhaustion cause. Explicit native usage-limit exhaustion,
 auth failure, rate limiting, session budget and context limits remain distinct.
-Generation/publication and saved-Q&A admission/resources remain TASK-006-04/05;
-features.provider denotes the transport, while generation/questions remain false.
+Task03 leaves generation/publication and saved-Q&A admission to TASK-006-04/05.
+The Task04 factory exposes implemented generation separately from provider
+readiness; questions remain unavailable until Task05. features.provider denotes
+the transport rather than entitlement.
 See the [implementation record](../testing/provider-adapter.md).
 
 The [official app-server authentication notes](https://learn.chatgpt.com/docs/app-server#auth-endpoints)
@@ -183,3 +185,50 @@ remain a handled historical diagnostic after durable settlement and collection,
 without fabricating a Transport, Lookup or accepted identity.
 An internal setup deadline with a live caller is setup_timeout, preserving
 prepared/no-send accounting and truthful caller/fence refusal semantics.
+
+## TASK-006-04 managed complete-directory generation
+
+The trusted generation service captures explicit project/document/base,
+publication-versus-draft intent, current source selection and the one owned
+skill version/hash before provider dispatch. Generation has a fresh private
+per-attempt CWD and result directory; runtime-derived destination/skill paths and
+operation IDs are not semantic request entropy. A new attempt cannot merge an
+older partial tree. The adapter verifies the materialized guidance bytes,
+actual enabled `skills/list` path and explicit native skill input. Normal
+owner tools/instructions remain inherited subject to the supported native
+controls and bounded capability disclosure; this is not an OS containment claim.
+
+The prompt is a retained exact UTF-8 object. Selected immutable explanation
+contexts are separately labelled and streamed in full, with their exact
+version/page/optional region and bytes identity. They are not project-source
+reads. Prompt/context/skill acknowledgement requires the complete written frame
+and matching native ACK; it does not prove model comprehension. Actual selected
+project-source disclosure and its observations retain Task02/03's accounting.
+
+Native completed/public-final facts are independent of the directory archive.
+After a completed native turn and positively drained owned process/readers, the
+adapter captures the whole ordinary result tree as a service-derived ZIP. Native
+public-final SHA/size and ZIP/result-object SHA/size stay separate. No author
+manifest, required index, file type/count/size/depth cap or prefix result is
+introduced. Corrupt paths/bytes, incomplete output, unsafe drain and lost output
+authority remain explicit. An unknown/reconciliation path cannot treat public
+final text alone as a complete directory. Recovery uses only the exact retained
+owned output tree under current authority, never another model turn implicitly.
+
+The complete ZIP is durable `result_saved` before importer preparation. Heavy
+expansion/hash/copy runs outside the writer with operation cancellation and
+current payload guards. Short writer transactions reserve/adopt the exact
+candidate and atomically publish or leave a ready draft. Cancellation, revoked
+source/output authority, changed generation and replaced/rejected draft decisions
+fence application. A stale base leaves the exact ready candidate available;
+continuation consumes its saved result without Execute. Prepare failures retain
+the existing typed accounting/cleanup diagnostic behavior and normal Reader,
+Review and dispatcher availability; unsafe cleanup errors are not swallowed.
+
+The managed host owns saved-tree capture and publication. The same guidance
+in an external compatible host uses its advertised whole-directory CLI/API
+consumer for explicit publication, with a stable operation key and captured base.
+It must not also import a managed-generation result itself. Actual Aquarium and
+standalone skill discovery/load/invocation must each be observed with the same
+guidance identity; a controlled peer or two labels on one fixture is insufficient.
+See [generation workflow](../testing/generation-workflow.md).

@@ -11,7 +11,7 @@ import (
 // identity. It performs no filesystem, Git or provider read.
 func authorizeManagedCapture(tx app.WriteTx, actor domain.Session, r domain.Request) (bool, error) {
 	parts := strings.Split(strings.Trim(strings.SplitN(r.Target, "?", 2)[0], "/"), "/")
-	if len(parts) != 5 || parts[0] != "api" || parts[1] != "v1" || parts[2] != "projects" || parts[4] != "source-captures" {
+	if len(parts) != 5 || parts[0] != "api" || parts[1] != "v1" || parts[2] != "projects" || (parts[4] != "source-captures" && parts[4] != "generation-source-captures") {
 		return false, nil
 	}
 	var input struct {
@@ -30,11 +30,20 @@ func authorizeManagedCapture(tx app.WriteTx, actor domain.Session, r domain.Requ
 		return true, e
 	}
 	if actor.Scope.Kind != "owner" {
-		if input.Version == "" || !contains(actor.Scope.ProjectIDs, project) || !contains(actor.Scope.VersionIDs, input.Version) {
-			return true, domain.ErrNotFound
-		}
-		if !contains(actor.Scope.Actions, "version.read") || !contains(actor.Scope.Actions, "source.read") {
-			return true, domain.ErrDenied
+		if parts[4] == "generation-source-captures" {
+			if !contains(actor.Scope.ProjectIDs, project) {
+				return true, domain.ErrNotFound
+			}
+			if !contains(actor.Scope.Actions, "generation.request") || !contains(actor.Scope.Actions, "source.read") {
+				return true, domain.ErrDenied
+			}
+		} else {
+			if input.Version == "" || !contains(actor.Scope.ProjectIDs, project) || !contains(actor.Scope.VersionIDs, input.Version) {
+				return true, domain.ErrNotFound
+			}
+			if !contains(actor.Scope.Actions, "version.read") || !contains(actor.Scope.Actions, "source.read") {
+				return true, domain.ErrDenied
+			}
 		}
 	}
 	for _, sel := range input.Selections {

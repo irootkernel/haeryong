@@ -105,6 +105,8 @@ func (h *HTTP) Start(ctx context.Context, p service.Profile, id service.Identity
 	mux.HandleFunc(stopPath, func(w http.ResponseWriter, r *http.Request) { respond(w, r, http.MethodPost, stop) })
 	if id.Storage.Ready && h.Auth != nil {
 		h.mountBootstrap(mux, p, id)
+		mux.HandleFunc(workflowGrantsPath, func(w http.ResponseWriter, r *http.Request) { h.workflowGrant(w, r, p, id) })
+		mux.HandleFunc(workflowGrantsPath+"/", func(w http.ResponseWriter, r *http.Request) { h.workflowGrant(w, r, p, id) })
 		if h.Copies != nil {
 			mux.HandleFunc(copiesPath, func(w http.ResponseWriter, r *http.Request) { h.copyRequest(w, r, p, id) })
 		}

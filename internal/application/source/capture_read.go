@@ -1,18 +1,23 @@
 package source
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"haeryong.local/haeryong/internal/application/service"
 	"io"
+	"sort"
 
 	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
+	sec "haeryong.local/haeryong/internal/security/session"
 )
 
-func (s *Service) captureAccess(ctx context.Context, tx app.WriteTx, token, id string) (domain.SourceCapture, error) {
+func (s *Service) captureAccess(ctx context.Context, tx app.WriteTx, token, id string, metadata bool) (domain.SourceCapture, error) {
 	actor, e := s.Auth.AuthenticateWrite(ctx, tx, token)
 	if e != nil {
 		return domain.SourceCapture{}, e
@@ -21,14 +26,35 @@ func (s *Service) captureAccess(ctx context.Context, tx app.WriteTx, token, id s
 	if e != nil {
 		return c, e
 	}
-	if actor.Scope.Kind != "owner" && c.PrincipalID != actor.PrincipalID {
-		return c, domain.ErrNotFound
+	if e = app.CheckCaptureActor(tx, actor, c); e != nil {
+		return c, e
+	}
+	if metadata {
+		for after := ""; ; {
+			reads, err := tx.SourceCaptureReads(c.ID, after, 64)
+			if err != nil {
+				return c, err
+			}
+			if len(reads) == 0 {
+				break
+			}
+			for _, read := range reads {
+				parent, err := app.SourceReadParent(c, read)
+				if err != nil {
+					return c, err
+				}
+				if parent != "" {
+					if err = app.CheckSourceReadContext(tx, actor, parent, c.ProjectID); err != nil {
+						return c, err
+					}
+				}
+				after = read.ID
+			}
+		}
+
 	}
 	var input CaptureRequest
 	if e = json.Unmarshal(c.Selection, &input); e != nil {
-		return c, e
-	}
-	if e = s.capturePrincipal(tx, actor, c.ProjectID, input.VersionID); e != nil {
 		return c, e
 	}
 	// A scoped reader cannot use a known history id as a source-existence oracle
@@ -45,7 +71,7 @@ func (s *Service) captureAccess(ctx context.Context, tx app.WriteTx, token, id s
 func (s *Service) CaptureView(ctx context.Context, token, id, after string) (map[string]any, error) {
 	var out map[string]any
 	e := s.Store.Write(ctx, func(tx app.WriteTx) error {
-		c, e := s.captureAccess(ctx, tx, token, id)
+		c, e := s.captureAccess(ctx, tx, token, id, true)
 		if e != nil {
 			return e
 		}
@@ -135,8 +161,18 @@ func (s *Service) ReadCaptured(ctx context.Context, token, readID string, consum
 		if e != nil {
 			return e
 		}
-		c, e := s.captureAccess(ctx, tx, token, row.CaptureID)
+		c, e := s.captureAccess(ctx, tx, token, row.CaptureID, false)
 		if e != nil {
+			return e
+		}
+		actor, e := s.Auth.AuthenticateWrite(ctx, tx, token)
+		if e != nil {
+			return e
+		}
+		if e = app.CheckSourceReadAuthority(tx, actor, row.ID, c.ProjectID, ""); e != nil {
+			if errors.Is(e, domain.ErrDenied) || errors.Is(e, domain.ErrNotFound) {
+				return domain.ErrNotFound
+			}
 			return e
 		}
 		mapping, e = app.ManagedSourcePolicy(tx, c.ProjectID, row.SourceID, "")
@@ -170,8 +206,18 @@ func (s *Service) ReadCaptured(ctx context.Context, token, readID string, consum
 	}
 	check := func() error {
 		return s.Store.Write(ctx, func(tx app.WriteTx) error {
-			c, e := s.captureAccess(ctx, tx, token, row.CaptureID)
+			c, e := s.captureAccess(ctx, tx, token, row.CaptureID, false)
 			if e != nil {
+				return e
+			}
+			actor, e := s.Auth.AuthenticateWrite(ctx, tx, token)
+			if e != nil {
+				return e
+			}
+			if e = app.CheckSourceReadAuthority(tx, actor, row.ID, c.ProjectID, ""); e != nil {
+				if errors.Is(e, domain.ErrDenied) || errors.Is(e, domain.ErrNotFound) {
+					return domain.ErrNotFound
+				}
 				return e
 			}
 			current, e := app.ManagedSourcePolicy(tx, c.ProjectID, row.SourceID, "")
@@ -277,11 +323,11 @@ func (s *Service) CompareCaptures(ctx context.Context, token, left, right, curso
 	changes := []domain.SourceCaptureDelta{}
 	var next any
 	e := s.Store.Write(ctx, func(tx app.WriteTx) error {
-		a, e := s.captureAccess(ctx, tx, token, left)
+		a, e := s.captureAccess(ctx, tx, token, left, true)
 		if e != nil {
 			return e
 		}
-		b, e := s.captureAccess(ctx, tx, token, right)
+		b, e := s.captureAccess(ctx, tx, token, right, true)
 		if e != nil {
 			return e
 		}
@@ -345,4 +391,131 @@ func ValidateObservedRead(tx app.WriteTx, attemptID, readID string) error {
 		}
 	}
 	return domain.ErrReconciliation
+}
+
+type retainedReadChoice struct {
+	domain.SourceCaptureRead
+	CapturedAt string `json:"captured_at"`
+}
+
+// RetainedReads exposes metadata for a normal pinned-files chooser, not a source
+// read or a provider observation. The existing completed target-set inventory is
+// the index; no new table, implicit capture, pin or current-file fallback exists.
+func (s *Service) RetainedReads(ctx context.Context, token, project, sourceID, cursor string) (map[string]any, error) {
+	if !uuidPattern.MatchString(project) || sourceID == "" {
+		return nil, sec.ErrInvalid
+	}
+	var out map[string]any
+	err := s.Store.Write(ctx, func(tx app.WriteTx) error {
+		actor, e := s.Auth.AuthenticateWrite(ctx, tx, token)
+		if e != nil {
+			return e
+		}
+		if e = generationCapturePrincipal(tx, actor, project); e != nil {
+			return e
+		}
+		if _, e = app.ManagedSourcePolicy(tx, project, sourceID, ""); e != nil {
+			return e
+		}
+		library, e := tx.Library()
+		if e != nil {
+			return e
+		}
+		scope, e := tx.Scope(project)
+		if e != nil {
+			return e
+		}
+		configuration, e := tx.Configuration()
+		if e != nil {
+			return e
+		}
+		principalRevision := int64(0)
+		if actor.Scope.Kind != "owner" {
+			p, e := tx.WorkflowPrincipal(actor.PrincipalID)
+			if e != nil {
+				return e
+			}
+			principalRevision = p.Revision
+		}
+		binding := fmt.Sprintf("%x", sha256.Sum256(encoded([]any{library.ID, library.RuntimeGeneration, library.AuthEpoch, actor.PrincipalID, actor.Scope, principalRevision, project, scope.Project.PermissionsRevision, configuration.Revision, sourceID})))
+		c := struct {
+			Binding string `json:"binding"`
+			After   string `json:"after,omitempty"`
+		}{Binding: binding}
+		if cursor != "" {
+			raw, e := base64.RawURLEncoding.DecodeString(cursor)
+			if e != nil {
+				return sec.ErrInvalid
+			}
+			d := json.NewDecoder(bytes.NewReader(raw))
+			d.DisallowUnknownFields()
+			var extra any
+			if d.Decode(&c) != nil || d.Decode(&extra) != io.EOF || c.Binding != binding || !uuidPattern.MatchString(c.After) {
+				return sec.ErrInvalid
+			}
+			canonical, _ := json.Marshal(c)
+			if base64.RawURLEncoding.EncodeToString(canonical) != cursor {
+				return sec.ErrInvalid
+			}
+		}
+		targets, e := tx.SourceCaptures(project)
+		if e != nil {
+			return e
+		}
+		seen := map[string]bool{}
+		items := map[string]retainedReadChoice{}
+		ids := []string{}
+		for _, target := range targets {
+			var saved struct {
+				Sources []struct {
+					SourceID string `json:"source_id"`
+					ReadID   string `json:"read_id"`
+				} `json:"sources"`
+			}
+			if e = json.Unmarshal(target.TargetsJSON, &saved); e != nil {
+				return e
+			}
+			for _, entry := range saved.Sources {
+				if entry.SourceID != sourceID || entry.ReadID == "" || entry.ReadID <= c.After || seen[entry.ReadID] {
+					continue
+				}
+				seen[entry.ReadID] = true
+				row, e := tx.SourceCaptureRead(entry.ReadID)
+				if e != nil {
+					return e
+				}
+				capture, e := s.captureAccess(ctx, tx, token, row.CaptureID, false)
+				if e == nil {
+					e = app.CheckSourceReadContext(tx, actor, row.ID, capture.ProjectID)
+				}
+				if errors.Is(e, domain.ErrNotFound) || errors.Is(e, domain.ErrDenied) {
+					continue
+				}
+				if e != nil {
+					return e
+				}
+				if capture.ProjectID != project || capture.TargetSetID != target.ID || capture.State != "completed" || row.SourceID != sourceID {
+					return domain.ErrInvalidTarget
+				}
+				ids = append(ids, row.ID)
+				items[row.ID] = retainedReadChoice{SourceCaptureRead: projectCaptureRead(tx, capture, row), CapturedAt: capture.CapturedAt}
+			}
+		}
+		sort.Strings(ids)
+		rows := []retainedReadChoice{}
+		var next *string
+		if len(ids) > 64 {
+			c.After = ids[63]
+			raw, _ := json.Marshal(c)
+			value := base64.RawURLEncoding.EncodeToString(raw)
+			next = &value
+			ids = ids[:64]
+		}
+		for _, id := range ids {
+			rows = append(rows, items[id])
+		}
+		out = map[string]any{"items": rows, "next_cursor": next}
+		return nil
+	})
+	return out, err
 }

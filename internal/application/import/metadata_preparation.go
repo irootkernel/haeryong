@@ -11,7 +11,17 @@ import (
 
 // A preparation owns a private incremental index, never a fabricated job.
 // Parsing and verified file reads stay outside the short writer callbacks.
-func (s *Service) prepareMetadata(ctx context.Context, token string, object domain.Object, set string) (id string, err error) {
+func (s *Service) prepareMetadata(ctx context.Context, token string, object domain.Object, set string) (string, error) {
+	return s.prepareMetadataGuarded(ctx, token, object, set, nil)
+}
+
+func (s *Service) prepareMetadataGuarded(ctx context.Context, token string, object domain.Object, set string, check func(app.WriteTx) error) (id string, err error) {
+	guard := func(tx app.WriteTx) error {
+		if check != nil {
+			return check(tx)
+		}
+		return nil
+	}
 	if object.Hash == "" {
 		return "", nil
 	}
@@ -20,6 +30,9 @@ func (s *Service) prepareMetadata(ctx context.Context, token string, object doma
 		return id, err
 	}
 	err = s.Store.Write(ctx, func(tx app.WriteTx) error {
+		if e := guard(tx); e != nil {
+			return e
+		}
 		record, e := s.Auth.AuthenticateWrite(ctx, tx, token)
 		if e != nil {
 			return e
@@ -44,6 +57,9 @@ func (s *Service) prepareMetadata(ctx context.Context, token string, object doma
 	err = s.Bytes.Read(ctx, object, domain.Pin{Kind: "import_prepare", OwnerID: id}, func(reader io.ReadSeeker) error {
 		sink := func(kind, key string, raw []byte) error {
 			return s.Store.Write(ctx, func(tx app.WriteTx) error {
+				if e := guard(tx); e != nil {
+					return e
+				}
 				if _, e := s.Auth.AuthenticateWrite(ctx, tx, token); e != nil {
 					return e
 				}
@@ -51,12 +67,19 @@ func (s *Service) prepareMetadata(ctx context.Context, token string, object doma
 			})
 		}
 		var version domain.Version
-		return s.parseMetadata(ctx, bufio.NewReader(reader), domain.ImportIntent{}, &version, sink)
+		var input io.Reader = reader
+		if check != nil {
+			input = &generationReader{Reader: reader, ctx: ctx, store: s.Store, check: guard}
+		}
+		return s.parseMetadata(ctx, bufio.NewReader(input), domain.ImportIntent{}, &version, sink)
 	})
 	if err != nil {
 		return id, err
 	}
 	err = s.Store.Write(ctx, func(tx app.WriteTx) error {
+		if e := guard(tx); e != nil {
+			return e
+		}
 		if _, e := s.Auth.AuthenticateWrite(ctx, tx, token); e != nil {
 			return e
 		}

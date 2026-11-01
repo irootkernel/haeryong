@@ -1709,3 +1709,94 @@ func TestReaderProviderStatusUsesOnlyClosedOwnerRead(t *testing.T) {
 		t.Fatal("unknown provider payload reached HTTP")
 	}
 }
+
+func TestReaderGenerationClosedRoutes(t *testing.T) {
+	const id = "11111111-1111-4111-8111-111111111111"
+	const etag = `"draft-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`
+	calls := 0
+	service, daemon, _ := newReaderFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if !strings.HasPrefix(r.URL.Path, "/api/v1/drafts") && !strings.HasPrefix(r.URL.Path, "/api/v1/jobs/") && r.URL.Path != "/api/v1/generations" {
+			return false
+		}
+		calls++
+		if r.Method != "GET" {
+			if r.Header.Get("Idempotency-Key") != id {
+				t.Error("missing exact operation key")
+			}
+			if strings.HasPrefix(r.URL.Path, "/api/v1/drafts/") && r.Header.Get("If-Match") != etag {
+				t.Error("missing exact draft validator")
+			}
+		}
+		if r.URL.Path == "/api/v1/generations" {
+			var body map[string]any
+			if json.NewDecoder(r.Body).Decode(&body) != nil || body["document_id"] != nil || body["intent"] != "draft" {
+				t.Error("lost explicit generation input")
+			}
+			dataReply(w, 202, map[string]any{"job_id": id, "draft_id": id, "operation_id": id})
+			return true
+		}
+		dataReply(w, 200, map[string]any{"draft_id": id, "state": "ready", "etag": etag})
+		return true
+	})
+	request := `{"project_id":"` + id + `","document_id":null,"intent":"draft","prompt":"Explain the selected project","source_selection":{"selections":[]}}`
+	invokeOK(t, service, "generationStart", `{"request":`+request+`,"operation_id":"`+id+`"}`)
+	invokeOK(t, service, "draftList", `{"project_id":"`+id+`","cursor":"opaque/+%"}`)
+	invokeOK(t, service, "draftGet", `{"draft_id":"`+id+`"}`)
+	invokeOK(t, service, "draftHistory", `{"draft_id":"`+id+`","cursor":"opaque/+%"}`)
+	for _, body := range []string{`{"action":"reject"}`, `{"action":"replace","upload_id":"` + id + `"}`} {
+		invokeOK(t, service, "draftPatch", `{"draft_id":"`+id+`","body":`+body+`,"etag":`+string(jsonBody(etag))+`,"operation_id":"`+id+`"}`)
+	}
+	invokeOK(t, service, "draftPublish", `{"draft_id":"`+id+`","etag":`+string(jsonBody(etag))+`,"operation_id":"`+id+`"}`)
+	jobTag := `"job-` + id + `-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`
+	invokeOK(t, service, "jobResume", `{"job_id":"`+id+`","decision":"continue","expected_attempt_generation":2,"etag":`+string(jsonBody(jobTag))+`,"operation_id":"`+id+`"}`)
+	if calls != 8 {
+		t.Fatal("missing generation/draft routes", calls)
+	}
+	if !strings.Contains(strings.Join(daemon.seen(), "\n"), "cursor=opaque%2F%2B%25") {
+		t.Fatal("cursor not encoded once")
+	}
+	before := len(daemon.seen())
+	negatives := map[string][]string{
+		"jobResume":       {`{"job_id":"` + id + `","decision":"continue","expected_attempt_generation":0,"etag":` + string(jsonBody(jobTag)) + `,"operation_id":"` + id + `"}`, `{"job_id":"` + id + `","decision":"retry","expected_attempt_generation":2,"etag":` + string(jsonBody(jobTag)) + `,"operation_id":"` + id + `","target":"/api/v1/configuration"}`},
+		"generationStart": {`{"request":` + request + `,"operation_id":"` + id + `","path":"/api/v1/configuration"}`, `{"request":` + strings.Replace(request, `"intent":"draft"`, `"intent":"draft","intent":"publish"`, 1) + `,"operation_id":"` + id + `"}`},
+		"draftList":       {`{"project_id":null}`, `{"cursor":"one","cursor":"two"}`},
+		"draftGet":        {`{"draft_id":"../configuration"}`, `{"draft_id":"` + id + `","method":"DELETE"}`},
+		"draftHistory":    {`{"draft_id":"` + id + `","limit":0}`},
+		"draftPatch":      {`{"draft_id":"` + id + `","body":{"action":"reject","upload_id":"` + id + `"},"etag":` + string(jsonBody(etag)) + `,"operation_id":"` + id + `"}`, `{"draft_id":"` + id + `","body":{"action":"replace","upload_id":null},"etag":` + string(jsonBody(etag)) + `,"operation_id":"` + id + `"}`},
+		"draftPublish":    {`{"draft_id":"` + id + `","etag":"weak","operation_id":"` + id + `"}`},
+	}
+	for op, payloads := range negatives {
+		for _, payload := range append(payloads, "null", "[]", "{}") {
+			if op == "draftList" && payload == "{}" {
+				continue
+			}
+			if e := invokeFail(t, service, op, payload); e.Status != 400 {
+				t.Fatal(op, e)
+			}
+		}
+	}
+	if len(daemon.seen()) != before {
+		t.Fatal("malformed generation payload reached HTTP")
+	}
+}
+
+func TestReaderRetainedSourceReadsClosedForwarding(t *testing.T) {
+	calls := 0
+	service, _, _ := newReaderFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path != "/api/v1/projects/p/source-reads" {
+			return false
+		}
+		calls++
+		if r.Method != "GET" || r.URL.Query().Get("source_id") != "files/+" || r.URL.Query().Get("cursor") != "opaque/+" {
+			t.Fatalf("wrong chooser request: %s %s", r.Method, r.URL)
+		}
+		dataReply(w, 200, map[string]any{"items": []any{}, "next_cursor": nil})
+		return true
+	})
+	invokeOK(t, service, "retainedSourceReads", `{"project_id":"p","source_id":"files/+","cursor":"opaque/+"}`)
+	before := calls
+	invokeFail(t, service, "retainedSourceReads", `{"project_id":"p","source_id":"files/+","path":"/api/v1/configuration"}`)
+	if calls != before {
+		t.Fatal("malformed named payload reached HTTP")
+	}
+}

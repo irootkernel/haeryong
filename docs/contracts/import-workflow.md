@@ -154,3 +154,29 @@ and history retention are atomic with the note and receipt; equivalent sealed ha
 normalize by content digest without masking changed target/action/conditions. Reattach
 keeps the body and adds no body-upload target. The UI automatically stages large note
 bodies; chunk/inline choices are transport details and impose no total-note quota.
+
+## Managed generation consumers (TASK-006-04)
+
+A generation body upload uses the existing object transport and exact
+`{operation_id,action:generation,project_id,document_id}` target. Prompt inline
+and body_ref identity is actual complete UTF-8 bytes/digest, not the staging
+handle. Current principal/project/policy is rechecked at adoption; workflow
+credentials remain distinct from body handles. Admission pins become existing
+job_input ownership without fabricating captured project-source inputs.
+
+Managed native output is a fresh complete directory. Only after verified owned
+process drain does the host capture its service-derived ZIP; the native public
+final text is not that ZIP or its inventory. The saved ZIP is durable before
+outside-writer expansion/copy/metadata preparation. The short guarded apply
+transaction uses the original requested base/candidate and existing importer,
+receipt and outbox. No author manifest, index.html or artificial package cap is
+introduced. Native attempts do not separately call import for the same managed
+request. External compatible hosts use their advertised whole-directory consumer
+under the same owned guidance.
+
+Draft replacement uses purpose=result with exact draft_id/project/document;
+optional metadata uses only `{operation_id,action:draft_replace,draft_id}`.
+Neither sealed handle can be rebound. Prior candidate/history and their complete
+inventory remain retained through abandon, purge and restart. Personal Review
+is unchanged. Any actual malformed metadata/path/bytes failure remains precise;
+missing optional enrichment is a valid ordinary directory.

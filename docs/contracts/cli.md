@@ -5,8 +5,9 @@ reconcile_only|continue|retry --expected-attempt-generation N --if-match ETAG`
 with the standard optional `--operation-id`. It journals the exact body and
 validator through the existing mutation recovery path. It never infers retry
 authority from a lost response, new operation ID or local process exit. The
-command resumes an existing eligible provider job; generation/question creation
-remains with its ordered implementing owner. jobs show/list JSON retains the
+command resumes an existing eligible provider job. TASK-006-04 now implements
+generation creation; saved-question creation remains with TASK-006-05.
+jobs show/list JSON retains the
 scoped provider_attempts counts and unknown-outcome reason, including older
 uncertain attempts on a completed current job. Explicit reconcile_only can
 settle those attempts without changing the terminal state/current result or
@@ -412,3 +413,53 @@ SHA before executing it. Missing/unverified binaries leave AI unavailable while
 normal local functions remain usable. PATH discovery does not substitute an
 unverified newer release or automatically downgrade it. This is an ephemeral
 startup selection, not a new effective-configuration field or account change.
+
+## Generation and draft CLI (TASK-006-04)
+
+The current executable additionally implements:
+
+```sh
+haeryong generate --request-file request.json [--project PROJECT] [--operation-id K]
+haeryong drafts list [--project PROJECT] [--cursor CURSOR]
+haeryong drafts show DRAFT
+haeryong drafts history DRAFT [--cursor CURSOR]
+haeryong drafts reject DRAFT [--if-match ETAG] [--operation-id K]
+haeryong drafts replace DRAFT --input WHOLE_DIRECTORY_OR_ZIP [--metadata METADATA_JSON] [--if-match ETAG] [--operation-id K]
+haeryong drafts publish DRAFT [--if-match ETAG] [--operation-id K]
+haeryong auth grant create --input selection.json [--operation-id K]
+haeryong auth grant rotate --input selection.json [--operation-id K]
+haeryong auth grant show BINDING
+haeryong auth grant revoke BINDING [--operation-id K]
+```
+
+Generation's strict request file uses the HTTP generation shape; omitted
+project/document fields resolve through the selected credential's authorized
+remembered association. Explicit file targets are preserved and checked against
+an explicit --project. Existing-document base is captured once before staging.
+Large prompt bytes use the existing protected snapshot and resumable object
+transfer; raw prompt is absent from the final small control journal. U/S keys
+are distinct from K. Normal local owner launch automatically reuses its remembered
+finite workflow grant, fixing final principal/library before preparation/final
+submission. Explicit owner-authenticated remote API submission remains supported;
+workflow refusal never falls back to owner or Unfiled. Providers/artifacts receive
+no bearer or management authority. A generation grant includes its own job
+read/cancel, not draft publish, owner resume or arbitrary other jobs.
+
+The protected caller journal preserves original target/base, prompt snapshot,
+source/prior selections, final principal and preparation/final keys. Same-key
+reentry looks up the original receipt before reopening local files. Unknown or
+paused generation retains its implicit pending K; it cannot turn the same
+interrupted command into a new generation. Output distinguishes admission, current
+job state, publication and required reconciliation. Existing owner jobs resume
+keeps current ETag/expected-generation/decision; new usage needs its explicit
+retry authority.
+
+Draft commands use the explicitly selected owner or exact draft-scoped
+credential. Missing draft authority fails without owner fallback; a generation
+grant does not imply knowledge of a future draft ID or permission to publish it.
+When If-Match is omitted, the command captures the current individual validator
+once, before preparation, and journals it. Replacement transfers the entire tree
+and optional metadata under exact draft targets. Original operation replay does
+not require the old local directory to remain. Stale base/validator conflicts
+retain the candidate and original intent; replacement cannot alter its base.
+No command automatically completes personal Review.

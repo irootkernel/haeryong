@@ -109,7 +109,17 @@ func (t *writeTx) ProviderInputs(id string) ([]domain.ProviderInput, error) {
 		}
 		out = append(out, v)
 	}
-	return out, rows.Err()
+	if e = errors.Join(rows.Err(), rows.Close()); e != nil {
+		return nil, e
+	}
+	for i := range out {
+		versions, err := t.sourceReadVersions(out[i].ReadID)
+		if err != nil {
+			return nil, err
+		}
+		out[i].SourceVersionIDs = versions
+	}
+	return out, nil
 }
 func (t *writeTx) PrepareProviderAttempt(a domain.ProviderAttempt, inputs []domain.ProviderInput) error {
 	if a.ID == "" || a.MayHaveDispatched || a.State != "prepared" || a.RequestID != "" || a.SessionID != "" || a.ResultHash != "" || a.Reason != "" || len(a.RequestSHA) != 64 {
@@ -125,6 +135,10 @@ func (t *writeTx) PrepareProviderAttempt(a domain.ProviderAttempt, inputs []doma
 	var scope domain.ProviderScope
 	if json.Unmarshal(j.Scope, &scope) != nil {
 		return domain.ErrInvalidTarget
+	}
+	owned, e := app.GenerationInputObjects(t, scope)
+	if e != nil {
+		return e
 	}
 	if len(scope.ReadIDs) != len(inputs) {
 		return domain.ErrInvalidTarget
@@ -165,6 +179,11 @@ func (t *writeTx) PrepareProviderAttempt(a domain.ProviderAttempt, inputs []doma
 			return e
 		}
 		if e = t.AcquirePin(domain.Pin{ID: a.ID + ":" + v.ReadID, Kind: "provider_attempt", OwnerID: a.ID, Hash: v.Hash}); e != nil {
+			return e
+		}
+	}
+	for _, object := range owned {
+		if e = t.AcquirePin(domain.Pin{ID: a.ID + ":owned:" + object.Hash, Kind: "provider_attempt", OwnerID: a.ID, Hash: object.Hash}); e != nil {
 			return e
 		}
 	}
@@ -315,10 +334,24 @@ func (t *writeTx) ApplyProviderResult(id string, apply func(app.WriteTx) error) 
 	if e = app.GuardProvider(t, a); e != nil {
 		return e
 	}
-	if e = t.FinishJob(a.JobID, a.ApplyGeneration, "", apply); e != nil {
+	if e = t.SetJobResult(a.JobID, jsonBytes(map[string]string{"attempt_id": a.ID, "result_sha256": a.ResultHash})); e != nil {
 		return e
 	}
-	return t.SetJobResult(a.JobID, jsonBytes(map[string]string{"attempt_id": a.ID, "result_sha256": a.ResultHash}))
+	if apply != nil {
+		if e = apply(t); e != nil {
+			return e
+		}
+	}
+	j, e := t.Job(a.JobID)
+	if e != nil {
+		return e
+	}
+	// A generation publication conflict retains its ready candidate and saved
+	// result in this same transaction. It is never a completed publication.
+	if j.Kind == "generation" && j.State == "paused" && j.Error == "VERSION_CONFLICT" {
+		return nil
+	}
+	return t.FinishJob(a.JobID, a.ApplyGeneration, "", nil)
 }
 
 func (t *writeTx) RebindProviderResult(id string) error {
@@ -385,6 +418,26 @@ func (t *writeTx) ResumeProviderJob(id string, generation int64, decision string
 	}
 	if !domain.ProviderJob(j.Kind) {
 		return j, domain.ErrTransition
+	}
+	if j.Kind == "generation" && decision != "reconcile_only" {
+		var scope domain.ProviderScope
+		if json.Unmarshal(j.Scope, &scope) != nil {
+			return j, domain.ErrInvalidTarget
+		}
+		if scope.Invocation != nil && scope.Invocation.Generation != nil {
+			intent, e := t.GenerationIntent(j.ID)
+			if e != nil {
+				return j, e
+			}
+			if !intent.AdmissionReady {
+				return j, domain.ErrReconciliation
+			}
+			if decision == "retry" && intent.PreparedVersion != nil {
+				// A prepared candidate belongs to its saved attempt. Use that
+				// candidate or a new explicit intent; a new result cannot replace it.
+				return j, domain.ErrTransition
+			}
+		}
 	}
 	if j.CancelRequested && decision != "reconcile_only" {
 		return j, domain.ErrTransition

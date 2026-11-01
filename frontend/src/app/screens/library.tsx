@@ -14,6 +14,7 @@ import type { DocumentAccumulation, LibraryFilter } from "./library-data.ts";
 import { LibrarySearch, LibrarySearchForm } from "./library-search.tsx";
 import { searchFromURL, searchURL } from "./search-state.ts";
 import { DownloadPanel } from "./download-panel.tsx";
+import { GenerationControl } from "./generation-control.tsx";
 import { ImportControl } from "./import-control.tsx";
 
 interface LibraryScreenProps {
@@ -42,6 +43,15 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
   const [inventory, setInventory] = useState<InventoryState | null>(null);
   const [download, setDownload] = useState<{ document: DocumentView } | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+ const [generationOpen,setGenerationOpen]=useState(false);
+ const closeGeneration=()=>{
+  setGenerationOpen(false);
+  requestAnimationFrame(()=>{
+   if(document.activeElement!==document.body && document.activeElement!==null)return;
+   const opener=document.getElementById("generation-open");
+   if(opener instanceof HTMLButtonElement && opener.isConnected && !opener.disabled && opener.getClientRects().length>0)opener.focus({preventScroll:true});
+  });
+ };
   // Only the newest in-flight filter response is applied; a stale response
   // from a superseded filter or Back navigation never overwrites the list.
   const requestRef = useRef(0);
@@ -217,6 +227,7 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
           <button type="button" disabled={!featureEnabled(features, "questions")} title={featureEnabled(features, "questions") ? undefined : "AI 기능은 아직 제공되지 않습니다."}>
             AI 질문
           </button>
+          <button id="generation-open" type="button" disabled={!featureEnabled(features,"generation")} onClick={()=>setGenerationOpen(true)}>설명 생성</button>
           <button type="button" className="primary" onClick={() => setImportOpen(true)}>
             가져오기
           </button>
@@ -307,6 +318,7 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
           </>
         )}
       </section>
+      {protectedVisible && generationOpen ? <GenerationControl key={epoch} controller={controller} projects={projects} initialProjectId={filter.projectId} onClose={closeGeneration}/> : null}
       {protectedVisible && importOpen ? <ImportControl controller={controller} projects={projects} documents={accumulation.documents} onFinished={refreshPublished} onClose={() => setImportOpen(false)} /> : null}
       {protectedVisible && download?.document.latest_version_id ? <DownloadPanel key={download.document.latest_version_id} controller={controller} versionId={download.document.latest_version_id} /> : null}
     </>

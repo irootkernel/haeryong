@@ -1,3 +1,4 @@
+import type {RetainedSourceRead,GenerationRequest,GenerationAccepted,DraftView,DraftPatch} from "./types.ts";
 import { providerStatus as verifiedProviderStatus } from "./provider-status.ts";
 // Narrow native transport boundary. The desktop companion (TASK-003-05) binds
 // these named operations to a typed Go proxy. The port accepts no arbitrary
@@ -137,6 +138,13 @@ export type PersonalPutCall = { kind: PersonalKind; version_id: string; page: st
 
 /** Named operations only; each overload pins an exact payload/result pair. */
 export interface NativePort {
+  call(operation:"retainedSourceReads",payload:{project_id:string;source_id:string;cursor?:string}):Promise<ListPage<RetainedSourceRead>>;
+  call(operation:"generationStart",payload:{request:GenerationRequest;operation_id:string}):Promise<DecisionResult>;
+  call(operation:"draftList",payload:{project_id?:string;cursor?:string}):Promise<ListPage<DraftView>>;
+  call(operation:"draftGet",payload:{draft_id:string}):Promise<DraftView>;
+  call(operation:"draftHistory",payload:{draft_id:string;cursor?:string}):Promise<ListPage<DraftView>>;
+  call(operation:"draftPatch",payload:{draft_id:string;body:DraftPatch;etag:string;operation_id:string}):Promise<DecisionResult>;
+  call(operation:"draftPublish",payload:{draft_id:string;etag:string;operation_id:string}):Promise<DecisionResult>;
   call(operation:"lifecyclePlan",payload:{document_id:string;body:LifecyclePlanRequest;operation_id?:string}):Promise<LifecyclePlanView>;
   call(operation:"lifecyclePlanGet",payload:{plan_id:string;request:LifecyclePageRequest}):Promise<LifecyclePlanView>;
   call(operation:"lifecyclePlanCommit",payload:{plan_id:string;body:LifecycleCommitRequest;operation_id?:string}):Promise<LifecycleResult>;
@@ -209,6 +217,7 @@ export interface NativePort {
   call(operation: "completeUpload", payload: CompleteUploadCall): Promise<DecisionResult>;
   call(operation: "abandonUpload", payload: AbandonUploadCall): Promise<DecisionResult>;
   call(operation: "importPublish", payload: ImportPublishCall): Promise<DecisionResult>;
+  call(operation:"jobResume",payload:{job_id:string;decision:"reconcile_only"|"continue"|"retry";expected_attempt_generation:number;etag:string;operation_id:string}):Promise<DecisionResult>;
   call(operation: "jobGet", payload: JobRequest): Promise<JobView>;
   call(operation: "jobCancel", payload: JobCancelCall): Promise<DecisionResult>;
   call(operation: "packageStream", payload: PackageStreamRequest): Promise<PackageStream>;
@@ -234,6 +243,7 @@ export interface NativePort {
 }
 
 export const NATIVE_OPERATIONS = [
+ "retainedSourceReads","generationStart","draftList","draftGet","draftHistory","draftPatch","draftPublish",
   "lifecyclePlan", "lifecyclePlanGet", "lifecyclePlanCommit", "trashList",
   "annotationList", "annotationGet", "annotationHistory", "annotationCreate", "annotationPatch", "annotationDelete", "annotationBodyStream", "annotationContextStream", "revisitGet", "revisitPut",
   "reviewGet", "reviewPut", "reviewHistory",
@@ -290,6 +300,7 @@ export const NATIVE_OPERATIONS = [
   "abandonUpload",
   "importPublish",
   "jobGet",
+  "jobResume",
   "jobCancel",
   "packageStream",
   "chooseImportSource",
@@ -531,6 +542,13 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
   annotationContextStream(id:string,revision:number):Promise<AnnotationStream>{return this.#savedStream("annotationContextStream",id,revision);}
   async #savedStream(operation:"annotationBodyStream"|"annotationContextStream",id:string,revision:number):Promise<AnnotationStream>{const era=this.#era;const s=await this.#freshStream(()=>this.#port.call(operation,{annotation_id:id,revision}),era);return {...s,body:eraGuardedStream(s.body,()=>era!==this.#era)};}
 
+  generationStart(request:GenerationRequest,key:string):Promise<GenerationAccepted>{const era=this.#era;return sourceWrite<GenerationAccepted>(key,()=>this.#fresh(this.#port.call("generationStart",{request,operation_id:key}),era),id=>{if(era!==this.#era)throw new StaleResponseError();return this.operation(id);},true);}
+  draftList(projectId?:string,cursor?:string):Promise<ListPage<DraftView>>{return this.#fresh(this.#port.call("draftList",{...(projectId?{project_id:projectId}:{}),...(cursor?{cursor}:{})}),this.#era);}
+  draftGet(id:string):Promise<DraftView>{return this.#fresh(this.#port.call("draftGet",{draft_id:id}),this.#era);}
+  draftHistory(id:string,cursor?:string):Promise<ListPage<DraftView>>{return this.#fresh(this.#port.call("draftHistory",{draft_id:id,...(cursor?{cursor}:{})}),this.#era);}
+  draftPatch(id:string,body:DraftPatch,etag:string,key:string):Promise<DraftView>{return this.#savedWrite(key,()=>this.#port.call("draftPatch",{draft_id:id,body,etag,operation_id:key}));}
+  draftPublish(id:string,etag:string,key:string):Promise<DraftView>{return this.#savedWrite(key,()=>this.#port.call("draftPublish",{draft_id:id,etag,operation_id:key}));}
+
   reviewGet(versionId: string): Promise<ReviewView> { return this.#fresh(this.#port.call("reviewGet", {version_id: versionId}), this.#era); }
   reviewPut(versionId: string, body: ReviewRequest, condition: ReviewCondition, operationId: string): Promise<ReviewView> {
     const precondition = "ifMatch" in condition ? {if_match: condition.ifMatch} : {create: true as const};
@@ -549,6 +567,8 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
   }
 
   configurationView(): Promise<ConfigurationView> { return this.#fresh(this.#port.call("configurationView", {}), this.#era); }
+  retainedSourceReads(projectId:string,sourceId:string,cursor?:string):Promise<ListPage<RetainedSourceRead>> {return this.#fresh(this.#port.call("retainedSourceReads",{project_id:projectId,source_id:sourceId,cursor}),this.#era);}
+
   projectSources(projectId: string, cursor?: string): Promise<ListPage<ProjectSourceView>> {
     return this.#fresh(this.#port.call("projectSources", { project_id: projectId, cursor }), this.#era);
   }
@@ -705,6 +725,8 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
   importPublish(request: ImportPublishRequest, operationId: string): Promise<DecisionResult> {
     return this.#fresh(this.#port.call("importPublish", { request, operation_id: operationId }), this.#era);
   }
+
+  jobResume(jobId:string,decision:"reconcile_only"|"continue"|"retry",expectedGeneration:number,etag:string,key:string):Promise<unknown>{return this.#savedWrite(key,()=>this.#port.call("jobResume",{job_id:jobId,decision,expected_attempt_generation:expectedGeneration,etag,operation_id:key}));}
 
   jobGet(jobId: string): Promise<JobView> {
     return this.#fresh(this.#port.call("jobGet", { job_id: jobId }), this.#era);

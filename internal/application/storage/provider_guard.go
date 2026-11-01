@@ -65,9 +65,33 @@ func guardProviderAuthority(tx WriteTx, j domain.Job, a domain.ProviderAttempt) 
 		if !p.Active {
 			return domain.ErrDenied
 		}
-		// Production managed submissions are owner-owned until the feature owner
-		// installs its exact workflow action authorization. Never infer privilege.
-		return domain.ErrDenied
+		if j.Kind != "generation" || scope.Purpose != "body" {
+			return domain.ErrDenied
+		}
+		if e = AuthorizeGeneration(tx, scope); e != nil {
+			return e
+		}
+	}
+	if scope.Invocation != nil && scope.Invocation.Generation != nil {
+		if scope.PrincipalID == state.OwnerID {
+			if e = AuthorizeGeneration(tx, scope); e != nil {
+				return e
+			}
+		}
+		g, e := tx.GenerationIntent(j.ID)
+		if e != nil {
+			return e
+		}
+		if !g.AdmissionReady {
+			return domain.ErrReconciliation
+		}
+		d, e := tx.Draft(g.DraftID)
+		if e != nil {
+			return e
+		}
+		if d.State != "preparing" && d.State != "ready" {
+			return domain.ErrStaleWorker
+		}
 	}
 	if e = AuthorizeTarget(tx, scope.Target); e != nil {
 		return e
@@ -158,6 +182,11 @@ func ProviderSavedObjects(tx WriteTx, a domain.ProviderAttempt) ([]domain.Object
 		}
 		objects = append(objects, object)
 	}
+	owned, e := GenerationInputObjects(tx, scope)
+	if e != nil {
+		return nil, e
+	}
+	objects = append(objects, owned...)
 	result, e := tx.Object(a.ResultHash)
 	if e != nil {
 		return nil, e
@@ -172,4 +201,61 @@ func ProviderSavedObjects(tx WriteTx, a domain.ProviderAttempt) ([]domain.Object
 // the current executing reconciliation intent. It grants no dispatch authority.
 func GuardProviderReconciliation(tx WriteTx, j domain.Job, a domain.ProviderAttempt) error {
 	return guardProviderAuthority(tx, j, a)
+}
+
+func generationScopeAllows(scope domain.CredentialScope, project string) bool {
+	action, anchor := false, false
+	for _, v := range scope.Actions {
+		action = action || v == "generation.request"
+	}
+	for _, v := range scope.ProjectIDs {
+		anchor = anchor || v == project
+	}
+	return scope.Kind == "workflow" && action && anchor && project != ""
+}
+
+// AuthorizeGeneration checks only the already captured job-bound generation
+// action. It cannot issue a credential or grant direct import/publication.
+func AuthorizeGeneration(tx WriteTx, scope domain.ProviderScope) error {
+	state, e := tx.AuthState()
+	if e != nil {
+		return e
+	}
+	if scope.AuthEpoch != state.AuthEpoch {
+		return domain.ErrDenied
+	}
+	if scope.PrincipalID == state.OwnerID {
+		return generationContextAuthority(tx, scope, domain.CredentialScope{Kind: "owner"})
+	}
+	current, e := tx.WorkflowPrincipal(scope.PrincipalID)
+	if e != nil {
+		return e
+	}
+	if !current.Active {
+		return domain.ErrDenied
+	}
+	project, e := TargetProject(tx, scope.Target)
+	if e != nil {
+		return e
+	}
+	if !generationScopeAllows(scope.CredentialScope, project) || !generationScopeAllows(current.Scope, project) {
+		return domain.ErrDenied
+	}
+	if len(scope.ReadIDs) > 0 {
+		has := func(s domain.CredentialScope) bool {
+			for _, a := range s.Actions {
+				if a == "source.read" {
+					return true
+				}
+			}
+			return false
+		}
+		if !has(scope.CredentialScope) || !has(current.Scope) {
+			return domain.ErrDenied
+		}
+	}
+	if e = generationContextAuthority(tx, scope, current.Scope); e != nil {
+		return e
+	}
+	return AuthorizeTarget(tx, scope.Target)
 }

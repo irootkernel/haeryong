@@ -7,6 +7,7 @@ import (
 	"errors"
 	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
+	"reflect"
 	"strings"
 )
 
@@ -30,8 +31,11 @@ func (t *writeTx) RecordProviderTransport(id string, v domain.ProviderTransport)
 	if e != nil {
 		return e
 	}
-	if v.Provider != "codex" || v.Version != "0.164.0" || len(v.BinarySHA) != 64 || v.PreparedAt == "" || v.AuthMode != "chatgpt" || v.Approval != "never" || v.Sandbox != "read-only" {
+	if v.Provider != "codex" || v.Version != "0.164.0" || len(v.BinarySHA) != 64 || v.PreparedAt == "" || v.AuthMode != "chatgpt" || v.Approval != "never" {
 		return domain.ErrInvalidTarget
+	}
+	if e = t.validateGenerationTransport(a, v); e != nil {
+		return e
 	}
 	inputs, e := t.ProviderInputs(id)
 	if e != nil {
@@ -70,6 +74,13 @@ func (t *writeTx) RecordProviderTransport(id string, v domain.ProviderTransport)
 	if a.Transport != nil {
 		old := *a.Transport
 		before, after := old, v
+		if old.Generation != nil || v.Generation != nil {
+			merged, conflict := mergeGenerationTransport(old.Generation, v.Generation)
+			if conflict || !reflect.DeepEqual(merged, v.Generation) {
+				return domain.ErrTransition
+			}
+			before.Generation, after.Generation = merged, merged
+		}
 		if before.FrameSHA == "" {
 			after.FrameSHA = ""
 		}

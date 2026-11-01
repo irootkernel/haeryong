@@ -1,3 +1,4 @@
+import type {RetainedSourceRead,GenerationRequest,GenerationAccepted,DraftView,DraftPatch} from "./types.ts";
 import { providerStatus as verifiedProviderStatus } from "./provider-status.ts";
 import type { ProviderStatus, LifecyclePlanRequest,LifecycleCommitRequest,LifecyclePlanView,LifecycleResult,LifecyclePageRequest,TrashRequest,TrashItem, AnnotationCreate, AnnotationPatch, AnnotationView, AnnotationStream, RevisitView, ReviewView, ReviewRequest, ReviewCondition, ReviewEvent, DocumentFilter,
   BacklinksRequest, BacklinkPage, IndexValidation, IndexValidationRequest, IndexRebuild, IndexRebuildRequest,
@@ -175,6 +176,15 @@ export class HttpHaeryongClient implements HaeryongClient {
     const query = search.toString();
     return query ? path + "?" + query : path;
   }
+
+  retainedSourceReads(projectId:string,sourceId:string,cursor?:string):Promise<ListPage<RetainedSourceRead>> {return this.#request("GET",this.#collection(`/api/v1/projects/${encodeURIComponent(projectId)}/source-reads`,{source_id:sourceId,cursor}));}
+
+  generationStart(request:GenerationRequest,key:string):Promise<GenerationAccepted>{return this.#sourceWrite("/api/v1/generations",request,key,true);}
+  draftList(projectId?:string,cursor?:string):Promise<ListPage<DraftView>>{return this.#request("GET",this.#collection("/api/v1/drafts",{project_id:projectId,cursor}));}
+  draftGet(id:string):Promise<DraftView>{return this.#request("GET",`/api/v1/drafts/${encodeURIComponent(id)}`);}
+  draftHistory(id:string,cursor?:string):Promise<ListPage<DraftView>>{return this.#request("GET",this.#collection(`/api/v1/drafts/${encodeURIComponent(id)}/history`,{cursor}));}
+  draftPatch(id:string,body:DraftPatch,etag:string,key:string):Promise<DraftView>{return this.#noteWrite("PATCH",`/api/v1/drafts/${encodeURIComponent(id)}`,body,key,{"If-Match":etag});}
+  draftPublish(id:string,etag:string,key:string):Promise<DraftView>{return this.#noteWrite("POST",`/api/v1/drafts/${encodeURIComponent(id)}/publish`,{},key,{"If-Match":etag});}
 
   configurationView(): Promise<ConfigurationView> { return this.#request("GET", "/api/v1/configuration"); }
 
@@ -490,6 +500,8 @@ export class HttpHaeryongClient implements HaeryongClient {
     if (outcome.status === 202) return { kind: "accepted", body: outcome.data };
     return { kind: "committed", body: outcome.data };
   }
+
+  jobResume(jobId:string,decision:"reconcile_only"|"continue"|"retry",expectedGeneration:number,etag:string,key:string):Promise<unknown>{return this.#noteWrite("POST",`/api/v1/jobs/${encodeURIComponent(jobId)}/resume`,{decision,expected_attempt_generation:expectedGeneration},key,{"If-Match":etag});}
 
   jobGet(jobId: string): Promise<JobView> {
     return this.#request("GET", `/api/v1/jobs/${encodeURIComponent(jobId)}`);

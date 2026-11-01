@@ -63,7 +63,7 @@ func (s *Service) scoped(tx app.WriteTx, token string, state domain.AuthState) (
 			return domain.Session{}, domain.ErrDenied
 		}
 	}
-	r := domain.Session{ID: c.ID, PrincipalID: c.PrincipalID, LibraryID: state.LibraryID, CreatedAt: c.CreatedAt, LastSeenAt: c.CreatedAt, ExpiresAt: c.ExpiresAt, Scope: RestrictScope(c.Scope, p.Scope), AuthEpoch: c.AuthEpoch, State: "active", Revision: c.Revision}
+	r := domain.Session{ID: c.ID, PrincipalID: c.PrincipalID, LibraryID: state.LibraryID, CreatedAt: c.CreatedAt, LastSeenAt: c.CreatedAt, ExpiresAt: c.ExpiresAt, Scope: RestrictScope(c.Scope, p.Scope), MutationProjectID: c.MutationProjectID, AuthEpoch: c.AuthEpoch, State: "active", Revision: c.Revision}
 	return sec.Projection(r, nil)
 }
 
@@ -142,6 +142,50 @@ func authorizeScope(tx app.WriteTx, record domain.Session, r domain.Request) err
 		return domain.ErrDenied
 	}
 	switch parts[2] {
+	case "drafts":
+		read := r.Method == "GET" || r.Method == "HEAD"
+		if len(parts) == 3 && read {
+			if contains(record.Scope.Actions, "draft.write") || contains(record.Scope.Actions, "draft.publish") {
+				return nil
+			}
+			return domain.ErrDenied
+		}
+		if len(parts) < 4 || len(parts) > 5 {
+			return domain.ErrDenied
+		}
+		draft, e := tx.Draft(parts[3])
+		if e != nil {
+			return e
+		}
+		if !contains(record.Scope.DraftIDs, draft.ID) || !contains(record.Scope.ProjectIDs, draft.ProjectID) {
+			return domain.ErrNotFound
+		}
+		if len(parts) == 5 && parts[4] == "publish" && r.Method == "POST" {
+			if contains(record.Scope.Actions, "draft.publish") {
+				return nil
+			}
+		} else if len(parts) == 4 && (read || r.Method == "PATCH") {
+			if contains(record.Scope.Actions, "draft.write") || read && contains(record.Scope.Actions, "draft.publish") {
+				return nil
+			}
+		}
+		return domain.ErrDenied
+	case "generations":
+		if r.Method != "POST" || len(parts) != 3 {
+			return domain.ErrDenied
+		}
+		var input struct {
+			Project  string  `json:"project_id"`
+			Document *string `json:"document_id"`
+		}
+		if json.Unmarshal(r.Body, &input) != nil || input.Project == "" {
+			return sec.ErrInvalid
+		}
+		target, _ := json.Marshal(map[string]any{"action": "generation", "project_id": input.Project, "document_id": input.Document})
+		if e := authorizeUpload(tx, record.Scope, "body", target); e != nil {
+			return e
+		}
+		return app.AuthorizeTarget(tx, target)
 	case "lifecycle-plans", "trash":
 		return domain.ErrNotFound
 	case "annotations":

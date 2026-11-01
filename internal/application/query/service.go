@@ -17,6 +17,7 @@ import (
 
 type Service struct {
 	ProviderStatus      func(context.Context) domain.ProviderStatus
+	GenerationAvailable bool
 	LifecycleNow        func() time.Time
 	Store               app.Store
 	Auth                *appauth.Service
@@ -302,7 +303,7 @@ func (s *Service) Capabilities(ctx context.Context, token string) (map[string]an
 		if err != nil {
 			return err
 		}
-		out = map[string]any{"library_id": l.ID, "api_version": "1.0", "runtime_generation": l.RuntimeGeneration, "stream_epoch": l.StreamEpoch, "unfiled_project_id": l.UnfiledProjectID, "features": map[string]bool{"resumable_uploads": true, "atomic_import": true, "cursor_files": true, "streamed_files": true, "byte_ranges": true, "source_verification": true, "html_js_v1": false, "multi_page_loader": false, "renderer": false, "preview": false, "provider": s.ProviderStatus != nil, "generation": false, "questions": false, "scheduler": false, "search": true, "references": true, "backlinks": true, "review": true, "annotations": true, "revisit": true, "lifecycle": true, "purge": true, "backup": true}}
+		out = map[string]any{"library_id": l.ID, "api_version": "1.0", "runtime_generation": l.RuntimeGeneration, "stream_epoch": l.StreamEpoch, "unfiled_project_id": l.UnfiledProjectID, "features": map[string]bool{"resumable_uploads": true, "atomic_import": true, "cursor_files": true, "streamed_files": true, "byte_ranges": true, "source_verification": true, "html_js_v1": false, "multi_page_loader": false, "renderer": false, "preview": false, "provider": s.ProviderStatus != nil, "generation": s.GenerationAvailable, "questions": false, "scheduler": false, "search": true, "references": true, "backlinks": true, "review": true, "annotations": true, "revisit": true, "lifecycle": true, "purge": true, "backup": true}}
 		return nil
 	})
 	return out, err

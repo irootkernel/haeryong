@@ -10,6 +10,7 @@ type UploadEntry struct {
 	Hash                           string
 }
 type ImportIntent struct {
+	ExplanationReferences                                                                                                                              []GenerationReference `json:",omitempty"`
 	JobID, PrincipalID, UploadID, ContentSetID, PayloadSHA, MetadataHash, ProjectID, DocumentID, VersionID, BaseVersionID, Title, CreatedAt, AuthEpoch string
 	NewDocument                                                                                                                                        bool
 	DocumentRevision, PermissionsRevision, ConfigRevision                                                                                              int64

@@ -221,6 +221,33 @@ func (p *ProviderCoordinator) settleProvider(ctx context.Context, a domain.Provi
 	if phase != nil {
 		phase.reconcileAttempt = ""
 	}
+	if saved && !reconcile && p.Prepare != nil {
+		// The complete result is durable already. New parsing/copying remains
+		// cancellable by this phase; only its required accounting is detached.
+		if preparationErr := p.Prepare(ctx, a); preparationErr != nil {
+			settleErr := p.Store.Write(accounting, func(tx app.WriteTx) error {
+				current, e := tx.Job(a.JobID)
+				if e != nil {
+					return e
+				}
+				if terminalProviderJob(current.State) {
+					return nil
+				}
+				if current.CancelRequested {
+					return tx.ConfirmStop(current.ID, current.AttemptGeneration)
+				}
+				if current.AttemptGeneration != expected {
+					return domain.ErrStaleWorker
+				}
+				return tx.PauseProviderJob(current.ID, providerPreparationReason(preparationErr))
+			})
+			if settleErr != nil {
+				return fail(errors.Join(preparationErr, settleErr))
+			}
+			done()
+			return diagnostic(errors.Join(preparationErr, callErr, out.CleanupError), true)
+		}
+	}
 	e := p.Store.Write(accounting, func(tx app.WriteTx) error {
 		current, e := tx.Job(a.JobID)
 		if e != nil {
