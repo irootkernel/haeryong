@@ -356,6 +356,13 @@ func (d *Driver) frame(ctx context.Context, a domain.ProviderAttempt, inputs []d
 			if _, e = io.WriteString(w, `}`); e != nil {
 				return fail(e)
 			}
+			// The pinned inventory identifies a whole version; its immutable
+			// directory bytes are explanation context, not project-source input.
+			if ref.PagePath == nil {
+				if e = d.questionDirectory(ctx, w, a, ref.VersionID); e != nil {
+					return fail(e)
+				}
+			}
 		}
 	}
 	if inv.Question != nil {

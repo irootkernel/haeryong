@@ -1137,11 +1137,17 @@ Each explanation reference is exactly
 `{version_id,page_path,region_id,bytes_sha256}` with explicit nullable page/region;
 a non-null region requires its page. For a page reference, bytes_sha256 is the
 exact selected HTML file digest. A whole-version reference uses the canonical
-payload inventory digest; its supplied context bytes are the service manifest,
-with their own separately retained object identity. Neither form creates a
-project-source capture/read/input observation. When useful, service-derived
-manifest references preserve the selected immutable navigation target without
-claiming semantic support or rewriting author file bytes.
+payload inventory digest and retains the service manifest as its separately
+identified supplied object. That header does not replace the complete context:
+every immutable file is supplied with the complete directory inventory, exact
+UTF-8 text or labelled base64 binary content, and directory/link metadata.
+Inventory cursors continue to completion. Current attempt/read authority, owned
+read pins and partial-frame cleanup remain enforced throughout delivery.
+Acknowledgement requires the complete written frame and matching native ACK.
+Neither form creates a project-source capture/read/input observation or proves
+semantic support. When useful, service-derived manifest references preserve the
+selected immutable navigation target without rewriting author file bytes.
+The reference DTO, payload/manifest identities and public schema remain unchanged.
 
 The draft projection is
 `{draft_id,project_id,document_id,base_version_id,job_id,state,intent,revision,created_at,updated_at,payload_sha256,metadata_sha256,published_version_id,failure_reason,etag}`.

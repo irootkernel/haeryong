@@ -213,7 +213,21 @@ valid findings. The proper final independent assessment passed all 29 due
 obligations and judged the bounded original Goal achieved; the native Goal is
 recorded achieved. The bounded Task05 delivery is complete. Delegated member
 acceptance, the normal completion commit and native finalization follow under
-existing authority; none is recorded as performed here. Task04's whole-version
-Generation seam remains OPEN before Task06. Provider input observation, later
-source verification and semantic support are distinct. Master overall Epic
-acceptance and physical-device qualification remain future.
+existing authority; none is recorded as performed here. At that Task05 cutoff,
+Task04's whole-version Generation seam remained OPEN before Task06. Provider input
+observation, later source verification and semantic support are distinct. Master
+overall Epic acceptance and physical-device qualification remain future.
+
+The later Task04-owned correction supplies every immutable file for a selected
+whole-version Generation reference through the existing guarded directory helper.
+The manifest identity, page-reference branch, current authority and separate
+project-source observation remain intact.
+Actual regression checks and the complete common gate passed. The independent
+final assessment supports this bounded correction and its original Goal.
+The original Task04 and Task05 acceptance, commits, review counts and evidence
+qualifications remain unchanged. Exact delegated correction acceptance, the
+separate correction commit and native handoff follow under existing authority; this record does not assert them as
+already performed.
+TASK-006-06 retains the assembled live workflow, matched C01 request, real
+pinned-region question and fault/allowance proof; Master overall Epic acceptance
+and physical-device qualification remain future.

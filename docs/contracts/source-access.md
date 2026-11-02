@@ -274,11 +274,20 @@ page and output consumer; hidden/status-only carriers perform no body read.
 
 Selected prior explanations retain exact immutable version/page/optional region
 and the registry bytes identity. Current and captured version/project scope is
-checked separately from project-source read authority. The service supplies the
-selected page bytes or whole-version manifest as labelled explanation context;
-its typed object pins are not captured_reads/job_inputs/observed_input rows.
-Actual frame delivery and matching ACK retain context identity without promoting
-it to project-source support. Useful service-derived pinned navigation preserves
+checked separately from project-source read authority. A page reference supplies
+the complete selected page bytes as labelled explanation context. A whole-version
+reference retains its payload-inventory identity and the service manifest's
+separate supplied-object identity, then supplies every immutable file with the
+complete directory inventory. UTF-8 text stays exact; binary content uses labelled
+base64, and directory/link metadata retains its type and target without following
+links. Cursor continuation does not omit files or impose a file-count limit.
+Current attempt and read authority are rechecked during delivery; owned read pins
+and incomplete-frame cleanup retain their existing lifetimes.
+
+These explanation reads and typed object pins are not
+captured_reads/job_inputs/observed_input rows. Complete frame delivery and matching
+ACK retain context identity without promoting it to project-source support or
+proving model comprehension. Useful service-derived pinned navigation preserves
 the exact selected target, never substitutes latest, and does not prove semantic
 reuse, source verification or an inter-project runtime dependency. Material
 source claims still require relevant actual source checks and the independent

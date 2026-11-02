@@ -575,9 +575,26 @@ separate; it claims no new full-common, provider or rendered execution. Delegate
 member acceptance, the normal completion commit and native finalization follow
 under existing authority and are not recorded as already performed here.
 
-Task04's whole-version Generation seam remains OPEN and must be resolved before
-Task06 assembled consumption. This Task05 completion neither repairs nor waives
-it. Task06/C01, later live integration and allowance/fault obligations, physical
-device/Stage A, release and Master overall Epic acceptance retain their future
-owners. Controlled output does not add semantic support, and citation validity,
+At this Task05 completion cutoff, Task04's whole-version Generation seam remained
+OPEN and required resolution before Task06 assembled consumption. This Task05
+completion neither repaired nor waived it. Task06/C01, later live integration and
+allowance/fault obligations, physical device/Stage A, release and Master overall
+Epic acceptance retain their future owners. Controlled output does not add semantic support, and citation validity,
 provider input observation and later byte verification remain distinct.
+
+## Subsequent Task04 correction
+
+The OPEN statement above records the Task05 completion cutoff. A separate
+Task04-owned correction now supplies complete immutable whole-version Generation
+context through the existing guarded directory helper.
+[The generation record](generation-workflow.md#whole-version-reference-correction)
+owns its actual checks and current result.
+Actual regression checks and the complete common gate passed. The independent
+final assessment supports this bounded correction and its original Goal.
+Exact delegated correction acceptance, the separate correction commit and native
+handoff follow under existing authority; this record does not assert them as
+already performed.
+This later correction does not rerun or upgrade the Task05 real answers,
+semantic assessments, controlled client observations or zero-repeat proof.
+Citation validity, producing-attempt observation and later source verification
+remain distinct; the original Task05 evidence and future-owner limits remain.

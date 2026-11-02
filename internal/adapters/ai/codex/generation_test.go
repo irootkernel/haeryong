@@ -17,6 +17,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"haeryong.local/haeryong/internal/application/service"
+	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/application/work"
 	"haeryong.local/haeryong/internal/domain"
 	"haeryong.local/haeryong/skills"
@@ -67,6 +68,48 @@ for line in sys.stdin:
    i,context=contexts[0]
    assert context['basis']=='explanation_context' and context['reference']['version_id']=='11111111-1111-4111-8111-111111111111'
    assert hashlib.sha256(p['input'][i+1]['text'].encode()).hexdigest()==context['reference']['bytes_sha256']==context['supplied_object_sha256']
+
+  if mode=='whole_ref':
+   import base64,hashlib
+   assert p['input'][0]['text']=='Generate using the complete prior version π'
+   metadata=[]
+   for i,part in enumerate(p['input']):
+    if part['type']!='text':continue
+    try:value=json.loads(part['text'])
+    except (ValueError,TypeError):continue
+    if isinstance(value,dict):metadata.append((i,value))
+   contexts=[(i,m) for i,m in metadata if m.get('basis')=='explanation_context']
+   assert len(contexts)==1
+   i,context=contexts[0]
+   reference=context['reference']
+   assert reference=={'version_id':'11111111-1111-4111-8111-111111111111','page_path':None,'region_id':None,'bytes_sha256':'b'*64}
+   manifest=p['input'][i+1]['text'].encode()
+   assert manifest==b'{"inventory":"immutable whole directory"}'
+   assert context['supplied_object_sha256']==hashlib.sha256(manifest).hexdigest()
+   assert context['byte_size']==len(manifest) and context['supplied_object_sha256']!=reference['bytes_sha256']
+   expected={'pages/%02d.html'%i:('<html>complete page %d π</html>'%i).encode() for i in range(66)}
+   expected.update({'behavior.js':b'globalThis.savedQuestion=true','attachment.bin':bytes([0,255,1,2])})
+   entries=[(i,m) for i,m in metadata if m.get('basis') in ('explanation_file','explanation_entry')]
+   assert [m['path'] for _,m in entries]==sorted([*expected,'empty','alias.html']), 'complete immutable directory is required before ACK'
+   files=0
+   for i,entry in entries:
+    path=entry['path']
+    if entry['basis']=='explanation_entry':
+     assert (path,entry['kind'],entry['link_target']) in [('empty','directory',''),('alias.html','symlink','pages/00.html')]
+     continue
+    files+=1
+    raw=expected[path]
+    assert entry['kind']=='file' and entry['bytes_sha256']==hashlib.sha256(raw).hexdigest() and entry['byte_size']==len(raw)
+    body=p['input'][i+1]
+    assert body['type']=='text'
+    if path=='attachment.bin':
+     assert entry['encoding']=='base64' and base64.b64decode(body['text'],validate=True)==raw
+    else:
+     assert entry['encoding']=='utf-8' and body['text'].encode()==raw
+   assert len(entries)==70 and files==68
+   source=[m for _,m in metadata if 'source' in m and 'location' in m]
+   assert len(source)==1 and source[0]['bytes_sha256']==hashlib.sha256('Exact source: π\n'.encode()).hexdigest()
+   with open(sys.argv[0]+'.whole-frame-checked','w') as f:json.dump({'entries':len(entries),'files':files},f)
 
   out=os.path.join(cwd,'result');os.makedirs(os.path.join(out,'pages'));os.makedirs(os.path.join(out,'empty'))
   with open(os.path.join(out,'read.html'),'w') as f:f.write('<a href="pages/next.html">next</a><script src="app.js"></script>')
@@ -402,4 +445,207 @@ var _ = It("C04DIR5 controlled actual native frame receives the complete retaine
 	Expect(out.Transport.Generation.ReferencesAcknowledged).To(BeTrue())
 	Expect(out.Transport.Generation.References).To(Equal([]domain.GenerationReference{reference}))
 	Expect(directoryEntries(out)).To(HaveKey("read.html"))
+})
+
+// Generation uses the same immutable directory port as Question. These controls
+// inject faults only after the added directory branch has enumerated a page.
+type generationDirectoryTx struct {
+	*questionFrameTx
+	cursors           []string
+	afterFirstEntries func()
+}
+
+func (t *generationDirectoryTx) Entries(set, after string, limit int) ([]domain.Entry, error) {
+	entries, e := t.questionFrameTx.Entries(set, after, limit)
+	t.cursors = append(t.cursors, after)
+	if e == nil && after == "" && len(entries) > 0 && t.afterFirstEntries != nil {
+		t.afterFirstEntries()
+	}
+	return entries, e
+}
+
+type generationDirectoryStore struct {
+	*testStore
+	directory *generationDirectoryTx
+}
+
+func (s *generationDirectoryStore) Write(ctx context.Context, fn func(app.WriteTx) error) error {
+	if e := ctx.Err(); e != nil {
+		return e
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return fn(s.directory)
+}
+
+// These are requested pin descriptors at a verified byte port, not proof of
+// durable SQLite pin acquisition or garbage-collection behavior.
+type generationDirectoryBytes struct {
+	values generationPromptBytes
+	hashes []string
+	pins   []domain.Pin
+}
+
+func (b *generationDirectoryBytes) Read(ctx context.Context, o domain.Object, p domain.Pin, consume func(io.ReadSeeker) error) error {
+	b.hashes = append(b.hashes, o.Hash)
+	b.pins = append(b.pins, p)
+	return b.values.Read(ctx, o, p, consume)
+}
+
+func wholeGenerationFixture() (*Driver, domain.ProviderAttempt, []domain.ProviderInput, *generationDirectoryStore, *generationDirectoryBytes) {
+	d, a, inputs, base := directoryFixture("whole_ref")
+	_, _, question, frames, data := questionFrames()
+	base.tx.objects = map[string]domain.Object{}
+	values := generationPromptBytes{}
+	for hash, raw := range data {
+		values[hash] = bytes.Clone(raw)
+		base.tx.objects[hash] = domain.Object{Hash: hash, Size: int64(len(raw)), State: "ready"}
+	}
+	put := func(raw []byte) domain.ProviderText {
+		hash := fmt.Sprintf("%x", sha256.Sum256(raw))
+		values[hash] = bytes.Clone(raw)
+		base.tx.objects[hash] = domain.Object{Hash: hash, Size: int64(len(raw)), State: "ready"}
+		return domain.ProviderText{Hash: hash, Size: int64(len(raw))}
+	}
+	prompt := put([]byte("Generate using the complete prior version π"))
+	read, e := base.tx.CapturedRead(inputs[0].ReadID)
+	Expect(e).NotTo(HaveOccurred())
+	source := put([]byte("Exact source: π\n"))
+	read.BytesSHA = source.Hash
+	base.tx.reads = map[string]domain.CapturedRead{read.ID: read}
+	inputs[0].Hash = source.Hash
+
+	var scope domain.ProviderScope
+	Expect(json.Unmarshal(base.tx.job.Scope, &scope)).To(Succeed())
+	scope.Invocation.Prompt = ""
+	scope.Invocation.PromptRef = &prompt
+	reference := question.Question.Explanation
+	reference.Hash = strings.Repeat("b", 64)
+	reference.ProjectID = "prior-project"
+	reference.DocumentID = "prior-document"
+	scope.Invocation.Generation.References = []domain.GenerationReference{reference}
+	a.RequestSHA, e = SemanticRequestSHA(scope.PrincipalID, scope.Target, *scope.Invocation, []domain.CapturedRead{read})
+	Expect(e).NotTo(HaveOccurred())
+	base.tx.job.Scope, e = json.Marshal(scope)
+	Expect(e).NotTo(HaveOccurred())
+
+	frames.question.testTx = base.tx
+	frames.question.version.PayloadSHA = reference.Hash
+	frames.question.version.ManifestSHA = reference.ObjectHash
+	frames.question.version.DocumentID = reference.DocumentID
+	store := &generationDirectoryStore{testStore: base, directory: &generationDirectoryTx{questionFrameTx: frames.question}}
+	objects := &generationDirectoryBytes{values: values}
+	d.Store, d.Bytes = store, objects
+	return d, a, inputs, store, objects
+}
+
+var _ = It("C04DIR6 whole-version generation delivers every immutable directory entry before matching native ACK without source observations", Label("integration"), func() {
+	d, a, inputs, store, objects := wholeGenerationFixture()
+	var scope domain.ProviderScope
+	Expect(json.Unmarshal(store.tx.job.Scope, &scope)).To(Succeed())
+	expectedObserved := append([]domain.ProviderInput(nil), inputs...)
+	expectedObserved[0].ObservedOrigin = "daemon_supplied"
+	beforeSend, acknowledgements := 0, 0
+	frameSHA := ""
+	out, e := d.Execute(context.Background(), a, inputs, func() error {
+		beforeSend++
+		Expect(acknowledgements).To(BeZero())
+		Expect(store.tx.metadata.Generation.ReferencesAcknowledged).To(BeFalse())
+		staged, e := filepath.Glob(filepath.Join(d.Scratch, "provider-input-*"))
+		Expect(e).NotTo(HaveOccurred())
+		Expect(staged).To(HaveLen(1))
+		raw, e := os.ReadFile(staged[0])
+		Expect(e).NotTo(HaveOccurred())
+		frameSHA = fmt.Sprintf("%x", sha256.Sum256(raw))
+		Expect(store.tx.metadata.FrameSHA).To(Equal(frameSHA))
+		var stagedFrame map[string]json.RawMessage
+		Expect(json.Unmarshal(raw, &stagedFrame)).To(Succeed())
+		var parts []struct{ Type, Text string }
+		Expect(json.Unmarshal(stagedFrame["input"], &parts)).To(Succeed())
+		files := []string{}
+		for _, part := range parts {
+			var metadata map[string]any
+			if part.Type == "text" && json.Unmarshal([]byte(part.Text), &metadata) == nil && metadata["basis"] == "explanation_file" {
+				files = append(files, metadata["path"].(string))
+			}
+		}
+		Expect(files).To(HaveLen(68), "the actual staged generation frame must include complete directory files before dispatch")
+		Expect(files).To(ContainElement("pages/65.html"), "delivery must pass the first cursor page")
+		return nil
+	}, func(p work.ProviderProgress) error {
+		acknowledgements++
+		checked, e := os.ReadFile(d.Binary + ".whole-frame-checked")
+		Expect(e).NotTo(HaveOccurred(), "the native peer must inspect the complete frame before acknowledging it")
+		Expect(checked).To(MatchJSON("{\"entries\":70,\"files\":68}"))
+		Expect(p.Observed).To(Equal(expectedObserved), "explanation files never become source observations")
+		Expect(p.RequestID).To(Equal("generation-turn"))
+		return nil
+	})
+	Expect(e).NotTo(HaveOccurred())
+	Expect(beforeSend).To(Equal(1))
+	Expect(acknowledgements).To(Equal(1))
+	Expect(out.State).To(Equal("result_saved"))
+	Expect(out.LocalClosed).To(BeTrue())
+	Expect(out.Observed).To(Equal(expectedObserved))
+	Expect(out.Transport.Question).To(BeNil())
+	Expect(out.Transport.FrameSHA).To(Equal(frameSHA))
+	Expect(out.Transport.Generation.SkillInputAcknowledged).To(BeTrue())
+	Expect(out.Transport.Generation.PromptInputAcknowledged).To(BeTrue())
+	Expect(out.Transport.Generation.ReferencesAcknowledged).To(BeTrue())
+	Expect(out.Transport.Generation.References).To(Equal(scope.Invocation.Generation.References))
+	Expect(store.directory.cursors).To(Equal([]string{"", "pages/59.html", "pages/65.html"}))
+	expectedHashes := []string{scope.Invocation.PromptRef.Hash, scope.Invocation.Generation.References[0].ObjectHash, inputs[0].Hash}
+	for _, entry := range store.directory.entries {
+		if entry.Kind == "file" {
+			expectedHashes = append(expectedHashes, entry.Hash)
+		}
+	}
+	Expect(objects.hashes).To(ConsistOf(expectedHashes))
+	Expect(objects.pins).To(HaveLen(71))
+	for _, pin := range objects.pins {
+		Expect(pin.Kind).To(Equal("provider_continuation"))
+		Expect(pin.OwnerID).To(Equal(a.ID))
+	}
+	Expect(directoryEntries(out)).To(HaveKey("read.html"))
+})
+
+var _ = It("C04FRAME1 whole-version generation refuses revoked or corrupt immutable context before dispatch and removes its incomplete frame", Label("unit"), func() {
+	for _, mode := range []string{"revoked", "corrupt", "cancelled"} {
+		d, a, inputs, store, objects := wholeGenerationFixture()
+		var scope domain.ProviderScope
+		Expect(json.Unmarshal(store.tx.job.Scope, &scope)).To(Succeed())
+		ctx, cancel := context.WithCancel(context.Background())
+		DeferCleanup(cancel)
+		expected := domain.ErrDenied
+		switch mode {
+		case "revoked":
+			store.directory.afterFirstEntries = func() { store.tx.deny = true }
+		case "cancelled":
+			store.directory.afterFirstEntries = cancel
+			expected = context.Canceled
+		case "corrupt":
+			expected = domain.ErrContentIntegrity
+			for _, entry := range store.directory.entries {
+				if entry.Path == "pages/65.html" {
+					corrupt := bytes.Clone(objects.values[entry.Hash])
+					corrupt[0] ^= 1
+					objects.values[entry.Hash] = corrupt
+				}
+			}
+		}
+		frame, sha, e := d.frame(ctx, a, inputs, *scope.Invocation, "generation-thread")
+		if frame != nil {
+			DeferCleanup(func() { frame.Close(); os.Remove(frame.Name()) })
+		}
+		Expect(e).To(MatchError(expected), mode)
+		Expect(frame).To(BeNil(), mode)
+		Expect(sha).To(BeEmpty(), mode)
+		Expect(store.directory.cursors).NotTo(BeEmpty(), "the failure must be inside directory delivery, not earlier setup")
+		Expect(store.tx.metadata).To(BeNil(), "frame preparation alone cannot acknowledge source input")
+		_, e = os.Stat(d.Binary + ".trace")
+		Expect(os.IsNotExist(e)).To(BeTrue(), "this unit case must not start a provider process")
+		staged, e := filepath.Glob(filepath.Join(d.Scratch, "provider-input-*"))
+		Expect(e).NotTo(HaveOccurred())
+		Expect(staged).To(BeEmpty(), mode)
+	}
 })

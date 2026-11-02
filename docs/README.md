@@ -223,6 +223,22 @@ passed all 29 due obligations and judged the bounded original Goal achieved; the
 native Goal is recorded achieved. The bounded Task05 delivery is complete.
 Delegated member acceptance, the normal completion commit and native finalization
 follow under existing authority; none is recorded as performed here. Q3's useful
-abstention stays a partial answer. Task04's whole-version Generation seam remains
-OPEN before Task06; assembled Epic, C01, live/device and Master overall acceptance
-obligations retain their owners.
+abstention stays a partial answer. At that Task05 cutoff, Task04's whole-version
+Generation seam remained OPEN before Task06; assembled Epic, C01, live/device and
+Master overall acceptance obligations retain their owners.
+
+## Whole-version Generation correction
+
+The subsequent Task04-owned correction supplies the complete immutable directory
+for a selected whole-version Generation reference, preserving exact manifest and
+payload identities, current guards, failure cleanup and source-observation limits.
+[The generation record](testing/generation-workflow.md#whole-version-reference-correction)
+owns the correction evidence and its source applicability.
+Actual regression checks and the complete common gate passed. The independent
+final assessment supports this bounded correction and its original Goal.
+The earlier Task04 and Task05 results and review budgets retain their original
+scope. Exact delegated correction acceptance, the separate correction commit and
+native handoff follow under existing authority; this record does not assert them as
+already performed.
+Task06, assembled Epic, C01, live/device and Master overall acceptance remain
+separate obligations.

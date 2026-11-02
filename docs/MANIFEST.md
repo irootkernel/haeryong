@@ -8,7 +8,7 @@ This inventory covers 189 other files: all Markdown documents and Python documen
 
 | File | Bytes | SHA-256 |
 | --- | --- | --- |
-| `README.md` | 30159 | `d0ba5737a1e5ae65a5a1c95eb91ebeebc9be21990cc266a8930f94bfd01fc017` |
+| `README.md` | 31133 | `6890f2c9ef9ead44e6d6024ad615466eb668c566fc335a72f6515fcede691540` |
 | `REVIEW-GUIDE.md` | 10105 | `8035dd9c431b7e6abc7adde3b2ae7824df2a97df3ef7b3ca7ce020e3cb0094ad` |
 | `adr/ADR-001.md` | 3239 | `02f3818c7843969ca3aa081fb252983d92f886904383d84d331a49eca57f9987` |
 | `adr/ADR-002.md` | 2987 | `2128dae47cc03f55000633c89bc4e4d06419c91a414230a45fd7e45e8bac759b` |
@@ -36,8 +36,8 @@ This inventory covers 189 other files: all Markdown documents and Python documen
 | `contracts/import-workflow.md` | 26300 | `b8d00edd824274d13e3dfd97dce47764fd215817db12a208bc47a38302c42b3e` |
 | `contracts/jobs-events.md` | 60070 | `4264d899c2ab5b09a98c0080b9596c0a93b7de7ae5e01321f91351b990f6acb5` |
 | `contracts/package.md` | 33727 | `f8730b9af605eac8e7da7a29a3be024b35b3c167580ae5c2e70dcf14d2fae0c6` |
-| `contracts/schema-registry.md` | 128430 | `31719c6b1c7984ded691d739192a3be1e4ad55ccaefd9af87d0a7fefb21b8ae1` |
-| `contracts/source-access.md` | 31303 | `bc3acd1ee39776f06e8f2c41aee74b57b6e023e6e38f4ed829fd64024ae1f949` |
+| `contracts/schema-registry.md` | 128918 | `d3399791abb46291209754f97f64538527218ae589ae87ff30594d6aa49d2a38` |
+| `contracts/source-access.md` | 31906 | `fc51553fee63577041b3381a98890e4831f9850a75a87394e3c8e5a1cde53597` |
 | `contracts/viewer-protocol.md` | 40473 | `929f6870e63589d636ba24b8be13c413d1cbaf201b503a963634edd0b56e56c2` |
 | `data-model.md` | 81612 | `9f1ee1764fd06865ddab6d08b91e145ed873c7370b41343117e16b91404612eb` |
 | `decisions.md` | 21105 | `62dadaf348d95aedee1d296bbd16c1e880e92256769e1d0ce3a5b0f7ae457824` |
@@ -107,7 +107,7 @@ This inventory covers 189 other files: all Markdown documents and Python documen
 | `tasks/EPIC-006/TASK-006-01.md` | 3063 | `2f199b51885901c4bd3a19f6a0985544b7f4e57a3cfcd3f1945136e7b2425f81` |
 | `tasks/EPIC-006/TASK-006-02.md` | 4129 | `cd2d03c623ecb7e3a9373922587616860f4f8177e24f2bda8d4106c8810fd8c7` |
 | `tasks/EPIC-006/TASK-006-03.md` | 3120 | `d6320a092edc8b1b16764e12ba3315b94b01fdf793015813817b5e3a173b8607` |
-| `tasks/EPIC-006/TASK-006-04.md` | 9948 | `377fdaf128e55b8ac05e7d071256571d5d5e1fc24c49805478d947f273678ece` |
+| `tasks/EPIC-006/TASK-006-04.md` | 11749 | `dbb2a9ca5ccf6ea33f1e19a7d91648921ab2b33b154d657a8f99754c85491096` |
 | `tasks/EPIC-006/TASK-006-05.md` | 3493 | `d0b880e0d9ba56d53ac3bf43d37d3dac3e76054345159afa885fae49c35b4efd` |
 | `tasks/EPIC-006/TASK-006-06.md` | 3182 | `4c4e4c1e816a6d583584d38b36fb7791706896066abcf424c30a383cbb73c455` |
 | `tasks/EPIC-007/TASK-007-01.md` | 2493 | `b46597cc896af2d646b2f37b1beccb403621e8f68b0e0c577b28e0b18d842c58` |
@@ -162,7 +162,7 @@ This inventory covers 189 other files: all Markdown documents and Python documen
 | `testing/fixtures.md` | 27607 | `1faa49a55b2724d7e26e039d6348be13dca11f32e1f2ee66d88ba0ffbad78105` |
 | `testing/foundation-recovery.md` | 11781 | `3d33044d2ddb46a14e57a99776e0efedce1aad55be54df2b288bbb18e3427eef` |
 | `testing/frontend-shell.md` | 12266 | `74de95da13b5fd00855918ba0cecb6e123043d211f0ff47cdbbeefebc8e9d833` |
-| `testing/generation-workflow.md` | 56597 | `43de3b20c0e475f4bb219f372b873871901f95cf1fa36ae44761ce17bea46a36` |
+| `testing/generation-workflow.md` | 61910 | `4ebe3816cf8d8413100328885402b24e640ea8e79e68bfc3f4f531ab7f32fdc3` |
 | `testing/knowledge-quality.md` | 24137 | `bf6b2e88ba371cb0b5e8d6500acfa52687237bbe58d8b92c33008a5f0fc9f726` |
 | `testing/knowledge-value-spike.md` | 24626 | `0ad6dd2f6c1f52478447911e5444af04dba711d8dee70ac456d8a70298560f2e` |
 | `testing/managed-sources.md` | 25004 | `9ec47e9863ed32f36ed46dcb38f971666a89c69918547cda95abd290ddef1093` |
@@ -178,7 +178,7 @@ This inventory covers 189 other files: all Markdown documents and Python documen
 | `testing/reader-viewer.md` | 26469 | `a95a730c5d80cd2678b74bd7f934a8b71d120ccf6d8a8dd65a72294c22efa3bd` |
 | `testing/responsive-cross-client-gate.md` | 16582 | `b54fe0282c0d307a234572e5a62512757a8eb3e948002ec05c13e6f175d55091` |
 | `testing/result-transfer.md` | 11464 | `680ab5bcd81f6314231c1189221050ad410398c42d43ec54925d2dc1bc34d2d7` |
-| `testing/saved-questions.md` | 38761 | `affb7935164ec21f880c770790a44bd782d3ce679a525a907076737acf534ea9` |
+| `testing/saved-questions.md` | 39803 | `dad131f6c963bb6c0d3d4a0c58ece9b39293d14b3b7620667279061181622522` |
 | `testing/search-relevance-worksheet.md` | 18555 | `b5af52b411872a68bfd12ba345f243b3c1ff9031c355c6d72980289ec1bc1c45` |
 | `testing/source-observation.md` | 18351 | `e84ef215e15b9f1dd9144a494d2683479e1428b2e65095f59f2be13cd9205627` |
 | `testing/stack-spike.md` | 13832 | `a85449001f2bbc45d384be3527b41d0cac1072597dae44aba48183c1e037b51b` |

@@ -860,3 +860,79 @@ scheduling and release obligations retain their original owners. No additional
 paid generation, quality repair, old fourth-result publication, new review
 ordinal, delegated member acceptance or Master overall Epic acceptance is
 claimed by this record.
+
+## Whole-version reference correction
+
+A current-source inspection during Task05 found that the Generation consumer
+supplied a selected whole-version reference's manifest but omitted its immutable
+file bodies. This Task-owned correction follows the accepted Task05 delivery. The earlier page-reference C04DIR5 and the
+independent whole-version Question consumer did not prove this missing branch.
+The original accepted Task04 evidence retains its tested source and scope.
+
+The correction reuses the existing complete-directory input helper only for a
+Generation reference with no selected page. The payload-inventory identity and
+separate manifest-object identity remain intact. Every immutable file follows
+with exact UTF-8 text or labelled base64, plus directory/link metadata and cursor
+continuation. Current attempt/read guards, owned continuation pins and partial
+frame cleanup remain enforced. Explanation context creates no project-source
+capture or producing-attempt observation; full-frame ACK does not prove model
+comprehension or semantic support. Public DTOs and schema revision are unchanged.
+
+The new C04DIR6 first failed on the unchanged product: its actual staged frame
+contained zero explanation-file entries where 68 were required, before turn
+submission or ACK. An earlier anchored selector selected no cases and failed
+on empty; that preparation incident is separate from the behavioral failure.
+After the correction, the same assertion and controlled native peer passed.
+The peer inspected all 70 entries, all 68 complete file bodies, the second cursor
+page, exact binary encoding and distinct manifest/reference identities before
+matching ACK. Only the original project-source input was observed. Its 71 read
+pin descriptors are byte-port observations, not durable SQLite pin proof.
+
+All 18 selected regression It cases passed exactly once with race detection,
+count one and fail-on-empty/pending. They include the two new cases and sixteen
+current Generation, Question and persistence regressions. C04FRAME1 is one It
+with three deterministic variants: authority loss and cancellation after the
+first directory enumeration, and same-length corruption in a second-page file.
+Each retained the expected error and removed its incomplete frame before
+submission; these direct frame cases started no provider process. The existing
+real foundation pin-ownership cases, SQLite GGEN18/19 and publication GGEN21
+retain their separate persistence scope. Go vet also passed. Native exits and
+outer Gaori exits were zero; source membership, bytes, HEAD and index stayed
+unchanged during these checks. Passing raw logs were not opened or hashed.
+
+These are controlled offline adapter and persistence results, with no new real
+provider or rendered-client campaign. Documentation integrity and working
+whitespace checks passed on the focused-record source. The independent work-phase
+assessment passed; that result is separate from the final correction assessment.
+
+The replacement canonical common gate passed on the corrected source: native
+Make and Gaori exited 0, all 15 native commands passed across the five serial
+stages, and 1,335 selected Go cases plus 247 Python tests passed. All 318 required
+feature tuples ran exactly once, including the two new directory/frame
+regressions, without a selected skip, pending case, retry, repeat or duplicate.
+The current F12 maps, contracts, crash/reopen boundaries, real-input subsets and
+cross-volume checks retain their actual scoped evidence. The common source,
+HEAD and index guards matched; later factual/lifecycle documentation is a
+separate projection with affected checks. Earlier failures remain preserved.
+The complete current finding set contains one Valid Medium whole-version
+context omission, resolved as a directly verified local correction. Medium is
+retained; no Low disposition, technical waiver or new review ordinal is used.
+The original 73-row technical projection has 73 met, zero unmet and zero
+unverified contributions, with 21 reassessed and 52 carried under current
+applicability. Original source-review negatives and the earlier accepted Task04
+and Task05 projections remain separate. The proper independent final assessment
+passed all 31 current mandatory contributions and judged the bounded correction
+Goal achieved, including restoration of T-006-04-02. Full-source future and actual
+downstream closeout clauses remain separately unverified. The historical reviews
+predate this exact local delta; the correction is supported by its explicit
+local verification and final assessment.
+Exact delegated correction acceptance, the separate correction commit and native
+handoff follow under existing authority; this record does not assert them as
+already performed.
+Any subsequent factual/lifecycle overlay has its own exact approval, affected
+documentation and whitespace checks, and candidate-applicability assessment; it
+does not repeat common or expand the scope of earlier provider/client evidence.
+Task04's three historical technical assessments and Task05's two remain intact;
+no review budget is reset by this correction. TASK-006-06 retains the assembled
+live workflow, matched C01 request, real pinned-region question and fault/allowance
+obligations. No whole-Epic, physical-device or Master overall acceptance is claimed.
