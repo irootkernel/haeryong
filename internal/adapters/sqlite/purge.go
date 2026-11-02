@@ -47,6 +47,8 @@ func (t *writeTx) PurgeImpact(document string) ([]domain.LifecycleItem, error) {
 	for _, q := range []struct{ kind, sql string }{
 		{"annotation_value", `SELECT a.value FROM annotations a WHERE a.document_id=? ORDER BY annotation_id`},
 		{"annotation_revision", `SELECT h.value FROM annotation_history h JOIN annotations a USING(annotation_id) WHERE a.document_id=? ORDER BY h.annotation_id,h.revision`},
+		{"question_value", `SELECT value FROM questions WHERE document_id=? ORDER BY question_id`},
+		{"answer_value", `SELECT a.value FROM answers a JOIN questions q USING(question_id) WHERE q.document_id=? ORDER BY a.answer_id`},
 		{"source_history", `SELECT value FROM (SELECT json_object('id',verification_id,'excerpt',hex(expected_excerpt),'ref',expected_excerpt_ref,'read',read_id,'outcome',outcome) AS value FROM citation_verifications WHERE version_id IN(SELECT version_id FROM document_versions WHERE document_id=?) ORDER BY verification_id)`},
 		{"managed_source_snapshot", sourceReadDependencies + `SELECT json_object('capture',c.capture_id,'read',r.read_id,'hash',r.content_hash,'retention',r.retention_mode,'availability',r.availability) FROM source_capture_reads r JOIN source_captures c ON c.capture_id=r.capture_id WHERE r.read_id IN(SELECT read_id FROM source_read_contexts WHERE version_id IN(SELECT version_id FROM document_versions WHERE document_id=?)) AND EXISTS(SELECT 1 FROM object_references own WHERE own.owner_kind='selected_snapshot' AND own.owner_id=r.read_id AND own.content_hash=r.content_hash) ORDER BY c.capture_id,r.read_id`},
 	} {
@@ -354,6 +356,11 @@ func (t *writeTx) PurgeStep(id string, generation int64, limit int) (bool, error
 		}
 		i.ReceiptsMinimized = done
 		return false, t.savePurge(i)
+	}
+	if detached, e := t.detachQuestions(id, i.DocumentID, limit); e != nil {
+		return false, e
+	} else if detached {
+		return false, t.purgeProgress(i)
 	}
 	if i.Phase < len(purgeDeletes) {
 		if i.Phase == 0 {

@@ -509,6 +509,14 @@ func (s *Service) Events(ctx context.Context, token, epoch string, after int64) 
 			return e
 		}
 		for i, event := range out {
+			if event.ResourceKind == "question" {
+				var e error
+				out[i], e = visibleQuestionEvent(tx, record, event)
+				if e != nil {
+					return e
+				}
+				continue
+			}
 			if event.ResourceKind == "review" || event.ResourceKind == "annotation" || event.ResourceKind == "revisit" {
 				if record.Scope.Kind != "owner" {
 					out[i] = domain.Event{StreamEpoch: event.StreamEpoch, Sequence: event.Sequence, ResourceKind: "library", Kind: "library.invalidated"}
@@ -886,6 +894,10 @@ func (s *Service) FilterEvent(ctx context.Context, token string, event domain.Ev
 		}
 		if event.StreamEpoch != epoch {
 			return domain.ErrPrecondition
+		}
+		if event.ResourceKind == "question" {
+			event, e = visibleQuestionEvent(tx, record, event)
+			return e
 		}
 		if event.ResourceKind == "review" || event.ResourceKind == "annotation" || event.ResourceKind == "revisit" {
 			if record.Scope.Kind != "owner" {
@@ -1287,4 +1299,30 @@ func personalEventTarget(e domain.Event) string {
 	default:
 		return "/api/v1/versions/" + e.ResourceID
 	}
+}
+
+// Saved Q&A events are personal invalidations. Recheck the current record's
+// owner and version at BOTH batch replay and each final socket delivery.
+func visibleQuestionEvent(tx app.WriteTx, actor domain.Session, event domain.Event) (domain.Event, error) {
+	hidden := domain.Event{StreamEpoch: event.StreamEpoch, Sequence: event.Sequence, ResourceKind: "library", Kind: "library.invalidated"}
+	if actor.Scope.Kind != "owner" {
+		return hidden, nil
+	}
+	q, e := tx.Question(event.ResourceID)
+	if errors.Is(e, domain.ErrNotFound) || errors.Is(e, domain.ErrDenied) {
+		return hidden, nil
+	}
+	if e != nil {
+		return event, e
+	}
+	if q.OwnerID != actor.PrincipalID {
+		return hidden, nil
+	}
+	if e = visibleTarget(tx, "/api/v1/versions/"+q.VersionID); errors.Is(e, domain.ErrNotFound) || errors.Is(e, domain.ErrDenied) {
+		return hidden, nil
+	}
+	if e != nil {
+		return event, e
+	}
+	return event, nil
 }

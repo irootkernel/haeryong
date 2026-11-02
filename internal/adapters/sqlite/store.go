@@ -26,7 +26,7 @@ import (
 	driverSQLite "modernc.org/sqlite"
 )
 
-const SchemaRevision = 18
+const SchemaRevision = 19
 
 type Boundary string
 
@@ -198,10 +198,13 @@ func (s *Store) Prepare(ctx context.Context, p service.Profile) (state service.S
 	// provider_continuation is an in-process verified reader, not an external
 	// effect owner. Exclusive startup proves its old process is gone; reclaim
 	// only that reader kind, retaining attempt/orphan/snapshot/result ownership.
-	if _, err := s.db.ExecContext(ctx, "DELETE FROM object_pins WHERE (owner_kind='metadata_prepare' OR owner_kind='import_prepare') AND owner_id IN(SELECT index_id FROM metadata_indexes WHERE job_id IS NULL);DELETE FROM object_pins WHERE owner_kind='import' AND pin_id GLOB 'metadata-request:*';DELETE FROM object_pins WHERE owner_kind IN ('context_prepare','generation_prepare');DELETE FROM object_pins WHERE owner_kind='provider_continuation';DELETE FROM metadata_indexes WHERE job_id IS NULL"); err != nil {
+	if _, err := s.db.ExecContext(ctx, "DELETE FROM object_pins WHERE (owner_kind='metadata_prepare' OR owner_kind='import_prepare') AND owner_id IN(SELECT index_id FROM metadata_indexes WHERE job_id IS NULL);DELETE FROM object_pins WHERE owner_kind='import' AND pin_id GLOB 'metadata-request:*';DELETE FROM object_pins WHERE owner_kind IN ('context_prepare','generation_prepare','question_prepare','question_read');DELETE FROM object_pins WHERE owner_kind='provider_continuation';DELETE FROM metadata_indexes WHERE job_id IS NULL"); err != nil {
 		return state, nil, err
 	}
 	if err := s.recoverSourceCaptures(ctx); err != nil {
+		return state, nil, err
+	}
+	if err := s.recoverQuestions(ctx); err != nil {
 		return state, nil, err
 	}
 	// Local work left running by a dead process is fenced before any new claim.
@@ -646,7 +649,12 @@ func (s *Store) validateTables(ctx context.Context, revision int) error {
 		}
 	}
 	if revision >= 18 {
-		return s.validateGenerationDeclarations(ctx)
+		if e := s.validateGenerationDeclarations(ctx); e != nil {
+			return e
+		}
+	}
+	if revision >= 19 {
+		return s.validateQuestionDeclarations(ctx)
 	}
 	return nil
 }

@@ -205,3 +205,36 @@ even when no request observed the intervening trash. The shared host closes a de
 renderer after content-free invalidation and checks again on stream reconnect/resync.
 Restore permits a fresh authorized renderer session only. Saved Note history/context
 ownership survives disposal; pending owner intent never submits automatically.
+
+## Captured Ask and saved history (TASK-006-05)
+
+The shared trusted Reader Ask panel prepares a new draft only through an
+explicit host action. It freezes the current version/page/region/query/fragment,
+full display context, provider, mode and selected source rows. A later page,
+ready event, state.changed/region.selected message or default change cannot
+submit or retarget it. Explicit Submit stages complete text/context and admits
+one original K. New drafts read fresh remembered settings and approved mappings;
+old drafts and uncertain journals keep their saved scope. Provider/disclosure
+availability is stated separately from feature support and unobserved account
+readiness. No owner credential or generic authenticated proxy is exposed to the
+artifact frame.
+
+Saved history streams full question, display context and answer bodies and keeps
+final, partial and error states separate. Source citations show exact identity,
+location/hash, producing-attempt observation or separate posthoc verification,
+current availability and limitations. Normal stream invalidation refreshes saved
+views and clears denied protected data without deleting a local captured draft,
+original key/context or automatically resubmitting it. Accepted job actions are
+bound to that same captured request; recovery uses the shared receipt-first
+per-decision runtime journal.
+
+The closed native operations are questionStart
+`{version_id,operation_id,request}`, questionList `{version_id,cursor?}`,
+questionGet/questionTextStream/questionContextStream `{question_id}`,
+questionAnswers `{question_id,cursor?}`, and answerGet/answerBodyStream
+`{answer_id}`. Unknown fields/identities fail before HTTP. Streams reuse the
+existing named stream pull/close protocol, exact digest/size descriptor and
+Go-held credential with current attachment/daemon/record guards before each
+pull. These operations are neither arbitrary URLs nor filesystem selectors.
+Browser and native clients share the same captured request/history semantics;
+actual rendered and native-platform proof remains separately scoped evidence.

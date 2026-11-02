@@ -73,6 +73,9 @@ func StreamCopyRecords(ctx context.Context, path, set, owner string, v domain.Co
 		case "notes":
 			query = selectedCopyNotes + ` SELECT value FROM notes WHERE document_id=? UNION SELECT h.value FROM annotation_history h JOIN notes n ON n.annotation_id=h.annotation_id WHERE n.document_id=? ORDER BY 1`
 			args = []any{set, v.DocumentID, v.DocumentID}
+		case "questions":
+			query = `SELECT json_object('record','question','value',json(json_remove(q.value,'$.PreparedAnswer'))) FROM questions q WHERE q.owner_id=? AND q.version_id=? UNION ALL SELECT json_object('record','answer','value',json(a.value)) FROM answers a JOIN questions q USING(question_id) WHERE q.owner_id=? AND q.version_id=? ORDER BY 1`
+			args = append(args, owner, v.VersionID)
 
 		case "reader":
 			prefix := owner + "/" + v.VersionID

@@ -18,6 +18,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -1798,5 +1799,115 @@ func TestReaderRetainedSourceReadsClosedForwarding(t *testing.T) {
 	invokeFail(t, service, "retainedSourceReads", `{"project_id":"p","source_id":"files/+","path":"/api/v1/configuration"}`)
 	if calls != before {
 		t.Fatal("malformed named payload reached HTTP")
+	}
+}
+
+func TestReaderQuestionClosedRoutesAndGuardedStreams(t *testing.T) {
+	id := "11111111-1111-4111-8111-111111111111"
+	var denied atomic.Bool
+	var sourceDenied atomic.Bool
+	var starts atomic.Int32
+	body := []byte(strings.Repeat("complete saved question context and answer α\n", 4096))
+	sum := sha256.Sum256(body)
+	tag := `"sha256-` + hex.EncodeToString(sum[:]) + `"`
+	service, daemon, _ := newReaderFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if !strings.Contains(r.URL.Path, "/questions") && !strings.Contains(r.URL.Path, "/answers") {
+			return false
+		}
+		if denied.Load() || sourceDenied.Load() && strings.HasSuffix(r.URL.Path, "/citations/0/source") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(404)
+			w.Write([]byte(`{"error":{"code":"NOT_FOUND","retryable":false}}`))
+			return true
+		}
+		if r.Method == "POST" {
+			if r.Header.Get("Idempotency-Key") != id || r.URL.Path != "/api/v1/versions/"+id+"/questions" {
+				t.Error("lost exact question admission identity")
+			}
+			var request map[string]any
+			if json.NewDecoder(r.Body).Decode(&request) != nil || request["question"] != "explicit owner question" {
+				t.Error("lost explicit question text")
+			}
+			starts.Add(1)
+			dataReply(w, 202, map[string]any{"operation_id": id, "question_id": id, "job_id": id})
+			return true
+		}
+		if strings.HasSuffix(r.URL.Path, "/text") || strings.HasSuffix(r.URL.Path, "/context") || strings.HasSuffix(r.URL.Path, "/body") || strings.HasSuffix(r.URL.Path, "/citations/0/source") {
+			w.Header().Set("ETag", tag)
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.Header().Set("Content-Length", fmt.Sprint(len(body)))
+			w.WriteHeader(200)
+			w.Write(body)
+			return true
+		}
+		if r.URL.Query().Get("cursor") != "" && r.URL.Query().Get("cursor") != "opaque/+%" {
+			t.Error("cursor changed")
+		}
+		dataReply(w, 200, map[string]any{"question_id": id, "answer_id": id, "items": []any{}, "next_cursor": nil})
+		return true
+	})
+	request := `{"page_path":null,"region_id":null,"question":"explicit owner question","provider_id":"codex"}`
+	invokeOK(t, service, "questionStart", `{"version_id":"`+id+`","request":`+request+`,"operation_id":"`+id+`"}`)
+	invokeOK(t, service, "questionList", `{"version_id":"`+id+`","cursor":"opaque/+%"}`)
+	invokeOK(t, service, "questionGet", `{"question_id":"`+id+`"}`)
+	invokeOK(t, service, "questionAnswers", `{"question_id":"`+id+`","cursor":"opaque/+%"}`)
+	invokeOK(t, service, "answerGet", `{"answer_id":"`+id+`"}`)
+	if starts.Load() != 1 {
+		t.Fatal("question admission was duplicated")
+	}
+	before := len(daemon.seen())
+	for op, payload := range map[string]string{"questionStart": `{"version_id":"` + id + `","operation_id":"` + id + `","request":` + request + `,"path":"/api/v1/configuration"}`, "questionList": `{"version_id":"` + id + `","limit":1}`, "questionGet": `{"question_id":"../configuration"}`, "questionAnswers": `{"question_id":"` + id + `","method":"POST"}`, "answerGet": `{"answer_id":"` + id + `","url":"https://example.invalid"}`, "questionTextStream": `{"question_id":"` + id + `","headers":{}}`, "questionContextStream": `{"question_id":"` + id + `","path":"elsewhere"}`, "answerBodyStream": `{"answer_id":null}`, "answerCitationStream": `{"answer_id":"` + id + `","citation_index":-1}`} {
+		if e := invokeFail(t, service, op, payload); e.Status != 400 {
+			t.Fatal(op, e)
+		}
+	}
+	if len(daemon.seen()) != before {
+		t.Fatal("malformed question operation reached HTTP")
+	}
+	for _, op := range []string{"questionTextStream", "questionContextStream", "answerBodyStream", "answerCitationStream"} {
+		key := "question_id"
+		if op == "answerBodyStream" || op == "answerCitationStream" {
+			key = "answer_id"
+		}
+		payload := `{"` + key + `":"` + id + `"}`
+		if op == "answerCitationStream" {
+			payload = `{"answer_id":"` + id + `","citation_index":0}`
+		}
+		stream := invokeOK(t, service, op, payload).(map[string]any)
+		if stream["etag"] != tag || stream["byte_size"] != fmt.Sprint(len(body)) {
+			t.Fatal("lost exact saved body metadata", stream)
+		}
+		streamID := stream["stream_id"].(string)
+		var full []byte
+		for {
+			part := invokeOK(t, service, "streamRead", fmt.Sprintf(`{"stream_id":%q,"max_bytes":65536}`, streamID)).(map[string]any)
+			if data, ok := part["data_b64"].(string); ok {
+				decoded, e := base64.StdEncoding.DecodeString(data)
+				if e != nil {
+					t.Fatal(e)
+				}
+				full = append(full, decoded...)
+			}
+			if part["eof"] == true {
+				break
+			}
+		}
+		if !bytes.Equal(full, body) {
+			t.Fatal("saved body was truncated")
+		}
+		next := invokeOK(t, service, op, payload).(map[string]any)
+		if op == "answerCitationStream" {
+			sourceDenied.Store(true)
+		} else {
+			denied.Store(true)
+		}
+		if e := invokeFail(t, service, "streamRead", fmt.Sprintf(`{"stream_id":%q,"max_bytes":256}`, next["stream_id"])); e.Status != 404 {
+			t.Fatal("current hidden question leaked prefetched bytes", e)
+		}
+		denied.Store(false)
+		sourceDenied.Store(false)
+	}
+	if starts.Load() != 1 {
+		t.Fatal("saved read executed another question")
 	}
 }

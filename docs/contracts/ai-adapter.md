@@ -146,7 +146,7 @@ without inventing an exhaustion cause. Explicit native usage-limit exhaustion,
 auth failure, rate limiting, session budget and context limits remain distinct.
 Task03 leaves generation/publication and saved-Q&A admission to TASK-006-04/05.
 The Task04 factory exposes implemented generation separately from provider
-readiness; questions remain unavailable until Task05. features.provider denotes
+readiness; Task05 now composes typed questions separately. features.provider denotes
 the transport rather than entitlement.
 See the [implementation record](../testing/provider-adapter.md).
 
@@ -232,3 +232,46 @@ It must not also import a managed-generation result itself. Actual Aquarium and
 standalone skill discovery/load/invocation must each be observed with the same
 guidance identity; a controlled peer or two labels on one fixture is insufficient.
 See [generation workflow](../testing/generation-workflow.md).
+
+## Typed read-only question consumer (TASK-006-05)
+
+Question invocation is distinct from Generation and uses no writable result
+directory or generation skill. The existing dispatcher supplies a fresh private
+attempt CWD and the pinned adapter's read-only native controls; this remains a
+supported-host restriction, not a universal OS jail. The trusted product frame
+specifies the exact captured version/page/region/query/fragment, resolved source
+mode, output union and missing-evidence limitations. Source/explanation/page
+content is untrusted data and cannot expand management or collection authority.
+The user's question text, authorized sources and selected context are normal
+provider input; author-only expected answers, scoring rubrics and assessment
+oracles are excluded.
+
+The full question, full adopted display snapshot and exact immutable explanation
+context are separately streamed and acknowledged. Whole-version Ask enumerates
+the complete directory and supplies every file with its canonical inventory:
+UTF-8 text stays exact, binary uses labelled base64, and directory/link metadata
+retains its type. Page/region Ask supplies the exact selected page; a region is
+an anchor on that page, not permission to invent a smaller verified source set.
+The question consumer does not silently substitute a manifest for all file bytes.
+This does not change the earlier Generation reference consumer or qualify its
+independent evidence.
+
+The private typed audit records complete matching-frame prompt/context/
+explanation ACK separately from each actual source observation. A supplied
+citation_candidate includes the full nullable citation union; the explanation
+header includes its separate reference. Final JSON must use final or partial,
+complete body/citations/explanation_references/limitations and explicit nullable
+union members. Service validation checks exact selected identity, location,
+hash and producing-attempt ACK for observed_input. Normal posthoc verification
+can corroborate the same selected bytes, but cannot manufacture original input
+observation or semantic support. Context/reference handles, fresh renderer IDs
+and attempt CWD are not equivalent-intent entropy; actual captured bytes and
+anchors remain semantic input. HTTP operation identity retains the full original
+render binding independently.
+
+Complete output is saved under the existing result ledger before preparation
+and guarded answer application. A prepared answer cannot authorize a new retry;
+explicit continuation reuses its saved output with Execute zero. Current
+execution epoch/source/disclosure restrictions, cancellation, hidden targets,
+restore/orphan uncertainty and bounded retry authority remain enforced. Saved
+history uses current owner read authority without repeating a provider turn.

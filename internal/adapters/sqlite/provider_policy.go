@@ -196,8 +196,8 @@ func (t *writeTx) releaseResolvedOrphanInputs(fact providerRestoreFact) error {
 			return e
 		}
 	}
-	if fact.Transport != nil && fact.Transport.Generation != nil {
-		for _, object := range generationTransportObjects(fact.Transport.Generation) {
+	if fact.Transport != nil {
+		for _, object := range transportOwnedObjects(fact.Transport) {
 			if e := t.exec(`DELETE FROM object_pins WHERE pin_id=? AND owner_kind='provider_orphan' AND owner_id=? AND content_hash=?`, "provider-orphan:"+fact.ID+":owned:"+object.Hash, fact.ID, object.Hash); e != nil {
 				return e
 			}

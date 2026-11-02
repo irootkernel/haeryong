@@ -78,6 +78,7 @@ type ProviderInvocation struct {
 	Model      string                `json:"model,omitempty"`
 	Effort     string                `json:"effort,omitempty"`
 	Generation *GenerationInvocation `json:"generation,omitempty"`
+	Question   *QuestionInvocation   `json:"question,omitempty"`
 }
 
 type ProviderDisclosure struct {
@@ -109,6 +110,7 @@ type ProviderCapabilities struct {
 
 type ProviderTransport struct {
 	Generation    *GenerationTransport  `json:"generation_output,omitempty"`
+	Question      *QuestionTransport    `json:"question_input,omitempty"`
 	Capabilities  *ProviderCapabilities `json:"inherited_capabilities,omitempty"`
 	BackendSource string                `json:"backend_observation_source,omitempty"`
 	DriverOutcome string                `json:"driver_outcome,omitempty"`

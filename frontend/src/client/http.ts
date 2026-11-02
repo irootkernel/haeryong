@@ -1,4 +1,4 @@
-import type {RetainedSourceRead,GenerationRequest,GenerationAccepted,DraftView,DraftPatch} from "./types.ts";
+import type {QuestionRequest,QuestionAccepted,QuestionView,AnswerView,RetainedSourceRead,GenerationRequest,GenerationAccepted,DraftView,DraftPatch} from "./types.ts";
 import { providerStatus as verifiedProviderStatus } from "./provider-status.ts";
 import type { ProviderStatus, LifecyclePlanRequest,LifecycleCommitRequest,LifecyclePlanView,LifecycleResult,LifecyclePageRequest,TrashRequest,TrashItem, AnnotationCreate, AnnotationPatch, AnnotationView, AnnotationStream, RevisitView, ReviewView, ReviewRequest, ReviewCondition, ReviewEvent, DocumentFilter,
   BacklinksRequest, BacklinkPage, IndexValidation, IndexValidationRequest, IndexRebuild, IndexRebuildRequest,
@@ -180,6 +180,15 @@ export class HttpHaeryongClient implements HaeryongClient {
   retainedSourceReads(projectId:string,sourceId:string,cursor?:string):Promise<ListPage<RetainedSourceRead>> {return this.#request("GET",this.#collection(`/api/v1/projects/${encodeURIComponent(projectId)}/source-reads`,{source_id:sourceId,cursor}));}
 
   generationStart(request:GenerationRequest,key:string):Promise<GenerationAccepted>{return this.#sourceWrite("/api/v1/generations",request,key,true);}
+  questionStart(id:string,request:QuestionRequest,key:string):Promise<QuestionAccepted>{return this.#sourceWrite(`/api/v1/versions/${encodeURIComponent(id)}/questions`,request,key,true);}
+  questionList(id:string,cursor?:string):Promise<ListPage<QuestionView>>{return this.#request("GET",this.#collection(`/api/v1/versions/${encodeURIComponent(id)}/questions`,{cursor}));}
+  questionGet(id:string):Promise<QuestionView>{return this.#request("GET",`/api/v1/questions/${encodeURIComponent(id)}`);}
+  questionAnswers(id:string,cursor?:string):Promise<ListPage<AnswerView>>{return this.#request("GET",this.#collection(`/api/v1/questions/${encodeURIComponent(id)}/answers`,{cursor}));}
+  answerGet(id:string):Promise<AnswerView>{return this.#request("GET",`/api/v1/answers/${encodeURIComponent(id)}`);}
+  questionTextStream(id:string):Promise<AnnotationStream>{return this.#savedTextStream(`/api/v1/questions/${encodeURIComponent(id)}/text`);}
+  questionContextStream(id:string):Promise<AnnotationStream>{return this.#savedTextStream(`/api/v1/questions/${encodeURIComponent(id)}/context`);}
+  answerBodyStream(id:string):Promise<AnnotationStream>{return this.#savedTextStream(`/api/v1/answers/${encodeURIComponent(id)}/body`);}
+  answerCitationStream(id:string,index:number):Promise<AnnotationStream>{if(!Number.isSafeInteger(index)||index<0)throw Error("Invalid citation index");return this.#savedTextStream(`/api/v1/answers/${encodeURIComponent(id)}/citations/${index}/source`);}
   draftList(projectId?:string,cursor?:string):Promise<ListPage<DraftView>>{return this.#request("GET",this.#collection("/api/v1/drafts",{project_id:projectId,cursor}));}
   draftGet(id:string):Promise<DraftView>{return this.#request("GET",`/api/v1/drafts/${encodeURIComponent(id)}`);}
   draftHistory(id:string,cursor?:string):Promise<ListPage<DraftView>>{return this.#request("GET",this.#collection(`/api/v1/drafts/${encodeURIComponent(id)}/history`,{cursor}));}
@@ -357,13 +366,16 @@ export class HttpHaeryongClient implements HaeryongClient {
   annotationBodyStream(id:string,revision:number):Promise<AnnotationStream>{return this.#annotationStream(id,revision,"body");}
   annotationContextStream(id:string,revision:number):Promise<AnnotationStream>{return this.#annotationStream(id,revision,"context");}
   async #annotationStream(id:string,revision:number,kind:"body"|"context"):Promise<AnnotationStream>{
+    return this.#savedTextStream(`/api/v1/annotations/${encodeURIComponent(id)}/${kind}?${new URLSearchParams({revision:String(revision)})}`);
+  }
+  async #savedTextStream(path:string):Promise<AnnotationStream>{
     const controller=new AbortController(),era=this.#era;
     const headers=new Headers();if(this.#credential)headers.set("Authorization","Bearer "+this.#credential);
-    const r=await fetch(`/api/v1/annotations/${encodeURIComponent(id)}/${kind}?${new URLSearchParams({revision:String(revision)})}`,{headers,credentials:"omit",redirect:"error",signal:controller.signal});
+    const r=await fetch(path,{headers,credentials:"omit",redirect:"error",signal:controller.signal});
     if(era!==this.#era){void r.body?.cancel();throw new StaleResponseError();}
     if(!r.ok||!r.body)throw await this.#apiError(r,era,false);
     const etag=r.headers.get("ETag")??"",size=r.headers.get("Content-Length")??"",media=r.headers.get("Content-Type")??"";
-    if(!/^"sha256-[0-9a-f]{64}"$/.test(etag)||!/^\d+$/.test(size)||!media){controller.abort();throw new Error("Invalid saved-note stream metadata");}
+    if(!/^"sha256-[0-9a-f]{64}"$/.test(etag)||!/^\d+$/.test(size)||!media){controller.abort();throw new Error("Invalid saved-text stream metadata");}
     return {body:eraGuardedStream(r.body,()=>era!==this.#era),cancel:()=>controller.abort(),etag,bytes_sha256:etag.slice(8,-1),byte_size:size,media_type:media};
   }
 

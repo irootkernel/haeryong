@@ -98,6 +98,7 @@ type DraftLaunch struct {
 }
 
 type Journal struct {
+	Question      *QuestionLaunch   `json:"question,omitempty"`
 	Draft         *DraftLaunch      `json:"draft,omitempty"`
 	Generation    *GenerationLaunch `json:"generation,omitempty"`
 	Preconditions map[string]string `json:"preconditions,omitempty"`
@@ -114,6 +115,16 @@ type Journal struct {
 	Phase         string            `json:"dispatch_phase"`
 	FinalBody     json.RawMessage   `json:"final_request,omitempty"`
 	Response      *domain.Response  `json:"response,omitempty"`
+}
+type QuestionLaunch struct {
+	SourcePath     string          `json:"source_path"`
+	Launcher       Identity        `json:"launcher"`
+	Request        json.RawMessage `json:"request"`
+	SourcesPresent bool            `json:"source_selection_present"`
+	Selectors      string          `json:"explicit_selectors"`
+	Context        *Preparation    `json:"context_preparation,omitempty"`
+	ContextKey     string          `json:"context_operation_id,omitempty"`
+	ContextRef     string          `json:"context_ref,omitempty"`
 }
 type State interface {
 	UsePending(context.Context, Identity, Input, string) (string, error)

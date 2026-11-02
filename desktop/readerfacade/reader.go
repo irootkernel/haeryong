@@ -57,6 +57,9 @@ type readerStream struct {
 	// both are reverified on every pull.
 	versionID    string
 	annotationID string
+	questionID   string
+	answerID     string
+	citationPath string
 	epoch        string
 }
 
@@ -740,6 +743,8 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 		return result.value, result.werr
 	case "generationStart", "draftList", "draftGet", "draftHistory", "draftPatch", "draftPublish", "jobResume":
 		return s.generationOperation(operation, payload, auth)
+	case "questionStart", "questionList", "questionGet", "questionAnswers", "answerGet", "questionTextStream", "questionContextStream", "answerBodyStream", "answerCitationStream":
+		return s.questionOperation(operation, payload, auth)
 	case "providerStatus":
 		var in struct{}
 		if werr := decodeReferencePayload(payload, &in); werr != nil {
@@ -2102,6 +2107,26 @@ func (s *ReaderService) validatePull(stream *readerStream) *wireError {
 	target := "/api/v1/versions/" + url.PathEscape(stream.versionID)
 	if stream.annotationID != "" {
 		target = "/api/v1/annotations/" + url.PathEscape(stream.annotationID)
+	}
+	if stream.questionID != "" {
+		target = "/api/v1/questions/" + url.PathEscape(stream.questionID)
+	}
+	if stream.answerID != "" {
+		target = "/api/v1/answers/" + url.PathEscape(stream.answerID)
+	}
+	if stream.citationPath != "" {
+		// Recheck both answer visibility and exact citation source authority before
+		// delivering any prefetched native bytes. HEAD never collects source.
+		r := s.requestRaw("HEAD", stream.citationPath, nil, nil, stream.auth, true)
+		if r.werr != nil {
+			return r.werr
+		}
+		defer r.close()
+		if r.status != 200 {
+			_, e := typedResult(r.status, r.body)
+			return e
+		}
+		return nil
 	}
 	detail := s.request("GET", target, nil, nil, nil, stream.auth)
 	if detail.werr != nil {

@@ -566,3 +566,8 @@ test("T4R2RESUME07 the actual HTTP client recovers a resume receipt across runti
   assert.deepEqual(seen,[["/api/v1/operations/resume","GET"],["/api/v1/operations/resume","GET"]]);
  }finally{restore();}
 });
+
+test("T5QCITHTTP01 citation source uses only its exact answer/index with integrity metadata and no mutation",async()=>{
+ const calls:string[]=[];const hash="a".repeat(64);const restore=stubFetch(async(input,init)=>{calls.push(String(input));assert.equal(init?.method,undefined);return new Response("exact captured B",{headers:{"ETag":`"sha256-${hash}"`,"Content-Length":"16","Content-Type":"application/octet-stream"}});});
+ try{const client=new HttpHaeryongClient();const stream=await client.answerCitationStream("answer/+",2);assert.deepEqual(calls,["/api/v1/answers/answer%2F%2B/citations/2/source"]);assert.equal(stream.bytes_sha256,hash);assert.equal(stream.byte_size,"16");stream.cancel();assert.throws(()=>client.answerCitationStream("answer",-1));}finally{restore();}
+});

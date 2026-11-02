@@ -2,6 +2,15 @@ package domain
 
 import "encoding/json"
 
+// BodyReference names complete sealed request bytes. The handle remains bound
+// to its operation/action target; content digest and size define byte identity.
+type BodyReference struct {
+	ID        string `json:"object_id"`
+	Hash      string `json:"bytes_sha256"`
+	Size      string `json:"byte_size"`
+	MediaType string `json:"media_type"`
+}
+
 type UploadEntry struct {
 	UploadID, Path, Kind, LinkText string
 	ExpectedSize                   *int64

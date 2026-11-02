@@ -60,7 +60,7 @@ var _ = It("GGEN01 revision18 migration rolls back atomically and enforces its e
 	Expect(e).NotTo(HaveOccurred())
 	// Reverse-constructed prior17 fixture; this never changes a real library or
 	// claims that the older binary executed the new migration.
-	_, e = s.db.Exec(`DROP TABLE workflow_selections; DROP TABLE draft_history; DROP TABLE drafts; DROP TABLE generation_intents; DELETE FROM schema_migrations WHERE revision=18; UPDATE libraries SET schema_revision=17; PRAGMA user_version=17`)
+	_, e = s.db.Exec(dropQuestionSchema + `DROP TABLE workflow_selections; DROP TABLE draft_history; DROP TABLE drafts; DROP TABLE generation_intents; DELETE FROM schema_migrations WHERE revision>17; UPDATE libraries SET schema_revision=17; PRAGMA user_version=17`)
 	Expect(e).NotTo(HaveOccurred())
 	Expect(s.Close()).To(Succeed())
 	fault := errors.New("controlled generation migration failure")
@@ -86,7 +86,7 @@ var _ = It("GGEN01 revision18 migration rolls back atomically and enforces its e
 	Expect(after.Library.ID).To(Equal(before.Library.ID))
 	Expect(after.Library.RuntimeGeneration).To(Equal(before.Library.RuntimeGeneration))
 	Expect(after.Library.AuthEpoch).To(Equal(before.Library.AuthEpoch))
-	Expect(after.Library.SchemaRevision).To(Equal(18))
+	Expect(after.Library.SchemaRevision).To(Equal(SchemaRevision))
 	Expect(s.validateTables(ctx, SchemaRevision)).To(Succeed())
 	_, e = s.db.Exec(`DROP INDEX drafts_project`)
 	Expect(e).NotTo(HaveOccurred())

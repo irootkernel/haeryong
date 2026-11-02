@@ -698,3 +698,32 @@ identities and matching-frame ACK flags. Native public-final SHA/size and the
 service-derived captured directory ZIP remain distinct. These private audit
 paths are absent from public draft/status projections. Backups/restore preserve
 typed facts without inventing newer input observations or authority.
+
+## Schema revision 19 saved questions (TASK-006-05)
+
+Migration 19 adds `questions` and `answers` with their exact validated indices;
+all earlier migration declarations and checksums remain unchanged. A question
+binds its owner/project/document/version and unique existing job, while its
+immutable value retains the original operation/request identity, exact nullable
+page/region, artifact query/fragment, text descriptor, adopted display context,
+explanation reference, resolved source mode, requested selection and actual
+retained-read ancestry. The columns and value must agree. No second provider
+queue or operation ledger is introduced.
+
+An answer binds one question and actual producing attempt. Its immutable value
+contains final/partial/error state, complete body descriptor, source citations,
+separate explanation references and limitations. `(attempt_id,state)` is unique.
+A partial/error record cannot replace the latest completed final answer. The
+prepared answer retains its exact output object and identity before application;
+saved continuation applies that object without another Execute. Retry refuses a
+prepared answer before changing attempt/job/authorization state.
+
+Question text, full display context and explanation input use existing object
+pins independently of project-source input rows. The accepted job adopts those
+pins before transient context can be abandoned; executing/restored orphan work
+retains its typed input dependencies. Saved answers own their complete body
+objects. Trash hides current records and streams, Restore exposes the same
+record under current authority, and purge detaches question/answer ownership
+before parent deletion. Whole backup/protected restore and explicitly selected
+question export preserve the adopted objects and original audit facts. None of
+these operations fabricate provider observations or change personal Review.

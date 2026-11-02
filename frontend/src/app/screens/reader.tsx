@@ -1,5 +1,6 @@
 import {LifecycleControl} from "./lifecycle-control.tsx";
 import {useReviewInvalidation} from "./review-refresh.ts";
+import {AskPanel} from "./ask-panel.tsx";
 import {NotesPanel,type NoteSelection} from "./notes-panel.tsx";
 import {RevisitControl} from "./revisit-control.tsx";
 import { ReviewControl } from "./review-control.tsx";
@@ -122,7 +123,7 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
   const [suppliedMetaBox, setSuppliedMetaBox] = useState<{ versionId: string; state: MetadataState }>(() => ({ versionId, state: { kind: "loading" } }));
   const [suppliedMetaReload, setSuppliedMetaReload] = useState(0);
   const [regionSelection, setRegionSelection] = useState<{ versionId: string; pagePath: string; context: string | null; reload: number; regionId: string; intentKey: string | null } | null>(null);
-  const [contextTab, setContextTab] = useState<"evidence" | "notes" | "links">("evidence");
+  const [contextTab, setContextTab] = useState<"evidence" | "notes" | "links" | "ask">("evidence");
   const [noteContext,setNoteContext]=useState<(ReaderPageContext & {payload:Record<string,unknown>})|null>(null);
   const [contextOpen, setContextOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
@@ -521,16 +522,17 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
       {!wideLayout && <button onClick={() => setContextOpen(false)}>문맥 닫기</button>}
       {suppliedMeta.kind === "ready" && currentPage !== null && regionsOfPage(suppliedMeta.metadata, currentPage).length > 0 && <div className="region-outline"><h3>영역 개요(현재 페이지)</h3><ul>{regionsOfPage(suppliedMeta.metadata, currentPage).map((region) => <li key={region.id}><button className="link" data-selected={regionId === region.id ? "true" : undefined} aria-current={regionId === region.id ? "true" : undefined} onClick={() => selectRegion(region)}>{typeof region.label === "string" && region.label !== "" ? region.label : region.id}</button></li>)}</ul><p className="hint">영역을 선택하면 해당 페이지의 문맥이 그 영역에 묶이고, 페이지 요소에 실제 초점을 시도해 결과를 알립니다. 좁은 화면에서는 문맥 패널이 닫힌 뒤 초점이 시도됩니다. 선언된 영역이 문서 요소와 연결되지 않아도 읽기·페이지 문맥은 그대로 유지됩니다.</p></div>}
       <div role="tablist" aria-label="문맥 탭" onKeyDown={event => {
-        const tabs = ["evidence", "notes", "links"] as const;
+        const tabs = ["evidence", "notes", "ask", "links"] as const;
         let next = tabs.indexOf(contextTab);
         if (event.key === "ArrowRight" || event.key === "ArrowLeft") next = (next+(event.key==="ArrowRight"?1:tabs.length-1))%tabs.length;
         else if (event.key === "Home") next = 0; else if (event.key === "End") next = tabs.length-1; else return;
         event.preventDefault(); const selected = tabs[next]!; setContextTab(selected); document.getElementById(`reader-${selected}-tab`)?.focus();
-      }}>{(["evidence", "notes", "links"] as const).map(tab => <button key={tab} id={`reader-${tab}-tab`} role="tab" aria-selected={contextTab === tab} aria-controls={`reader-${tab}-content`} tabIndex={contextTab === tab ? 0 : -1} onClick={() => setContextTab(tab)}>{tab === "evidence" ? "Evidence" : tab==="notes"?"Notes":"Links"}</button>)}</div>
+      }}>{(["evidence", "notes", "ask", "links"] as const).map(tab => <button key={tab} id={`reader-${tab}-tab`} role="tab" aria-selected={contextTab === tab} aria-controls={`reader-${tab}-content`} tabIndex={contextTab === tab ? 0 : -1} onClick={() => setContextTab(tab)}>{tab === "evidence" ? "Evidence" : tab==="notes"?"Notes":tab==="links"?"Links":"Ask"}</button>)}</div>
       <div role="tabpanel" id="reader-evidence-content" aria-labelledby="reader-evidence-tab" hidden={contextTab !== "evidence"} className="reader-evidence">
       <SourcePanel controller={controller} version={currentVersion} versionId={versionId} pagePath={currentPage} regionId={regionId} contextKey={`${context ?? "initial"}:${reload}`} metadata={suppliedMeta} />
       </div>
       <div role="tabpanel" id="reader-notes-content" aria-labelledby="reader-notes-tab" hidden={contextTab!=="notes"}><NotesPanel key={JSON.stringify([referenceOwner,versionId])} controller={controller} documentId={documentId} owner={referenceOwner} active={contextVisible&&contextTab==="notes"} modal={contextModal} navigationContext={navigationContext} anchor={{version_id:versionId,page_path:currentPage,region_id:regionId,page_query:props.pageQuery,page_fragment:props.pageFragment}} selection={noteContext&&noteContext.versionId===versionId&&noteContext.pagePath===currentPage&&noteContext.context===context&&noteContext.reload===reload&&noteContext.renderGeneration===channelRef.current?.renderGeneration?{selectedText:typeof noteContext.payload.selected_text==="string"?noteContext.payload.selected_text:null,contextRef:typeof noteContext.payload.context_ref==="string"?noteContext.payload.context_ref:null,context:noteContext.payload.context??noteContext.payload.state??null} satisfies NoteSelection:undefined}/></div>
+      <div role="tabpanel" id="reader-ask-content" aria-labelledby="reader-ask-tab" hidden={contextTab!=="ask"}>{currentDocInfo&&<AskPanel key={JSON.stringify([referenceOwner,documentId])} controller={controller} documentId={documentId} projectId={currentDocInfo.document.project_id} sourceIntent={suppliedMeta.kind==="ready"?suppliedMeta.metadata.sourceIntent:null} sourceReady={suppliedMeta.kind==="ready"||suppliedMeta.kind==="absent"} active={contextVisible&&contextTab==="ask"} anchor={{version_id:versionId,page_path:currentPage,region_id:regionId,page_query:props.pageQuery,page_fragment:props.pageFragment}} selection={noteContext&&noteContext.versionId===versionId&&noteContext.pagePath===currentPage&&noteContext.context===context&&noteContext.reload===reload&&noteContext.renderGeneration===channelRef.current?.renderGeneration?{contextRef:typeof noteContext.payload.context_ref==="string"?noteContext.payload.context_ref:null,context:noteContext.payload.context??noteContext.payload.state??null}:{contextRef:null,context:null}}/>}</div>
       {contextVisible && contextTab === "links" && <div role="tabpanel" id="reader-links-content" aria-labelledby="reader-links-tab"><LinksPanel key={`${referenceOwner}:${versionId}:${currentPage}:${regionId}:${context}:${reload}`} controller={controller} versionId={versionId} pagePath={currentPage} regionId={regionId} onNavigate={async (url, active) => {
         const authority = controller.captureDispatchAuthority();
         await linksNavigation.request({

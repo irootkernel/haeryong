@@ -5,6 +5,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
+import {QuestionSubmission,questionStreamText,BrowserQuestionJournal} from "./questions.ts";
+import type {QuestionRecord} from "./questions.ts";
 import { GenerationSubmission } from "./generation.ts";
 import type { GenerationRecord } from "./generation.ts";
 
@@ -903,4 +905,113 @@ test("GCLIENT16 fresh generation seals exact UTF-8 object bytes before original-
   assert.equal(fake.importCalls, 0);assert.equal(rows.get(record.operationId)?.accepted?.job_id, "generation-job");
   await submission.send(record, "accepted replay ignores current text", {});
   assert.equal(creates.length, 1);assert.equal(fake.puts.length, 1);assert.equal(fake.completeCalls.length, 1);assert.equal(dispatched.length, 1);
+});
+
+
+function questionJournal(){
+ const rows=new Map<string,QuestionRecord>();
+ return {read:()=>[...rows.values()].map(row=>structuredClone(row)),save:(row:QuestionRecord)=>{rows.set(row.operationId,structuredClone(row));}};
+}
+const questionLock=async<T>(_name:string,action:()=>Promise<T>)=>action();
+function questionBoundary(){
+ const fake=new FakeClient(),port=client(fake),uploads=new FakeJournal();
+ fake.operation404=true; // Fresh question keys have no durable receipt yet.
+ const prepared=new Map<string,{detail:UploadDetail;bytes:Uint8Array}>();
+ const starts:{version:string;body:unknown;key:string}[]=[],contexts:{binding:unknown;upload:string;key:string}[]=[],keys:string[]=[];
+ port.createUpload=async(request,key)=>{
+  assert.ok(request.purpose==="body"||request.purpose==="context");assert.equal(request.input_mode,"object");
+  const id="u-"+(prepared.size+1);keys.push(key);prepared.set(id,{detail:{...structuredClone(fake.detail),upload_id:id,purpose:request.purpose,input_mode:"object",target:request.target,transport_entry:"_input"},bytes:new Uint8Array()});return {upload_id:id,checkpoint:emptyCheckpoint()};
+ };
+ port.uploadDetail=async id=>structuredClone(prepared.get(id)!.detail);
+ port.uploadRanges=async()=>({items:[],next_cursor:null});
+ port.putUploadEntry=async(id,chunk)=>{
+  const row=prepared.get(id)!;
+  // Enforce the real service's object-upload contract, independently from
+  // the production promptPlan/TRANSPORT_ENTRY implementation.
+  assert.equal(chunk.path,"_input");assert.equal(chunk.kind,"file");assert.equal(row.detail.state,"open");assert.equal(chunk.offset,row.bytes.byteLength);
+  const joined=new Uint8Array(row.bytes.byteLength+chunk.bytes.byteLength);joined.set(row.bytes);joined.set(chunk.bytes,row.bytes.byteLength);row.bytes=joined;
+  row.detail.checkpoint={generation:row.detail.checkpoint.generation+1,inventory_sha256:createHash("sha256").update(joined).digest("hex"),accepted_bytes:String(joined.length),complete_input:false};
+  return {accepted_offset:String(joined.length),checkpoint:structuredClone(row.detail.checkpoint)};
+ };
+ port.completeUpload=async(id,checkpoint,key)=>{const row=prepared.get(id)!;assert.equal(checkpoint.complete_input,true);assert.equal(checkpoint.accepted_bytes,String(row.bytes.length));keys.push(key);row.detail={...row.detail,state:"sealed",reusable:true,checkpoint,sealed_object_ref:{object_id:id,bytes_sha256:createHash("sha256").update(row.bytes).digest("hex"),byte_size:String(row.bytes.length),media_type:"application/octet-stream"}};return {kind:"accepted",body:{job_id:"controlled-seal"}};};
+ port.consumeContext=async(binding,upload,key)=>{const row=prepared.get(upload)!;assert.equal(row.detail.purpose,"context");assert.equal(row.detail.state,"sealed");assert.deepEqual(row.detail.target,binding);contexts.push({binding:structuredClone(binding),upload,key});keys.push(key);return {kind:"committed",body:{context_ref:"context-original",bytes_sha256:row.detail.sealed_object_ref!.bytes_sha256,media_type:"application/json",created_at:"controlled"}};};
+ port.questionStart=async(version,body,key)=>{assert.ok(body.body_ref);const row=prepared.get(body.body_ref.object_id)!;assert.equal(row.detail.state,"sealed");assert.deepEqual(body.body_ref,{...row.detail.sealed_object_ref,media_type:"text/plain"});assert.deepEqual(row.detail.target,{operation_id:key,action:"question",version_id:version,page_path:body.page_path});assert.equal(Object.hasOwn(body,"question"),false);assert.equal(Object.hasOwn(body,"display_state"),false);starts.push({version,body:structuredClone(body),key});return {question_id:"saved-q",job_id:"saved-job",operation_id:key,job_url:"/api/v1/jobs/saved-job"};};
+ return {fake,port,uploads,prepared,starts,contexts,keys};
+}
+
+test("T5QCLIENT01 real question transfer freezes complete anchor and large context, seals separate exact objects and dispatches only original K",async()=>{
+ const boundary=questionBoundary(),journal=questionJournal(),submission=new QuestionSubmission(boundary.port,journal,"l","p",boundary.uploads,questionLock,()=>"runtime-original");
+ const context={selection:"한글".repeat(40000),nested:{scroll:37}},text="Question original α\n";
+ const request={page_path:"nested/a.html",region_id:"exact-region",page_query:"mode=A&x=1",page_fragment:"original",provider_id:"codex",source_mode:"pinned" as const,source_selection:{selections:[{source_id:"source-A",paths:[{path:"a.go",read_id:"read-A"}]}]},display_state:context};
+ const record=submission.capture("version-A",request,text,()=>{});assert.equal(boundary.prepared.size,0);assert.equal(boundary.starts.length,0);
+ request.page_path="changed.html";request.page_query="later";request.source_selection.selections[0]!.paths[0]!.read_id="read-B";context.nested.scroll=99;
+ await submission.send(record,text,{});
+ assert.equal(boundary.prepared.size,2);assert.equal(boundary.contexts.length,1);assert.equal(boundary.starts.length,1);
+ assert.equal(boundary.starts[0]!.version,"version-A");assert.equal(boundary.starts[0]!.key,record.operationId);assert.deepEqual(boundary.starts[0]!.body,{page_path:"nested/a.html",region_id:"exact-region",page_query:"mode=A&x=1",page_fragment:"original",provider_id:"codex",source_mode:"pinned",source_selection:{selections:[{source_id:"source-A",paths:[{path:"a.go",read_id:"read-A"}]}]},body_ref:record.request.body_ref,context_ref:"context-original"});
+ const [body,display]=[...boundary.prepared.values()];assert.equal(new TextDecoder().decode(body!.bytes),text);assert.equal(new TextDecoder().decode(display!.bytes),record.contextJSON);assert.equal(JSON.parse(record.contextJSON!).nested.scroll,37);
+ assert.deepEqual(boundary.contexts[0]!.binding,{version_id:"version-A",page_path:"nested/a.html",render_instance_id:null});
+ assert.equal(new Set([...boundary.keys,record.operationId]).size,6);assert.equal(boundary.fake.importCalls,0);
+ await submission.send(record,"changed current editor",{});assert.equal(boundary.starts.length,1);assert.equal(boundary.prepared.size,2);
+});
+
+test("T5QCLIENT02 restore or legacy missing receipt stays GET-only, completed receipt remains readable and same-runtime retry preserves exact frozen body",async()=>{
+ for(const original of [undefined,"before","same"]){
+  const journal=questionJournal();let posts=0,found=false;const reads:string[]=[];const accepted={question_id:"q",job_id:"j",operation_id:"K",job_url:"/j"};
+  const request={page_path:null,region_id:null,body_ref:{object_id:"o",bytes_sha256:"a".repeat(64),byte_size:"1",media_type:"text/plain"},context_ref:"ctx"};
+  const port={operation:async(id:string)=>{reads.push(id);if(!found)throw new ApiError(404,"NOT_FOUND",false);return {operation_id:id,state:"completed",original_status:202,result_metadata:accepted};},questionStart:async(version:string,body:unknown,key:string)=>{posts++;assert.equal(version,"original-version");assert.equal(key,"K");assert.deepEqual(body,request);return accepted;}} as unknown as HaeryongClient;
+  const record:QuestionRecord={operationId:"K",versionId:"original-version",request:structuredClone(request),textSHA:"",textSize:0,runtimeGeneration:original,dispatchReady:true};journal.save(record);
+  const submission=new QuestionSubmission(port,journal,"l","p",new FakeJournal(),questionLock,()=>"same");
+  if(original==="same"){await submission.send(record,"different editor",{});assert.equal(posts,1);}else{await assert.rejects(submission.send(record,"",{}),/세대/);assert.equal(posts,0);assert.deepEqual(journal.read()[0],record);found=true;await submission.send(record,"",{});assert.equal(posts,0);}
+  assert.ok(reads.every(id=>id==="K"));assert.equal(journal.read()[0]!.accepted!.question_id,"q");
+ }
+});
+
+test("T5QCLIENT03 local journal failure and stopped preparation cannot dispatch, while changed text never replaces the original consent",async()=>{
+ const boundary=questionBoundary(),journal=questionJournal();const submission=new QuestionSubmission(boundary.port,journal,"l","p",boundary.uploads,questionLock,()=>"r");
+ const request={page_path:"a.html",region_id:null};
+ const stopped=submission.capture("v",request,"original",()=>{});
+ await assert.rejects(submission.send(stopped,"original",{guard:()=>{throw Error("stopped");}}),/stopped/);
+ assert.equal(boundary.prepared.size,0);assert.equal(boundary.starts.length,0);assert.equal(journal.read()[0]!.operationId,stopped.operationId);
+ await assert.rejects(submission.send(stopped,"different",{}),/원래 질문 본문/);assert.equal(boundary.prepared.size,0);
+ const failing=new QuestionSubmission(boundary.port,{read:()=>[],save:()=>{throw new JournalWriteError(Error("full"));}},"l","p",boundary.uploads,questionLock,()=>"r");
+ assert.throws(()=>failing.capture("v",request,"original",()=>{}),JournalWriteError);assert.equal(boundary.prepared.size,0);
+ await submission.send(stopped,"original",{});assert.equal(boundary.starts[0]!.key,stopped.operationId);
+});
+
+test("T5QCLIENT04 sealed context digest mismatch blocks question admission while preserving all preparation identity",async()=>{
+ const boundary=questionBoundary(),journal=questionJournal();boundary.port.consumeContext=async()=>({kind:"committed",body:{context_ref:"wrong",bytes_sha256:"f".repeat(64),media_type:"application/json"}});
+ const submission=new QuestionSubmission(boundary.port,journal,"l","p",boundary.uploads,questionLock,()=>"r");const row=submission.capture("v",{page_path:null,region_id:null,display_state:{full:"original"}},"question",()=>{});
+ await assert.rejects(submission.send(row,"question",{}),/정확한 바이트/);assert.equal(boundary.starts.length,0);assert.equal(boundary.prepared.size,2);const saved=journal.read()[0]!;assert.equal(saved.operationId,row.operationId);assert.ok(saved.contextOperation);assert.equal(saved.contextDispatchReady,true);assert.equal(saved.request.context_ref,undefined);
+});
+
+test("T5QCLIENT05 saved text consumes complete verified UTF-8 and rejects truncation or digest mismatch with cancellation",async()=>{
+ const text="saved source-independent answer 한글\n".repeat(5000),bytes=new TextEncoder().encode(text),hash=createHash("sha256").update(bytes).digest("hex");
+ for(const broken of [false,true]){let cancelled=0;const stream={body:new ReadableStream<Uint8Array>({start(c){c.enqueue(bytes.slice(0,13));c.enqueue(bytes.slice(13));c.close();}}),bytes_sha256:broken?"0".repeat(64):hash,byte_size:String(bytes.length),media_type:"text/plain",etag:`"sha256-${hash}"`,cancel:()=>{cancelled++;}};
+ if(broken)await assert.rejects(questionStreamText(stream,()=>{}),/무결성/);else assert.equal(await questionStreamText(stream,()=>{}),text);assert.equal(cancelled,1);}
+});
+
+test("T5QCLIENT06 malformed local question history fails closed rather than silently dropping or rewriting pending requests",()=>{
+ const map=new Map([["haeryong.questions.v1:owner:K",'{"operationId":"K"}']]);const storage={get length(){return map.size;},key:(i:number)=>[...map.keys()][i]??null,getItem:(key:string)=>map.get(key)??null,setItem:(key:string,value:string)=>{map.set(key,value);}} as Storage;
+ const original=map.get("haeryong.questions.v1:owner:K");assert.throws(()=>new BrowserQuestionJournal("owner",storage).read(),JournalReadError);assert.equal(map.get("haeryong.questions.v1:owner:K"),original);
+});
+
+test("T5QCLIENT07 initial question journal recovers its original receipt before missing-body preparation across runtime changes, without writes",async()=>{
+ for(const [runtime,outcome]of [["original","found"],["changed","found"],["changed","missing"],["original","unavailable"]]as const){
+  const boundary=questionBoundary(),map=new Map<string,string>();
+  const storage={get length(){return map.size;},key:(i:number)=>[...map.keys()][i]??null,getItem:(key:string)=>map.get(key)??null,setItem:(key:string,value:string)=>{map.set(key,value);}}as Storage;
+  const journal=new BrowserQuestionJournal("owner",storage);let current="original";
+  const submission=new QuestionSubmission(boundary.port,journal,"l","p",boundary.uploads,questionLock,()=>current);
+  const captured=submission.capture("original-version",{page_path:"explain.html",region_id:"risk",context_ref:"original-context"},"original question",()=>{});
+  const record=journal.read()[0]!;assert.equal(record.operationId,captured.operationId);assert.equal(record.dispatchReady,false);assert.equal(record.request.body_ref,undefined);current=runtime;
+  const reads:string[]=[],accepted={question_id:"original-question",job_id:"original-job",operation_id:record.operationId,job_url:"/api/v1/jobs/original-job"};
+  boundary.port.operation=async key=>{reads.push(key);if(outcome!=="found")throw new ApiError(outcome==="missing"?404:503,outcome==="missing"?"NOT_FOUND":"SERVICE_RECOVERING",false);return {operation_id:key,state:"completed",original_status:202,result_ref:null,job_id:null,result_metadata:accepted};};
+  if(outcome==="found"){
+   assert.deepEqual(await submission.send(record,"",{}),accepted);assert.deepEqual(journal.read()[0]!.accepted,accepted);
+   await submission.send(record,"",{});assert.deepEqual(reads,[captured.operationId]);
+  }else{
+   await assert.rejects(submission.send(record,"",{}),outcome==="missing"?/세대/:/결과 확인 필요/);assert.equal(journal.read()[0]!.accepted,undefined);assert.deepEqual(reads,[captured.operationId]);
+  }
+  assert.equal(record.operationId,captured.operationId);assert.equal(record.request.body_ref,undefined);assert.equal(record.request.context_ref,"original-context");
+  assert.equal(boundary.prepared.size,0);assert.equal(boundary.uploads.saves,0);assert.equal(boundary.contexts.length,0);assert.equal(boundary.starts.length,0);assert.deepEqual(boundary.keys,[]);
+ }
 });

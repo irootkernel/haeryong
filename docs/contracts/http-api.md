@@ -862,7 +862,7 @@ file and personal Review routes do not depend on provider availability.
 /api/v1/status distinguishes installed transport from as-yet unobserved native
 availability and points to /providers. Task03 did not implement generation or
 question admission. Task04 now separately exposes generation_available through
-its wired factory; question_available remains false. Transport support alone
+its wired factory; Task05 separately composes question_available. Transport support alone
 does not establish actual availability or grant an unimplemented paid action.
 
 ## Generation and drafts implementation (TASK-006-04)
@@ -905,7 +905,7 @@ The creation response is 202 with
 publication or completed AI work. The existing operation/job routes own status,
 unknown effects, cancellation and explicit resume decisions. features.generation
 is set only by the wired production factory; it is not provider entitlement or
-quota availability. features.questions remains false.
+quota availability. Task05 composes features.questions separately.
 
 GET /drafts supports optional project_id/cursor; GET /drafts/{id}/history supports
 cursor. Lists are `{items,next_cursor}` with cursors bound to library, runtime,
@@ -969,3 +969,87 @@ nonce/request/body proof; complete responses retain their nonce/status/body
 proof. It imposes no total selection-length limit. Pairing/session control
 limits remain unchanged. Logical-body tamper, changed-body/same-key replay, scoped-current
 authority and private verifier/credential rules remain in force.
+
+## Saved question routes (TASK-006-05)
+
+The composed production factory enables features.questions and status provider
+question_available independently of native account readiness. Bare query and
+configuration services leave support false. An unobserved account remains
+`available:null,reason:status_not_observed`; these feature flags never probe or
+permit a request by themselves.
+
+All routes below require the current owner and exact visible version. POST
+requires the standard Idempotency-Key and the registry's closed captured request.
+GET/HEAD are reads and cannot capture source, invoke a provider or change Review.
+
+| Route | Meaning |
+| --- | --- |
+| POST /versions/{id}/questions | Atomically record the captured question and existing provider job; 202 is admission, not an answer |
+| GET/HEAD /versions/{id}/questions?cursor=... | Cursor-enumerate saved owner/version question summaries |
+| GET/HEAD /questions/{id} | Exact saved scope, current job and first answer page |
+| GET/HEAD /questions/{id}/answers?cursor=... | Enumerate every immutable final/partial/error answer |
+| GET/HEAD /answers/{id} | One producing-attempt answer and current citation availability |
+| GET/HEAD /questions/{id}/text | Stream complete retained UTF-8 question text |
+| GET/HEAD /questions/{id}/context | Stream the complete adopted display snapshot with its original media type |
+| GET/HEAD /answers/{id}/body | Stream complete retained UTF-8 answer text |
+| GET/HEAD /answers/{id}/citations/{index}/source | Explicitly inspect the accepted exact retained citation bytes; zero-based canonical decimal index |
+
+List cursors bind library/runtime/current owner epoch/version/resource and
+project permission revision; session clock touches do not invalidate them.
+Unknown query keys and empty cursor values are invalid. Saved stream responses
+carry no-store, nosniff, Content-Length and the exact SHA-256 ETag. Authorization
+and object integrity are checked incrementally; a late denial aborts the stream
+rather than completing a prefix. Descriptor byte_size uses decimal strings.
+The text, display context and answer are separately streamed, not silently
+truncated into a small control response.
+
+Mode resolves once as explicit request choice, otherwise immutable historical
+version intent (pinned), otherwise remembered project default, initially pinned.
+Default targets come only from exact declared evidence and unambiguous approved
+mappings. Missing source yields an explicit limitation/unavailable path; it is
+not an empty verified target set. Later defaults/navigation cannot retarget an
+accepted question or change its saved selected rows. Explanation-only discussion
+remains visibly distinct from checked project-source claims.
+
+The current owner can inspect a saved answer after ordinary restart or protected
+restore without its old renderer/session. Source citation availability is checked
+as a current owner read, not under the old execution epoch or AI disclosure list.
+Provider dispatch/continue retain their stricter current epoch/disclosure guards.
+The question/answer routes never accept broader source collection from returned
+citation IDs. See [saved questions](../testing/saved-questions.md) for verification
+scope and the separately required rendered/real-provider evidence.
+
+
+Question citation source reads bind the current owner, saved answer/version,
+accepted producing-attempt read or exact posthoc ancestry, and citation digest.
+They reuse the retained source reader and complete object-integrity checks.
+Only `selected_snapshot` bytes are available; `reference_only` does not trigger
+filesystem/Git rereading or new collection. Missing/unretained bytes return
+unavailable, while current source denial refuses access. The stream is inert
+`application/octet-stream` with attachment/nosniff/no-store, Content-Length and
+`"sha256-<digest>"` ETag. HEAD rechecks the same answer/source authority without
+returning bytes. It also guards every native pull before prefetched delivery.
+Posthoc citations preserve their null producing read_id/input_origin and never
+become original-input observations merely because the owner inspected bytes.
+
+A new-operation source-policy refusal atomically commits a terminal failed
+operation receipt, with no Question, job, context adoption or source capture.
+Its original_status is 403 and result_metadata retains the normal error object
+with code FORBIDDEN, message Forbidden, retryable false and details
+`{question_admission:"refused_before_admission",operation_id,runtime_generation,principal_id}`.
+POST and early replay project that committed response through the existing typed
+error envelope. Existing accepted/pending keys cannot become this refusal.
+The stable failed key fences even an earlier same-key server request still
+preparing outside the admission writer; restoring source disclosure cannot
+reopen that key or permit its delayed admission.
+
+The shared client requires the original key lock, current owner/original runtime
+and the matching authoritative terminal failed403 receipt before explicit
+acknowledgement. A matching failure observation conservatively persists the
+original dispatch phase before readback, so a failed readback cannot un-fence a
+retained preparation prefix. Lost refusal replies recover the original receipt
+before preparing bytes or sending another POST. Acknowledgement rechecks the
+terminal proof and preserves the immutable original request/key/history; only a
+subsequent explicit new intent gets a new key. Receipt404 is never proof that an
+in-flight request drained. Generic status/visibility failures, transport
+uncertainty, pending/conflict and changed-runtime cases remain fenced.

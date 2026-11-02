@@ -45,7 +45,8 @@ export function ProviderScreen({ controller }: { controller: ShellController }) 
   }, [controller, authority, refresh]);
   return <section className="screen" data-provider-screen>
     <h1>AI 제공자</h1>
-    <p>호스트의 Codex 구독 연결 상태입니다. 생성과 질문 기능은 아직 제공되지 않습니다.</p>
+    <p>호스트의 Codex 구독 연결 상태입니다. 서비스 기능 지원과 계정 준비는 별개입니다.</p>
+    <p>생성 {controller.state.capabilities?.features.generation?"지원됨":"제공되지 않음"} · 질문 {controller.state.capabilities?.features.questions?"지원됨":"제공되지 않음"}. 연결 확인은 요청의 완료나 원본 접근을 보장하지 않습니다.</p>
     <button type="button" aria-disabled={loading} onClick={() => { if (busy.current) return; busy.current = true; setRefresh(value => value + 1); }}>제공자 상태 새로 고침</button>
     <p role="status" aria-live="polite" aria-atomic="true">{loading ? "제공자 상태 확인 중…" : error ? "제공자 상태 확인 실패" : status ? labels[status.state] : "연결 상태를 확인할 수 없습니다"}</p>
     {error && <p role="alert">{error}</p>}

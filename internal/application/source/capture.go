@@ -99,7 +99,7 @@ func (s *Service) Capture(ctx context.Context, token, key, project string, input
 	return s.CaptureAndAdmit(ctx, token, key, project, input, nil)
 }
 func (s *Service) CaptureAndAdmit(ctx context.Context, token, key, project string, input CaptureRequest, admit CaptureAdmission) (domain.Response, error) {
-	return s.captureAndAdmit(ctx, token, key, project, input, admit, "")
+	return s.captureAndAdmit(ctx, token, key, project, input, admit, "", "")
 }
 
 // CaptureGenerationAndAdmit reads only an already accepted generation's frozen
@@ -116,7 +116,22 @@ func (s *Service) CaptureGenerationAndAdmit(ctx context.Context, jobID string, a
 	if json.Unmarshal(g.SourceSelection, &input) != nil || admit == nil {
 		return domain.Response{}, domain.ErrInvalidTarget
 	}
-	return s.captureAndAdmit(ctx, "", g.CaptureOperationID, g.ProjectID, input, admit, jobID)
+	return s.captureAndAdmit(ctx, "", g.CaptureOperationID, g.ProjectID, input, admit, jobID, "generation")
+}
+
+// CaptureQuestionAndAdmit retains the accepted question's exact version context
+// throughout local preparation, independently of its old bearer/render channel.
+func (s *Service) CaptureQuestionAndAdmit(ctx context.Context, jobID string, admit CaptureAdmission) (domain.Response, error) {
+	var q domain.Question
+	e := s.Store.Write(ctx, func(tx app.WriteTx) error { var e error; q, e = tx.QuestionByJob(jobID); return e })
+	if e != nil {
+		return domain.Response{}, e
+	}
+	var input CaptureRequest
+	if json.Unmarshal(q.SourceSelection, &input) != nil || input.VersionID != q.VersionID || admit == nil {
+		return domain.Response{}, domain.ErrInvalidTarget
+	}
+	return s.captureAndAdmit(ctx, "", q.CaptureOperationID, q.ProjectID, input, admit, jobID, "question")
 }
 func generationCapturePrincipal(tx app.WriteTx, actor domain.Session, project string) error {
 	if _, e := tx.Scope(project); e != nil {
@@ -141,22 +156,38 @@ func generationCapturePrincipal(tx app.WriteTx, actor domain.Session, project st
 	}
 	return nil
 }
-func (s *Service) captureAndAdmit(ctx context.Context, token, key, project string, input CaptureRequest, admit CaptureAdmission, generationJob string) (domain.Response, error) {
+func (s *Service) captureAndAdmit(ctx context.Context, token, key, project string, input CaptureRequest, admit CaptureAdmission, acceptedJob, acceptedKind string) (domain.Response, error) {
 	requestedSelection := encoded(input)
 	authenticate := func(ctx context.Context, tx app.WriteTx) (domain.Session, error) {
-		if generationJob == "" {
+		if acceptedJob == "" {
 			return s.Auth.AuthenticateWrite(ctx, tx, token)
 		}
-		j, e := tx.Job(generationJob)
+		j, e := tx.Job(acceptedJob)
 		if e != nil {
 			return domain.Session{}, e
 		}
-		g, e := tx.GenerationIntent(j.ID)
-		if e != nil {
-			return domain.Session{}, e
-		}
-		if j.Kind != "generation" || j.State != "paused" || j.Error != "source_capture_pending" || j.CancelRequested || g.AdmissionReady || g.ProjectID != project || g.CaptureOperationID != key || !bytes.Equal(g.SourceSelection, requestedSelection) {
+		if j.Kind != acceptedKind || j.State != "paused" || j.Error != "source_capture_pending" || j.CancelRequested {
 			return domain.Session{}, domain.ErrStaleWorker
+		}
+		switch acceptedKind {
+		case "generation":
+			g, e := tx.GenerationIntent(j.ID)
+			if e != nil {
+				return domain.Session{}, e
+			}
+			if g.AdmissionReady || g.ProjectID != project || g.CaptureOperationID != key || !bytes.Equal(g.SourceSelection, requestedSelection) {
+				return domain.Session{}, domain.ErrStaleWorker
+			}
+		case "question":
+			q, e := tx.QuestionByJob(j.ID)
+			if e != nil {
+				return domain.Session{}, e
+			}
+			if q.AdmissionReady || q.ProjectID != project || q.VersionID != input.VersionID || q.CaptureOperationID != key || !bytes.Equal(q.SourceSelection, requestedSelection) {
+				return domain.Session{}, domain.ErrStaleWorker
+			}
+		default:
+			return domain.Session{}, domain.ErrInvalidTarget
 		}
 		var scope domain.ProviderScope
 		if json.Unmarshal(j.Scope, &scope) != nil || scope.Purpose != "body" {
@@ -164,6 +195,11 @@ func (s *Service) captureAndAdmit(ctx context.Context, token, key, project strin
 		}
 		if e = appauth.AuthorizeAccepted(tx, scope.PrincipalID, scope.AuthEpoch, "body", scope.Target, scope.CredentialScope); e != nil {
 			return domain.Session{}, e
+		}
+		if acceptedKind == "question" {
+			if e = app.AuthorizeQuestion(tx, scope); e != nil {
+				return domain.Session{}, e
+			}
 		}
 		captured := scope.CredentialScope
 		if captured.Kind != "owner" {
@@ -176,14 +212,14 @@ func (s *Service) captureAndAdmit(ctx context.Context, token, key, project strin
 		return domain.Session{PrincipalID: scope.PrincipalID, AuthEpoch: scope.AuthEpoch, Scope: captured}, nil
 	}
 	principal := func(tx app.WriteTx, actor domain.Session) error {
-		if generationJob != "" {
+		if acceptedKind == "generation" {
 			return generationCapturePrincipal(tx, actor, project)
 		}
 		return s.capturePrincipal(tx, actor, project, input.VersionID)
 	}
 	var actor domain.Session
 	var e error
-	if generationJob == "" {
+	if acceptedJob == "" {
 		actor, e = s.Auth.Authenticate(ctx, token)
 	} else {
 		e = s.Store.Write(ctx, func(tx app.WriteTx) error { var e error; actor, e = authenticate(ctx, tx); return e })
@@ -213,8 +249,8 @@ func (s *Service) captureAndAdmit(ctx context.Context, token, key, project strin
 	}
 	body := encoded(input)
 	route := "/source-captures"
-	if generationJob != "" {
-		route = "/generation-source-captures"
+	if acceptedJob != "" {
+		route = "/" + acceptedKind + "-source-captures"
 	}
 	request := domain.Request{Key: domain.OperationKey{PrincipalID: actor.PrincipalID, OperationID: key}, Method: "POST", Target: "/api/v1/projects/" + project + route, Body: body}
 	var capture domain.SourceCapture
@@ -245,7 +281,7 @@ func (s *Service) captureAndAdmit(ctx context.Context, token, key, project strin
 			}
 			maps[m.SourceID] = m
 		}
-		if generationJob == "" {
+		if acceptedJob == "" {
 			if e = appauth.AuthorizeFreshWorkflowMutation(tx, current, request); e != nil {
 				return e
 			}
@@ -430,8 +466,8 @@ func (s *Service) captureAndAdmit(ctx context.Context, token, key, project strin
 						return app.CheckSourceReadAuthority(tx, current, path.ReadID, project, input.ProviderID)
 					}
 					readPinned := func(consume func(io.Reader) error) error {
-						if generationJob != "" {
-							return s.readPinnedGeneration(turn, project, mapping, path, pinnedGuard, consume)
+						if acceptedJob != "" {
+							return s.readPinnedAccepted(turn, project, mapping, path, pinnedGuard, consume)
 						}
 						return s.readPinnedCapture(turn, token, project, mapping, path, consume)
 					}
@@ -664,7 +700,7 @@ func (s *Service) readPinnedCapture(ctx context.Context, token, project string, 
 // A retained selected snapshot is read under the accepted job's current
 // authority. Reference-only/missing bytes are unavailable; there is no fallback
 // to a different path, project or current working copy for a pinned snapshot.
-func (s *Service) readPinnedGeneration(ctx context.Context, project string, mapping domain.ManagedSourceMapping, path CapturePath, guard func(app.WriteTx) error, consume func(io.Reader) error) error {
+func (s *Service) readPinnedAccepted(ctx context.Context, project string, mapping domain.ManagedSourceMapping, path CapturePath, guard func(app.WriteTx) error, consume func(io.Reader) error) error {
 	var object domain.Object
 	e := s.Store.Write(ctx, func(tx app.WriteTx) error {
 		if e := guard(tx); e != nil {

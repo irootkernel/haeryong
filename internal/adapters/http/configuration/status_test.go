@@ -2,6 +2,7 @@ package configuration_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http/httptest"
 	"time"
@@ -75,4 +76,35 @@ var _ = Describe("status source section", Label("persistence"), func() {
 		Expect(failed.Body.String()).To(ContainSubstring("SERVICE_RECOVERING"))
 		Expect(failed.Body.String()).NotTo(ContainSubstring("not_observed"), "a storage failure never reads as never observed")
 	})
+})
+
+var _ = It("T5QSTATUS01 status reports composed question support without probing or fabricating account readiness", Label("persistence"), func() {
+	store, auth, token := ownerProfile(GinkgoT())
+	core := appconfig.New(store, auth, nil)
+	status := func() map[string]any {
+		r := httptest.NewRequest("GET", "/api/v1/status", nil)
+		r.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		httpconfig.New(core).ServeHTTP(w, r)
+		Expect(w.Code).To(Equal(200))
+		var response struct {
+			Data struct {
+				Provider map[string]any `json:"provider"`
+			} `json:"data"`
+		}
+		Expect(json.Unmarshal(w.Body.Bytes(), &response)).To(Succeed())
+		return response.Data.Provider
+	}
+	Expect(status()).To(Equal(map[string]any{"available": false, "reason": "feature_not_ready"}))
+	core.ProviderTransportAvailable = true
+	before := status()
+	Expect(before["question_available"]).To(BeFalse())
+	Expect(before["generation_available"]).To(BeFalse())
+	core.QuestionsAvailable = true
+	current := status()
+	Expect(current["question_available"]).To(BeTrue())
+	Expect(current["generation_available"]).To(BeFalse())
+	Expect(current["available"]).To(BeNil())
+	Expect(current["reason"]).To(Equal("status_not_observed"))
+	Expect(current["status_url"]).To(Equal("/api/v1/providers"))
 })

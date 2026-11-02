@@ -93,6 +93,21 @@ func guardProviderAuthority(tx WriteTx, j domain.Job, a domain.ProviderAttempt) 
 			return domain.ErrStaleWorker
 		}
 	}
+	if scope.Invocation != nil && scope.Invocation.Question != nil {
+		if j.Kind != "question" {
+			return domain.ErrInvalidTarget
+		}
+		if e = AuthorizeQuestion(tx, scope); e != nil {
+			return e
+		}
+		q, e := tx.Question(scope.Invocation.Question.QuestionID)
+		if e != nil {
+			return e
+		}
+		if q.JobID != j.ID || !q.AdmissionReady {
+			return domain.ErrReconciliation
+		}
+	}
 	if e = AuthorizeTarget(tx, scope.Target); e != nil {
 		return e
 	}
@@ -182,7 +197,7 @@ func ProviderSavedObjects(tx WriteTx, a domain.ProviderAttempt) ([]domain.Object
 		}
 		objects = append(objects, object)
 	}
-	owned, e := GenerationInputObjects(tx, scope)
+	owned, e := ProviderInputObjects(tx, scope)
 	if e != nil {
 		return nil, e
 	}

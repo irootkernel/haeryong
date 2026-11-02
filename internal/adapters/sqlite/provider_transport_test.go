@@ -95,7 +95,7 @@ var _ = It("C03R revision16 migration preserves old attempt facts without invent
 	profile := s.profile
 	Expect(s.Close()).To(Succeed())
 	db := readDB(GinkgoT(), profile)
-	_, e := db.Exec(`DROP TABLE workflow_selections;DROP TABLE draft_history;DROP TABLE drafts;DROP TABLE generation_intents;DROP TABLE provider_transport;DELETE FROM schema_migrations WHERE revision>16;UPDATE libraries SET schema_revision=16;PRAGMA user_version=16`)
+	_, e := db.Exec(dropQuestionSchema + `DROP TABLE workflow_selections;DROP TABLE draft_history;DROP TABLE drafts;DROP TABLE generation_intents;DROP TABLE provider_transport;DELETE FROM schema_migrations WHERE revision>16;UPDATE libraries SET schema_revision=16;PRAGMA user_version=16`)
 	Expect(e).NotTo(HaveOccurred())
 	Expect(db.Close()).To(Succeed())
 	upgraded := New(nil)

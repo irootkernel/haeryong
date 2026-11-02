@@ -304,6 +304,11 @@ func (d *Driver) execute(ctx context.Context, setupTimeout time.Duration, a doma
 		out.Reason = "generation_setup_failed"
 		return out, e
 	}
+	question, e := d.prepareQuestion(a, &inv)
+	if e != nil {
+		out.Reason = "question_setup_failed"
+		return out, e
+	}
 	// Preserve the actual local preparation deadline, independently of caller
 	// cancellation and the later one-use dispatch fence.
 	defer func() {
@@ -440,7 +445,7 @@ func (d *Driver) execute(ctx context.Context, setupTimeout time.Duration, a doma
 	if generation != nil {
 		mode = "workspace-write"
 	}
-	metadata = &domain.ProviderTransport{Generation: generation, Capabilities: &capabilities, Disclosure: disclosures, OrdinaryUsageAllowed: status.OrdinaryUsageAllowed, Provider: "codex", Version: Version, BinarySHA: binarySHA, PreparedAt: time.Now().UTC().Format(time.RFC3339Nano), SetupThread: actual.Thread.ID, AuthMode: "chatgpt", Model: actual.Model, Effort: actual.Effort, CWD: actual.CWD, Approval: actual.Approval, Sandbox: mode, InstructionCount: len(actual.Instructions), DisabledPluginCount: len(actual.DisabledPlugins), FrameSHA: "", AllowanceKnown: status.OrdinaryUsageAllowed != nil}
+	metadata = &domain.ProviderTransport{Generation: generation, Question: question, Capabilities: &capabilities, Disclosure: disclosures, OrdinaryUsageAllowed: status.OrdinaryUsageAllowed, Provider: "codex", Version: Version, BinarySHA: binarySHA, PreparedAt: time.Now().UTC().Format(time.RFC3339Nano), SetupThread: actual.Thread.ID, AuthMode: "chatgpt", Model: actual.Model, Effort: actual.Effort, CWD: actual.CWD, Approval: actual.Approval, Sandbox: mode, InstructionCount: len(actual.Instructions), DisabledPluginCount: len(actual.DisabledPlugins), FrameSHA: "", AllowanceKnown: status.OrdinaryUsageAllowed != nil}
 	record := func() error {
 		e := d.Store.Write(context.WithoutCancel(ctx), func(tx app.WriteTx) error { return tx.RecordProviderTransport(a.ID, *metadata) })
 		if e != nil && out.State == "" && !work.ProviderAuthorityRefusal(e) {
@@ -483,6 +488,11 @@ func (d *Driver) execute(ctx context.Context, setupTimeout time.Duration, a doma
 		generation.SkillInputAcknowledged = true
 		generation.PromptInputAcknowledged = generation.Prompt != nil
 		generation.ReferencesAcknowledged = len(generation.References) > 0
+	}
+	if question != nil {
+		question.PromptInputAcknowledged = true
+		question.ContextInputAcknowledged = question.Context != nil
+		question.ExplanationInputAcknowledged = true
 	}
 	observed := append([]domain.ProviderInput(nil), inputs...)
 	for i := range observed {

@@ -19,15 +19,18 @@ type GenerationTx interface {
 	WorkflowPrincipalByBinding(string) (domain.WorkflowPrincipal, error)
 }
 
-// GenerationInputObjects describes retained non-source request bytes. It does
+// ProviderInputObjects describes retained non-source request bytes. It does
 // not create a source target set or a producing-source observation.
-func GenerationInputObjects(tx WriteTx, scope domain.ProviderScope) ([]domain.Object, error) {
+func ProviderInputObjects(tx WriteTx, scope domain.ProviderScope) ([]domain.Object, error) {
 	out := []domain.Object{}
 	if scope.Invocation == nil {
 		return out, nil
 	}
 	inv := scope.Invocation
-	if inv.Generation == nil {
+	if inv.Generation != nil && inv.Question != nil {
+		return nil, domain.ErrInvalidTarget
+	}
+	if inv.Generation == nil && inv.Question == nil {
 		if inv.PromptRef != nil {
 			return nil, domain.ErrInvalidTarget
 		}
@@ -40,8 +43,17 @@ func GenerationInputObjects(tx WriteTx, scope domain.ProviderScope) ([]domain.Ob
 		}
 		refs = append(refs, *inv.PromptRef)
 	}
-	for _, ref := range inv.Generation.References {
-		refs = append(refs, domain.ProviderText{Hash: ref.ObjectHash, Size: ref.Size})
+	if inv.Generation != nil {
+		for _, ref := range inv.Generation.References {
+			refs = append(refs, domain.ProviderText{Hash: ref.ObjectHash, Size: ref.Size})
+		}
+	}
+	if inv.Question != nil {
+		q := inv.Question
+		refs = append(refs, domain.ProviderText{Hash: q.Explanation.ObjectHash, Size: q.Explanation.Size})
+		if q.Context != nil {
+			refs = append(refs, domain.ProviderText{Hash: q.Context.Hash, Size: q.Context.Size})
+		}
 	}
 	seen := map[string]bool{}
 	for _, ref := range refs {

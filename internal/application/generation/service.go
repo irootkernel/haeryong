@@ -262,7 +262,7 @@ func (s *Service) Start(ctx context.Context, token, key string, input Request) (
 		if e := tx.CreateJob(j); e != nil {
 			return domain.Response{}, e
 		}
-		owned, e := app.GenerationInputObjects(tx, n.Scope)
+		owned, e := app.ProviderInputObjects(tx, n.Scope)
 		if e != nil {
 			return domain.Response{}, e
 		}

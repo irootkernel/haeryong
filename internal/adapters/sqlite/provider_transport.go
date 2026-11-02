@@ -37,6 +37,9 @@ func (t *writeTx) RecordProviderTransport(id string, v domain.ProviderTransport)
 	if e = t.validateGenerationTransport(a, v); e != nil {
 		return e
 	}
+	if e = t.validateQuestionTransport(a, v); e != nil {
+		return e
+	}
 	inputs, e := t.ProviderInputs(id)
 	if e != nil {
 		return e
@@ -80,6 +83,12 @@ func (t *writeTx) RecordProviderTransport(id string, v domain.ProviderTransport)
 				return domain.ErrTransition
 			}
 			before.Generation, after.Generation = merged, merged
+		}
+		if old.Question != nil || v.Question != nil {
+			if !questionTransportAdvance(old.Question, v.Question) {
+				return domain.ErrTransition
+			}
+			before.Question, after.Question = v.Question, v.Question
 		}
 		if before.FrameSHA == "" {
 			after.FrameSHA = ""

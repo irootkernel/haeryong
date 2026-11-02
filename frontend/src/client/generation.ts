@@ -139,7 +139,8 @@ export function requireOriginalRuntime(original:string|undefined,current:string)
 }
 
 /** A resume is a separate mutation: its parent's admission runtime is not its own. */
-export async function recoverGenerationResume(client:HaeryongClient,record:GenerationRecord,runtime:string,save:()=>void,guard:()=>void):Promise<boolean> {
+export interface ProviderResumeRecord {operationId:string;accepted?:{job_id:string};resume?:GenerationResume;resumeHistory?:GenerationResume[]}
+export async function recoverGenerationResume(client:HaeryongClient,record:ProviderResumeRecord,runtime:string,save:()=>void,guard:()=>void):Promise<boolean> {
   const pending=record.resume;
   if(!pending)throw new JournalReadError("original resume missing");
   guard();
@@ -155,7 +156,7 @@ export async function recoverGenerationResume(client:HaeryongClient,record:Gener
   return false;
 }
 
-export async function dispatchGenerationResume(client:HaeryongClient,record:GenerationRecord,runtime:string,save:()=>void,guard:()=>void):Promise<void> {
+export async function dispatchGenerationResume(client:HaeryongClient,record:ProviderResumeRecord,runtime:string,save:()=>void,guard:()=>void):Promise<void> {
   const pending=record.resume;
   if(!pending||!record.accepted)throw new JournalReadError("original resume/job missing");
   guard();requireOriginalRuntime(pending.runtimeGeneration,runtime);
@@ -172,7 +173,7 @@ export async function dispatchGenerationResume(client:HaeryongClient,record:Gene
 
 /** Caller holds the same journal lock as submission/recovery. One save retains
  * the original refusal and releases its slot; no failed write loses history. */
-export function acknowledgeGenerationResume(journal:GenerationJournal,operationId:string,expected:GenerationResume):GenerationRecord {
+export function acknowledgeGenerationResume<T extends ProviderResumeRecord>(journal:{read():T[];save(record:T):void},operationId:string,expected:GenerationResume):T {
   const current=journal.read().find(row=>row.operationId===operationId);
   if(!expected.refused||!current?.resume||JSON.stringify(current.resume)!==JSON.stringify(expected))throw new JournalReadError("original refused resume changed");
   const next=structuredClone(current);

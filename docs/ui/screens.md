@@ -206,3 +206,22 @@ explicit null. Source narrowing remains visible even when a provider change also
 an error and Retry rather than invented editable values. Keyboard and
 emulated-touch browser evidence is separate from the native harness's
 trusted-host DOM interactions.
+
+## Shared Ask implementation (TASK-006-05)
+
+Reader Ask separates preparing the current location from submitting the captured
+question. It displays the saved exact anchor/context, provider, pinned/current
+mode and selected sources, including remembered disclosure/retention and honest
+unverified availability. Source defaults refresh for the next new question;
+changes do not rewrite an existing draft. Provider settings links use the normal
+host route and do not probe or launch a paid request automatically.
+
+Recovery rows and active job controls show their captured scope and original
+identity. Stop, receipt recovery and explicit resume acknowledgement retain that
+identity; selecting another record cannot attach an old job's actions to a new
+request. Saved history displays complete text/context, exact targets and final/
+partial/error state, with observation, posthoc verification, current availability
+and limitations visibly separated. Invalidated or denied server views refresh
+or close independently of the unsent/uncertain local draft. The shared responsive
+layout keeps controls and long immutable identifiers readable; actual keyboard,
+mobile and native evidence remains an execution obligation, not a design claim.

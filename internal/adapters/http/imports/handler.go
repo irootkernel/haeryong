@@ -20,6 +20,7 @@ import (
 
 	generation "haeryong.local/haeryong/internal/application/generation"
 	importer "haeryong.local/haeryong/internal/application/import"
+	"haeryong.local/haeryong/internal/application/questions"
 	appstorage "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
 	"haeryong.local/haeryong/internal/security/session"
@@ -28,6 +29,7 @@ import (
 type handler struct {
 	core       *importer.Service
 	generation *generation.Service
+	questions  *questions.Service
 }
 
 func New(core *importer.Service) http.Handler { return &handler{core: core} }
@@ -36,7 +38,7 @@ func New(core *importer.Service) http.Handler { return &handler{core: core} }
 // and unknown-route responses for APIs outside this adapter's ownership.
 func (h *handler) Handles(r *http.Request) bool {
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/")
-	return h.generation != nil && (path == "generations" || path == "drafts" || strings.HasPrefix(path, "drafts/")) || path == "uploads" || strings.HasPrefix(path, "uploads/") || path == "imports" || path == "packages/validate" || path == "contexts" || strings.HasPrefix(path, "contexts/")
+	return h.questionPath(path) || h.generation != nil && (path == "generations" || path == "drafts" || strings.HasPrefix(path, "drafts/")) || path == "uploads" || strings.HasPrefix(path, "uploads/") || path == "imports" || path == "packages/validate" || path == "contexts" || strings.HasPrefix(path, "contexts/")
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -59,6 +61,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if h.generationRoutes(w, r, token, path, parts, query) {
+		return
+	}
+	if h.questionRoutes(w, r, token, path, parts, query) {
 		return
 	}
 	if r.Method == http.MethodPost && (path == "uploads" || path == "imports" || path == "packages/validate" || (len(parts) == 3 && parts[0] == "uploads" && (parts[2] == "complete" || parts[2] == "abandon"))) {
@@ -507,6 +512,13 @@ func fail(w http.ResponseWriter, err error) {
 		}
 	}
 	details := map[string]any{}
+	var refused *questions.AdmissionRefusal
+	if errors.As(err, &refused) {
+		details["question_admission"] = "refused_before_admission"
+		details["operation_id"] = refused.OperationID
+		details["runtime_generation"] = refused.RuntimeGeneration
+		details["principal_id"] = refused.PrincipalID
+	}
 	var metadata *importer.MetadataError
 	if errors.As(err, &metadata) {
 		details["field"] = metadata.Pointer

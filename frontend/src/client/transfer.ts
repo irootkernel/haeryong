@@ -519,9 +519,10 @@ export class TransferEngine {
     }
   }
 
-  /** Stage one typed generation/draft input through the existing upload engine. */
+  /** Stage a typed object input through the existing upload engine. */
   async beginOwnedUpload(libraryId: string, principalId: string, request: CreateUploadRequest, input: PlannedInput, callbacks: TransferCallbacks = {}): Promise<ImportJournal> {
-    if (request.input_mode !== input.mode || !("project_id" in request.target || "draft_id" in request.target)) throw new TargetMismatchError("preparation target/mode mismatch");
+    const scopedQuestion=(request.purpose==="context"||request.purpose==="body"&&"action" in request.target&&request.target.action==="question")&&"version_id" in request.target&&request.target.version_id!=="";
+    if (request.input_mode !== input.mode || !("project_id" in request.target || "draft_id" in request.target || scopedQuestion)) throw new TargetMismatchError("preparation target/mode mismatch");
     const now = new Date().toISOString();
     const target = request.target;
     const record: ImportJournal = {

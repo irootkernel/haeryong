@@ -289,3 +289,11 @@ label.choice input { width: 18px; height: 18px; }
 .draft-choice { text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .draft-target { overflow-wrap: anywhere; }
 .draft-target dd { margin-inline-start: 0; margin-block-end: 0.5rem; }
+
+/* Ask keeps the captured scope and complete saved context readable in the
+   shared narrow Reader panel. The complete text remains scrollable. */
+.ask-panel, .ask-panel fieldset { min-width: 0; }
+.ask-panel p, .ask-panel label { overflow-wrap: anywhere; }
+.ask-panel input[type="text"], .ask-panel textarea { box-sizing: border-box; width: 100%; min-height: 44px; background: var(--surface); color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+.ask-panel textarea { min-height: 6rem; resize: vertical; }
+.ask-panel select { width: 100%; }

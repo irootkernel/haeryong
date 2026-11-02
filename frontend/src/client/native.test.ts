@@ -508,3 +508,7 @@ test("T4R2RESUME06 the actual native client keeps changed-runtime404 recovery on
  found=true;assert.equal(await recoverGenerationResume(client,record,"changed",()=>{},()=>{}),true);
  assert.deepEqual(fake.calls,[["operation",{operation_id:"resume"}],["operation",{operation_id:"resume"}]]);
 });
+
+test("T5QCITNATIVE01 citation source forwards a closed exact answer/index operation",async()=>{
+ const fake=port(),expected={bytes_sha256:"a".repeat(64),byte_size:"3",media_type:"application/octet-stream"};fake.handlers.set("answerCitationStream",()=>expected);const client=new NativeHaeryongClient(fake as unknown as NativePort);assert.equal(await client.answerCitationStream("answer",3),expected);assert.deepEqual(fake.calls,[["answerCitationStream",{answer_id:"answer",citation_index:3}]]);assert.throws(()=>client.answerCitationStream("answer",-1));assert.equal(fake.calls.length,1);
+});

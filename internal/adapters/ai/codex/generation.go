@@ -21,6 +21,10 @@ import (
 var generationAttemptID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 func (d *Driver) generationCWD(a domain.ProviderAttempt) (string, error) {
+	return d.attemptCWD(a, "generation-")
+}
+
+func (d *Driver) attemptCWD(a domain.ProviderAttempt, prefix string) (string, error) {
 	if !generationAttemptID.MatchString(a.ID) || !filepath.IsAbs(d.Scratch) {
 		return "", domain.ErrInvalidTarget
 	}
@@ -32,7 +36,7 @@ func (d *Driver) generationCWD(a domain.ProviderAttempt) (string, error) {
 	if e != nil || !info.IsDir() || info.Mode().Perm()&0077 != 0 {
 		return "", domain.ErrInvalidTarget
 	}
-	return filepath.Join(d.Scratch, "generation-"+a.ID), nil
+	return filepath.Join(d.Scratch, prefix+a.ID), nil
 }
 func readGenerationSkill(path, expected string) ([]byte, error) {
 	if !filepath.IsAbs(path) || len(expected) != 64 {

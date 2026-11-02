@@ -19,12 +19,7 @@ import (
 
 // BodyRef is the existing sealed body transfer descriptor. The handle is an
 // exact operation/target capability; only its verified bytes are request identity.
-type BodyRef struct {
-	ID        string `json:"object_id"`
-	Hash      string `json:"bytes_sha256"`
-	Size      string `json:"byte_size"`
-	MediaType string `json:"media_type"`
-}
+type BodyRef = domain.BodyReference
 
 func (s *Service) promptTarget(key string, input Request) []byte {
 	return encode(map[string]any{"action": "generation", "operation_id": key, "project_id": input.ProjectID, "document_id": input.DocumentID})

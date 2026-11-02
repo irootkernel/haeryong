@@ -101,7 +101,7 @@ func Validate(r *domain.CopyRequest) error {
 		}
 		for _, kind := range r.Records {
 			switch kind {
-			case "review", "revisit", "reader", "notes", "references":
+			case "review", "revisit", "reader", "notes", "references", "questions":
 			case "decisions":
 				return ErrRecordUnavailable
 			default:

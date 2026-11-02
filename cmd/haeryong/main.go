@@ -37,9 +37,11 @@ import (
 	generation "haeryong.local/haeryong/internal/application/generation"
 	importer "haeryong.local/haeryong/internal/application/import"
 	"haeryong.local/haeryong/internal/application/query"
+	"haeryong.local/haeryong/internal/application/questions"
 	"haeryong.local/haeryong/internal/application/recovery"
 	"haeryong.local/haeryong/internal/application/service"
 	appsource "haeryong.local/haeryong/internal/application/source"
+	appstorage "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/skills"
 )
 
@@ -96,7 +98,7 @@ func parse(args []string) (options, error) {
 			continue
 		}
 		switch key {
-		case "--request-file", "--provider-binary", "--capture", "--other", "--read", "--decision", "--expected-attempt-generation", "--destination", "--metadata-destination", "--records", "--choices", "--index", "--expected-revision", "--flag", "--action", "--if-match", "--if-none-match", "--profile", "--data-dir", "--volume-root", "--port", "--endpoint", "--credential", "--client-dir", "--operation-id", "--project", "--document", "--base-version", "--metadata", "--version", "--path", "--output", "--input", "--state", "--cursor", "--limit", "--directory", "--kind", "--file", "--format", "--expected-config-revision", "--scope", "--name", "--evidence", "--expected-sha256", "--expected-excerpt-file", "--source-id", "--root-path", "--repo-id", "--retention-mode", "--provider-ids", "--plan-id", "--page", "--region", "--coverage-set", "--reference-id", "--query", "--lifecycle", "--versions":
+		case "--source-mode", "--request-file", "--provider-binary", "--capture", "--other", "--read", "--decision", "--expected-attempt-generation", "--destination", "--metadata-destination", "--records", "--choices", "--index", "--expected-revision", "--flag", "--action", "--if-match", "--if-none-match", "--profile", "--data-dir", "--volume-root", "--port", "--endpoint", "--credential", "--client-dir", "--operation-id", "--project", "--document", "--base-version", "--metadata", "--version", "--path", "--output", "--input", "--state", "--cursor", "--limit", "--directory", "--kind", "--file", "--format", "--expected-config-revision", "--scope", "--name", "--evidence", "--expected-sha256", "--expected-excerpt-file", "--source-id", "--root-path", "--repo-id", "--retention-mode", "--provider-ids", "--plan-id", "--page", "--region", "--coverage-set", "--reference-id", "--query", "--lifecycle", "--versions":
 		default:
 			return opt, invalid("unsupported flag: " + key)
 		}
@@ -174,6 +176,12 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 		}
 		return draftCommand(ctx, opt, emit)
 	}
+	if opt.command[0] == "ask" || opt.command[0] == "questions" {
+		if e := validateCommandFlags(opt); e != nil {
+			return e
+		}
+		return questionCommand(ctx, opt, emit)
+	}
 	if opt.command[0] == "generate" {
 		if e := validateCommandFlags(opt); e != nil {
 			return e
@@ -214,6 +222,7 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 			queries := query.New(store, core, store)
 			copyCore := recovery.New(store, core, store)
 			sourceCore := appsource.New(store, core, store, gitreader.New())
+			questionCore := questions.New(store, core, sourceCore, codex.SemanticRequestSHA)
 			profile, profileErr := service.Load(opt.selection)
 			if profileErr != nil {
 				return errors.Join(historicalDiagnostic, profileErr)
@@ -253,7 +262,9 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 				}
 				generationCore := generation.New(store, core, sourceCore, domain.GenerationInvocation{SkillPath: skillPath, SkillSHA: ownedSkill.SHA256, SkillVersion: ownedSkill.Version}, codex.SemanticRequestSHA)
 				queries.GenerationAvailable = true
+				queries.QuestionsAvailable = true
 				configurationCore.GenerationAvailable = true
+				configurationCore.QuestionsAvailable = true
 				managementOrigin = origin
 				configurationCore.RuntimeEndpoint = origin
 				configurationCore.ListenerOverride = opt.portSelected
@@ -262,9 +273,19 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 					return nil, err
 				}
 				externalOrigin = configuredExternalOrigin(configuration.Value)
-				return productHandler(core, origin, configuration.Value, productRoutes{httpsource.New(sourceCore), httpimports.NewGeneration(imports, generationCore), httpv1.New(queries, renderFacade, func() (string, string) { return managementOrigin, externalOrigin }), httpconfig.New(configurationCore)})
+				return productHandler(core, origin, configuration.Value, productRoutes{httpsource.New(sourceCore), httpimports.NewQuestions(imports, generationCore, questionCore), httpv1.New(queries, renderFacade, func() (string, string) { return managementOrigin, externalOrigin }), httpconfig.New(configurationCore)})
 			}}
-			runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: store, Endpoint: endpoint, Work: (work.Dispatcher{Provider: &work.ProviderCoordinator{Store: store, Bytes: store, Driver: providerDriver, Prepare: imports.PrepareGeneration, Apply: imports.ApplyGeneration}, Copies: copyCore, Purge: &work.Purger{Store: store, Bytes: store}, Store: store, Imports: imports, Derived: work.NewMaintenance(store, store)}).Run, CloseDependents: renderFacade.Shutdown, ListenerPort: func(ctx context.Context) (int, error) {
+			runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: store, Endpoint: endpoint, Work: (work.Dispatcher{Provider: &work.ProviderCoordinator{Store: store, Bytes: store, Driver: providerDriver, Prepare: func(ctx context.Context, a domain.ProviderAttempt) error {
+				if e := imports.PrepareGeneration(ctx, a); e != nil {
+					return e
+				}
+				return questionCore.Prepare(ctx, a)
+			}, Apply: func(tx appstorage.WriteTx, a domain.ProviderAttempt) error {
+				if e := imports.ApplyGeneration(tx, a); e != nil {
+					return e
+				}
+				return questionCore.Apply(tx, a)
+			}}, Copies: copyCore, Purge: &work.Purger{Store: store, Bytes: store}, Store: store, Imports: imports, Derived: work.NewMaintenance(store, store)}).Run, CloseDependents: renderFacade.Shutdown, ListenerPort: func(ctx context.Context) (int, error) {
 				configuration, e := store.Configuration(ctx)
 				if e != nil {
 					return 0, e

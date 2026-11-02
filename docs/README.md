@@ -190,3 +190,39 @@ C01's matched-request procedure is unverified with TASK-006-06, and the existing
 Task03 transport qualifications remain. TASK-006-05/06 retain saved Q&A and the
 assembled Epic gate. This record claims no Master overall Epic acceptance or
 physical-device proof.
+
+## Saved questions delivery
+
+TASK-006-05 adds typed read-only provider input and durable final/partial/error
+question history at schema revision 19. Shared Ask freezes the exact location,
+full context, provider and source selection before explicit Submit. Saved reads
+use current owner authority and do not execute AI. HTTP, CLI and closed native
+ports share the original receipt/recovery and lifetime guards. The
+[saved-question record](testing/saved-questions.md) records offline and rendered
+proof with its controlled zero-model/focus-timing qualifications, the strict
+output-contract correction, the original three real-provider cases and one
+additive actual source-absence case with bounded semantic passage. Complete saved
+reads and zero-repeat evidence retain their executed scope. The pre-review
+whole-candidate headless common passed, including all 309 mandatory members
+exactly once. The first technical review identified four correction groups.
+Their current source adds optional runtime regions, exact retained citation
+inspection, durable failed-receipt refusal recovery and honest history states.
+The same-key admission race was reproduced before its corrected regression
+passed. Affected checks and canonical frontend verification passed. Replacement
+common passed 1,333 Go and 247 Python cases and all 316 mandatory Go tuples exactly
+once. Current controlled native proof covers strict trusted Submit and complete
+partial-answer/context/source reads. Bounded browser evidence covers history,
+terminal refusal recovery, final-answer and retained-source reads, authority-loss
+late-response clearing and actual invalid-output error UI. The later acquisition
+passed with its expected selected accounting/shutdown error; no pristine service
+exit or result of three positive answers is inferred. One positive UI Submit corresponded to two
+same-key backend 202 deliveries without duplicate Execute. Earlier failed cohorts
+retain their outcomes. The second technical assessment completed with four fresh
+roles and no unresolved valid findings. The proper final independent assessment
+passed all 29 due obligations and judged the bounded original Goal achieved; the
+native Goal is recorded achieved. The bounded Task05 delivery is complete.
+Delegated member acceptance, the normal completion commit and native finalization
+follow under existing authority; none is recorded as performed here. Q3's useful
+abstention stays a partial answer. Task04's whole-version Generation seam remains
+OPEN before Task06; assembled Epic, C01, live/device and Master overall acceptance
+obligations retain their owners.

@@ -638,8 +638,12 @@ func (s *Store) exportMetadata(ctx context.Context, set domain.CopySet, v domain
 		if e := enc.Encode(map[string]any{"kind": kind, "owner_id": set.OwnerID, "version_id": v.VersionID, "value": raw}); e != nil {
 			return e
 		}
-		if kind == "notes" {
-			contexts, e := sqlite.CopyNoteObjects(ctx, set.Snapshot, set.OwnerID, raw, copyObject)
+		if kind == "notes" || kind == "questions" {
+			objects := sqlite.CopyNoteObjects
+			if kind == "questions" {
+				objects = sqlite.CopyQuestionObjects
+			}
+			contexts, e := objects(ctx, set.Snapshot, set.OwnerID, raw, copyObject)
 			if e != nil {
 				return e
 			}

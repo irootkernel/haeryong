@@ -360,3 +360,25 @@ create an attempt observation. Missing, denied, unconsumed and unsupported legac
 rows retain conservative facts; an ambiguous marker alone cannot invent history.
 Independent payload, selected snapshot, result and other owners keep their normal
 coherent object-copy and retention requirements.
+
+### Saved question dependencies (TASK-006-05)
+
+Coherent backup includes question/answer records and their full owned text,
+display context, explanation input and saved answer bodies. Existing typed job,
+attempt and orphan input pins remain separate from source-retention ownership.
+Restore preserves original producing-attempt/citation/audit facts and rotates
+runtime/auth/stream epochs normally. Current owner saved reads recover after
+bootstrap and applicable source policy review; an old execution epoch does not
+permanently deny saved citations. Review does not redispatch paused work or
+fabricate an original observation. Source bytes remain subject to current
+read authority and their actual retention mode.
+
+Scoped export accepts the explicit `records:["questions"]` selection and keeps
+those records/objects outside original payload roots. It includes saved records,
+not unpublished PreparedAnswer candidates, operational provider history or
+credentials. Question/answer identities, anchors, body/context descriptors and
+linked dependencies are verified before accepting the copy grammar. Source
+bytes are not implicitly included; explicit retained-source selection retains
+its existing scope/ancestry rules. Plain export stays the original result tree.
+Trash and purge retain their current confirmed plans, reusable-owner protections
+and resumable pin-safe deletion behavior for the new record family.

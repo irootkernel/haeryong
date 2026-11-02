@@ -1,4 +1,4 @@
-import type {RetainedSourceRead,GenerationRequest,GenerationAccepted,DraftView,DraftPatch} from "./types.ts";
+import type {QuestionRequest,QuestionAccepted,QuestionView,AnswerView,RetainedSourceRead,GenerationRequest,GenerationAccepted,DraftView,DraftPatch} from "./types.ts";
 import { providerStatus as verifiedProviderStatus } from "./provider-status.ts";
 // Narrow native transport boundary. The desktop companion (TASK-003-05) binds
 // these named operations to a typed Go proxy. The port accepts no arbitrary
@@ -138,6 +138,15 @@ export type PersonalPutCall = { kind: PersonalKind; version_id: string; page: st
 
 /** Named operations only; each overload pins an exact payload/result pair. */
 export interface NativePort {
+  call(operation:"questionStart",payload:{version_id:string;request:QuestionRequest;operation_id:string}):Promise<DecisionResult>;
+  call(operation:"questionList",payload:{version_id:string;cursor?:string}):Promise<ListPage<QuestionView>>;
+  call(operation:"questionGet",payload:{question_id:string}):Promise<QuestionView>;
+  call(operation:"questionAnswers",payload:{question_id:string;cursor?:string}):Promise<ListPage<AnswerView>>;
+  call(operation:"answerGet",payload:{answer_id:string}):Promise<AnswerView>;
+  call(operation:"questionTextStream",payload:{question_id:string}):Promise<AnnotationStream>;
+  call(operation:"questionContextStream",payload:{question_id:string}):Promise<AnnotationStream>;
+  call(operation:"answerBodyStream",payload:{answer_id:string}):Promise<AnnotationStream>;
+  call(operation:"answerCitationStream",payload:{answer_id:string;citation_index:number}):Promise<AnnotationStream>;
   call(operation:"retainedSourceReads",payload:{project_id:string;source_id:string;cursor?:string}):Promise<ListPage<RetainedSourceRead>>;
   call(operation:"generationStart",payload:{request:GenerationRequest;operation_id:string}):Promise<DecisionResult>;
   call(operation:"draftList",payload:{project_id?:string;cursor?:string}):Promise<ListPage<DraftView>>;
@@ -243,6 +252,7 @@ export interface NativePort {
 }
 
 export const NATIVE_OPERATIONS = [
+ "questionStart","questionList","questionGet","questionAnswers","answerGet","questionTextStream","questionContextStream","answerBodyStream","answerCitationStream",
  "retainedSourceReads","generationStart","draftList","draftGet","draftHistory","draftPatch","draftPublish",
   "lifecyclePlan", "lifecyclePlanGet", "lifecyclePlanCommit", "trashList",
   "annotationList", "annotationGet", "annotationHistory", "annotationCreate", "annotationPatch", "annotationDelete", "annotationBodyStream", "annotationContextStream", "revisitGet", "revisitPut",
@@ -543,6 +553,14 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
   async #savedStream(operation:"annotationBodyStream"|"annotationContextStream",id:string,revision:number):Promise<AnnotationStream>{const era=this.#era;const s=await this.#freshStream(()=>this.#port.call(operation,{annotation_id:id,revision}),era);return {...s,body:eraGuardedStream(s.body,()=>era!==this.#era)};}
 
   generationStart(request:GenerationRequest,key:string):Promise<GenerationAccepted>{const era=this.#era;return sourceWrite<GenerationAccepted>(key,()=>this.#fresh(this.#port.call("generationStart",{request,operation_id:key}),era),id=>{if(era!==this.#era)throw new StaleResponseError();return this.operation(id);},true);}
+  questionStart(versionId:string,request:QuestionRequest,key:string):Promise<QuestionAccepted>{const era=this.#era;return sourceWrite<QuestionAccepted>(key,()=>this.#fresh(this.#port.call("questionStart",{version_id:versionId,request,operation_id:key}),era),id=>{if(era!==this.#era)throw new StaleResponseError();return this.operation(id);},true);}
+  questionList(versionId:string,cursor?:string):Promise<ListPage<QuestionView>>{return this.#fresh(this.#port.call("questionList",{version_id:versionId,cursor}),this.#era);}
+  questionGet(id:string):Promise<QuestionView>{return this.#fresh(this.#port.call("questionGet",{question_id:id}),this.#era);}
+  questionAnswers(id:string,cursor?:string):Promise<ListPage<AnswerView>>{return this.#fresh(this.#port.call("questionAnswers",{question_id:id,cursor}),this.#era);}
+  answerGet(id:string):Promise<AnswerView>{return this.#fresh(this.#port.call("answerGet",{answer_id:id}),this.#era);}
+  questionTextStream(id:string):Promise<AnnotationStream>{return this.#fresh(this.#port.call("questionTextStream",{question_id:id}),this.#era);}
+  questionContextStream(id:string):Promise<AnnotationStream>{return this.#fresh(this.#port.call("questionContextStream",{question_id:id}),this.#era);}
+  answerBodyStream(id:string):Promise<AnnotationStream>{return this.#fresh(this.#port.call("answerBodyStream",{answer_id:id}),this.#era);}
   draftList(projectId?:string,cursor?:string):Promise<ListPage<DraftView>>{return this.#fresh(this.#port.call("draftList",{...(projectId?{project_id:projectId}:{}),...(cursor?{cursor}:{})}),this.#era);}
   draftGet(id:string):Promise<DraftView>{return this.#fresh(this.#port.call("draftGet",{draft_id:id}),this.#era);}
   draftHistory(id:string,cursor?:string):Promise<ListPage<DraftView>>{return this.#fresh(this.#port.call("draftHistory",{draft_id:id,...(cursor?{cursor}:{})}),this.#era);}
@@ -567,6 +585,7 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
   }
 
   configurationView(): Promise<ConfigurationView> { return this.#fresh(this.#port.call("configurationView", {}), this.#era); }
+  answerCitationStream(id:string,index:number):Promise<AnnotationStream>{if(!Number.isSafeInteger(index)||index<0)throw Error("Invalid citation index");return this.#fresh(this.#port.call("answerCitationStream",{answer_id:id,citation_index:index}),this.#era);}
   retainedSourceReads(projectId:string,sourceId:string,cursor?:string):Promise<ListPage<RetainedSourceRead>> {return this.#fresh(this.#port.call("retainedSourceReads",{project_id:projectId,source_id:sourceId,cursor}),this.#era);}
 
   projectSources(projectId: string, cursor?: string): Promise<ListPage<ProjectSourceView>> {

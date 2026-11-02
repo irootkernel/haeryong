@@ -136,7 +136,7 @@ func (t *writeTx) PrepareProviderAttempt(a domain.ProviderAttempt, inputs []doma
 	if json.Unmarshal(j.Scope, &scope) != nil {
 		return domain.ErrInvalidTarget
 	}
-	owned, e := app.GenerationInputObjects(t, scope)
+	owned, e := app.ProviderInputObjects(t, scope)
 	if e != nil {
 		return e
 	}
@@ -435,6 +435,24 @@ func (t *writeTx) ResumeProviderJob(id string, generation int64, decision string
 			if decision == "retry" && intent.PreparedVersion != nil {
 				// A prepared candidate belongs to its saved attempt. Use that
 				// candidate or a new explicit intent; a new result cannot replace it.
+				return j, domain.ErrTransition
+			}
+		}
+	}
+	if j.Kind == "question" && decision != "reconcile_only" {
+		var scope domain.ProviderScope
+		if json.Unmarshal(j.Scope, &scope) != nil {
+			return j, domain.ErrInvalidTarget
+		}
+		if scope.Invocation != nil && scope.Invocation.Question != nil {
+			question, e := t.QuestionByJob(j.ID)
+			if e != nil {
+				return j, e
+			}
+			if !question.AdmissionReady {
+				return j, domain.ErrReconciliation
+			}
+			if decision == "retry" && question.PreparedAnswer != nil {
 				return j, domain.ErrTransition
 			}
 		}

@@ -19,14 +19,15 @@ import (
 // or fresh default capture. Request bytes and resolved defaults remain in the
 // operation journal; this index never replaces those original semantics.
 type CommandIntent struct {
-	CopyAction       string `json:"copy_action,omitempty"`
-	Method           string `json:"method"`
-	Target           string `json:"target"`
-	SourcePath       string `json:"source_path,omitempty"`
-	MetadataPath     string `json:"metadata_path,omitempty"`
-	ProjectID        string `json:"explicit_project_id,omitempty"`
-	SourceID         string `json:"explicit_source_id,omitempty"`
-	ExpectedRevision string `json:"explicit_expected_revision,omitempty"`
+	QuestionSelectors string `json:"question_selectors,omitempty"`
+	CopyAction        string `json:"copy_action,omitempty"`
+	Method            string `json:"method"`
+	Target            string `json:"target"`
+	SourcePath        string `json:"source_path,omitempty"`
+	MetadataPath      string `json:"metadata_path,omitempty"`
+	ProjectID         string `json:"explicit_project_id,omitempty"`
+	SourceID          string `json:"explicit_source_id,omitempty"`
+	ExpectedRevision  string `json:"explicit_expected_revision,omitempty"`
 }
 
 func commandKey(identity transfer.Identity, intent CommandIntent) (string, error) {

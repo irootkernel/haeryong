@@ -34,6 +34,12 @@ func validateCommandFlags(opt options) error {
 		}
 	case "generate":
 		add("project request-file operation-id")
+	case "ask":
+		add("version page region source-mode request-file operation-id")
+	case "questions":
+		if verb == "list" {
+			add("version cursor")
+		}
 	case "auth":
 		if len(args) >= 3 && args[1] == "grant" {
 			switch args[2] {

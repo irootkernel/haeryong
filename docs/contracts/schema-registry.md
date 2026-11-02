@@ -1112,7 +1112,7 @@ inference, source capture or account/configuration mutation. Its data object is:
 
 features.provider indicates installed production transport support, not account
 readiness or public question/generation admission. Task03 did not expose generation or questions. Task04 now separately wires
-features.generation; features.questions remains false. The shared native operation providerStatus
+features.generation; Task05 separately wires features.questions when its service is composed. The shared native operation providerStatus
 accepts exactly an empty JSON object and forwards only this GET. Unknown or
 malformed payload cannot reach HTTP. No native IDs, CWD, private invocation,
 source bodies, raw configuration, credentials or reasoning enter this projection.
@@ -1202,3 +1202,83 @@ are required before rows are returned. Page size does not limit total selection.
 The chooser uses exact retained path/read identities; missing or unavailable
 bytes never select current files implicitly. Existing pinned-byte admission
 rechecks project/source/path and actual retained bytes.
+
+## Saved question implementation projection (TASK-006-05)
+
+The API remains v1 and package schema 1.0; SQLite revision 19 adds saved question
+and answer ownership. The typed provider invocation has mutually exclusive
+`generation` and `question` consumers. A question uses the existing job,
+provider-attempt, result, receipt and resume state machines in read-only mode.
+
+The closed creation object is
+`{question?|body_ref?,page_path,region_id,page_query?,page_fragment?,source_mode?,context_ref?|display_state?,provider_id?,model?,effort?,source_selection?}`.
+Exactly one text selector is present. HTTP requires explicit nullable
+page_path/region_id; region requires its exact page. Inline display_state and
+context_ref are mutually exclusive. Empty/null/unknown selectors do not select
+another page or default silently. `body_ref` identifies the complete sealed
+question text as `{object_id,bytes_sha256,byte_size,media_type}`; byte_size is a
+nonnegative decimal string and media_type is text/plain. The body upload uses
+`purpose=body,input_mode=object,target={operation_id,action:question,version_id,page_path}`; page_path is required and explicitly nullable.
+The real object transfer entry is the existing fixed `_input`, not a user path.
+Display state uses its separate purpose=context upload and exact
+`{version_id,page_path,render_instance_id}` target before POST /contexts.
+
+Creation returns `{operation_id,question_id,job_id,job_url}` with status 202.
+A question view carries question_id, project_id, document_id, version_id, job_id,
+job_state, nullable job_error/latest_answer_id, operation_id, created_at, nullable
+page_path/region_id, page_query/page_fragment, body_ref/text_url, nullable
+context_ref/display_context, explanation_reference, source_mode, nullable
+target_set_id, resolved targets, requested_selection and limitations. Detail also
+includes the first answers page. Public display_context is
+`{context_ref,bytes_sha256,byte_size,media_type,render_instance_id}` with decimal
+byte_size and explicitly nullable render_instance_id. Saved body_ref is
+`{object_id,bytes_sha256,byte_size,media_type}`. Lists use `{items,next_cursor}`;
+service page size is a cursor transport detail, not an author/content quota.
+
+An answer view is
+`{answer_id,question_id,attempt_id,state,created_at,body_ref,body_url,citations,explanation_references,limitations}`.
+Each citation requires the original union's explicit nullable read_id,
+verification_id and input_origin, target_set_id, canonical source/location and
+bytes_sha256; package_evidence_ref remains optional. Runtime views add current
+availability and nullable bytes_origin/reason/observed_at/verified_at. Missing
+nullable members are malformed, not an implicit observation basis. Explanation
+references require version_id, nullable page_path/region_id and bytes_sha256.
+Limitations are `{code,message}`. Typed final output is exactly
+`{state:final|partial,body,citations,explanation_references,limitations}`; error
+answers are service settlement records, not model claims of completed support.
+
+Canonical Git source identity compares kind/repo_id/object_format/exact_revision;
+snapshot identity compares kind/snapshot_sha256. Authored metadata wrappers and
+local retention labels cannot create a different source identity, but exact
+location/hash, accepted selection, owner/version and current read guards still
+must match. Original published/verification JSON stays unchanged. Saved citation
+availability uses the current owner's source-read policy, independently of old
+attempt auth_epoch and provider_ids disclosure. Revoking only AI disclosure does
+not revoke owner retained reads; removing current source authority does. Restore
+review can make source bytes unavailable while saved answer text remains readable.
+Original observations, verification time and attempt scope are never rewritten.
+
+
+Question display regions are optional page-local runtime anchors. Admission and
+ongoing authority validate the exact visible immutable page/object/hash while
+retaining the original region/query/fragment/context without requiring authored
+region metadata. The provider explanation_region frame marks metadata_status as
+`declared` or `not_declared`; missing optional metadata is null and does not prove
+a project-source region or observation. Generation reference policy is unchanged.
+
+The closed native operation `answerCitationStream` accepts exactly
+`{answer_id,citation_index}` where the index is a nonnegative integer. It opens
+only the matching saved-answer citation source route and reuses the existing
+verified stream descriptor/byte bridge. Its per-pull HEAD guard covers both
+current answer visibility and current source authority. No arbitrary route,
+source root or fresh-source selector is accepted. The public citation union
+retains every original nullable observation member unchanged.
+
+
+Question source-policy refusal is an existing operation-ledger failed response,
+not a Question/job or a new schema/queue. Its closed typed refusal normalization
+commits 403/error metadata before publication of the refusal proof. The original
+semantic request fingerprint and terminal receipt immutability prevent delayed
+same-key admission. The error's question_admission marker alone and a missing
+receipt cannot authorize acknowledgement; the client requires the matching
+current-authorized failed receipt under the original runtime and owner.

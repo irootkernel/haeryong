@@ -6,7 +6,7 @@ with the standard optional `--operation-id`. It journals the exact body and
 validator through the existing mutation recovery path. It never infers retry
 authority from a lost response, new operation ID or local process exit. The
 command resumes an existing eligible provider job. TASK-006-04 now implements
-generation creation; saved-question creation remains with TASK-006-05.
+generation creation; TASK-006-05 adds saved-question creation and history below.
 jobs show/list JSON retains the
 scoped provider_attempts counts and unknown-outcome reason, including older
 uncertain attempts on a completed current job. Explicit reconcile_only can
@@ -463,3 +463,38 @@ and optional metadata under exact draft targets. Original operation replay does
 not require the old local directory to remain. Stale base/validator conflicts
 retain the candidate and original intent; replacement cannot alter its base.
 No command automatically completes personal Review.
+
+## Saved Ask and question history (TASK-006-05)
+
+```sh
+haeryong ask --version VERSION --request-file REQUEST [--page PATH] [--region ID] [--source-mode pinned|current] [--operation-id K]
+haeryong questions list --version VERSION [--cursor CURSOR]
+haeryong questions show QUESTION
+```
+
+Ask defaults to the whole exact version; a non-null region requires its page.
+The strict request file uses the question creation shape, with omitted nullable
+anchors filled only by the CLI's captured whole-version/page selection. Explicit
+flags and file selectors must agree. Current owner authentication is required;
+there is no provider/agent owner fallback or implicit workflow scope expansion.
+
+Before preparation, the caller records its automatic or explicit K, original
+launcher principal/library/runtime, complete request snapshot and captured
+selectors. It snapshots full question text and serialized display_state, then
+uses separate durable object-upload/seal and context-create identities. The
+final question body holds body_ref/context_ref rather than duplicating large
+text/state. An existing context_ref retains its original binding. Independent
+preparation keys never replace K, and byte limits in a selected provider are not
+a storage/author-state cap.
+
+Same-key reentry reads the original receipt before reopening request files or
+resolving later defaults. A missing receipt across runtime change requires
+reconciliation; no automatic POST or new Execute follows. Unknown results keep
+the original pending key in machine error metadata. Definitive results release
+an automatic pending entry only after successful caller output, using the
+original launcher and intent. Output failure retains exact recovery identity.
+Saved question show/list and completed Ask output enumerate saved answer history
+and stream full question/context/body under current authority. Reopening saved
+history never executes the provider. Partial/error output is not a completed
+verified answer. Jobs cancel/resume retains the existing explicit decision,
+ETag, expected-generation, restore-hold and receipt-first semantics.

@@ -652,3 +652,27 @@ pending; no implicit rebase or paid retry is introduced. A stopped older action
 cannot authorize a later callback, and a new explicit acknowledgement has its
 own cancellation lifetime after the old promise settles. These caller records
 change no job-resume route, decision union or server authority.
+
+## Saved question ownership and events (TASK-006-05)
+
+Question admission reserves its immutable captured scope and existing provider
+job before source capture is adopted. Pending source selection retains actually
+consumed snapshot ancestry so Trash/purge/cancellation cannot lose an in-flight
+dependency. Initial admission, dispatch, incremental input, preparation and
+answer application retain current accepted-principal/version/source/epoch
+checks. No second queue or provider-attempt ledger is added.
+
+The typed question result is prepared outside the writer and adopted in a short
+guarded transaction. Its exact producing attempt and complete final/partial/error
+record are retained. A prepared answer pauses safely if current authority cannot
+apply it; retry refuses before mutating attempt/job/retry authorization, while a
+permitted saved continuation consumes the owned result with no Execute. Unknown
+work, restore orphans and explicit new-attempt decisions retain existing rules.
+
+Answer settlement emits resource_kind=question, resource_id=question_id,
+kind=answer.saved in the normal transactional outbox. Bulk replay and single
+redelivery resolve the actual record owner and current version/project/lifecycle.
+Hidden, missing or foreign records become content-free library.invalidated at
+the same stream sequence/epoch rather than exposing question/answer IDs. Current
+visible owner events retain their exact original event. Saved views refresh on
+these invalidations without resubmitting drafts or clearing unresolved identity.

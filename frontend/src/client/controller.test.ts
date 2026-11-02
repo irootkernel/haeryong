@@ -57,6 +57,16 @@ function operationView(id: string, state = "completed"): OperationView {
 }
 
 class FakeClient implements HaeryongClient, CredentialAware {
+async questionStart():Promise<never>{throw new Error("not used in controller tests");}
+async questionList():Promise<never>{throw new Error("not used in controller tests");}
+async questionGet():Promise<never>{throw new Error("not used in controller tests");}
+async questionAnswers():Promise<never>{throw new Error("not used in controller tests");}
+async answerGet():Promise<never>{throw new Error("not used in controller tests");}
+async questionTextStream():Promise<never>{throw new Error("not used in controller tests");}
+async questionContextStream():Promise<never>{throw new Error("not used in controller tests");}
+async answerBodyStream():Promise<never>{throw new Error("not used in controller tests");}
+async answerCitationStream():Promise<never>{throw new Error("not used in controller tests");}
+async consumeContext():Promise<never>{throw new Error("not used in controller tests");}
  jobResume():Promise<unknown>{return Promise.reject(new Error("not bound"));}
 async retainedSourceReads():Promise<never>{throw new Error("not provided by controller fixture");}
 async generationStart():Promise<never>{throw new Error("not provided by controller fixture");}

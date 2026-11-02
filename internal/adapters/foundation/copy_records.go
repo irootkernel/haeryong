@@ -47,21 +47,32 @@ func copyShape(raw []byte, t reflect.Type) error {
 	}
 	fields := map[string]reflect.StructField{}
 	required := map[string]bool{}
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		tag := strings.Split(f.Tag.Get("json"), ",")
-		name := tag[0]
-		if name == "-" {
-			continue
-		}
-		if name == "" {
-			name = f.Name
-		}
-		fields[name] = f
-		if !strings.Contains(f.Tag.Get("json"), ",omitempty") {
-			required[name] = true
+	// JSON flattens an anonymous value struct such as GenerationReference's
+	// ExplanationReference. Preserve the same closed member grammar rather than
+	// requiring a synthetic nested field that the producer never writes.
+	var addFields func(reflect.Type)
+	addFields = func(t reflect.Type) {
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+			if f.Anonymous && f.Type.Kind() == reflect.Struct && f.Tag.Get("json") == "" {
+				addFields(f.Type)
+				continue
+			}
+			tag := strings.Split(f.Tag.Get("json"), ",")
+			name := tag[0]
+			if name == "-" {
+				continue
+			}
+			if name == "" {
+				name = f.Name
+			}
+			fields[name] = f
+			if !strings.Contains(f.Tag.Get("json"), ",omitempty") {
+				required[name] = true
+			}
 		}
 	}
+	addFields(t)
 	seen := map[string]bool{}
 	for d.More() {
 		key, e := d.Token()
@@ -120,10 +131,12 @@ type exportBindings struct {
 	required     map[exportLink]bool
 	dependencies map[exportLink]string
 	values       map[string]json.RawMessage
+	questions    map[string]domain.Question
+	answers      map[string]domain.QuestionAnswer
 }
 
 func newExportBindings(ctx context.Context) *exportBindings {
-	return &exportBindings{ctx: ctx, notes: map[noteIdentity]*noteRevisions{}, contexts: map[string]exportContext{}, required: map[exportLink]bool{}, dependencies: map[exportLink]string{}, values: map[string]json.RawMessage{}}
+	return &exportBindings{ctx: ctx, notes: map[noteIdentity]*noteRevisions{}, contexts: map[string]exportContext{}, required: map[exportLink]bool{}, dependencies: map[exportLink]string{}, values: map[string]json.RawMessage{}, questions: map[string]domain.Question{}, answers: map[string]domain.QuestionAnswer{}}
 }
 func (b *exportBindings) finish(payload *exportView, selected map[string]domain.CopyVersion) error {
 	used := map[string]bool{}
@@ -164,6 +177,9 @@ func (b *exportBindings) finish(payload *exportView, selected map[string]domain.
 		if !qualified {
 			return domain.ErrContentIntegrity
 		}
+	}
+	if e := b.finishQuestions(payload, selected, used); e != nil {
+		return e
 	}
 	for link, state := range b.dependencies {
 		v, included := selected[link.version]
@@ -222,6 +238,8 @@ func (b *exportBindings) record(payload, view *exportView, selected domain.CopyV
 	}
 	b.owner = row.Owner
 	switch row.Kind {
+	case "questions":
+		return b.questionRecord(payload, view, selected, row)
 	case "notes":
 		var n domain.Annotation
 		if e := decodeCopyValue(row.Value, &n); e != nil {

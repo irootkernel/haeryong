@@ -33,9 +33,16 @@ const sourceJobDependencies = sourceReadDependencies + `, generation_source_cont
  JOIN source_read_contexts c ON c.read_id=r.value
  UNION SELECT DISTINCT g.job_id,ctx.version_id FROM generation_intents g JOIN jobs j ON j.job_id=g.job_id JOIN source_captures capture ON capture.operation_id=json_extract(g.value,'$.CaptureOperationID') AND capture.principal_id=json_extract(j.scope,'$.principal_id') AND capture.project_id=json_extract(g.value,'$.ProjectID'),json_each(capture.requested_selection,'$._retained_read_ids') r
  JOIN source_read_contexts ctx ON ctx.read_id=r.value WHERE capture.state='capturing'
+), question_source_contexts(job_id,version_id) AS (
+ SELECT q.job_id,q.version_id FROM questions q
+ UNION SELECT DISTINCT q.job_id,c.version_id FROM questions q,json_each(q.value,'$.SourceReadIDs') r
+ JOIN source_read_contexts c ON c.read_id=r.value
+ UNION SELECT DISTINCT q.job_id,ctx.version_id FROM questions q JOIN jobs j ON j.job_id=q.job_id JOIN source_captures capture ON capture.operation_id=json_extract(q.value,'$.CaptureOperationID') AND capture.principal_id=q.owner_id AND capture.project_id=q.project_id,json_each(capture.requested_selection,'$._retained_read_ids') r
+ JOIN source_read_contexts ctx ON ctx.read_id=r.value WHERE capture.state='capturing'
 ), source_job_contexts(job_id,version_id) AS (
  SELECT i.job_id,c.version_id FROM job_inputs i JOIN source_read_contexts c ON c.read_id=i.read_id
  UNION SELECT job_id,version_id FROM generation_source_contexts
+ UNION SELECT job_id,version_id FROM question_source_contexts
 ) `
 
 func (t *writeTx) sourceReadVersions(id string) ([]string, error) {

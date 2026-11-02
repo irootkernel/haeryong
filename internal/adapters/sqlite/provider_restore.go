@@ -407,8 +407,8 @@ func RetainProviderOrphans(ctx context.Context, path string, input io.Reader, av
 			if e = json.Unmarshal(node, &fact); e != nil {
 				return e
 			}
-			if fact.Transport != nil && fact.Transport.Generation != nil {
-				owned := generationTransportObjects(fact.Transport.Generation)
+			if fact.Transport != nil {
+				owned := transportOwnedObjects(fact.Transport)
 				for _, object := range owned {
 					if len(object.Hash) != 64 || object.Size < 0 {
 						return domain.ErrInvalidTarget

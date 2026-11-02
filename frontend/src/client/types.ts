@@ -491,7 +491,9 @@ export interface ResultUploadRequest {
 
 export type GenerationBodyUpload = {purpose:"body";input_mode:"object";target:{operation_id:string;action:"generation";project_id:string;document_id:string|null}};
 export type DraftMetadataUpload = {purpose:"metadata";input_mode:"object";target:{operation_id:string;action:"draft_replace";draft_id:string}};
-export type CreateUploadRequest = ResultUploadRequest | GenerationBodyUpload | DraftMetadataUpload | {purpose:"body";input_mode:"object";target:({operation_id:string;action:"annotation_create";version_id:string;page_path:string|null}|{operation_id:string;action:"annotation_edit";annotation_id:string})};
+export type QuestionBodyUpload={purpose:"body";input_mode:"object";target:{operation_id:string;action:"question";version_id:string;page_path:string|null}};
+export type DisplayContextUpload={purpose:"context";input_mode:"object";target:{version_id:string;page_path:string|null;render_instance_id:string|null}};
+export type CreateUploadRequest = ResultUploadRequest | GenerationBodyUpload | DraftMetadataUpload | QuestionBodyUpload | DisplayContextUpload | {purpose:"body";input_mode:"object";target:({operation_id:string;action:"annotation_create";version_id:string;page_path:string|null}|{operation_id:string;action:"annotation_edit";annotation_id:string})};
 
 /** Binary payload for one streamed entry chunk. */
 export interface EntryChunk {
@@ -845,7 +847,49 @@ export interface DraftView {
 }
 export type DraftPatch={action:"reject"}|{action:"replace";upload_id:string;metadata_ref?:BodyReference};
 
+export interface QuestionRequest {
+ question?:string;body_ref?:BodyReference;page_path:string|null;region_id:string|null;
+ page_query?:string;page_fragment?:string;context_ref?:string;display_state?:unknown;
+ source_mode?:"pinned"|"current";source_selection?:GenerationSourceSelection;
+ provider_id?:string;model?:string;effort?:string;
+}
+export interface QuestionAccepted {operation_id:string;question_id:string;job_id:string;job_url:string}
+export interface QuestionLimitation {code:string;message:string}
+export interface QuestionCitation {
+ basis:"observed_input"|"posthoc_verified";read_id:string|null;verification_id:string|null;
+ input_origin:"daemon_supplied"|"native_observed"|null;target_set_id:string;
+ source:Record<string,unknown>;location:Record<string,unknown>;bytes_sha256:string;
+ package_evidence_ref?:{version_id:string;evidence_id:string};
+ availability:"available"|"unavailable"|"denied";bytes_origin:string|null;reason:string|null;
+ observed_at:string|null;verified_at:string|null;
+}
+export interface AnswerView {
+ answer_id:string;question_id:string;attempt_id:string;state:"final"|"partial"|"error";created_at:string;
+ body_ref:BodyReference;body_url:string;citations:QuestionCitation[];
+ explanation_references:GenerationReference[];limitations:QuestionLimitation[];
+}
+export interface QuestionView {
+ question_id:string;project_id:string;document_id:string;version_id:string;job_id:string;
+ job_state:string;job_error:string|null;latest_answer_id:string|null;operation_id:string;created_at:string;
+ page_path:string|null;region_id:string|null;page_query:string;page_fragment:string;
+ body_ref:BodyReference;text_url:string;context_ref:string|null;
+ display_context:{context_ref:string;bytes_sha256:string;byte_size:string;media_type:string;render_instance_id:string|null}|null;
+ explanation_reference:GenerationReference;source_mode:"pinned"|"current";target_set_id:string|null;
+ targets:unknown[];requested_selection:GenerationSourceSelection;limitations:QuestionLimitation[];
+ answers?:ListPage<AnswerView>;
+}
+
 export interface HaeryongClient {
+  consumeContext(binding:{version_id:string;page_path:string|null;render_instance_id:string|null},uploadId:string,operationId:string):Promise<DecisionResult>;
+  questionStart(versionId:string,request:QuestionRequest,operationId:string):Promise<QuestionAccepted>;
+  questionList(versionId:string,cursor?:string):Promise<ListPage<QuestionView>>;
+  questionGet(id:string):Promise<QuestionView>;
+  questionAnswers(id:string,cursor?:string):Promise<ListPage<AnswerView>>;
+  answerGet(id:string):Promise<AnswerView>;
+  questionTextStream(id:string):Promise<AnnotationStream>;
+  questionContextStream(id:string):Promise<AnnotationStream>;
+  answerBodyStream(id:string):Promise<AnnotationStream>;
+  answerCitationStream(id:string,index:number):Promise<AnnotationStream>;
   retainedSourceReads(projectId:string,sourceId:string,cursor?:string):Promise<ListPage<RetainedSourceRead>>;
   generationStart(request:GenerationRequest,operationId:string):Promise<GenerationAccepted>;
   draftList(projectId?:string,cursor?:string):Promise<ListPage<DraftView>>;

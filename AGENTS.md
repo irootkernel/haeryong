@@ -183,3 +183,37 @@ exit retain TASK-006-05/06 ownership. The bounded Task04 delivery is complete.
 Delegated member acceptance, the normal completion commit and native
 finalization follow. No Master overall Epic acceptance or physical-device proof
 is claimed here.
+
+TASK-006-05 adds typed read-only Ask, durable question/answer ownership at schema
+revision 19, exact captured display/source context and current-authority saved
+history across HTTP, CLI and shared browser/native clients. The
+[saved-question record](docs/testing/saved-questions.md) owns implementation,
+executed offline checks, bounded shared-browser/native observations and the
+current real-provider evidence. The closed output-contract correction preserves
+strict validation; eleven focused race specs passed. Independent semantic assessment
+passed the original three real cases, including Q3's useful partial abstention,
+and one separately predeclared actual source-absence answer. Complete saved reads
+and zero-repeat records retain their exact scope. The pre-review candidate's full
+headless common passed with all 309 mandatory members exactly once. The first
+technical review identified four correction groups: optional runtime regions,
+exact retained citation inspection, terminal refusal recovery and honest history
+states. The corrections include a reproduced same-key admission race and its
+passing durable failed-receipt regression. Affected checks and canonical frontend
+verification passed. The replacement common passed 1,333 Go and 247 Python cases,
+with all 316 mandatory Go tuples exactly once. Current controlled native proof
+passed strict trusted Submit and full partial-answer/context/source reads.
+Browser history, terminal refusal recovery, final-answer/current-retained-source
+reads, authority-loss late-response clearing and invalid-output error UI have
+bounded completed proof. The later acquisition passed with the expected selected
+accounting/shutdown error; it is not a pristine service-exit or claim of three positive answers.
+One positive UI Submit had two same-key backend 202 deliveries with no duplicate
+Execute. Earlier failed cohorts and focus qualifications remain explicit.
+The second technical assessment completed with four fresh roles and no unresolved
+valid findings. The proper final independent assessment passed all 29 due
+obligations and judged the bounded original Goal achieved; the native Goal is
+recorded achieved. The bounded Task05 delivery is complete. Delegated member
+acceptance, the normal completion commit and native finalization follow under
+existing authority; none is recorded as performed here. Task04's whole-version
+Generation seam remains OPEN before Task06. Provider input observation, later
+source verification and semantic support are distinct. Master overall Epic
+acceptance and physical-device qualification remain future.
