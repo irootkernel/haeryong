@@ -163,6 +163,103 @@ def test_command_preserves_raw_child_exit_separate_from_control(tmp_path,code):
     assert result['exit_code']==code and result['signal'] is None and not result['timed_out']
 
 
+def test_command_shows_milestones_and_wait_before_quiet_child_finishes(tmp_path, monkeypatch, capsys):
+    from tests import run_checks as r
+    import json, threading, time
+
+    monkeypatch.setattr(r, "PROGRESS_INTERVAL", .05)  # observation cadence, not the child deadline
+    release, metadata, log = (tmp_path / name for name in ("release", "progress.log", "child.log"))
+    code = '''import pathlib,sys,time
+release,metadata=map(pathlib.Path,sys.argv[1:])
+print('PRIVATE PRODUCT OUTPUT',flush=True)
+metadata.write_text('PYTEST [1/1] START controlled_test\\n')
+deadline=time.monotonic()+15
+while not release.exists() and time.monotonic()<deadline:time.sleep(.01)
+assert release.exists()
+with metadata.open('a') as stream:stream.write('PYTEST [1/1] PASSED controlled_test\\n')
+'''
+    script = tmp_path / "quiet_child.py"
+    script.write_text(code)
+    argv = [sys.executable, "-B", str(script), str(release), str(metadata)]
+    observed = []
+    def watch_console():
+        output = ""
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            output += capsys.readouterr().out
+            if "WAIT child:" in output and "PYTEST [1/1] START controlled_test" in output:
+                observed.append(output)
+                break
+            time.sleep(.01)
+        release.touch()
+    watcher = threading.Thread(target=watch_console)
+    watcher.start()
+    try:
+        r.command(argv, log, dict(os.environ), timeout=20, progress=metadata)
+    finally:
+        release.touch()
+        watcher.join(timeout=15)
+    assert not watcher.is_alive() and observed, "milestones and wait must be visible before releasing the child"
+    output = observed[0] + capsys.readouterr().out
+    assert "START child:" in output and "PYTEST [1/1] PASSED controlled_test" in output
+    assert "PRIVATE PRODUCT OUTPUT" not in output
+    assert log.read_text() == "PRIVATE PRODUCT OUTPUT\n"
+    assert json.loads(log.with_suffix('.status.json').read_text()) == {
+        'argv': argv,
+        'exit_code': 0, 'signal': None, 'timed_out': False,
+    }
+
+
+def test_unavailable_progress_observer_does_not_lose_child_result(tmp_path, monkeypatch):
+    from tests import run_checks as r
+    import json
+
+    def unavailable(_):
+        raise RuntimeError("controlled unavailable thread")
+    monkeypatch.setattr(r.threading.Thread, "start", unavailable)
+    log = tmp_path / 'child.log'
+    with pytest.raises(r.CheckFailure):
+        r.command([sys.executable, '-B', '-c', 'raise SystemExit(7)'], log, dict(os.environ))
+    result = json.loads(log.with_suffix('.status.json').read_text())
+    assert result['exit_code'] == 7 and result['signal'] is None and not result['timed_out']
+
+
+def test_pytest_milestones_include_teardown_and_omit_parameter_values(tmp_path):
+    root = Path(__file__).resolve().parents[2]
+    for name in ("conftest.py", "pytest.ini"):
+        (tmp_path / name).write_bytes((root / name).read_bytes())
+    (tmp_path / 'test_progress.py').write_text('''import pytest
+pytestmark=pytest.mark.unit
+@pytest.fixture
+def bad_teardown():
+ yield
+ raise RuntimeError('controlled teardown failure')
+@pytest.fixture
+def bad_setup():
+ raise RuntimeError('controlled setup failure')
+def test_teardown(bad_teardown):pass
+def test_setup(bad_setup):pass
+@pytest.mark.parametrize('value',['PRIVATE_PARAMETER_VALUE'])
+def test_pass(value):assert value
+@pytest.mark.skip(reason='controlled required skip')
+def test_skip():pass
+''')
+    progress = tmp_path / "progress.log"
+    env = os.environ | {'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1', 'HAERYONG_REQUIRED_TEST_STAGE': 'unit'}
+    env.pop('PYTEST_ADDOPTS', None)
+    result = subprocess.run([sys.executable, '-B', '-m', 'pytest', '--haeryong-progress', str(progress),
+                             'test_progress.py'], cwd=tmp_path, env=env, capture_output=True, timeout=30)
+    assert result.returncode == 1
+    lines = progress.read_text().splitlines()
+    assert lines[0] == 'PYTEST collected 4 tests'
+    assert len([line for line in lines if '] START ' in line]) == 4
+    for index, outcome, name in [(1, 'FAILED', 'test_teardown'), (2, 'FAILED', 'test_setup'),
+                                  (3, 'PASSED', 'test_pass'), (4, 'SKIPPED', 'test_skip')]:
+        assert any(line.startswith(f'PYTEST [{index}/4] {outcome} test_progress.py::{name}; elapsed=') for line in lines)
+    assert not any('PRIVATE_PARAMETER_VALUE' in line for line in lines)
+    assert not any('PASSED test_progress.py::test_teardown' in line for line in lines)
+
+
 def test_timeout_stops_owned_descendant_and_keeps_failure(tmp_path):
     from tests import run_checks as r
     import json,signal,time

@@ -2,6 +2,7 @@
 """Leaf handlers for the root Make authority. No aggregate or dependency installation."""
 import argparse
 import ast
+from contextlib import contextmanager
 import errno
 import hashlib
 import importlib.metadata
@@ -16,10 +17,13 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 IDENTITY = ".haeryong-test-run.json"
+PROGRESS_INTERVAL = 30
 
 
 def scratch_parent():
@@ -176,18 +180,76 @@ def stop_children(process):
     # Orphan zombies await OS reaping; SIGKILL prevents runnable survivors.
 
 
-def command(args, output, env, *, timeout=120):
+@contextmanager
+def command_progress(output, timeout, progress):
+    """Show observation only; the original child wait owns the deadline/result."""
+    started = time.monotonic()
+    stopped = threading.Event()
+    offset, pending = 0, b""
+
+    def milestones():
+        nonlocal offset, pending
+        if progress is None:
+            return
+        try:
+            with progress.open("rb") as stream:
+                stream.seek(offset)
+                data = stream.read()
+        except FileNotFoundError:
+            return  # Pytest creates this metadata stream during configuration.
+        offset += len(data)
+        lines = (pending + data).split(b"\n")
+        pending = lines.pop()
+        for line in lines:
+            print(line.decode("utf-8", errors="replace"), flush=True)
+
+    def observe():
+        next_report = started + PROGRESS_INTERVAL
+        while True:
+            finished = stopped.wait(min(1, PROGRESS_INTERVAL))
+            try:
+                milestones()
+                now = time.monotonic()
+                if not finished and now >= next_report:
+                    info = output.stat()
+                    quiet = max(0, time.time() - info.st_mtime)
+                    print(f"WAIT {output.stem}: elapsed={now-started:.0f}s; "
+                          f"timeout={timeout}s; log unchanged={quiet:.0f}s", flush=True)
+                    next_report = now + PROGRESS_INTERVAL
+            except OSError as error:
+                # Progress observation must not replace the actual child result.
+                print(f"Progress unavailable for {output.stem}: {type(error).__name__}", flush=True)
+            if finished:
+                return
+
+    observer = threading.Thread(target=observe, name="test-progress", daemon=True)
+    try:
+        observer.start()
+    except RuntimeError:
+        # An unavailable observer must not leave a launched child unwaited.
+        yield
+        return
+    try:
+        yield
+    finally:
+        stopped.set()
+        observer.join()
+
+
+def command(args, output, env, *, timeout=120, progress=None):
     result = {"argv": args, "exit_code": None, "signal": None, "timed_out": False}
     child = None
     try:
         with output.open("xb") as stream:
+            print(f"START {output.stem}: timeout={timeout}s; private log={output}", flush=True)
             try:
                 child = subprocess.Popen(args, cwd=ROOT, env=env, stdout=stream,
                                          stderr=subprocess.STDOUT, start_new_session=True)
             except OSError as error:
                 raise FatalSetup(f"Cannot start required tool: {args[0]}") from error
             try:
-                result["exit_code"] = child.wait(timeout=timeout)
+                with command_progress(output, timeout, progress):
+                    result["exit_code"] = child.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 result["timed_out"] = True
                 stop_children(child)
@@ -383,11 +445,14 @@ def validate_layers():
 
 
 def pytest_suite(layer, paths, work, env, keep_going=False):
+    progress = work / f"pytest-{layer}.progress.log"
     args = [sys.executable, "-B", "-m", "pytest", "--strict-config", "--strict-markers", "-W", "error",
+            "--haeryong-progress", str(progress),
             "--basetemp", str(work / "pytest-tmp"), f"--junitxml={work / ('pytest-'+layer+'.xml')}", *paths]
     if not keep_going:
         args.insert(4, "-x")
-    command(args, work / f"pytest-{layer}.log", env, timeout=5400 if layer == "e2e" else 1800)
+    command(args, work / f"pytest-{layer}.log", env, timeout=5400 if layer == "e2e" else 1800,
+            progress=progress)
 
 
 def main():

@@ -82,6 +82,22 @@ The [EPIC-005 verification profile](docs/testing/epic-harmony-verification-profi
 selects this native mode and the separately owned frontend/desktop/campaign checks.
 Historical runtime adapters are not the post-change completion command.
 
+## Console progress
+
+Each child command prints `START` with its private log and existing timeout.
+While waiting, the runner prints `WAIT` every 30 seconds with elapsed time and
+how long that log has been unchanged. This confirms that the supervisor is
+waiting, not that a silent child has made progress; it is not an ETA or a pass.
+
+Python stages also show collection and each test's `START` and result, including
+fixture teardown, with completed position/total and duration. A long test keeps
+its last start visible while the periodic wait lines continue. These milestones
+are streamed from `pytest-<layer>.progress.log`; test parameter values and
+captured product output stay out of that metadata. Full output remains in the
+existing private log, and native exit/signal/timeout and structured reports
+remain authoritative. Progress changes neither deadlines nor test selection,
+fail-fast/keep-going behavior or process cleanup.
+
 ## Stage Mapping
 
 | Stage | Concrete ownership and isolation |
@@ -144,7 +160,8 @@ times the slowest observed passing duration. Elapsed time is informational and
 never an acceptance criterion.
 
 Python leaf execution is `python3 -B -m pytest -x --strict-config --strict-markers
--W error --basetemp <new-private-path> --junitxml=<private-report> <suite-paths>`.
+-W error --haeryong-progress <private-milestones> --basetemp <new-private-path>
+--junitxml=<private-report> <suite-paths>`.
 Ambient `PYTEST_ADDOPTS` must be unset; it cannot replace a required run with
 collection-only or partial-selection behavior. The unit path is `tests/unit`; integration selects `tests/contracts` and the
 documentation-validator regression file; E2E selects `tests/e2e`. Each selected
