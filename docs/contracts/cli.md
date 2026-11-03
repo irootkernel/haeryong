@@ -445,6 +445,23 @@ workflow refusal never falls back to owner or Unfiled. Providers/artifacts recei
 no bearer or management authority. A generation grant includes its own job
 read/cancel, not draft publish, owner resume or arbitrary other jobs.
 
+An import grant includes `job.read` so the normal CLI can follow its accepted
+import to completion. The job must belong to that same workflow principal and
+retain an allowed upload purpose and project/target. This grants no job cancel,
+resume or personal Review/lifecycle authority. Credentials captured before this
+action was added retain their original scope; normal fresh issuance or explicit
+rotation is required to obtain the new action. Reentering the same import K
+recovers its original receipt/job/version rather than publishing another result.
+
+Initial workflow issuance reloads the protected frozen request before its first
+send, so JSON serialization of optional selection fields cannot make the later
+acknowledgement conflict with the saved intent. This adds no retry or credential
+rotation and does not relax immutable journal comparison.
+The unchanged-selection comparison uses that same serialized representation for
+optional source selection, so omitted/null or insignificant JSON whitespace do not
+rotate an otherwise unchanged remembered credential. All other selected fields
+and current authentication checks still apply.
+
 The protected caller journal preserves original target/base, prompt snapshot,
 source/prior selections, final principal and preparation/final keys. Same-key
 reentry looks up the original receipt before reopening local files. Unknown or

@@ -9,7 +9,7 @@ commands:
     command: ["make", "test"]
     tags: [test, validation]
     parser: generic
-    timeout_sec: 11000
+    timeout_sec: 18900
   test-prepare:
     command: ["make", "test-prepare"]
     tags: [test, validation]
@@ -29,9 +29,9 @@ commands:
     command: ["make", "test-e2e"]
     tags: [test, validation]
     parser: generic
-    timeout_sec: 9800
+    timeout_sec: 18900
   test-persistence:
     command: ["make", "test-persistence"]
     tags: [test, validation]
     parser: generic
-    timeout_sec: 4100
+    timeout_sec: 9000

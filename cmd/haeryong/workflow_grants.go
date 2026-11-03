@@ -231,6 +231,12 @@ func grantCommand(ctx context.Context, opt options, emit func(any) error) error 
 		if e = state.SaveWorkflow(j); e != nil {
 			return e
 		} // before the first issue send
+		// Dispatch and acknowledge the exact persisted request. A JSON round trip
+		// turns an omitted RawMessage into null; keep the frozen representation.
+		j, e = state.LoadWorkflow(key)
+		if e != nil {
+			return e
+		}
 	} else if e != nil {
 		return e
 	}
@@ -288,7 +294,10 @@ func workflowCredentialPath(state *clientstate.Store, binding string) string {
 }
 
 func sameWorkflowSelection(input workflowSelectionInput, old appauth.WorkflowGrantRequest) bool {
-	return input.BindingID == old.BindingID && input.Workflow == old.Workflow && input.ProjectID == old.ProjectID && reflect.DeepEqual(input.DocumentID, old.DocumentID) && reflect.DeepEqual(input.VersionIDs, old.VersionIDs) && reflect.DeepEqual(input.DraftIDs, old.DraftIDs) && input.ProviderID == old.ProviderID && bytes.Equal(input.SourceSelection, old.SourceSelection) && reflect.DeepEqual(input.ExpiresAt, old.ExpiresAt)
+	// Compare the representation frozen in JSON, including omitted/null values.
+	source, sourceErr := json.Marshal(input.SourceSelection)
+	previousSource, previousErr := json.Marshal(old.SourceSelection)
+	return sourceErr == nil && previousErr == nil && input.BindingID == old.BindingID && input.Workflow == old.Workflow && input.ProjectID == old.ProjectID && reflect.DeepEqual(input.DocumentID, old.DocumentID) && reflect.DeepEqual(input.VersionIDs, old.VersionIDs) && reflect.DeepEqual(input.DraftIDs, old.DraftIDs) && input.ProviderID == old.ProviderID && bytes.Equal(source, previousSource) && reflect.DeepEqual(input.ExpiresAt, old.ExpiresAt)
 }
 func decodeWorkflowSelection(r io.Reader, out *workflowSelectionInput) error {
 	d := json.NewDecoder(r)

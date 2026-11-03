@@ -242,3 +242,19 @@ native handoff follow under existing authority; this record does not assert them
 already performed.
 Task06, assembled Epic, C01, live/device and Master overall acceptance remain
 separate obligations.
+
+## AI workflow verification
+
+TASK-006-06 adds real-DB offline Generation/Question workflow composition.
+[Its record](testing/ai-workflows.md) separates retained real provider attempts,
+scoped publication and source/Trash/restore observations, the later matched
+pre-call search pair, and actual shared-browser Reader/saved-Q&A/page-fault
+observations. The R35 Notes correction has canonical frontend, embedded-assets,
+build and zero-model disconnect/reconnect proof. The complete common on the corrected product also passed 1,351 Go and 249
+Python cases, including all 334 required tuples once. Earlier common successes
+and failures retain their source qualifications. Current applicability and the
+affected documentation checks are separate from that common. One fresh four-role
+Codex review and the original-criterion independent final assessment passed the
+bounded Task06 delivery, accepted under the delegated member envelope. Its
+normal completion commit/native finalization follows. Whole-Epic internal
+validation and Master overall acceptance remain separate.

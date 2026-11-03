@@ -205,6 +205,14 @@ those inputs. The common Sheet API and persisted/API contracts are unchanged.
 The completed owner-records campaigns and Task checks have the bounded scope
 recorded there; they do not qualify a physical device or every companion stage.
 
+Consequential Notes actions require current verified owner authority. Existing
+synchronous scope/owner guards succeed before save activity is shown, so a new
+already-disconnected activation creates no false save-pending presentation. Local
+draft, namespace, unmount and original receipt ownership remain unchanged; the
+[current R35 record](../docs/testing/ai-workflows.md#honest-disconnected-notes-correction)
+separates actual browser/common proof, independent member review and the later
+whole-Epic acceptance boundary.
+
 ## Saved-context presentation boundary
 
 NotesPanel currently retains complete saved-revision text in ordinary inline

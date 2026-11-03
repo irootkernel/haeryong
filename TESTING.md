@@ -102,16 +102,40 @@ production coordinator is introduced for setup.
 `make test-persistence`/`make test-e2e`, not `make test-int` alone. Its public
 counterpart is `tests/e2e/test_owner_records.py`. Separate actual browser/Wails
 commands and current limits are in [the Task6 record](docs/testing/owner-records.md).
+`tests/integration/ai-workflows` also uses `persistence`: it composes real
+foundation/SQLite, source/config authority, Generation/Question, saved-result
+continuation, cancellation and protected backup/restore through normal services.
+Its controlled provider makes no native/model call. [The AI workflow record](docs/testing/ai-workflows.md)
+separates focused results from actual common, provider, browser/Wails and quality
+gates. These scenarios are selected by `make test-persistence`/`make test-e2e`,
+not `make test-int` alone.
 Recovery/storage consumer specs use `unit`; a `persistence` filter does not cover
 them. Required final gates retain complete registered layers.
 
 Go leaf execution is `go tool ginkgo --race --fail-on-empty --fail-on-pending
 --no-color --timeout=<budget> --label-filter=<layer> --json-report=<private-report>
 <packages>` using only packages containing that layer. The budget is `1000s` for
-unit and integration and `3600s` for the additional persistence gate, whose
-serial race suites vary with host load. Ginkgo builds/runs its test executables
-without Go result caching. Required selected specs must pass; specs
-intentionally filtered into another stage are not required skips.
+unit and integration and `8400s` for the additional persistence gate. Ginkgo uses
+one deadline for compilation and the complete selected package list, not that
+budget per package. The persistence bound rounds about three times the slowest
+retained successful complete persistence interval (about 2,754 seconds) upward;
+the earlier 3,600-second exhaustion remains a failed run, not calibration for a
+passing duration. These prior timings cover nineteen suites; the current full
+selection, including AI workflow composition, still requires its own execution.
+Ginkgo builds/runs its test executables without Go result caching. Required
+selected specs must pass; other-layer filtered specs are not required skips.
+A timed-out or unstarted suite remains failed. Its explicit Ginkgo failure reason
+is retained even when Ginkgo emits a null `SpecReports` for a suite it could not
+start; null reports without a terminal failure reason remain malformed.
+
+The native command watchdog remains the selected Go budget plus 500 seconds.
+Configured Gaori `test` and `test-e2e` outer bounds are 18,900 seconds, rounded
+from about three times the slowest retained complete common duration (about
+6,286 seconds). The configured persistence outer bound is 9,000 seconds so its
+8,900-second native watchdog and evidence finalization can settle. These outer
+bounds do not replace or override inner Ginkgo guards. The canonical Make/helper
+entrypoint exposes no ambient or per-invocation timeout override; changing a
+budget requires a reviewed canonical change and separately bound execution.
 
 Every finite test time limit, from the Go and pytest leaf bounds to scenario
 waits such as F12's, is a hang guard for a shared and usually heavily loaded

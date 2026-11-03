@@ -231,7 +231,7 @@ def test_leaf_global_setup_failure_is_fatal_control(tmp_path):
     assert result.returncode==2 and b'PYTEST_ADDOPTS must be unset' in result.stderr
 
 
-@pytest.mark.parametrize('report',[None,'{','{}','[{}]','[{"SpecReports":{}}]','[{"SpecReports":[null]}]','[{"SpecReports":[{}]}]','[{"SpecReports":[{"State":"passed","LeafNodeLabels":7}]}]'])
+@pytest.mark.parametrize('report',[None,'{','{}','[{}]','[{"SpecReports":null}]','[{"SpecReports":{}}]','[{"SpecReports":[null]}]','[{"SpecReports":[{}]}]','[{"SpecReports":[{"State":"passed","LeafNodeLabels":7}]}]'])
 def test_malformed_go_reports_are_check_failures_and_python_still_runs(tmp_path,monkeypatch,report):
     from tests import run_checks as r
     monkeypatch.setattr(r,'go_packages',lambda _:['./fixture'])
@@ -242,6 +242,34 @@ def test_malformed_go_reports_are_check_failures_and_python_still_runs(tmp_path,
     checks.run('go',lambda:r.go_suite('unit',tmp_path,{},True))
     checks.run('python',lambda:calls.append('ran'))
     assert calls==['ran'] and len(checks.failures)==1
+
+
+def test_ginkgo_timeout_keeps_failed_and_unrun_suite_reasons_and_continues(tmp_path, monkeypatch):
+    from tests import run_checks as r
+    import json
+
+    reports = [
+        {"SuitePath": "./source", "SuiteSucceeded": False,
+         "SpecialSuiteFailureReasons": ["Suite Timeout Elapsed"],
+         "SpecReports": [{"State": "timedout", "LeafNodeLabels": ["persistence"]}]},
+        {"SuitePath": "./ai-workflows", "SuiteSucceeded": False,
+         "SpecialSuiteFailureReasons": ["Suite did not run because the timeout elapsed"],
+         "SpecReports": None},
+    ]
+    monkeypatch.setattr(r, "go_packages", lambda _: ["./source", "./ai-workflows"])
+    def command(*args, **kwargs):
+        (tmp_path / "go-persistence.json").write_text(json.dumps(reports))
+        raise r.CheckFailure("Required command failed: go (exit 1, timeout False)")
+    monkeypatch.setattr(r, "command", command)
+    checks = r.Checks(tmp_path, True)
+    later = []
+    checks.run("go-persistence", lambda: r.go_suite("persistence", tmp_path, {}, True))
+    checks.run("later", lambda: later.append("ran"))
+    assert later == ["ran"] and len(checks.failures) == 1
+    message = checks.failures[0]["error"]
+    assert "./source: Suite Timeout Elapsed" in message
+    assert "./ai-workflows: Suite did not run because the timeout elapsed" in message
+    assert "exit 1" in message and "malformed" not in message
 
 
 @pytest.mark.parametrize('manifest',['{','{}','{"files":{}}','{"files":[{},null]}'])

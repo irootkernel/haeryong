@@ -51,7 +51,7 @@ func workflowActions(kind string) []string {
 	case "generation":
 		return []string{"project.read", "version.read", "source.read", "generation.request", "job.read", "job.cancel"}
 	case "import":
-		return []string{"project.read", "version.read", "source.read", "import.publish"}
+		return []string{"project.read", "version.read", "source.read", "import.publish", "job.read"}
 	case "draft_write":
 		return []string{"project.read", "version.read", "draft.write"}
 	case "draft_publish":

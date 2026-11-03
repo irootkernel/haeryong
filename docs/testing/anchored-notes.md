@@ -198,6 +198,21 @@ proof is claimed. Lifecycle actions, purge/history retention policy, coherent ba
 and protected restore retain their ordered TASK-005-03..06 owners. Their handoff must
 include annotation_history object references/pins and revision-scoped context ownership.
 
+## Later disconnected-state correction (TASK-006-06)
+
+The composed R35 check found a source-reachable local presentation defect: a new
+Save activated while already disconnected could enter busy state before failing
+its authority guard. The current correction admits authority and owner scope
+before marking save activity, and disables consequential Notes actions until
+current owner connection is verified. Existing local draft, namespace, unmount
+and pending-receipt guards remain intact. The canonical frontend checks and a
+normal zero-model browser disconnect/reconnect observation passed: the exact
+unsent draft remained, Save was disabled offline, no false pending-result status
+appeared, and confirmed server Notes remained empty. No Save was submitted.
+[The current workflow record](ai-workflows.md#honest-disconnected-notes-correction)
+owns its qualifications and remaining gates; earlier accepted Notes evidence
+retains its original scope.
+
 ## Review and acceptance
 
 The Task Evaluator, the two non-authoring Executor reviewers and the Epic Evaluator

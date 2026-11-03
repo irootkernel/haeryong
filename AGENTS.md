@@ -231,3 +231,20 @@ already performed.
 TASK-006-06 retains the assembled live workflow, matched C01 request, real
 pinned-region question and fault/allowance proof; Master overall Epic acceptance
 and physical-device qualification remain future.
+
+TASK-006-06 adds real-DB offline AI workflow composition in
+`tests/integration/ai-workflows`, labelled persistence under the common test
+contract. [The AI workflow record](docs/testing/ai-workflows.md) owns the real
+provider/input/cleanup qualifications, production source/Trash/restore boundary,
+matched pre-call search pair, actual shared-browser Reader/saved-Q&A/page-fault
+observations and the later R35 Notes correction. The corrected frontend checks,
+embedded-assets race package, build and zero-model browser disconnect/reconnect
+observation passed. The complete common on the corrected product passed 1,351 Go and 249 Python
+cases, including all 334 required tuples once. Earlier successes and failures
+keep their source qualifications. One fresh four-role Codex review and the
+original-criterion independent final assessment passed the bounded Task06
+delivery. Current-source applicability and affected documentation checks remain
+separate from the full common. Delegated member acceptance establishes Task06
+delivery; its normal commit/native finalization follows. The Epic remains in
+progress pending its internal audit and Master overall acceptance. Physical/
+private-device and later Epic gates retain their owners.

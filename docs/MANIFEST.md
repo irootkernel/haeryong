@@ -4,11 +4,11 @@
 
 **Edition prepared:** 2026-10-13
 
-This inventory covers 189 other files: all Markdown documents and Python documentation-check utilities. Paths are relative to docs; sizes and SHA-256 cover exact bytes. MANIFEST.md excludes itself. This is not runtime evidence.
+This inventory covers 190 other files: all Markdown documents and Python documentation-check utilities. Paths are relative to docs; sizes and SHA-256 cover exact bytes. MANIFEST.md excludes itself. This is not runtime evidence.
 
 | File | Bytes | SHA-256 |
 | --- | --- | --- |
-| `README.md` | 31133 | `6890f2c9ef9ead44e6d6024ad615466eb668c566fc335a72f6515fcede691540` |
+| `README.md` | 32200 | `dcd2760518d062ede107e6faa05f7e2fdeb3c9afdad0d8ba059773cefff95fe0` |
 | `REVIEW-GUIDE.md` | 10105 | `8035dd9c431b7e6abc7adde3b2ae7824df2a97df3ef7b3ca7ce020e3cb0094ad` |
 | `adr/ADR-001.md` | 3239 | `02f3818c7843969ca3aa081fb252983d92f886904383d84d331a49eca57f9987` |
 | `adr/ADR-002.md` | 2987 | `2128dae47cc03f55000633c89bc4e4d06419c91a414230a45fd7e45e8bac759b` |
@@ -30,7 +30,7 @@ This inventory covers 189 other files: all Markdown documents and Python documen
 | `contracts/README.md` | 5429 | `53d501ff3b1ef652c3fab56c4acbca7019194a9a2b807a80e4727ad96a279abf` |
 | `contracts/ai-adapter.md` | 28894 | `8f0ac95faf00cf79403b6d149c724383547bece5d23c75119e5d94db5f8d7ff6` |
 | `contracts/authentication.md` | 24375 | `290d8131a3d5b0d61faae76abba11c11971c2f5a628be6a4400d14f0c78d619f` |
-| `contracts/cli.md` | 53260 | `4ab2874f6642c4b6024163c472e9813c2bad04b0fd8d10af87d170991ca28058` |
+| `contracts/cli.md` | 54402 | `4b0c3899b3ce142503d81ad75ed844c4d140ecb0f9adaa18612d1eeec8f5a4de` |
 | `contracts/configuration.md` | 30604 | `fcba18dc927e65b63bb1457f2fefeebb729985642dffcb8cce8c0911be85467e` |
 | `contracts/http-api.md` | 118191 | `b3fac6a4ca9e1f244eca11285b8b24792ea498439731eb77a3a14acbdf1b38b3` |
 | `contracts/import-workflow.md` | 26300 | `b8d00edd824274d13e3dfd97dce47764fd215817db12a208bc47a38302c42b3e` |
@@ -109,7 +109,7 @@ This inventory covers 189 other files: all Markdown documents and Python documen
 | `tasks/EPIC-006/TASK-006-03.md` | 3120 | `d6320a092edc8b1b16764e12ba3315b94b01fdf793015813817b5e3a173b8607` |
 | `tasks/EPIC-006/TASK-006-04.md` | 11749 | `dbb2a9ca5ccf6ea33f1e19a7d91648921ab2b33b154d657a8f99754c85491096` |
 | `tasks/EPIC-006/TASK-006-05.md` | 3493 | `d0b880e0d9ba56d53ac3bf43d37d3dac3e76054345159afa885fae49c35b4efd` |
-| `tasks/EPIC-006/TASK-006-06.md` | 3182 | `4c4e4c1e816a6d583584d38b36fb7791706896066abcf424c30a383cbb73c455` |
+| `tasks/EPIC-006/TASK-006-06.md` | 4399 | `bb1a3451ec173009ef19ab9bedc8db4af93d9b4120929b14208871153f30f207` |
 | `tasks/EPIC-007/TASK-007-01.md` | 2493 | `b46597cc896af2d646b2f37b1beccb403621e8f68b0e0c577b28e0b18d842c58` |
 | `tasks/EPIC-007/TASK-007-02.md` | 3193 | `130fc674a743284d14b7d971439ef323f265fe69bc3d9d9a7117d491cde9a8ea` |
 | `tasks/EPIC-007/TASK-007-03.md` | 4536 | `67fcbb9d6aa64e70c3127e400e66a2e60de2a9dee3b47770946521e4b11a5edd` |
@@ -140,7 +140,8 @@ This inventory covers 189 other files: all Markdown documents and Python documen
 | `templates/epic-gate.md` | 2139 | `9d7d8d8cd44cc29c4922645fed996bdc9b9794bb48a61eea706955ccec804e7b` |
 | `templates/task-evidence.md` | 2936 | `ed7a55607ee1f203c41d7667d28c80c5be756635a955ecbdd23fd095e5d39d83` |
 | `testing/acceptance-catalog.md` | 36336 | `051ad9a3f55a964dfdd4ba7dcf4e0eacbde878ec6a90b3712a30796bdee27d96` |
-| `testing/anchored-notes.md` | 16809 | `7b718c1c969ff0bf9f54fbb85ff161e38b9833f43bf46afc1ee8cf1ae15abae4` |
+| `testing/ai-workflows.md` | 38416 | `8ef422d555cc74b366fc1fdc8781fc1b49e7693b11183945b694704d6c47e30f` |
+| `testing/anchored-notes.md` | 17759 | `c78829ee11ba08280f25fb7cef6c04facfff130517095e325798909e38fab7e5` |
 | `testing/atomic-import.md` | 16640 | `8e964102b5bdb05cf1705261edb4c60572a3c9c844d5c5088f4f1170ebfb6cee` |
 | `testing/auth-ingress-spike.md` | 19029 | `461d5a9a3ca74752a909093683e90f12b4508516c1533c818c7fea5b6432d4dc` |
 | `testing/authenticated-sessions.md` | 17247 | `e5a0f9757f034bf55ce760c3fb8a88c1fa02eee430eaf81a286700f67d844b70` |

@@ -260,8 +260,9 @@ def go_packages(layer):
 
 def go_suite(layer, work, env, keep_going=False):
     report = work / f"go-{layer}.json"
-    # Budgets bound hung runs; the serial race persistence suites vary with host load.
-    budget = 3600 if layer == "persistence" else 1000
+    # Ginkgo applies one deadline to compilation and all selected package suites.
+    # The persistence bound is about 3x the slowest retained complete PASS interval.
+    budget = 8400 if layer == "persistence" else 1000
     args = ["go", "tool", "ginkgo", "--race", "--fail-on-empty", "--fail-on-pending", "--no-color",
             f"--timeout={budget}s", f"--label-filter={layer}", f"--json-report={report}", *go_packages(layer)]
     if keep_going:
@@ -277,10 +278,22 @@ def go_suite(layer, work, env, keep_going=False):
         raise CheckFailure(f"Required {layer} report unavailable or malformed; child failure={failure}") from error
     if not isinstance(reports, list) or not reports:
         raise CheckFailure("Required Go report must contain suites")
+    suite_failures = []
     for suite in reports:
-        if not isinstance(suite, dict) or not isinstance(suite.get("SpecReports"), list):
+        if not isinstance(suite, dict):
             raise CheckFailure("Required Go suite report is malformed")
-        for spec in suite["SpecReports"]:
+        reasons = suite.get("SpecialSuiteFailureReasons") or []
+        if not isinstance(reasons, list) or any(not isinstance(reason, str) for reason in reasons):
+            raise CheckFailure("Required Go suite failure reasons are malformed")
+        if reasons:
+            suite_failures.append(f"{suite.get('SuitePath', '<unknown>')}: {'; '.join(reasons)}")
+        specs = suite.get("SpecReports")
+        if specs is None and suite.get("SuiteSucceeded") is False and reasons:
+            # Ginkgo emits null specs for a suite it could not start. It still fails.
+            continue
+        if not isinstance(specs, list):
+            raise CheckFailure("Required Go suite report is malformed")
+        for spec in specs:
             if not isinstance(spec, dict) or not isinstance(spec.get("State"), str):
                 raise CheckFailure("Required Go spec report is malformed")
             labels, containers = spec.get("LeafNodeLabels") or [], spec.get("ContainerHierarchyLabels") or []
@@ -288,6 +301,9 @@ def go_suite(layer, work, env, keep_going=False):
                 raise CheckFailure("Required Go spec labels are malformed")
             if not isinstance(containers, list) or any(not isinstance(group, list) or any(not isinstance(label, str) for label in group) for group in containers):
                 raise CheckFailure("Required Go container labels are malformed")
+    if suite_failures:
+        raise CheckFailure(f"Required {layer} suites failed or did not run: "
+                           + " | ".join(suite_failures) + f"; child failure={failure}")
     selected = [spec for suite in reports for spec in suite["SpecReports"]
                 if layer in (spec.get("LeafNodeLabels") or []) or any(layer in labels for labels in (spec.get("ContainerHierarchyLabels") or []))]
     if failure or not selected or any(spec["State"] != "passed" for spec in selected):
