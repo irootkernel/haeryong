@@ -577,3 +577,58 @@ client observations keep their distinct proof and limits. Complete-record crash
 recovery does not become an unexecuted active-provider kill; no universal OS jail
 or remote cessation is asserted. Stage A/private second-device, maintenance,
 scheduling and release retain EPIC-007 through EPIC-010 ownership.
+
+## Whole-Epic client availability correction
+
+The subsequent whole-Epic Codex operation covered all six members with three
+fresh base reviewers and a fresh UI specialist. Its original assessment required
+changes: the frontend guide presented the Task03 question-capability cutoff as
+current, Sources claimed no provider was connected, and consequential Generation,
+Draft and Ask controls remained enabled during a same-authority outage. Existing
+dispatch guards prevented writes; this was not an authorization bypass.
+
+The bounded integration correction qualifies the Task03 history, links current
+generation/Ask records, and gives Sources explicit AI settings navigation while
+retaining its read-only-reader and external-tool/OS-boundary qualifications.
+Consequential controls now require verified owner authority and the applicable
+capability. Local drafts, original operation IDs, journals and dispatch guards
+retain their roles. Reader mount identity survives a temporary outage; actual
+owner/session/library/runtime or newly confirmed authority changes still retire
+the previous Reader. Renderer renewal failure still retires its frame, but only
+an explicit API refusal closes the protected host Reader. A network or
+dispatch-gate failure does not discard unsent Ask text and its captured target.
+
+The focused Chrome driver is `internal/adapters/http/auth/browser/check_reader.py
+--ai-disconnected-only`. It uses the actual compiled shell, controller, disposable
+daemon, owner authentication and imported Reader fixture. Offline/capability
+responses, ready-Draft read DTOs, a pending local Draft intent and identity-change
+responses are labelled controls. It submits no generation/question or Draft
+mutation; AI status navigation uses a controlled unavailable response with no
+native provider probe. This does not qualify backend Draft execution, a real
+provider, native Wails or a physical private device.
+
+The corrected-source Chrome selection passed all ten control groups, including
+exact Ask text/target/provider/source-mode retention, unchanged original recovery
+journals, confirmed reconnect, capability withdrawal, and editor retirement on
+session/runtime replacement. The failed renderer stays retired across reconnect;
+the host editor survives. The existing actual lifecycle campaign also passed:
+fast Trash/Restore and missed-event resync still close a refused original
+delivery and its protected host, without an automatic replacement. Those
+touch observations use emulation, not a physical device.
+
+Canonical frontend regeneration and validation passed, including the focused
+transport/dispatch-failure versus conclusive-refusal regression and the native
+build boundary. The original negative browser observations, setup failures and
+intermediate failed correction checks remain failures. A subsequent complete common on this corrected
+assembled source passed 1,351 Go and 249 Python cases, with every one of the 334
+required exact identities passed once. Five serial stages and fifteen native
+commands completed without timeout or signal; the full structured primary
+results and source-before/after equality were verified. This is headless/offline
+proof, separate from the rendered and retained real-provider observations.
+
+This later factual documentation overlay changes no product, test or compiled
+asset input. Its affected documentation checks are separate from that common.
+The final independent assessment remains pending at this checkpoint. Earlier
+common successes retain their original candidate applicability. The source
+whole-Epic review predates this local correction; no technical clean verdict or
+Master overall acceptance is claimed.

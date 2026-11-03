@@ -239,8 +239,11 @@ work.
 HTTP and the closed native providerStatus operation share its credential-free
 status. Keyboard/touch refresh, unknown allowance, auth/quota failures and
 provider-independent Reader/Review behavior are covered by the provider-only
-browser campaign. features.questions remains false, so installing the transport
-cannot enable the future Library question action. See
+browser campaign. At the TASK-006-03 transport checkpoint,
+features.questions remained false; transport installation alone did not enable
+question admission. Current generation and Ask delivery are documented in
+[generation workflows](../docs/testing/generation-workflow.md) and
+[saved questions](../docs/testing/saved-questions.md). See
 [the implementation record](../docs/testing/provider-adapter.md).
 
 
@@ -254,3 +257,20 @@ and existing 44 px targets. The browser observer correlates each expected exact
 supplied-metadata GET 404 to one device/request/response; unrelated query/method,
 status, reason and duplicate reuse controls fail. See
 [correction evidence](../docs/testing/provider-corrections.md).
+
+## AI actions during disconnection
+
+Generation, Draft and Ask consequential controls require the current verified
+owner session and their generation/questions capability. Existing dispatch and
+captured-authority guards remain authoritative. A same-authority outage keeps
+unsent editor state and original recovery records; reconnection confirms both
+session and capabilities before those controls become available again.
+
+The Reader retains its last confirmed authority nonce only as a mount identity
+during that outage. Actual session/owner/library/runtime or newly confirmed
+authority changes still retire the previous Reader. A failed renderer renewal
+retires that delivery; only an explicit API refusal closes the protected host
+Reader. Network or dispatch-gate failure leaves unsent host edits available.
+Sources directs the owner to AI settings for provider readiness without probing
+an account on Sources entry. See the
+[assembled correction record](../docs/testing/ai-workflows.md#whole-epic-client-availability-correction).

@@ -1,6 +1,9 @@
 import type { HaeryongClient, RenderSessionView } from "../client/types.ts";
 import { ApiError } from "../client/types.ts";
 
+/** A refused delivery closes the host Reader; a transport failure only retires its frame. */
+export const renderDeliveryRefused = (error: unknown): boolean => error instanceof ApiError && [401, 403, 404, 409, 410].includes(error.status);
+
 type SessionClient = Pick<HaeryongClient, "renderSessionOpen" | "renderSessionRenew" | "renderSessionClose">;
 type SessionStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 interface Actor { client: SessionClient; guard(): void }

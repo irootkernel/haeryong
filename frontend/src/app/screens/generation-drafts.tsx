@@ -15,6 +15,7 @@ const stateLabel:Record<string,string>={preparing:"생성 중",ready:"검토 가
 
 export function DraftControl({controller,projects}:{controller:ShellController;projects:ProjectView[]}) {
  const client=controller.client,library=controller.state.capabilities!.library_id,principal=controller.state.session!.principal_id;
+ const canWrite=controller.state.phase==="verified"&&controller.state.session?.scope.kind==="owner"&&controller.state.capabilities?.features.generation===true;
  const prefix=`haeryong.draft-action.v1:${library}:${principal}:`;
  const [store]=useState(()=>new BrowserJournalStore("haeryong.draft-uploads.v1"));
  const [engine]=useState(()=>new TransferEngine(client,store));
@@ -151,16 +152,16 @@ export function DraftControl({controller,projects}:{controller:ShellController;p
    <button type="button" disabled={busy} onClick={()=>void act(async()=>{const page=await client.draftHistory(selected.draft_id);setHistory(page.items);setHistoryCursor(page.next_cursor);})}>초안 이력</button>
    <ul>{history.map(row=><li key={row.revision}>#{row.revision} · {stateLabel[row.state]} · {new Date(row.updated_at).toLocaleString()} · 초안 {row.draft_id} · 문서 {row.document_id??"새 문서"} · 기준 {baseLabel(row)}</li>)}</ul>
    {historyCursor?<button type="button" disabled={busy} onClick={()=>void act(async()=>{const page=await client.draftHistory(selected.draft_id,historyCursor);setHistory(old=>[...old,...page.items]);setHistoryCursor(page.next_cursor);})}>이력 더 보기</button>:null}
-   {pending?<><p>원래 {pending.action} 작업을 확인해야 합니다. 새 작업을 자동으로 만들지 않습니다.</p>{pending.refused?<><p>{draftRefusalText(pending.refused)}</p><button type="button" disabled={busy} onClick={()=>void act(acknowledgeRefusal)}>거부 확인 · 새 동작 선택</button></>:<button type="button" disabled={busy} onClick={()=>void act(control=>run(control,pending.action,true))}>원래 초안 작업 복구</button>}</>:null}
+   {pending?<><p>원래 {pending.action} 작업을 확인해야 합니다. 새 작업을 자동으로 만들지 않습니다.</p>{pending.refused?<><p>{draftRefusalText(pending.refused)}</p><button type="button" disabled={!canWrite||busy} onClick={()=>void act(acknowledgeRefusal)}>거부 확인 · 새 동작 선택</button></>:<button type="button" disabled={!canWrite||busy} onClick={()=>void act(control=>run(control,pending.action,true))}>원래 초안 작업 복구</button>}</>:null}
    {["preparing","ready"].includes(selected.state)?<>
-    <button type="button" disabled={busy||pending!==null} onClick={()=>void act(control=>run(control,"reject"))}>초안 거부</button>
-    {selected.state==="ready"?<fieldset disabled={busy}><legend>완전한 교체 결과 선택</legend>
+    <button type="button" disabled={!canWrite||busy||pending!==null} onClick={()=>void act(control=>run(control,"reject"))}>초안 거부</button>
+    {selected.state==="ready"?<fieldset disabled={!canWrite||busy}><legend>완전한 교체 결과 선택</legend>
      {native?<button type="button" onClick={()=>void act(chooseNative)}>호스트 결과 폴더 선택</button>:<><label className="field"><span>결과 ZIP</span><input type="file" onChange={e=>{const file=e.target.files?.[0];if(file)setInput(planFromArchive(file));}}/></label><label className="field"><span>결과 폴더</span><input type="file" {...{webkitdirectory:""} as object} multiple onChange={e=>{const files=Array.from(e.target.files??[]);if(files.length)setInput(planFromFolder(files,files[0]!.webkitRelativePath.split("/")[0]!));}}/></label></>}
      {input?<p>{input.selectionName} · {input.entries.length}개 항목. {!input.limits.emptyDirectoriesRepresented||!input.limits.symlinksRepresented?"브라우저 폴더 선택은 빈 디렉터리·심볼릭 링크를 표현하지 못합니다. 보존하려면 ZIP을 사용하세요.":"선택한 전체 트리를 전송합니다."}</p>:null}
      <button type="button" disabled={pending!==null||!input} onClick={()=>void act(control=>run(control,"replace"))}>선택한 전체 결과로 교체</button>
     </fieldset>:null}
    </>:null}
-   {selected.state==="ready"?<button className="primary" type="button" disabled={busy||pending!==null} onClick={()=>void act(control=>run(control,"publish"))}>저장된 기준으로 발행</button>:null}
+   {selected.state==="ready"?<button className="primary" type="button" disabled={!canWrite||busy||pending!==null} onClick={()=>void act(control=>run(control,"publish"))}>저장된 기준으로 발행</button>:null}
    {busy?<button type="button" onClick={()=>{actionOwner.stop();}}>전송 중지 · 원래 작업 유지</button>:null}
   </section>:null}
  </section>;

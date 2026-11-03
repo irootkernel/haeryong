@@ -1,13 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ApiError } from "../client/types.ts";
+import { ApiError, DispatchBlockedError, NetworkError } from "../client/types.ts";
 import type { RenderSessionView } from "../client/types.ts";
-import { RenderSessionLease } from "./render-session.ts";
+import { RenderSessionLease, renderDeliveryRefused } from "./render-session.ts";
 const storage = () => {
   const values = new Map<string, string>();
   return { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); }, removeItem: (key: string) => { values.delete(key); }, values };
 };
 const view = (id = "delivery"): RenderSessionView => ({ version_id: "version", session_id: id, render_origin: "http://renderer.invalid", handoff: { url: "http://renderer.invalid/handoff", secret: "memory-only", expires_at: new Date(Date.now() + 60_000).toISOString() }, lease_expires_at: new Date(Date.now() + 600_000).toISOString() });
+test("temporary delivery failures preserve host edits while confirmed refusal closes the Reader", () => {
+  for (const error of [new NetworkError(), new DispatchBlockedError(), new Error("local handoff failed"), new ApiError(503, "UNAVAILABLE", true)]) {
+    assert.equal(renderDeliveryRefused(error), false);
+  }
+  for (const status of [401, 403, 404, 409, 410]) {
+    assert.equal(renderDeliveryRefused(new ApiError(status, "REFUSED", false)), true);
+  }
+});
 test("an unknown open retries the exact journalled K and stores no handoff secret", async () => {
   const journal = storage(), keys: string[] = [];
   const client = {

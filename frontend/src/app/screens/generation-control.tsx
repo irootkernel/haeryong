@@ -24,6 +24,7 @@ function SavedGenerationScope({record,projects,documents}:{record:GenerationReco
 
 export function GenerationControl({controller,projects,initialProjectId,onClose}:{controller:ShellController;projects:ProjectView[];initialProjectId:string;onClose:()=>void}) {
  const client=controller.client;
+ const canWrite=controller.state.phase==="verified"&&controller.state.session?.scope.kind==="owner"&&controller.state.capabilities?.features.generation===true;
  const library=controller.state.capabilities!.library_id,principal=controller.state.session!.principal_id;
  const [journal]=useState(()=>new BrowserGenerationJournal(`${library}:${principal}`));
  const [submission]=useState(()=>new GenerationSubmission(client,journal,library,principal,undefined,undefined,()=>controller.state.capabilities?.runtime_generation??""));
@@ -201,7 +202,7 @@ export function GenerationControl({controller,projects,initialProjectId,onClose}
      </>:<label className="field"><span>{source.repo_id??source.kind} · 상대 파일 경로, 한 줄에 하나</span><textarea value={paths[source.source_id]??""} onChange={e=>setPaths(old=>({...old,[source.source_id]:e.target.value}))} rows={2}/></label>}{sourceMode==="pinned"&&source.kind==="git"?<label className="field"><span>이력 버전</span><input type="text" value={revisions[source.source_id]??""} onChange={e=>setRevisions(old=>({...old,[source.source_id]:e.target.value}))}/></label>:null}</div>)}
      <p className="hint">원본을 선택하지 않은 설명은 출처 미확인으로 보관됩니다. 기존 설명 선택은 원본 확인을 대신하지 않습니다.</p>
     </fieldset>
-    <button type="submit" className="primary" disabled={busy||!project||provider!=="codex"||!prompt.trim()}>생성 요청</button>
+    <button type="submit" className="primary" disabled={!canWrite||busy||!project||provider!=="codex"||!prompt.trim()}>생성 요청</button>
     {busy?<button type="button" onClick={()=>{if(operation.current)operation.current.stopped=true;}}>전송 중지 · 복구 기록 유지</button>:null}
    </form>
    <section aria-label="기존 설명 선택"><h3>관련 설명 찾기</h3>
@@ -216,19 +217,19 @@ export function GenerationControl({controller,projects,initialProjectId,onClose}
    {active?<section aria-label="선택한 원래 생성 요청" id={`generation-active-${active.operationId}`}><h3>선택한 원래 생성 요청</h3><SavedGenerationScope record={active} projects={projects} documents={visibleLabels}/></section>:null}
    {job?<section aria-label="생성 작업" aria-describedby={active?`generation-active-${active.operationId}`:undefined}><h3>{stateName(job)}</h3><p>{job.error}</p>
     <button type="button" disabled={busy} onClick={()=>void perform(async control=>{if(!active?.accepted)return;const current=await client.jobGet(active.accepted.job_id);guard(control);setJob(current);})}>작업 상태 새로고침</button>
-    {!["completed","failed","cancelled"].includes(job.state)?<button type="button" disabled={busy} onClick={()=>void perform(async()=>{controller.requireVerifiedDispatch();await client.jobCancel(job.job_id,crypto.randomUUID());setJob(await client.jobGet(job.job_id));})}>생성 작업 취소</button>:null}
+    {!["completed","failed","cancelled"].includes(job.state)?<button type="button" disabled={!canWrite||busy} onClick={()=>void perform(async()=>{controller.requireVerifiedDispatch();await client.jobCancel(job.job_id,crypto.randomUUID());setJob(await client.jobGet(job.job_id));})}>생성 작업 취소</button>:null}
     {active?.resume?<section aria-label="원래 재개 결정"><p>원래 재개 결정의 결과를 확인해야 합니다. 새 결정을 자동으로 만들지 않습니다.</p>
-     {active.resume.refused?<><p>{resumeRefusalText(active.resume.refused)}</p><button type="button" disabled={busy} onClick={()=>void acknowledgeResume()}>재개 거부 확인 · 새 결정 선택</button></>:<button type="button" disabled={busy} onClick={()=>void resume()}>원래 재개 결정 결과 확인</button>}
+     {active.resume.refused?<><p>{resumeRefusalText(active.resume.refused)}</p><button type="button" disabled={!canWrite||busy} onClick={()=>void acknowledgeResume()}>재개 거부 확인 · 새 결정 선택</button></>:<button type="button" disabled={!canWrite||busy} onClick={()=>void resume()}>원래 재개 결정 결과 확인</button>}
     </section>:null}
     {controller.state.session?.scope.kind==="owner"&&job.state==="paused"?<>
-     <button type="button" disabled={busy||!!active?.resume} onClick={()=>void resume("reconcile_only")}>상태만 재조정</button>
-     <button type="button" disabled={busy||!!active?.resume} onClick={()=>void resume("continue")}>원래 작업 이어가기</button>
-     <button type="button" disabled={busy||!!active?.resume} onClick={()=>void resume("retry")}>추가 사용량을 허용하고 재시도</button>
+     <button type="button" disabled={!canWrite||busy||!!active?.resume} onClick={()=>void resume("reconcile_only")}>상태만 재조정</button>
+     <button type="button" disabled={!canWrite||busy||!!active?.resume} onClick={()=>void resume("continue")}>원래 작업 이어가기</button>
+     <button type="button" disabled={!canWrite||busy||!!active?.resume} onClick={()=>void resume("retry")}>추가 사용량을 허용하고 재시도</button>
     </>:null}
     <p>이미 완성된 후보가 있는 작업은 추가 생성으로 재시도하지 않습니다. 초안 관리에서 후보를 확인하거나 별도의 새 생성 요청을 선택하세요.</p>
     <p>결과는 초안 관리에서 확인할 수 있습니다. 불확실한 작업은 새 생성 요청을 자동으로 만들지 않습니다.</p></section>:null}
 
-   <section aria-label="생성 복구 기록"><h3>이전 요청 확인</h3>{records.length===0?<p>복구 기록이 없습니다.</p>:records.map(record=><article key={record.operationId} data-operation-id={record.operationId}><h4>{record.request.title||"생성 요청"} · {record.accepted?"접수 확인됨":"확인 필요"}</h4><SavedGenerationScope record={record} projects={projects} documents={visibleLabels}/><button type="button" disabled={busy} onClick={()=>void perform(control=>send(record,control))}>{record.accepted?"작업 확인":"원래 요청 복구"}</button></article>)}</section>
+   <section aria-label="생성 복구 기록"><h3>이전 요청 확인</h3>{records.length===0?<p>복구 기록이 없습니다.</p>:records.map(record=><article key={record.operationId} data-operation-id={record.operationId}><h4>{record.request.title||"생성 요청"} · {record.accepted?"접수 확인됨":"확인 필요"}</h4><SavedGenerationScope record={record} projects={projects} documents={visibleLabels}/><button type="button" disabled={!canWrite||busy} onClick={()=>void perform(control=>send(record,control))}>{record.accepted?"작업 확인":"원래 요청 복구"}</button></article>)}</section>
   </>}
  </Sheet>;
 }

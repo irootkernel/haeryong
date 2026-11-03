@@ -6,6 +6,7 @@ parser.add_argument('--browser-cli',type=pathlib.Path,required=True)
 parser.add_argument('--scratch-root',type=pathlib.Path,help='Explicit existing private physical parent for this driver')
 parser.add_argument('--receipt',type=pathlib.Path,required=True)
 parser.add_argument('--provider-only',action='store_true',help='Bounded TASK-006-03 provider status and local-reader usability; no inference')
+parser.add_argument('--ai-disconnected-only',action='store_true',help='Controlled AI control-state/reconnect regression; no provider submission')
 parser.add_argument('--provider-binary',type=pathlib.Path,help='Explicit already installed pinned native binary; provider-only')
 parser.add_argument('--backup-only',action='store_true',help='Bounded TASK-005-05 Settings keyboard and hasTouch tap status proof')
 parser.add_argument('--lifecycle-only',action='store_true',help='Bounded TASK-005-03/04 lifecycle/purge proof; no external CDN')
@@ -21,11 +22,11 @@ base=args.scratch_root.resolve(strict=True) if args.scratch_root else (volume/'t
 os.umask(0o077);work=pathlib.Path(tempfile.mkdtemp(prefix='h3r-',dir=base)).resolve()
 env=os.environ|{'TMPDIR':str(work),'HAERYONG_TEST_STATE_DIR':str(work/'app-state'),'PYTHONDONTWRITEBYTECODE':'1'}
 os.environ['HAERYONG_TEST_STATE_DIR']=env['HAERYONG_TEST_STATE_DIR']
-if args.provider_only or args.review_only or args.notes_only or args.lifecycle_only or args.backup_only:env['PLAYWRIGHT_DAEMON_SOCKETS_DIR']=str(work/'sockets')
+if args.ai_disconnected_only or args.provider_only or args.review_only or args.notes_only or args.lifecycle_only or args.backup_only:env['PLAYWRIGHT_DAEMON_SOCKETS_DIR']=str(work/'sockets')
 spec=importlib.util.spec_from_file_location('h',REPO/'tests/e2e/harness.py');h=importlib.util.module_from_spec(spec);spec.loader.exec_module(h)
 cli=str(args.browser_cli.resolve(strict=True))
 session=work.name;product=None;opened=False
-if args.provider_only or args.review_only or args.notes_only or args.lifecycle_only or args.backup_only:pathlib.Path(env['PLAYWRIGHT_DAEMON_SOCKETS_DIR']).mkdir(mode=0o700)
+if args.ai_disconnected_only or args.provider_only or args.review_only or args.notes_only or args.lifecycle_only or args.backup_only:pathlib.Path(env['PLAYWRIGHT_DAEMON_SOCKETS_DIR']).mkdir(mode=0o700)
 proof={'scope':__doc__,'runtime':str(work),'complete':False,'cases':[],'driver_sha256':hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest()}
 def fingerprints():
  paths=sorted([p for folder in ['cmd','internal'] for p in (REPO/folder).rglob('*.go') if not p.name.endswith('_test.go')]+[REPO/'go.mod',REPO/'go.sum']+[p for p in (REPO/'internal/webassets/dist').rglob('*') if p.is_file()])
@@ -51,7 +52,7 @@ try:
  source=work/'source';(source/'nested').mkdir(parents=True)
  first="""<!doctype html><meta charset=utf-8><title>Reader first</title><h1 id=heading>첫 페이지</h1><div id=framework></div><button id=increment onclick="this.textContent=String(Number(this.textContent)+1)">0</button><a id=next href="nested/둘째.html?scenario=2#part">next</a><a id=popup target=_blank href="nested/둘째.html?popup=1#part">popup</a><div style="height:2600px"></div><h2 id=part>끝</h2><script type=module>import {value} from './module.js';window.moduleValue=value;import('https://esm.sh/preact@10.27.2').then(({h,render})=>{render(h('strong',{},'External Preact rendered'),document.querySelector('#framework'));window.cdnFramework='pass';}).catch(()=>window.cdnFramework='unavailable');new Worker('./worker.js').onmessage=e=>window.workerValue=e.data;</script>"""
  second="""<!doctype html><meta charset=utf-8><title>Reader second</title><h1>둘째 페이지</h1><a href='../first.html'>first</a><div style='height:2600px'></div><h2 id=part>둘째 끝</h2>"""
- if args.provider_only or args.review_only or args.notes_only or args.lifecycle_only or args.backup_only:
+ if args.ai_disconnected_only or args.provider_only or args.review_only or args.notes_only or args.lifecycle_only or args.backup_only:
   first="<h1 id='review-fixture'>Review fixture</h1><h2 id='retry'>Page-local note anchor</h2><p>Labelled synthetic AI minor-change assessment, no Review authority.</p><a id='next' href='nested/둘째.html'>next</a><div style='height:2600px'></div>"
   second="<h1 id='second-review-page'>Second Review page</h1>"
  (source/'first.html').write_text(first);(source/'nested/둘째.html').write_text(second)
@@ -75,7 +76,14 @@ try:
  call(['open',product.endpoint+'/health/live','--browser','chrome','--profile',str(work/'profile')]);opened=True
  js("async page=>{await page.evaluate(token=>localStorage.setItem('haeryong.owner-session.v1',token),"+json.dumps(owner['token'])+");return true;}")
  route=product.endpoint+f'/documents/{document}/versions/{version}?'+urllib.parse.urlencode({'page':'first.html','page_query':'scenario=1','page_fragment':''})
- if args.provider_only:
+ if args.ai_disconnected_only:
+  code=pathlib.Path(__file__).with_name('check_ai_disconnected.js').read_text()
+  proof['ai_disconnected_driver_sha256']=hashlib.sha256(code.encode()).hexdigest()
+  archive=work/'controlled-result.zip';archive.write_bytes(b'PK\x05\x06'+bytes(18))
+  actual=js(code.replace('INPUT',json.dumps({'origin':product.endpoint,'route':route,'version':version,'document':document,'zip':str(archive),'screenshot':str(args.screenshot.resolve()) if args.screenshot else None})))
+  proof['cases'].append({'kind':'EPIC-006 controlled rendered AI action eligibility/reconnect; actual shell/controller/HTTP and read-only ready-Draft fixture; zero provider submissions','actual':actual})
+  assert actual['all_passed'], 'AI disconnected-control requirements failed; see structured case observations'
+ elif args.provider_only:
   code=pathlib.Path(__file__).with_name('check_provider.js').read_text()
   proof['provider_driver_sha256']=hashlib.sha256(code.encode()).hexdigest()
   actual=js(code.replace('INPUT',json.dumps({'origin':product.endpoint,'route':route,'version':version,'screenshot':str(args.screenshot.resolve()) if args.screenshot else None})))

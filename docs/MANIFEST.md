@@ -140,7 +140,7 @@ This inventory covers 190 other files: all Markdown documents and Python documen
 | `templates/epic-gate.md` | 2139 | `9d7d8d8cd44cc29c4922645fed996bdc9b9794bb48a61eea706955ccec804e7b` |
 | `templates/task-evidence.md` | 2936 | `ed7a55607ee1f203c41d7667d28c80c5be756635a955ecbdd23fd095e5d39d83` |
 | `testing/acceptance-catalog.md` | 36336 | `051ad9a3f55a964dfdd4ba7dcf4e0eacbde878ec6a90b3712a30796bdee27d96` |
-| `testing/ai-workflows.md` | 38416 | `8ef422d555cc74b366fc1fdc8781fc1b49e7693b11183945b694704d6c47e30f` |
+| `testing/ai-workflows.md` | 42086 | `aaae09d9f11ddca16b050aebf8ac216b658544f88cef4a6748aa4b0357e42964` |
 | `testing/anchored-notes.md` | 17759 | `c78829ee11ba08280f25fb7cef6c04facfff130517095e325798909e38fab7e5` |
 | `testing/atomic-import.md` | 16640 | `8e964102b5bdb05cf1705261edb4c60572a3c9c844d5c5088f4f1170ebfb6cee` |
 | `testing/auth-ingress-spike.md` | 19029 | `461d5a9a3ca74752a909093683e90f12b4508516c1533c818c7fea5b6432d4dc` |

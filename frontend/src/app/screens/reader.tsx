@@ -67,10 +67,13 @@ function readerURL(document: string, version: string, location: ReaderLocation):
 
 export function ReaderScreen(props: ReaderProps) {
   const state = props.controller.state, authority = props.controller.captureDispatchAuthority();
+  const confirmedNonce = useRef(authority?.nonce);
+  if (authority !== null) confirmedNonce.current = authority.nonce;
   const owner = JSON.stringify([state.capabilities?.library_id, state.session?.principal_id, state.session?.session_id]);
-  // Ordinary rechecks leave this epoch stable. A replaced credential or
-  // daemon generation cannot reactivate the preceding Reader's callbacks.
-  const epoch = JSON.stringify([owner, authority?.nonce, state.capabilities?.runtime_generation]);
+  // Keep unsent drafts mounted through a same-authority outage. This retained
+  // nonce is only a mount key; dispatch still requires verified authority.
+  // A replaced credential or daemon generation creates a new Reader.
+  const epoch = JSON.stringify([owner, confirmedNonce.current, state.capabilities?.runtime_generation]);
   return <ReaderOwner key={epoch + ":" + props.documentId} {...props} owner={owner} epoch={epoch} />;
 }
 

@@ -133,7 +133,8 @@ export function SourceSettings({ controller, projectId }: { controller: ShellCon
     {state.phase === "pending" && <button onClick={() => attempt(() => flow.recover())}>원래 설정 작업 결과 다시 확인</button>}
     {state.phase === "stale" && <div><p>계획이 오래되었습니다. 현재 설정으로 새 미리보기가 필요합니다.</p><button onClick={() => attempt(() => flow.load())}>현재 설정 다시 불러오기</button></div>}
     {state.phase === "done" && <p role="status">출처 설정 적용됨</p>}
-    <p className="muted">Haeryong 원본 reader는 선택한 루트의 파일을 읽고 원본을 수정하지 않습니다. 실제 제공자는 아직 연결되지 않았습니다. 외부 에이전트는 소유자의 기존 도구·권한을 사용하며, 이 설정은 OS 읽기 격리 경계가 아닙니다.</p>
+    <p className="muted">Haeryong 원본 reader는 선택한 루트의 파일을 읽고 원본을 수정하지 않습니다. 제공자 연결과 계정·사용량 준비 상태는 AI 제공자 설정에서 확인하세요. 외부 에이전트는 소유자의 기존 도구·권한을 사용하며, 이 설정은 OS 읽기 격리 경계가 아닙니다.</p>
+    <button onClick={() => navigate("/settings/ai")}>AI 제공자 설정</button>
     <button onClick={() => navigate(`/projects/${projectId}/sources`)}>원본 목록으로</button>
   </section>;
 }

@@ -1,13 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ShellController } from "../client/controller.ts";
 import type { ContextClient } from "../client/context-types.ts";
-import { ApiError } from "../client/types.ts";
 import type { PersonalTarget, PersonalOperations } from "../app/screens/personal-operations.ts";
 import { BrowserContextJournal, ContextTransferHost, freshContextVerifier } from "./context-transfer.ts";
 import { featureEnabled } from "../app/screens/library-data.ts";
 import type { ReaderPageContext, ReferenceActivation } from "../app/screens/reader-navigation.ts";
 import { ViewerChannel } from "./channel.ts";
-import { RenderSessionLease } from "./render-session.ts";
+import { RenderSessionLease, renderDeliveryRefused } from "./render-session.ts";
 import { useReviewInvalidation } from "../app/screens/review-refresh.ts";
 import { ReaderLocationTracker, type ReaderLocation } from "./reader-location.ts";
 
@@ -294,7 +293,7 @@ export function IsolatedViewer(props: ViewerProps) {
       setLoaded(false); setFailure(message(error));
       if (revoked) callbacks.current.onDeliveryRevoked?.({ versionId: props.versionId, context: props.context, reload: props.reload });
     };
-    retireDelivery.current = error => fail(error, true);
+    retireDelivery.current = error => fail(error, renderDeliveryRefused(error));
     window.addEventListener("message", onMessage);
     setFailure(null); setLoaded(false); setWaiting(null);
     void lease.start().then((session) => {
@@ -307,7 +306,7 @@ export function IsolatedViewer(props: ViewerProps) {
       handoff.action = session.handoff.url + "?page=" + encodeURIComponent(artifact);
       (handoff.elements.namedItem("secret") as HTMLInputElement).value = session.handoff.secret;
       handoff.submit();
-    }).catch((error) => fail(error, error instanceof ApiError && [401, 403, 404, 409, 410].includes(error.status)));
+    }).catch((error) => fail(error, renderDeliveryRefused(error)));
     return () => { dispose(); retireDelivery.current = null; };
   }, [props.controller, props.owner, props.context, props.documentId, props.versionId, props.reload, props.personal, initial, retry, lease]);
 
