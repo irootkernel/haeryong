@@ -43,3 +43,7 @@ C01, C02, C03, C04, C05, C06, C07, C08, C09, M08, M10, M14, M15, M16, M17, M18, 
 ## Handoff
 
 Stage A passing record with actual provider, primary browser/WebView, second device, source and private route; real two-project reader outcomes. Manual/periodic maintenance is not claimed complete. Use the [Epic gate template](../templates/epic-gate.md) as an index to actual artifacts and identify the exact next task.
+
+## Execution sources
+
+Detailed SOT: [EPIC-007 execution dossier](../todo/TODO-EPIC-007.md). It maps the six Tasks to their canonical requirement, acceptance, environment and authority owners. Frontmatter and the [roadmap](../roadmap.md) retain identity, order, dependencies and status. At closeout, promote durable content and replace this link with Canonical Outcomes; dossier removal requires the approved closeout envelope.

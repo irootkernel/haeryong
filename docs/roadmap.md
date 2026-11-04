@@ -63,4 +63,4 @@ closeout. The [production AI gate](testing/epic-006-ai-gate.md) indexes the six
 completed members, accepted shared-client correction, independent final
 assessment and bounded evidence. The complete Stage A/private second-device
 gate remains EPIC-007; [TASK-007-01](tasks/EPIC-007/TASK-007-01.md) is the next
-ordered owner and has not started.
+ordered owner and has not started. Its Detailed SOT is the [EPIC-007 execution dossier](todo/TODO-EPIC-007.md); this roadmap and canonical frontmatter retain identity, order, dependencies and status.

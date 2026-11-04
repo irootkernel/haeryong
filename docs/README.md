@@ -95,6 +95,10 @@ The [decision register](decisions.md) distinguishes inherited direction, propose
 
 The owner explicitly waived creation of a separate execution dossier for EPIC-001 on 2026-10-13. The composite source of truth is the canonical set linked here: [roadmap](roadmap.md), [EPIC-001 and its ordered Tasks](epics/EPIC-001.md), [execution protocol](execution-protocol.md), decisions/requirements, architecture/data model/ADRs, contracts/schema registry, UI specifications/R5 handoff, testing/knowledge-quality, operations, references and source map. Each keeps its existing requirement ownership. The waiver omits only the separate dossier; it waives no product gate, source binding, account/device proof or D-10 exposure boundary. Final Epic acceptance remains an owner decision after all required work and gates pass.
 
+### Execution dossiers
+
+[TODO and execution dossiers](todo/README.md) holds future Epic-sized candidates and temporary execution dossiers for adopted Epics. A dossier links canonical owners without owning identity, order, dependency, status or product requirements. EPIC-007 uses its [execution dossier](todo/TODO-EPIC-007.md) as Detailed SOT. Durable content is promoted and the dossier removed only at its last consumer's approved closeout.
+
 ## Delivery shape
 
 - **10 sequential Epics, 61 task specifications.** Complete the current Epic's exit gate before starting the next one. Task count follows required outcomes, with no fixed six-task rule. EPIC-001 includes a cheap reader-task checkpoint and a real-project usefulness spike before contract freeze, followed by actual-use checkpoints as features arrive.
@@ -116,7 +120,7 @@ Stage A requires the connected desktop and private remote reader, real source-gr
 | Design | [Architecture](architecture.md), [data model](data-model.md), [ADRs](adr/README.md) |
 | Interfaces | [Schema registry](contracts/schema-registry.md), [Package](contracts/package.md), [Import workflow](contracts/import-workflow.md), [HTTP API](contracts/http-api.md), [authentication](contracts/authentication.md), [viewer protocol](contracts/viewer-protocol.md), [CLI](contracts/cli.md), [jobs/events](contracts/jobs-events.md), [AI adapter](contracts/ai-adapter.md), [source access](contracts/source-access.md), [configuration](contracts/configuration.md) |
 | UI | [Design index](design/README.md), [R5 prototype](design/prototype/README.md), [implementation handoff](design/prototype/HANDOFF.md), [Information architecture](ui/information-architecture.md), [screen specifications](ui/screens.md), [wireframes](ui/wireframes.md), [flows](ui/flows.md), [design system](ui/design-system.md) |
-| Work | [Roadmap](roadmap.md), [Epic index](epics/README.md), [task index](tasks/README.md), [execution protocol](execution-protocol.md), [deferred feedback](deferred-feedback/README.md) |
+| Work | [Roadmap](roadmap.md), [Epic index](epics/README.md), [task index](tasks/README.md), [execution protocol](execution-protocol.md), [deferred feedback](deferred-feedback/README.md), [TODO and execution dossiers](todo/README.md) |
 | Quality | [Knowledge quality](testing/knowledge-quality.md), [acceptance](testing/acceptance-catalog.md), [fixtures](testing/fixtures.md), [traceability](testing/traceability.md), [strategy](testing/test-strategy.md), [stack experiment](testing/stack-spike.md), [auth/ingress experiment](testing/auth-ingress-spike.md), [provider/source experiment](testing/provider-source-spike.md), [understanding experiment](testing/knowledge-value-spike.md), [bundle validation](testing/bundle-validation.md) |
 | Operations | [Security](operations/security.md), [deployment](operations/deployment.md), [recovery](operations/backup-recovery.md), [observability](operations/observability.md), [release](operations/release-checklist.md) |
 
