@@ -2,7 +2,7 @@
 id: "EPIC-006"
 type: "epic"
 title: "Haeryong skill, durable AI work and Q&A"
-status: "in_progress"
+status: "done"
 depends_on: ["EPIC-005"]
 completion_requires: ["TASK-006-01","TASK-006-02","TASK-006-03","TASK-006-04","TASK-006-05","TASK-006-06"]
 ---
@@ -54,3 +54,18 @@ interface contracts and knowledge-quality/acceptance owners form its composite
 execution source of truth. The waiver removes no implementation or evidence
 obligation. TASK-006-01's [attempt foundation](../testing/provider-attempts.md)
 records the current bounded implementation; later Tasks retain their order.
+
+## Prepared closeout record
+
+All six member Tasks are complete. The [production AI exit gate](../testing/epic-006-ai-gate.md)
+indexes the assembled evidence, original whole-Epic review, verified shared-client
+correction at `68a50c4903f577cf9a97fc30c3095652c8615eb0`, independent final
+assessment and actual Master overall acceptance of this closeout.
+The canonical Epic status is `done`; its common, real-provider, semantic,
+rendered and native observations retain their individual scopes and failures.
+The closeout commit records this acceptance.
+
+Only the separate execution dossier was waived. Its composite execution sources
+remain canonical; no dossier is created or deleted. Physical private-device and
+complete Stage A qualification remain with EPIC-007. The next ordered owner is
+[TASK-007-01](../tasks/EPIC-007/TASK-007-01.md), which has not started.

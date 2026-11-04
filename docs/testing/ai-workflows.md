@@ -632,3 +632,26 @@ The final independent assessment remains pending at this checkpoint. Earlier
 common successes retain their original candidate applicability. The source
 whole-Epic review predates this local correction; no technical clean verdict or
 Master overall acceptance is claimed.
+
+## Assembled Epic closeout
+
+The preceding correction checkpoint's pending assessment has since completed.
+The independent final integrated Evaluator found all 50 original criteria met,
+with no unmet or unverified criterion and all seven native compounds met. The
+Coordinator accepted the exact shared-client correction under the existing Epic
+correction grant and verified commit
+`68a50c4903f577cf9a97fc30c3095652c8615eb0`. Internal Validation completed with
+Goal achieved and that authoritative commit handoff. The original whole-Epic
+source review still requires changes at its original candidate; the verified
+local correction and final assessment are separate evidence.
+
+Master overall acceptance of the exact final closeout establishes
+EPIC-006 completion. The [production AI exit gate](epic-006-ai-gate.md) indexes
+all six member records, current common/rendered evidence, material and Reader
+quality, original failures and future-owner limits. Final canonical documentation
+checks cover this closeout projection; product and compiled assets are
+unchanged from the validated correction. The separately checked test-console
+progress change at `acbb221b6f0b179012cdfa0cb60df1580df09724` does not extend the
+historical full-common result to a new test-tooling candidate. The closeout
+commit records this acceptance. Physical private-device and
+complete Stage A qualification remain with EPIC-007.

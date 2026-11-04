@@ -258,3 +258,20 @@ Codex review and the original-criterion independent final assessment passed the
 bounded Task06 delivery, accepted under the delegated member envelope. Its
 normal completion commit/native finalization follows. Whole-Epic internal
 validation and Master overall acceptance remain separate.
+
+## EPIC-006 assembled delivery
+
+The earlier Task and correction checkpoints above retain their historical
+status and evidence scope. All six members are now complete. The
+[production AI exit gate](testing/epic-006-ai-gate.md) indexes the assembled delivery, accepted
+shared-client correction at `68a50c4903f577cf9a97fc30c3095652c8615eb0`,
+independent final assessment, passing corrected common and actual Master overall
+acceptance of the exact closeout. EPIC-006 is complete; the final
+closeout commit records this acceptance. The original source
+review predates the verified local correction and retains its original result.
+
+Retained real-provider, semantic, Reader/browser and native observations keep
+their individual qualifications. Current common and affected documentation
+checks do not establish physical private-device use or complete Stage A.
+EPIC-007 owns that gate and TASK-007-01 is the next ordered owner; it has not
+started. Maintenance, schedules and release retain their later Epic owners.

@@ -248,3 +248,20 @@ separate from the full common. Delegated member acceptance establishes Task06
 delivery; its normal commit/native finalization follows. The Epic remains in
 progress pending its internal audit and Master overall acceptance. Physical/
 private-device and later Epic gates retain their owners.
+
+## EPIC-006 assembled delivery
+
+The earlier Task and correction checkpoints above retain their historical
+status and evidence scope. All six members are now complete. The
+[production AI exit gate](docs/testing/epic-006-ai-gate.md) indexes the assembled delivery, accepted
+shared-client correction at `68a50c4903f577cf9a97fc30c3095652c8615eb0`,
+independent final assessment, passing corrected common and actual Master overall
+acceptance of the exact closeout. EPIC-006 is complete; the final
+closeout commit records this acceptance. The original source
+review predates the verified local correction and retains its original result.
+
+Retained real-provider, semantic, Reader/browser and native observations keep
+their individual qualifications. Current common and affected documentation
+checks do not establish physical private-device use or complete Stage A.
+EPIC-007 owns that gate and TASK-007-01 is the next ordered owner; it has not
+started. Maintenance, schedules and release retain their later Epic owners.
