@@ -153,6 +153,10 @@ export interface DeviceSession {
   state: string;
   origin: string;
   last_seen_at: string;
+  created_at?: string;
+  expires_at?: string | null;
+  revision?: number;
+  etag?: string;
 }
 
 export interface EventSubscription {
@@ -168,7 +172,7 @@ export interface ListPage<T> {
   next_cursor: string | null;
 }
 
-/** Owner configuration edits always preview a revision-bound project plan. */
+/** Owner configuration edits always preview a revision-bound project or library plan. */
 export interface SourceMapping {
   source_id: string;
   kind: "git" | "files";
@@ -183,13 +187,27 @@ export interface ProjectConfiguration {
   provider_id?: string | null;
   [key: string]: unknown;
 }
+export interface SecurityConfiguration {
+  remember_device_default: boolean;
+  session_idle_seconds: number | null;
+  session_absolute_seconds: number | null;
+  pairing_expiry_seconds?: number;
+  [key: string]: unknown;
+}
 export interface ConfigurationView {
   config_revision: number;
   etag: string;
-  configuration: { projects: Record<string, ProjectConfiguration>; [key: string]: unknown };
+  configuration: {
+    projects: Record<string, ProjectConfiguration>;
+    security?: SecurityConfiguration;
+    [key: string]: unknown;
+  };
 }
+export type ConfigurationScope =
+  | { kind: "project"; project_id: string }
+  | { kind: "library" };
 export interface ConfigurationPlanRequest {
-  scope: { kind: "project"; project_id: string };
+  scope: ConfigurationScope;
   expected_config_revision: number;
   changes: Record<string, unknown>;
 }

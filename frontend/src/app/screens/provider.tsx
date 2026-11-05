@@ -62,7 +62,7 @@ export function ProviderScreen({ controller }: { controller: ShellController }) 
     </div>}
     <p>로그인·계정·결제 설정은 호스트의 Codex에서 관리합니다. 연결이 없어도 기존 문서 읽기와 Review는 계속 사용할 수 있습니다.</p>
     <nav aria-label="다른 설정" className="form-row">
-      {[["/settings/general", "일반 설정"], ["/connect", "연결 및 장치"], ["/settings/projects", "프로젝트 및 소스"], ["/settings/backup", "백업 및 내보내기"], ["/settings/storage", "저장 공간"]].map(([path, label]) =>
+      {[["/settings/general", "일반 설정"], ["/settings/sessions", "세션 및 보안 정책"], ["/connect", "연결 및 장치"], ["/settings/projects", "프로젝트 및 소스"], ["/settings/backup", "백업 및 내보내기"], ["/settings/storage", "저장 공간"]].map(([path, label]) =>
         <a className="action-link" key={path} href={path} onClick={event => {
           if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
           event.preventDefault();

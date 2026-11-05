@@ -246,7 +246,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		identity, err := h.core.Authenticate(r.Context(), token)
+		authenticate := h.core.Authenticate
+		if passiveAuthRoute(r.Method, path) {
+			authenticate = h.core.AuthenticatePassive
+		}
+		identity, err := authenticate(r.Context(), token)
 		if err != nil {
 			fail(w, r, err)
 			return
@@ -301,7 +305,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		value, err := h.core.Decide(r.Context(), token, domain.PairingDecision{ID: parts[2], Code: input.Code, Origin: input.Origin, ETag: r.Header.Get("If-Match"), OperationID: r.Header.Get("Idempotency-Key"), Action: parts[3]})
 		durable(w, r, value, err)
 	case path == "session" && r.Method == http.MethodGet:
-		value, err := h.core.Authenticate(r.Context(), token)
+		value, err := h.core.AuthenticatePassive(r.Context(), token)
 		h.private(w, r, token, func() {
 			if err == nil {
 				w.Header().Set("ETag", value.ETag)
@@ -506,6 +510,21 @@ func futureCapability(method, path string) bool {
 		}
 	}
 	return false
+}
+
+func passiveAuthRoute(method, path string) bool {
+	trimmed := strings.TrimSuffix(path, "/")
+	switch {
+	case (trimmed == "session" || trimmed == "events") && method == http.MethodGet:
+		return true
+	case trimmed == "capabilities" && (method == http.MethodGet || method == http.MethodHead):
+		return true
+	case method == http.MethodPost:
+		parts := strings.Split(trimmed, "/")
+		return len(parts) == 5 && parts[0] == "versions" && parts[1] != "" && parts[2] == "render-sessions" && parts[3] != "" && parts[4] == "renew"
+	default:
+		return false
+	}
 }
 
 func (h *handler) private(w http.ResponseWriter, r *http.Request, token string, deliver func()) {
@@ -725,7 +744,7 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request, token string) {
 		fail(w, r, session.ErrUnavailable)
 		return
 	}
-	identity, err := h.core.Authenticate(r.Context(), token)
+	identity, err := h.core.AuthenticatePassive(r.Context(), token)
 	if err != nil {
 		fail(w, r, err)
 		return
@@ -938,7 +957,7 @@ func (h *handler) pollEvents(w http.ResponseWriter, r *http.Request, token strin
 			return
 		}
 	}
-	identity, e := h.core.Authenticate(r.Context(), token)
+	identity, e := h.core.AuthenticatePassive(r.Context(), token)
 	if e != nil {
 		fail(w, r, e)
 		return

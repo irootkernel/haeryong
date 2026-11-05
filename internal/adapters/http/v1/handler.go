@@ -171,8 +171,15 @@ func bearer(r *http.Request) (string, error) {
 	}
 	return strings.TrimPrefix(values[0], "Bearer "), nil
 }
+func passiveRoute(method string, p []string) bool {
+	if len(p) == 1 && p[0] == "capabilities" && (method == http.MethodGet || method == http.MethodHead) {
+		return true
+	}
+	return method == http.MethodPost && len(p) == 5 && p[0] == "versions" && p[1] != "" && p[2] == "render-sessions" && p[3] != "" && p[4] == "renew"
+}
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/api/v1/search" || referenceRoute(route(r)) || connectedRoute(route(r)) {
+	p := route(r)
+	if r.URL.Path == "/api/v1/search" || referenceRoute(p) || connectedRoute(p) {
 		ctx, cancel := context.WithTimeout(r.Context(), query.SearchTimeout)
 		defer cancel()
 		r = r.WithContext(ctx)
@@ -184,7 +191,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failure(w, r, err)
 		return
 	}
-	if _, err = h.Core.Auth.Authenticate(r.Context(), token); err != nil {
+	authenticate := h.Core.Auth.Authenticate
+	if passiveRoute(r.Method, p) {
+		authenticate = h.Core.Auth.AuthenticatePassive
+	}
+	if _, err = authenticate(r.Context(), token); err != nil {
 		failure(w, r, err)
 		return
 	}
@@ -192,7 +203,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failure(w, r, domain.ErrNotFound)
 		return
 	}
-	p := route(r)
 	if lifecycleRoute(p) {
 		h.lifecycle(w, r, token, p)
 		return

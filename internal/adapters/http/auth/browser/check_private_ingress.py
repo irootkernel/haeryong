@@ -53,6 +53,7 @@ os.umask(0o077)
 work = Path(tempfile.mkdtemp(prefix='h3p7-', dir=args.scratch_root.resolve(strict=True))).resolve()
 env = os.environ | {'TMPDIR': str(work), 'HAERYONG_TEST_STATE_DIR': str(work / 'app-state'),
                     'PLAYWRIGHT_DAEMON_SOCKETS_DIR': str(work / 'sockets'),
+                    'PWTEST_SOCKETS_DIR': str(work / 'sockets'),
                     'PLAYWRIGHT_DAEMON_SESSION_DIR': str(work / 'registry'),
                     'PYTHONDONTWRITEBYTECODE': '1', 'GOTOOLCHAIN': 'local',
                     'GOPROXY': 'off', 'GOSUMDB': 'off'}
@@ -86,7 +87,9 @@ def fingerprints():
     paths = [p for folder in ('cmd', 'internal', 'skills') for p in (REPO / folder).rglob('*.go')
              if not p.name.endswith('_test.go')]
     paths += [p for p in (REPO / 'internal/webassets/dist').rglob('*') if p.is_file()]
-    paths += [REPO / 'skills/use-haeryong/SKILL.md',
+    paths += [p for p in (REPO / 'frontend/src').rglob('*') if p.is_file() and not p.name.endswith('.test.ts')]
+    paths += [REPO / 'frontend/check_build.py',
+              REPO / 'skills/use-haeryong/SKILL.md',
               REPO / 'internal/application/configuration/schema.json',
               REPO / 'internal/application/import/metadata-schema.json',
               REPO / 'internal/application/storage/defaults.json',
@@ -109,9 +112,9 @@ def wait_signal(path):
     assert json.loads(path.read_text())['session'] == session
 
 
-def call(arguments, result=False):
+def call(arguments, result=False, timeout=90):
     run = subprocess.run([cli, '--session=' + session, *arguments], cwd=work, env=env,
-                         capture_output=True, text=True, timeout=90)
+                         capture_output=True, text=True, timeout=timeout)
     if run.returncode or '### Error' in run.stdout:
         detail = run.stdout.split('### Error', 1)[-1].split('### Ran', 1)[0]
         proof['browser_error'] = redact(detail or run.stderr)[-2400:]
@@ -122,8 +125,8 @@ def call(arguments, result=False):
         return json.JSONDecoder().raw_decode(run.stdout[match.end():].lstrip())[0]
 
 
-def js(code):
-    return call(['run-code', code], True)
+def js(code, timeout=90):
+    return call(['run-code', code], True, timeout=timeout)
 
 
 def request_url(url, method='GET', headers=None, body=None):
@@ -374,6 +377,32 @@ fetch('/root-asset.txt').then(r=>r.text()).then(t=>window.rootAsset=t);</script>
     script = Path(__file__).with_suffix('.js').read_text()
     proof['cases'].append({'kind': 'actual local Reader before private configuration',
                            'actual': js(script.replace('INPUT', json.dumps(inputs)))})
+    task02_source = work / 'task02-source-root'
+    task02_source.mkdir(exist_ok=True)
+    (task02_source / 'note.md').write_text('# Task02 source scope proof\n')
+
+    def run_task02_cohort(target_base, target_renderer1, mode_label):
+        origin_denied = request_url(target_base + '/api/v1/session', headers={'Origin': 'https://foreign.invalid'})[0]
+        forged_denied = request_url(target_base + '/api/v1/session', headers={'Origin': target_base, 'Tailscale-User-Login': 'owner@example.com', 'X-Forwarded-User': 'admin'})[0]
+        assert origin_denied == 403 and forged_denied == 401
+        cohort_inputs = inputs | {
+            'base': target_base,
+            'expectedOrigins': [target_renderer1],
+            'phase': 'task02-cohort',
+            'disposableSourceRoot': str(task02_source),
+            'modeLabel': mode_label,
+        }
+        # task02-cohort spans multiple 60s CreatePairing rate-limit windows plus a
+        # 61.5s session-age wait (~240-260s minimum); scope a 420s timeout to this phase only.
+        cohort_result = js(script.replace('INPUT', json.dumps(cohort_inputs)), timeout=420)
+        cohort_result['http_foreign_origin_status'] = origin_denied
+        cohort_result['http_forged_identity_status'] = forged_denied
+        proof['cases'].append({'kind': 'TASK-007-02 pairing, sessions, policy recovery, memory-only and passive-idle expiry (' + mode_label + ')',
+                               'actual': cohort_result})
+        assert local('GET', '/api/v1/session', client=owner)['session_id'] == owner['session']['session_id']
+
+    if not live:
+        run_task02_cohort(product.endpoint, upstream1, 'local-deterministic')
     external = args.external_base_url or 'https://node.tailnet.ts.net:9271'
     renderer1 = args.renderer_origin_1 or 'https://node.tailnet.ts.net:9291'
     renderer2 = args.renderer_origin_2 or 'https://node.tailnet.ts.net:9292'
@@ -439,6 +468,7 @@ fetch('/root-asset.txt').then(r=>r.text()).then(t=>window.rootAsset=t);</script>
         revoked = js(script.replace('INPUT', json.dumps(live_inputs | {'phase': 'revoked'})))
         proof['cases'].append({'kind': 'private bearer and narrow delivery lose current authority after local-owner revoke', 'actual': revoked})
         assert local('GET', '/api/v1/session', client=owner)['session_id'] == owner['session']['session_id']
+        run_task02_cohort(external, renderer1, 'private-https')
         publish(args.web_complete_file, {'session': session})
         wait_signal(args.serve_removed_file)
         try:

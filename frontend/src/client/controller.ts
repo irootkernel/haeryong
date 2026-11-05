@@ -101,6 +101,9 @@ export const NOTICE = {
   logoutNativeLocal: "이 앱의 연결을 해제하고 저장된 연결 자격을 정리하는 중입니다.",
   logoutLocalFailure: "저장된 연결 자격을 지우지 못했습니다. 앱을 다시 시작하면 재접속될 수 있습니다. 연결 자격 정리를 다시 시도하세요. 서버 해지 여부는 확인되지 않았습니다.",
   externalRemoval: "이 브라우저의 저장된 연결이 제거되었습니다. 다시 연결하세요.",
+  policyCommitUnknownExpired: "보안 정책 변경 적용 여부를 확인하지 못한 채 이 세션이 만료되었습니다. 다른 소유자 장치 또는 호스트 로컬 CLI로 다시 연결해 작업 결과를 확인하세요.",
+  policyCommitUnknownRevoked: "보안 정책 변경 적용 여부를 확인하지 못한 채 이 장치의 연결이 해제되었습니다. 다른 소유자 장치 또는 호스트 로컬 CLI로 다시 연결해 작업 결과를 확인하세요.",
+  policyAppliedSessionExpired: "보안 정책 적용은 확인되었으나 새 정책에 의해 이 세션이 만료되었습니다. 다시 연결해 현재 정책을 확인하세요.",
 } as const;
 
 export type DecisionOutcome =
@@ -114,6 +117,20 @@ export interface PendingDecision {
   request: PairingDecisionRequest;
   libraryId: string;
   observed: number;
+}
+
+/**
+ * Minimal token-free library security policy commit recovery record (TE-P05).
+ * Registered before commit dispatch and bound to libraryId + principalId.
+ */
+export interface PendingPolicyRecovery {
+  operationId: string;
+  planId: string;
+  baseRevision: number;
+  libraryId: string;
+  principalId: string;
+  authorityNonce: number;
+  state: "in_flight" | "unknown";
 }
 
 /** Authority identity a screen flow captured before its async preparation. */
@@ -137,6 +154,10 @@ export interface ShellControllerOptions {
 
 export class ShellController {
   readonly #sourceWrites = new Map<string, SourceWriteIntents>();
+  readonly #policyRecovery = new Map<string, PendingPolicyRecovery>();
+  #activePolicyCommitKey = "";
+  #unauthenticatedPolicyNotice: string | null = null;
+  #clearedFromAuthority: number | null = null;
   readonly #client: HaeryongClient & CredentialAware;
   readonly #store: CredentialStore;
   readonly #recheckIntervalMs: number;
@@ -247,6 +268,16 @@ export class ShellController {
     return { nonce: this.#authority, libraryId: this.#libraryId, runtimeGeneration: this.#generation };
   }
 
+  /** Non-throwing check whether a captured authority is still the active verified authority. */
+  isCurrentDispatchAuthority(captured: DispatchAuthority | null): boolean {
+    if (this.#state.phase !== "verified" || captured === null) return false;
+    return (
+      captured.nonce === this.#authority &&
+      captured.libraryId === this.#libraryId &&
+      captured.runtimeGeneration === this.#generation
+    );
+  }
+
   /** Same library/principal survives a runtime generation, never crosses owners. */
   sourceWriteIntents(): SourceWriteIntents {
     const libraryId = this.#state.capabilities?.library_id;
@@ -256,6 +287,111 @@ export class ShellController {
     let intents = this.#sourceWrites.get(key);
     if (!intents) { intents = new SourceWriteIntents(); this.#sourceWrites.set(key, intents); }
     return intents;
+  }
+
+  /**
+   * Registers a minimal token-free recovery record bound to the current verified
+   * libraryId and principalId BEFORE dispatching a library security policy commit.
+   */
+  registerPolicyCommitIntent(planId: string, baseRevision: number, operationId: string): PendingPolicyRecovery {
+    if (this.#state.phase !== "verified") throw new DispatchBlockedError();
+    const libraryId = this.#state.capabilities?.library_id;
+    const principalId = this.#state.session?.principal_id;
+    if (!libraryId || !principalId || this.#state.session?.library_id !== libraryId) throw new DispatchBlockedError();
+    const key = JSON.stringify([libraryId, principalId]);
+    const record: PendingPolicyRecovery = {
+      operationId,
+      planId,
+      baseRevision,
+      libraryId,
+      principalId,
+      authorityNonce: this.#authority,
+      state: "in_flight",
+    };
+    this.#policyRecovery.set(key, record);
+    this.#activePolicyCommitKey = key;
+    this.#unauthenticatedPolicyNotice = null;
+    this.#clearedFromAuthority = null;
+    return record;
+  }
+
+  /**
+   * Returns the pending library security policy recovery record ONLY when a
+   * verified session for the exact same libraryId and principalId is active.
+   */
+  pendingPolicyRecovery(): PendingPolicyRecovery | null {
+    if (this.#state.phase !== "verified") return null;
+    const libraryId = this.#state.capabilities?.library_id;
+    const principalId = this.#state.session?.principal_id;
+    if (!libraryId || !principalId || this.#state.session?.library_id !== libraryId) return null;
+    const key = JSON.stringify([libraryId, principalId]);
+    return this.#policyRecovery.get(key) ?? null;
+  }
+
+  /** Clears a resolved or non-uncertain library security policy recovery record. */
+  clearPolicyRecovery(operationId: string): void {
+    for (const [key, record] of this.#policyRecovery.entries()) {
+      if (record.operationId === operationId) {
+        this.#policyRecovery.delete(key);
+        if (this.#activePolicyCommitKey === key) this.#activePolicyCommitKey = "";
+      }
+    }
+    if (this.#state.phase === "verified") {
+      this.#unauthenticatedPolicyNotice = null;
+      this.#clearedFromAuthority = null;
+    }
+  }
+
+  /**
+   * Handles a 401 (SESSION_EXPIRED / SESSION_REVOKED) during a library security
+   * policy commit or its immediate follow-up configurationView() read (TE-P05).
+   * Updates only the matching owner/library recovery entry and clears credentials
+   * ONLY if the controller is still under the captured authority era (never
+   * clearing a newly verified different owner/session).
+   */
+  recordPolicyCommitAuthLoss(
+    captured: DispatchAuthority | null,
+    operationId: string,
+    code: string,
+    commitConfirmedApplied = false,
+  ): void {
+    let matchedKey = "";
+    for (const [key, record] of this.#policyRecovery.entries()) {
+      if (record.operationId === operationId && (!captured || record.libraryId === captured.libraryId)) {
+        matchedKey = key;
+        if (commitConfirmedApplied) {
+          this.#policyRecovery.delete(key);
+          const intents = this.#sourceWrites.get(key);
+          if (intents?.securityPolicy?.operationId === operationId) intents.securityPolicy = null;
+        } else {
+          record.state = "unknown";
+        }
+        break;
+      }
+    }
+    if (matchedKey !== "" && this.#activePolicyCommitKey === matchedKey) {
+      this.#activePolicyCommitKey = "";
+    }
+    if (!captured) return;
+    const notice = commitConfirmedApplied
+      ? NOTICE.policyAppliedSessionExpired
+      : code === "SESSION_REVOKED"
+        ? NOTICE.policyCommitUnknownRevoked
+        : NOTICE.policyCommitUnknownExpired;
+    if (captured.nonce === this.#authority) {
+      this.#unauthenticatedPolicyNotice = notice;
+      this.#clearCredential(notice);
+      this.#clearedFromAuthority = captured.nonce;
+    } else if (
+      this.#state.phase === "unauthenticated" &&
+      !this.hasCredential() &&
+      this.#clearedFromAuthority === captured.nonce
+    ) {
+      this.#unauthenticatedPolicyNotice = notice;
+      if (this.#state.notice !== notice) {
+        this.#apply({ notice });
+      }
+    }
   }
 
   hasCredential(): boolean {
@@ -289,6 +425,7 @@ export class ShellController {
     this.#generation = "";
     this.#libraryId = "";
     this.#boundCredential = "";
+    this.#clearedFromAuthority = null;
     // Drop the transport binding immediately: responses pending from the
     // cleared authority must be invalidated before anything else rebinds.
     let disposal: Promise<void> | undefined;
@@ -352,6 +489,18 @@ export class ShellController {
     }
     if (error instanceof ApiError) {
       if (error.status === 401) {
+        const prevAuthority = this.#authority;
+        if (this.#activePolicyCommitKey !== "") {
+          const activeRecord = this.#policyRecovery.get(this.#activePolicyCommitKey);
+          if (activeRecord && activeRecord.authorityNonce === prevAuthority) {
+            activeRecord.state = "unknown";
+            if (error.code === "SESSION_REVOKED" || error.code === "SESSION_EXPIRED") {
+              this.#unauthenticatedPolicyNotice = error.code === "SESSION_REVOKED" ? NOTICE.policyCommitUnknownRevoked : NOTICE.policyCommitUnknownExpired;
+            }
+          }
+          this.#activePolicyCommitKey = "";
+        }
+        const policyNotice = (error.code === "SESSION_REVOKED" || error.code === "SESSION_EXPIRED") ? this.#unauthenticatedPolicyNotice : null;
         if (this.#nativeAuthRecheckIdempotent(error.code)) {
           // Retire this verification run without touching the transport era,
           // the Go-held attempt slot, the store or a pending local-cleanup
@@ -365,22 +514,27 @@ export class ShellController {
             capabilities: null,
             notice: this.#state.localCleanupPending
               ? NOTICE.logoutLocalFailure
-              : error.code === "SESSION_REVOKED"
-                ? NOTICE.revoked
-                : error.code === "SESSION_EXPIRED"
-                  ? NOTICE.expired
-                  : NOTICE.unauthenticated,
+              : policyNotice
+                ? policyNotice
+                : error.code === "SESSION_REVOKED"
+                  ? NOTICE.revoked
+                  : error.code === "SESSION_EXPIRED"
+                    ? NOTICE.expired
+                    : NOTICE.unauthenticated,
           });
           return;
         }
         if (error.code === "SESSION_REVOKED") {
-          this.#clearCredential(NOTICE.revoked);
+          this.#clearCredential(policyNotice ?? NOTICE.revoked);
+          this.#clearedFromAuthority = prevAuthority;
           return;
         }
         if (error.code === "SESSION_EXPIRED") {
-          this.#clearCredential(NOTICE.expired);
+          this.#clearCredential(policyNotice ?? NOTICE.expired);
+          this.#clearedFromAuthority = prevAuthority;
           return;
         }
+        this.#unauthenticatedPolicyNotice = null;
         if (error.code === "NATIVE_NO_CREDENTIAL") {
           // A native first boot without a remembered credential is the plain
           // unauthenticated state — not an invalid stored credential.
@@ -427,6 +581,8 @@ export class ShellController {
         if (this.#nativeAttachment !== attached.attachment_id) {
           this.#nativeAttachment = attached.attachment_id;
           this.#token = ""; this.#boundCredential = "";
+          this.#clearedFromAuthority = null;
+          this.#unauthenticatedPolicyNotice = null;
           this.#authority++; this.#client.invalidate(); this.#closeEvents();
           this.#apply({ phase: "checking", notice: NOTICE.checking, localCleanupPending: false, cleanupAlerts: [] });
         }
@@ -462,7 +618,7 @@ export class ShellController {
         session: null,
         capabilities: null,
         memoryOnly: false,
-        notice: this.#state.localCleanupPending ? NOTICE.logoutLocalFailure : NOTICE.unauthenticated,
+        notice: this.#state.localCleanupPending ? NOTICE.logoutLocalFailure : (this.#unauthenticatedPolicyNotice ?? NOTICE.unauthenticated),
       });
       return;
     }
@@ -476,6 +632,8 @@ export class ShellController {
       this.#client.setCredential(token);
       this.#client.invalidate();
       this.#boundCredential = token;
+      this.#clearedFromAuthority = null;
+      this.#unauthenticatedPolicyNotice = null;
       this.#authority += 1;
       this.#apply({ cleanupAlerts: [] });
     }
@@ -525,6 +683,7 @@ export class ShellController {
     }
     this.#generation = capabilities.runtime_generation;
     this.#libraryId = capabilities.library_id;
+    this.#unauthenticatedPolicyNotice = null;
     const pendingDecision =
       this.#state.pendingDecision && this.#state.pendingDecision.libraryId === capabilities.library_id
         ? this.#state.pendingDecision

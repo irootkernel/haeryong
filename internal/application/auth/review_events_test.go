@@ -124,3 +124,47 @@ var _ = It("C1 Review mixed event batches equal individual filtering for owner a
 		}
 	}
 })
+
+var _ = It("TestPassiveAuthenticateAndEventHeadDoNotTouchLastSeenAt", Label("persistence"), func() {
+	ctx := context.Background()
+	selection := service.Selection{Profile: "passive-auth", DataDir: filepath.Join(GinkgoT().TempDir(), "library")}
+	_, err := service.Initialize(selection)
+	Expect(err).NotTo(HaveOccurred())
+	writer, err := service.OpenWriter(selection)
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(func() { Expect(writer.Close()).To(Succeed()) })
+	store := foundation.New(nil)
+	_, closeStore, err := store.Prepare(ctx, writer.Profile)
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(func() { Expect(closeStore()).To(Succeed()) })
+	Expect(writer.MarkStorageReady(nil)).To(Succeed())
+	id := func() string { value, err := service.NewID(); Expect(err).NotTo(HaveOccurred()); return value }
+	auth := appauth.New(store)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	auth.Now = func() time.Time { return now }
+	pair, err := auth.CreatePairing(ctx, "http://127.0.0.1:9270", "passive owner", "fixture")
+	Expect(err).NotTo(HaveOccurred())
+	_, err = auth.BootstrapDecide(ctx, domain.PairingDecision{ID: pair.ID, Action: "approve", Code: pair.Code, Origin: pair.Origin, ETag: pair.ETag, OperationID: id()})
+	Expect(err).NotTo(HaveOccurred())
+	owner, err := auth.Poll(ctx, pair.ID, pair.PollingSecret, pair.Origin)
+	Expect(err).NotTo(HaveOccurred())
+	initial, err := auth.AuthenticatePassive(ctx, owner.Token)
+	Expect(err).NotTo(HaveOccurred())
+
+	now = now.Add(2 * time.Second)
+	passive, err := auth.AuthenticatePassive(ctx, owner.Token)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(passive.LastSeenAt).To(Equal(initial.LastSeenAt))
+	Expect(passive.Revision).To(Equal(initial.Revision))
+	_, _, err = auth.EventHead(ctx, owner.Token)
+	Expect(err).NotTo(HaveOccurred())
+	afterHead, err := auth.AuthenticatePassive(ctx, owner.Token)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(afterHead.LastSeenAt).To(Equal(initial.LastSeenAt))
+	Expect(afterHead.Revision).To(Equal(initial.Revision))
+
+	touched, err := auth.Authenticate(ctx, owner.Token)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(touched.LastSeenAt.After(initial.LastSeenAt)).To(BeTrue())
+	Expect(touched.Revision).To(BeNumerically(">", initial.Revision))
+})

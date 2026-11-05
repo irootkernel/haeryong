@@ -131,3 +131,37 @@ after restart; an authorized Reader selection obtains a fresh session.
 
 See [private ingress evidence](../testing/private-ingress.md) for same-host actual
 HTTPS web observations and their physical-device/native qualification limits.
+
+## Private browser pairing, sessions and security policy (TASK-007-02)
+
+Passive status and lease-renewal routes (`GET /api/v1/session`, `GET /api/v1/events`,
+`GET`/`HEAD /api/v1/capabilities` and
+`POST /api/v1/versions/{id}/render-sessions/{id}/renew`) authenticate without
+updating `last_seen_at`, while still enforcing revocation, epoch, idle and
+absolute expiry. Active owner reads (`GET /api/v1/sessions`,
+`GET /api/v1/auth/pairings`, `GET /api/v1/configuration`, Reader/library
+queries) and mutations update `last_seen_at`, so background polling and active
+Reader lease renewal cannot mask configured idle expiry. Background SSE stream
+open/close/invalidation notifications on `/settings/sessions` and `/connect` do
+not automatically issue active touching reads.
+
+`/connect` exposes the authenticated pairing queue (`GET /api/v1/auth/pairings`
+with list/item ETags), exact `{code,origin}` approve/reject with `If-Match` and
+`Idempotency-Key`, and a connected device list (`device_label`, `(이 장치)`,
+`state`, current-session logout `DELETE /api/v1/session` and peer
+`DELETE /api/v1/sessions/{id}`). `/settings/sessions` links to `/connect` for
+pairing approvals, displays the full session inventory (`GET /api/v1/sessions`)
+including `origin`, `created_at`, `last_seen_at` and `expires_at`, and edits
+`security`-scope configuration (`remember_device_default`,
+`session_idle_seconds`, `session_absolute_seconds`) via plan/commit after a fresh
+authorized `GET /api/v1/sessions` read.
+If a security policy commit applies a stricter limit that immediately expires the
+submitting session and returns `401` (`SESSION_EXPIRED` or `SESSION_REVOKED`),
+encounters a retryable `503 SERVICE_RECOVERING` or network error after dispatch,
+or if a post-reconnect receipt lookup returns `404` or remains unreadable, the
+client retains the original `operation_id` as `UNKNOWN` and reconciles it via
+`GET /api/v1/operations/{id}` under authorized same-owner access before claiming
+applied or not-applied state. See
+[private device session evidence](../testing/private-device-sessions.md) for
+executed local, browser and private HTTPS cohort coverage and its physical-device
+exclusions.

@@ -5,8 +5,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NATIVE_PAIRING_NOTICES, NOTICE, ShellController, nativeDaemonStateLabel, nativePairingNotice } from "../client/controller.ts";
 import type { ShellState } from "../client/controller.ts";
-import type { DaemonDiscovery, DeviceSession } from "../client/types.ts";
+import type { DaemonDiscovery, DeviceSession, PairingView } from "../client/types.ts";
 import { ApiError } from "../client/types.ts";
+import { navigate } from "./router.tsx";
+import { describeConnectionSecurity, describePairingDecisionConflict } from "./screens/security-policy.ts";
 
 export const CONNECT_COPY = {
   heading: "Haeryong 연결",
@@ -320,6 +322,16 @@ export function ConnectScreen({ controller, state }: { controller: ShellControll
     }
   };
 
+  const endpointOrigin = nativeVariant ? controller.client.publicOrigin ?? daemon?.endpoint ?? location.origin : location.origin;
+  const securityNotes = describeConnectionSecurity({
+    origin: endpointOrigin,
+    nativeVariant,
+    storageAvailable: state.storageAvailable,
+    remember,
+    memoryOnly: state.memoryOnly,
+    verified: state.phase === "verified",
+  });
+
   return (
     <section className="panel" onKeyDown={onKeyDown}>
       <h1>{CONNECT_COPY.heading}</h1>
@@ -327,7 +339,8 @@ export function ConnectScreen({ controller, state }: { controller: ShellControll
       <p className="hint">
         {CONNECT_COPY.endpointLabel}: <span className="muted-code" data-testid="connect-endpoint">{nativeVariant ? controller.client.publicOrigin ?? daemon?.endpoint ?? "서비스 연결 정보를 확인하세요." : location.origin}</span>
       </p>
-      <p className="hint">{nativeVariant ? NATIVE_CONNECT_COPY.storageNote : CONNECT_COPY.securityNote}</p>
+      <p className="hint" data-testid="connect-security-note">{securityNotes.transportNote}</p>
+      <p className="hint" data-testid="connect-storage-note">{securityNotes.storageNote}</p>
       <p className="status" role="status" aria-label="연결 상태">
         {state.notice}
       </p>
@@ -455,6 +468,7 @@ function DegradedTools({ state }: { state: ShellState }) {
 function OwnerTools({ controller, state }: { controller: ShellController; state: ShellState }) {
   const [privateView, setPrivateView] = useState("");
   const [devices, setDevices] = useState<DeviceSession[]>([]);
+  const [pairings, setPairings] = useState<PairingView[]>([]);
   const [resultMessage, setResultMessage] = useState("");
   const [requestId, setRequestId] = useState("");
   const [code, setCode] = useState("");
@@ -464,7 +478,12 @@ function OwnerTools({ controller, state }: { controller: ShellController; state:
 
   const refreshDevices = useCallback(async () => {
     try {
-      setDevices(await controller.listSessions());
+      const [latestDevices, latestPairings] = await Promise.all([
+        controller.listSessions(),
+        controller.pendingPairings(),
+      ]);
+      setDevices(latestDevices);
+      setPairings(latestPairings);
     } catch (error) {
       if (controller.state.phase === "verified") setResultMessage(errorMessage(error));
     }
@@ -495,9 +514,15 @@ function OwnerTools({ controller, state }: { controller: ShellController; state:
     }
     setDecisionBusy(true);
     try {
-      const pairings = await controller.pendingPairings();
-      const target = pairings.find((item) => item.pairing_id === trimmedId);
-      if (!target) throw new Error("Pending request unavailable");
+      const currentPairings = await controller.pendingPairings();
+      setPairings(currentPairings);
+      const target = currentPairings.find((item) => item.pairing_id === trimmedId);
+      if (!target) {
+        const latestDevices = await controller.listSessions().catch(() => devices);
+        setDevices(latestDevices);
+        setResultMessage(describePairingDecisionConflict(trimmedId, currentPairings));
+        return;
+      }
       const operation = crypto.randomUUID();
       const outcome = await controller.decidePairing({
         pairing_id: trimmedId,
@@ -517,8 +542,30 @@ function OwnerTools({ controller, state }: { controller: ShellController; state:
       }
       setRequestId("");
       setCode("");
+      await refreshDevices();
       setResultMessage(CONNECT_COPY.decisionDone);
     } catch (error) {
+      if (
+        error instanceof ApiError &&
+        (error.status === 412 ||
+          error.status === 409 ||
+          error.code === "PRECONDITION_FAILED" ||
+          error.code === "INVALID_TRANSITION" ||
+          error.code === "OPERATION_CONFLICT")
+      ) {
+        try {
+          const [latestDevices, latestPairings] = await Promise.all([
+            controller.listSessions(),
+            controller.pendingPairings(),
+          ]);
+          setDevices(latestDevices);
+          setPairings(latestPairings);
+          setResultMessage(describePairingDecisionConflict(trimmedId, latestPairings));
+          return;
+        } catch {
+          // Fall through to generic error message if refresh fails.
+        }
+      }
       setResultMessage(errorMessage(error));
     } finally {
       setDecisionBusy(false);
@@ -535,6 +582,7 @@ function OwnerTools({ controller, state }: { controller: ShellController; state:
         setResultMessage(CONNECT_COPY.decisionUnknown);
         return;
       }
+      await refreshDevices();
       setResultMessage(
         `${CONNECT_COPY.reconcileButton}: 작업 ${result.operation.state}${result.operation.original_status !== null ? ` (HTTP ${result.operation.original_status})` : ""}`,
       );
@@ -552,6 +600,7 @@ function OwnerTools({ controller, state }: { controller: ShellController; state:
       const outcome = await controller.retryPendingDecision();
       if (!outcome) return;
       if (outcome.outcome === "done") {
+        await refreshDevices();
         setResultMessage(CONNECT_COPY.decisionDone);
       } else if (outcome.outcome === "reconciliation_required") {
         setResultMessage(CONNECT_COPY.reconciliationRequired);
@@ -619,12 +668,44 @@ function OwnerTools({ controller, state }: { controller: ShellController; state:
         <button type="button" onClick={() => void refreshDevices()}>
           {CONNECT_COPY.refreshDevices}
         </button>
+        <button type="button" data-testid="open-sessions-settings" onClick={() => navigate("/settings/sessions")}>
+          세션 및 보안 정책 설정
+        </button>
       </div>
       {privateView && (
         <pre className="data-readout" aria-label="비공개 상태">
           {privateView}
         </pre>
       )}
+      <div data-testid="pending-pairings-section">
+        <h2>대기 중인 페어링 요청</h2>
+        {pairings.length === 0 ? (
+          <p className="hint" data-testid="pending-pairings-empty">현재 대기 중이거나 미수령 상태인 페어링 요청이 없습니다.</p>
+        ) : (
+          <ul className="device-list" aria-label="대기 중인 페어링 요청" data-testid="pending-pairings-list">
+            {pairings.map((pairing) => (
+              <li key={pairing.pairing_id} data-testid={`pairing-row-${pairing.pairing_id}`}>
+                <span>
+                  <strong>{pairing.device_label}</strong> ({pairing.state === "approved" ? "승인됨·미수령" : "승인 대기"}) · ID{" "}
+                  <span className="muted-code">{pairing.pairing_id}</span> · 출처{" "}
+                  <span className="muted-code">{pairing.origin}</span> · 만료{" "}
+                  <span className="muted-code">{pairing.expires_at}</span>
+                </span>
+                <span>
+                  <button
+                    type="button"
+                    data-testid={`select-pairing-${pairing.pairing_id}`}
+                    disabled={decisionBusy || !!state.pendingDecision}
+                    onClick={() => setRequestId(pairing.pairing_id)}
+                  >
+                    요청 선택
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -675,11 +756,12 @@ function OwnerTools({ controller, state }: { controller: ShellController; state:
       )}
       <ul className="device-list" aria-label="연결된 장치">
         {devices.map((device) => {
+          const isCurrent = state.session !== null && device.session_id === state.session.session_id;
           const pendingRevoke = state.pendingRevokes.find((row) => row.sessionId === device.session_id);
           return (
             <li key={device.session_id}>
               <span>
-                {device.device_label} ({device.state}){pendingRevoke ? ` — ${CONNECT_COPY.revokeUnknown}` : ""}
+                {device.device_label}{isCurrent ? " (이 장치)" : ""} ({device.state}){pendingRevoke ? ` — ${CONNECT_COPY.revokeUnknown}` : ""}
               </span>
               <span>
                 {pendingRevoke && (

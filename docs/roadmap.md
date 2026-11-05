@@ -65,7 +65,7 @@ assessment and bounded evidence. The complete Stage A/private second-device
 gate remains EPIC-007. [TASK-007-01](tasks/EPIC-007/TASK-007-01.md) has completed
 its bounded member delivery under the
 [web-only execution direction](decisions.md#owner-amendment-2026-11-05-web-only-epic-007-execution);
-[TASK-007-02](tasks/EPIC-007/TASK-007-02.md) is the next ordered owner.
+[TASK-007-02](tasks/EPIC-007/TASK-007-02.md) has completed its bounded web member delivery with actual private proof and qualified current check composition. [TASK-007-03](tasks/EPIC-007/TASK-007-03.md) is the next ordered owner after the normal completion commit and native finalization.
 Original actual second-device and Stage A evidence remain unverified. Its Detailed
 SOT is the [EPIC-007 execution dossier](todo/TODO-EPIC-007.md); this roadmap and
 canonical frontmatter retain identity, order, dependencies and status.

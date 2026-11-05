@@ -281,3 +281,15 @@ qualification; those exclusions follow the current owner direction. The exact-cu
 Task panel and scoped Epic contribution assessment support the bounded member
 delivery under delegated acceptance. Its normal commit/native finalization
 follow; no Master overall Epic acceptance is asserted.
+
+TASK-007-02 adds passive-activity isolation (`AuthenticatePassive` on status,
+event, capability and render-session renew routes), `/settings/sessions` and
+`/connect` pairing queue/device management, `security`-scope policy plan/commit
+with stale-draft preservation, and post-commit `401` `UNKNOWN` receipt
+reconciliation. [Private device session evidence](docs/testing/private-device-sessions.md)
+records executed local/browser checks and Coordinator-owned Tailscale web scope.
+
+The bounded Task02 member is accepted under delegation. Its record preserves the
+format-only failed full aggregate and the passing affected-prepare/current-check
+composition, with actual private-web proof. TASK-007-03 follows the verified
+normal completion commit and native finalization; physical Stage A stays unclaimed.

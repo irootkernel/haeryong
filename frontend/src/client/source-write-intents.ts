@@ -22,11 +22,17 @@ export interface RegistrationIntent extends WriteIntent<unknown> {
 }
 export interface ConfigurationIntent extends WriteIntent<ConfigurationPlanView | ConfigurationCommitView> {
   kind: "preview" | "commit";
+  planId?: string;
+  baseRevision?: number;
 }
 
 /** Record the producer's outcome even if its original screen has gone away.
  * Consumers remove the entry only after applying/showing a definitive outcome. */
-export async function resolveWriteIntent<T>(intent: WriteIntent<T>, dispatch: () => Promise<T>): Promise<T> {
+export async function resolveWriteIntent<T>(
+  intent: WriteIntent<T>,
+  dispatch: () => Promise<T>,
+  isUncertainError?: (error: unknown) => boolean,
+): Promise<T> {
   if (intent.outcome.state === "completed") return intent.outcome.result;
   if (intent.outcome.state === "failed") throw intent.outcome.error;
   intent.inFlight ??= (async () => {
@@ -35,7 +41,11 @@ export async function resolveWriteIntent<T>(intent: WriteIntent<T>, dispatch: ()
       intent.outcome = { state: "completed", result };
       return result;
     } catch (error) {
-      intent.outcome = error instanceof PendingSourceWriteError || error instanceof StaleResponseError
+      const keepPending =
+        error instanceof PendingSourceWriteError ||
+        error instanceof StaleResponseError ||
+        (isUncertainError ? isUncertainError(error) : false);
+      intent.outcome = keepPending
         ? { state: "pending" } : { state: "failed", error };
       throw error;
     } finally { intent.inFlight = undefined; }
@@ -48,4 +58,5 @@ export class SourceWriteIntents {
   verifications = new Map<string, VerificationIntent>();
   registration: RegistrationIntent | null = null;
   configurations = new Map<string, ConfigurationIntent>();
+  securityPolicy: ConfigurationIntent | null = null;
 }

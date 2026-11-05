@@ -48,7 +48,7 @@ runtime = Path(tempfile.mkdtemp(prefix='haeryong-task0101-browser-', dir=args.re
 socket_dir = Path(tempfile.mkdtemp(prefix='hbs-', dir=base))
 profile = runtime / 'browser-profile'
 session = 'hauth' + uuid.uuid4().hex[:10]
-env = os.environ | {'TMPDIR': str(runtime), 'PLAYWRIGHT_DAEMON_SESSION_DIR': str(runtime / 'registry'), 'PLAYWRIGHT_DAEMON_SOCKETS_DIR': str(socket_dir)}
+env = os.environ | {'TMPDIR': str(runtime), 'PLAYWRIGHT_DAEMON_SESSION_DIR': str(runtime / 'registry'), 'PLAYWRIGHT_DAEMON_SOCKETS_DIR': str(socket_dir), 'PWTEST_SOCKETS_DIR': str(socket_dir)}
 browser_cli = args.browser_cli.resolve(strict=True)
 browser = (['bash'] if browser_cli.suffix == '.sh' else []) + [str(browser_cli), '--session=' + session]
 binary = str(args.fixture_binary.resolve(strict=True))
@@ -72,7 +72,7 @@ def cli(arguments, result=False):
     value = subprocess.run(browser + arguments, cwd=runtime, env=env, capture_output=True, text=True, timeout=90)
     if value.returncode or '### Error' in value.stdout:
         detail = value.stdout.split('### Error', 1)[-1] if '### Error' in value.stdout else value.stderr
-        detail = re.sub(r'(?i)[0-9a-f]{8,}', '[redacted]', '\n'.join(detail.splitlines()[:3]))
+        detail = re.sub(r'(?i)[0-9a-f]{8,}', '[redacted]', '\n'.join(detail.splitlines()[:8]))
         raise RuntimeError('Browser step failed; credentials suppressed: ' + detail)
     if result:
         match = re.search(r'### Result\s*\n', value.stdout)
@@ -296,6 +296,9 @@ def attach_console_watch(target_expression):
 def source_fingerprints():
     repo = Path(__file__).resolve().parents[5]
     names = ['frontend/src/app/screens/sources.tsx', 'frontend/src/app/screens/source-configuration.ts',
+             'frontend/src/app/screens/sessions.tsx', 'frontend/src/app/screens/security-policy.ts',
+             'frontend/src/app/connect.tsx', 'frontend/src/client/controller.ts',
+             'frontend/src/client/source-write-intents.ts',
              'frontend/src/client/types.ts', 'internal/adapters/http/auth/browser/check_browser.py']
     paths = [repo / name for name in names] + sorted(p for p in (repo / 'internal/webassets/dist').rglob('*') if p.is_file())
     return {str(p.relative_to(repo)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
@@ -1172,6 +1175,233 @@ try:
       await context.close();
       return {touch_navigation_tap:true,touch_targets_44px:true};
     }'''.replace('VERIFIED', VERIFIED_WAIT).replace('SHOT', json.dumps(str(runtime / 'touch.png')))))
+
+    # TASK-007-02: Connect pending/approved-unredeemed pairings, race readback,
+    # and /settings/sessions policy preview, stale-draft preservation, and
+    # commit-401 UNKNOWN receipt recovery under a replacement owner session.
+    script('''async(page)=>{
+      const context=await page.context().browser().newContext({viewport:{width:1280,height:900}}),target=await context.newPage();
+      await target.goto(BASE);
+      const secNote=await target.getByTestId('connect-security-note').innerText();
+      const storageNote=await target.getByTestId('connect-storage-note').innerText();
+      if(!secNote.includes('루프백')||!storageNote.includes('이 장치 기억을 선택하면'))throw new Error('Unauthenticated Connect security/storage notes missing: '+secNote+' / '+storageNote);
+      return true;
+    }'''.replace('BASE', json.dumps(local)))
+    attach_console_watch("page.context().browser().contexts().find(context=>context!==page.context()).pages()[0]")
+    pair('Task02 sessions owner', 'page.context().browser().contexts().find(context=>context!==page.context()).pages()[0]', True)
+    control({'action': 'advance', 'seconds': 61})
+    proof.update(script('''async(page)=>{
+      const context=page.context().browser().contexts().find(context=>context!==page.context()),target=context.pages()[0];
+      const peerContext=await page.context().browser().newContext({viewport:{width:1280,height:900}}),peerPage=await peerContext.newPage();
+      try {
+        await target.goto(BASE+'/connect');
+        await target.waitForFunction(()=>VERIFIED,null,{timeout:12000});
+        const secNote=await target.getByTestId('connect-security-note').innerText();
+        const storageNote=await target.getByTestId('connect-storage-note').innerText();
+        if(!secNote.includes('루프백')||!storageNote.includes('기억된 장치 연결'))throw new Error('Verified Connect security/storage notes missing: '+secNote+' / '+storageNote);
+
+        // Create a pending peer request from a real peerPage at PEER origin and verify pending + approved-unredeemed list and rejection (TE-N01).
+        await peerPage.goto(PEER+'/connect');
+        await peerPage.getByLabel('장치 이름',{exact:true}).fill('Task02 pending peer');
+        const created1Resp=peerPage.waitForResponse(r=>r.url().endsWith('/api/v1/auth/pairings')&&r.request().method()==='POST');
+        await peerPage.getByRole('button',{name:'연결 코드 요청',exact:true}).click();
+        const created1=(await(await created1Resp).json()).data;
+        if(created1.origin!==PEER)throw new Error('expected peer pairing origin '+PEER+', got '+created1.origin);
+        await peerPage.waitForFunction(()=>document.querySelector('[aria-label="비교 코드"]')!==null,null,{timeout:9000});
+        await peerPage.getByRole('button',{name:'대기 중단',exact:true}).click();
+        await peerPage.waitForFunction(()=>{const n=document.querySelector('[aria-label="페어링 진행"]');return n&&n.textContent.includes('대기를 중단했습니다')},null,{timeout:9000});
+
+        await target.getByRole('button',{name:'장치 목록 새로고침',exact:true}).click();
+        const pendingList=target.getByTestId('pending-pairings-list');
+        const pendingRow1=pendingList.locator('li',{hasText:'Task02 pending peer'});
+        await pendingRow1.waitFor();
+        if(!(await pendingRow1.innerText()).includes('승인 대기'))throw new Error('pending pairing row state missing');
+        await pendingRow1.getByRole('button',{name:'요청 선택',exact:true}).click();
+        if(await target.getByLabel('요청 ID',{exact:true}).inputValue()!==created1.pairing_id)throw new Error('selecting pairing row did not populate request ID');
+        await target.getByLabel('비교 코드',{exact:true}).fill(created1.code);
+        await target.getByRole('button',{name:'장치 승인',exact:true}).click();
+        await target.waitForFunction(()=>{const n=document.querySelector('[aria-label="소유자 도구 결과"]');return n&&n.textContent.includes('요청이 처리되었습니다')},null,{timeout:12000});
+        await target.getByRole('button',{name:'장치 목록 새로고침',exact:true}).click();
+        await target.waitForFunction(()=>{const n=document.querySelector('[data-testid="pending-pairings-list"]');return n&&n.textContent.includes('승인됨·미수령')},null,{timeout:12000});
+        // Reject the approved-unredeemed request before redemption.
+        await pendingRow1.getByRole('button',{name:'요청 선택',exact:true}).click();
+        await target.getByLabel('비교 코드',{exact:true}).fill(created1.code);
+        await target.getByRole('button',{name:'장치 거절',exact:true}).click();
+        await pendingRow1.waitFor({state:'detached'});
+        await target.waitForFunction(()=>{const n=document.querySelector('[aria-label="소유자 도구 결과"]');return n&&n.textContent.includes('요청이 처리되었습니다')},null,{timeout:12000});
+        const pollRejected=await peerPage.evaluate(async p=>{
+          const r=await fetch('/api/v1/auth/pairings/'+p.pairing_id+'/poll',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({polling_secret:p.polling_secret})});
+          return (await r.json()).data;
+        },created1);
+        if(pollRejected.state!=='rejected')throw new Error('expected rejected state after rejecting approved-unredeemed pairing, got '+JSON.stringify(pollRejected));
+
+        // Real stale-ETag 412 decision POST race AND missing-row readback.
+        await peerPage.getByLabel('장치 이름',{exact:true}).fill('Task02 race peer');
+        const created2Resp=peerPage.waitForResponse(r=>r.url().endsWith('/api/v1/auth/pairings')&&r.request().method()==='POST');
+        await peerPage.getByRole('button',{name:'연결 코드 요청',exact:true}).click();
+        const created2=(await(await created2Resp).json()).data;
+        await peerPage.waitForFunction(()=>document.querySelector('[aria-label="비교 코드"]')!==null,null,{timeout:9000});
+        await peerPage.getByRole('button',{name:'대기 중단',exact:true}).click();
+
+        await target.getByRole('button',{name:'장치 목록 새로고침',exact:true}).click();
+        const pendingRow2=pendingList.locator('li',{hasText:'Task02 race peer'});
+        await pendingRow2.waitFor();
+        await pendingRow2.getByRole('button',{name:'요청 선택',exact:true}).click();
+        await target.getByLabel('비교 코드',{exact:true}).fill(created2.code);
+        // Intercept the fresh pending-list GET inside decide('reject') once so the UI receives ETag "1",
+        // while we concurrently approve created2 on the server (advancing server ETag to "2"), forcing a real 412 POST response.
+        let interceptedOnce=false;
+        const routePattern='**/api/v1/auth/pairings';
+        await target.route(routePattern,async route=>{
+          if(!interceptedOnce&&route.request().method()==='GET'){
+            interceptedOnce=true;
+            const resp=await route.fetch();
+            await target.evaluate(async p=>{
+              const token=localStorage.getItem('haeryong.owner-session.v1');
+              const r=await fetch('/api/v1/auth/pairings/'+p.pairing_id+'/approve',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json','If-Match':p.etag,'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({code:p.code,origin:p.origin})});
+              if(r.status!==200)throw new Error('concurrent approve failed: '+r.status);
+            },created2);
+            await route.fulfill({response:resp});
+            return;
+          }
+          await route.continue();
+        });
+        const staleRejectResp=target.waitForResponse(r=>r.url().endsWith('/api/v1/auth/pairings/'+created2.pairing_id+'/reject')&&r.request().method()==='POST');
+        await target.getByRole('button',{name:'장치 거절',exact:true}).click();
+        const staleStatus=(await staleRejectResp).status();
+        await target.unroute(routePattern);
+        if(staleStatus!==412)throw new Error('expected 412 on stale-ETag reject POST, got '+staleStatus);
+        await target.waitForFunction(()=>{const n=document.querySelector('[aria-label="소유자 도구 결과"]');return n&&n.textContent.includes('서버 상태가 변경되었습니다(현재 상태: 승인됨(미수령), 리비전 2)')},null,{timeout:12000});
+
+        // Redeem created2 on peerPage (waiting out the 2s PollAfter window if needed) and verify missing-row readback when the pairing is no longer in the active queue.
+        await peerPage.evaluate(async p=>{
+          for(let i=0;i<5;i++){
+            const r=await fetch('/api/v1/auth/pairings/'+p.pairing_id+'/poll',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({polling_secret:p.polling_secret})});
+            if(r.status===200)return;
+            if(r.status!==429)throw new Error('redeem created2 failed: '+r.status);
+            await new Promise(res=>setTimeout(res,1000));
+          }
+          throw new Error('redeem created2 remained 429 after retry window');
+        },created2);
+        await target.getByRole('button',{name:'장치 거절',exact:true}).click();
+        await target.waitForFunction(()=>{const n=document.querySelector('[aria-label="소유자 도구 결과"]');return n&&n.textContent.includes('더 이상 활성 대기 목록에 없습니다')},null,{timeout:12000});
+      } finally {
+        await peerContext.close();
+      }
+
+      // Navigate via SPA to /settings/sessions and exercise policy validation, preview, stale-draft preservation, and commit.
+      await target.getByTestId('open-sessions-settings').click();
+      await target.getByRole('heading',{name:'세션 및 보안 정책',exact:true}).waitFor();
+      await target.getByTestId('current-session-summary').waitFor();
+      await target.getByTestId('policy-current-summary').waitFor();
+      await target.getByTestId('sessions-device-list').locator('li',{hasText:'(이 장치)'}).waitFor();
+      const policySectionText=await target.getByTestId('security-policy-section').innerText();
+      if(!policySectionText.includes('실제 소유자 활동만 최근 활동 시각을 갱신합니다')||!policySectionText.includes('유휴 만료 시계를 연장하지 않습니다'))throw new Error('plain-user passive activity explanation missing');
+
+      await target.getByTestId('policy-idle-seconds').fill('0');
+      await target.getByTestId('policy-preview-button').click();
+      await target.waitForFunction(()=>{const n=document.querySelector('[data-testid="policy-input-error"]');return n&&n.textContent.includes('1 이상의 양의 정수여야 합니다')},null,{timeout:9000});
+
+      await target.getByTestId('policy-remember-default').setChecked(false);
+      await target.getByTestId('policy-idle-seconds').fill('600');
+      await target.getByTestId('policy-absolute-seconds').fill('3600');
+      await target.getByTestId('policy-preview-button').click();
+      await target.getByTestId('policy-preview-panel').waitFor();
+      await target.getByTestId('policy-normalized-summary').waitFor();
+      await target.getByTestId('policy-expiry-preview').waitFor();
+      if(!(await target.getByTestId('policy-expiry-preview').innerText()).includes('미리보기 시점 기준 추정치이며'))throw new Error('expiry estimate note missing');
+      const applyBtn=target.getByTestId('policy-commit-button');
+      if(!await applyBtn.isDisabled())throw new Error('policy commit button enabled before confirmation checkbox');
+
+      // Advance server config_revision out-of-band to trigger 412 STALE_PLAN on commit, verifying draft preservation.
+      await target.evaluate(async()=>{
+        const token=localStorage.getItem('haeryong.owner-session.v1');
+        const headers={Authorization:'Bearer '+token,'Content-Type':'application/json'};
+        const cur=(await(await fetch('/api/v1/configuration',{headers})).json()).data;
+        const plan=(await(await fetch('/api/v1/configuration/plans',{method:'POST',headers:{...headers,'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({scope:{kind:'library'},expected_config_revision:cur.config_revision,changes:{security:cur.configuration.security}})})).json()).data;
+        await fetch('/api/v1/configuration/plans/'+plan.plan_id+'/commit',{method:'POST',headers:{...headers,'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({expected_config_revision:plan.base_config_revision,confirmed:true})});
+      });
+      await target.getByTestId('policy-confirm-checkbox').check();
+      await applyBtn.click();
+      await target.waitForFunction(()=>{const n=document.querySelector('[data-testid="policy-error-notice"]');return n&&n.textContent.includes('구성 리비전이 변경되었거나 계획이 만료되었습니다. 입력한 정책 변경안은 유지되므로')},null,{timeout:12000});
+      if(await target.getByTestId('policy-idle-seconds').inputValue()!=='600'||await target.getByTestId('policy-absolute-seconds').inputValue()!=='3600'||await target.getByTestId('policy-remember-default').isChecked()!==false)throw new Error('stale revision reread lost user-proposed policy draft inputs');
+
+      // Re-preview preserved draft against refreshed revision and commit to Saved.
+      await target.getByTestId('policy-preview-button').click();
+      await target.getByTestId('policy-preview-panel').waitFor();
+      await target.getByTestId('policy-confirm-checkbox').check();
+      await applyBtn.click();
+      await target.waitForFunction(()=>{const n=document.querySelector('[data-testid="policy-saved-notice"]');return n&&n.textContent.includes('보안 정책 변경이 저장되었습니다.')},null,{timeout:12000});
+
+      // Prepare preview of session_absolute_seconds=30 for durable-commit-then-401 SESSION_EXPIRED test.
+      await target.getByTestId('policy-remember-default').setChecked(true);
+      await target.getByTestId('policy-idle-seconds').fill('');
+      await target.getByTestId('policy-absolute-seconds').fill('30');
+      await target.getByTestId('policy-preview-button').click();
+      await target.getByTestId('policy-preview-panel').waitFor();
+      if(!(await target.getByTestId('policy-normalized-summary').innerText()).includes('30초'))throw new Error('normalized policy summary missing 30s limit');
+      return {
+        task02_connect_security_storage_notes:true,
+        task02_pending_and_approved_unredeemed_visible:true,
+        task02_approved_unredeemed_rejected:true,
+        task02_decision_stale_412_race_and_missing_row_readback:true,
+        task02_sessions_screen_and_validation:true,
+        task02_stale_plan_preserves_user_draft:true,
+        task02_policy_preview_confirm_saved:true
+      };
+    }'''.replace('BASE', json.dumps(local)).replace('PEER', json.dumps(peer)).replace('VERIFIED', VERIFIED_WAIT)))
+    # Advance synthetic clock by 35s so the editing session (>30s old) passes pre-commit check (under 3600s)
+    # and fails post-commit Guard check with 401 SESSION_EXPIRED right after durable commit of 30s.
+    control({'action': 'advance', 'seconds': 35})
+    proof.update(script('''async(page)=>{
+      const context=page.context().browser().contexts().find(context=>context!==page.context()),target=context.pages()[0];
+      await target.getByTestId('policy-confirm-checkbox').check();
+      const commitResp=target.waitForResponse(r=>r.request().method()==='POST'&&r.url().includes('/configuration/plans/')&&r.url().endsWith('/commit'));
+      await target.getByTestId('policy-commit-button').click();
+      const resp=await commitResp;
+      if(resp.status()!==401)throw new Error('expected 401 SESSION_EXPIRED after self-expiring policy commit, got '+resp.status());
+      await target.waitForFunction(()=>UNAUTHENTICATED,null,{timeout:12000});
+      if(!await target.evaluate(()=>document.body.textContent.includes('보안 정책 변경 적용 여부를 확인하지 못한 채 이 세션이 만료되었습니다.')))throw new Error('UNKNOWN policy commit notice missing after 401');
+      if(await target.evaluate(()=>localStorage.getItem('haeryong.owner-session.v1')!==null))throw new Error('expired token retained after 401 policy commit');
+      return {task02_commit_401_retained_as_unknown:true};
+    }'''.replace('UNAUTHENTICATED', UNAUTHENTICATED_WAIT)))
+    pair('Task02 replacement owner', 'page.context().browser().contexts().find(context=>context!==page.context()).pages()[0]', True)
+    proof.update(script('''async(page)=>{
+      const context=page.context().browser().contexts().find(context=>context!==page.context()),target=context.pages()[0];
+      // Use SPA navigation in the original controller (never full page.goto) so in-memory controller recovery intent is preserved.
+      if(await target.evaluate(()=>location.pathname!=='/settings/sessions')){
+        await target.getByTestId('open-sessions-settings').click();
+      }
+      await target.getByRole('heading',{name:'세션 및 보안 정책',exact:true}).waitFor();
+      await target.getByTestId('policy-pending-panel').waitFor();
+      let recoveryCommitPosts=0;
+      const opReads=[];
+      const onReq=r=>{
+        if(r.method()==='POST'&&r.url().includes('/configuration/plans/')&&r.url().endsWith('/commit'))recoveryCommitPosts++;
+        if(r.method()==='GET'&&r.url().includes('/api/v1/operations/'))opReads.push(r.url().split('/').pop());
+      };
+      target.on('request',onReq);
+      await target.getByTestId('policy-recover-button').click();
+      await target.waitForFunction(()=>{const n=document.querySelector('[data-testid="policy-saved-notice"]');return n&&n.textContent.includes('이전 세션이 만료되기 전에 보안 정책 변경이 적용된 것을 확인했습니다.')},null,{timeout:12000});
+      target.off('request',onReq);
+      if(recoveryCommitPosts!==0||opReads.length!==1)throw new Error('expected 0 duplicate commit POSTs and 1 operation receipt read, got recoveryCommitPosts='+recoveryCommitPosts+' opReads='+opReads.length);
+      if(await target.getByTestId('policy-absolute-seconds').inputValue()!=='30')throw new Error('reconciled configuration did not reflect committed 30s absolute expiry');
+      // Restore default unlimited expiry policy via UI.
+      await target.getByTestId('policy-absolute-seconds').fill('');
+      await target.getByTestId('policy-preview-button').click();
+      await target.getByTestId('policy-preview-panel').waitFor();
+      await target.getByTestId('policy-confirm-checkbox').check();
+      await target.getByTestId('policy-commit-button').click();
+      await target.waitForFunction(()=>{const n=document.querySelector('[data-testid="policy-saved-notice"]');return n&&n.textContent.includes('보안 정책 변경이 저장되었습니다.')},null,{timeout:12000});
+      await target.screenshot({path:SHOT});
+      if(target.qaErrors.length)throw new Error('Task02 sessions flow observed application errors: '+JSON.stringify(target.qaErrors));
+      await context.close();
+      return {
+        task02_replacement_session_reconciles_original_receipt:true,
+        task02_zero_duplicate_commit_posts:true,
+        task02_sessions_screenshot:SHOT
+      };
+    }'''.replace('BASE', json.dumps(local)).replace('SHOT', json.dumps(str(runtime / 'sessions-policy.png')))))
 
     proof.update(script('''async(page)=>{if((await page.evaluate(()=>JSON.parse(sessionStorage.getItem('haeryong.qa.errors')||'[]'))).length)throw new Error('Relevant application console/page errors observed');return {console_health:true}}'''))
     proof.update({'interaction': True, 'runtime': str(runtime), 'fixture_classification': 'actual production HTTP/service/SQLite; synthetic policy/child fixtures and loopback fault proxy; real desktop Chrome'})

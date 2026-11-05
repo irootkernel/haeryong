@@ -6,13 +6,16 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -22,10 +25,13 @@ import (
 	"haeryong.local/haeryong/internal/adapters/content/staging"
 	"haeryong.local/haeryong/internal/adapters/foundation"
 	httpauth "haeryong.local/haeryong/internal/adapters/http/auth"
+	httpconfiguration "haeryong.local/haeryong/internal/adapters/http/configuration"
 	httpimports "haeryong.local/haeryong/internal/adapters/http/imports"
 	appauth "haeryong.local/haeryong/internal/application/auth"
+	appconfiguration "haeryong.local/haeryong/internal/application/configuration"
 	importer "haeryong.local/haeryong/internal/application/import"
 	"haeryong.local/haeryong/internal/application/query"
+	"haeryong.local/haeryong/internal/application/render"
 	"haeryong.local/haeryong/internal/application/service"
 	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
@@ -572,4 +578,350 @@ var _ = It("TestAssessmentsRoutesServeCompositionAndCoverageValidation", Label("
 	Expect(recorder.Code).To(Equal(404))
 	recorder = request("/api/v1/versions/00000000-0000-4000-8000-000000000002/assessments/coverage?coverage_set_id=00000000-0000-4000-8000-0000000000ff")
 	Expect(recorder.Code).To(Equal(404))
+})
+
+type noopRenderServer struct{}
+
+func (noopRenderServer) Serve(l net.Listener) error {
+	_ = l.Close()
+	return nil
+}
+
+var _ = It("TestPassiveCapabilitiesAndRenderSessionRenewHonorIdleExpiryWhileOwnerReadsTouch", Label("persistence"), func() {
+	t := GinkgoT()
+	f := newFixture(t)
+	var now atomic.Int64
+	now.Store(time.Now().UnixNano())
+	f.auth.Now = func() time.Time { return time.Unix(0, now.Load()) }
+
+	appState := filepath.Join(filepath.Dir(f.selection.DataDir), "appstate")
+	Expect(os.MkdirAll(appState, 0700)).To(Succeed())
+	lazy := render.NewLazy(func() (*render.Service, error) {
+		return render.New(f.store, f.auth, f.store, render.Options{
+			AppStateDir:      appState,
+			Now:              f.auth.Now,
+			ManagementOrigin: func() string { return f.server.URL },
+			NewServer: func(origin string, binding render.Binding) render.Server {
+				return noopRenderServer{}
+			},
+		})
+	})
+	DeferCleanup(func() { _ = lazy.Shutdown() })
+	origin := f.server.URL
+	host := strings.TrimPrefix(origin, "http://")
+	handler, err := httpauth.New(f.auth, httpauth.Policy{Hosts: []string{host}, Origins: []string{origin}}, routes{New(f.query, lazy, nil), httpimports.New(f.imports)})
+	Expect(err).NotTo(HaveOccurred())
+	f.server.Config.Handler = handler
+
+	u := f.create()
+	f.put(u, "hello.html", "file", []byte("<html>passive-renew</html>"))
+	version := f.publish(u, nil)
+
+	configuration, err := f.store.Configuration(context.Background())
+	Expect(err).NotTo(HaveOccurred())
+	var config map[string]any
+	Expect(json.Unmarshal(configuration.Value, &config)).To(Succeed())
+	config["security"].(map[string]any)["session_idle_seconds"] = int64(3)
+	configuration.Value, err = json.Marshal(config)
+	Expect(err).NotTo(HaveOccurred())
+	configuration.Actor = "fixture"
+	Expect(f.store.Write(context.Background(), func(tx app.WriteTx) error {
+		return tx.SetConfiguration(configuration, configuration.Revision)
+	})).To(Succeed())
+
+	// Opening a render session is a genuine owner action that touches LastSeenAt.
+	status, openData := f.json("POST", "/api/v1/versions/"+version.ID+"/render-sessions", map[string]any{})
+	want(t, status, 201, openData)
+	opened := decoded[struct {
+		SessionID string `json:"session_id"`
+	}](t, openData)
+	Expect(opened.SessionID).NotTo(BeEmpty())
+
+	status, _, sessBody := f.request("GET", "/api/v1/session", nil, nil)
+	want(t, status, 200, sessBody)
+	before := decoded[map[string]any](t, sessBody)
+	beforeLastSeen := before["last_seen_at"]
+	beforeRevision := before["revision"]
+
+	// Advance 1s: passive capabilities (GET/HEAD) and render-session renew must not touch LastSeenAt or revision.
+	now.Add(int64(time.Second))
+	status, _, capBody := f.request("GET", "/api/v1/capabilities", nil, nil)
+	want(t, status, 200, capBody)
+	status, _, headBody := f.request("HEAD", "/api/v1/capabilities", nil, nil)
+	want(t, status, 200, headBody)
+	status, _, renewBody := f.request("POST", "/api/v1/versions/"+version.ID+"/render-sessions/"+opened.SessionID+"/renew", bytes.NewReader([]byte(`{}`)), map[string]string{"Content-Type": "application/json"})
+	want(t, status, 200, renewBody)
+
+	status, _, sessBody = f.request("GET", "/api/v1/session", nil, nil)
+	want(t, status, 200, sessBody)
+	afterPassive := decoded[map[string]any](t, sessBody)
+	Expect(afterPassive["last_seen_at"]).To(Equal(beforeLastSeen))
+	Expect(afterPassive["revision"]).To(Equal(beforeRevision))
+
+	// Advance another 1s and execute active owner reads (documents + attachment download): LastSeenAt and revision advance.
+	now.Add(int64(time.Second))
+	status, _, docBody := f.request("GET", "/api/v1/documents", nil, nil)
+	want(t, status, 200, docBody)
+	status, _, sessBody = f.request("GET", "/api/v1/session", nil, nil)
+	want(t, status, 200, sessBody)
+	afterDoc := decoded[map[string]any](t, sessBody)
+	Expect(afterDoc["last_seen_at"]).NotTo(Equal(beforeLastSeen))
+	Expect(afterDoc["revision"].(float64)).To(BeNumerically(">", beforeRevision.(float64)))
+
+	now.Add(int64(time.Second))
+	status, _, fileBody := f.request("GET", "/api/v1/versions/"+version.ID+"/file?path=hello.html", nil, nil)
+	want(t, status, 200, fileBody)
+	status, _, sessBody = f.request("GET", "/api/v1/session", nil, nil)
+	want(t, status, 200, sessBody)
+	afterFile := decoded[map[string]any](t, sessBody)
+	Expect(afterFile["last_seen_at"]).NotTo(Equal(afterDoc["last_seen_at"]))
+	Expect(afterFile["revision"].(float64)).To(BeNumerically(">", afterDoc["revision"].(float64)))
+
+	// Passive capabilities and render-session renew at +2s keep the session alive only within the 3s idle window, without resetting LastSeenAt.
+	now.Add(int64(2 * time.Second))
+	status, _, capBody = f.request("GET", "/api/v1/capabilities", nil, nil)
+	want(t, status, 200, capBody)
+	status, _, renewBody = f.request("POST", "/api/v1/versions/"+version.ID+"/render-sessions/"+opened.SessionID+"/renew", bytes.NewReader([]byte(`{}`)), map[string]string{"Content-Type": "application/json"})
+	want(t, status, 200, renewBody)
+
+	// Advance +2s more (total 4s > 3s idle limit since last active touch): passive and active routes fail with 401 SESSION_EXPIRED and cannot revive the credential.
+	now.Add(int64(2 * time.Second))
+	status, _, expCap := f.request("GET", "/api/v1/capabilities", nil, nil)
+	Expect(status).To(Equal(401))
+	Expect(string(expCap)).To(ContainSubstring(`"SESSION_EXPIRED"`))
+	status, _, expRenew := f.request("POST", "/api/v1/versions/"+version.ID+"/render-sessions/"+opened.SessionID+"/renew", bytes.NewReader([]byte(`{}`)), map[string]string{"Content-Type": "application/json"})
+	Expect(status).To(Equal(401))
+	Expect(string(expRenew)).To(ContainSubstring(`"SESSION_EXPIRED"`))
+	status, _, expDoc := f.request("GET", "/api/v1/documents", nil, nil)
+	Expect(status).To(Equal(401))
+	Expect(string(expDoc)).To(ContainSubstring(`"SESSION_EXPIRED"`))
+})
+
+type postCommitGuardStore struct {
+	app.Store
+	armPostCommitGuardFailure atomic.Bool
+	failNextAuthWrite         atomic.Bool
+}
+
+type authGuardInterceptStore struct {
+	*postCommitGuardStore
+}
+
+func (s *postCommitGuardStore) Write(ctx context.Context, fn func(app.WriteTx) error) error {
+	err := s.Store.Write(ctx, fn)
+	if err == nil && s.armPostCommitGuardFailure.CompareAndSwap(true, false) {
+		s.failNextAuthWrite.Store(true)
+	}
+	return err
+}
+
+func (s *authGuardInterceptStore) Write(ctx context.Context, fn func(app.WriteTx) error) error {
+	if s.failNextAuthWrite.CompareAndSwap(true, false) {
+		return errors.New("simulated post-commit Auth.Guard store failure")
+	}
+	return s.Store.Write(ctx, fn)
+}
+
+type configAndQueryRoutes struct {
+	config  *httpconfiguration.Handler
+	queries *Handler
+	imports http.Handler
+}
+
+func (m configAndQueryRoutes) Handles(r *http.Request) bool {
+	return m.config.Handles(r) || m.queries.Handles(r) || m.imports.(interface{ Handles(*http.Request) bool }).Handles(r)
+}
+
+func (m configAndQueryRoutes) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch {
+	case m.config.Handles(r):
+		m.config.ServeHTTP(w, r)
+	case m.queries.Handles(r):
+		m.queries.ServeHTTP(w, r)
+	default:
+		m.imports.ServeHTTP(w, r)
+	}
+}
+
+var _ = It("TestPolicyCommitDurableBeforePostCommitGuard503And401ReconcileViaOperationReceipt", Label("persistence"), func() {
+	t := GinkgoT()
+	f := newFixture(t)
+	var now atomic.Int64
+	now.Store(time.Now().UnixNano())
+	f.auth.Now = func() time.Time { return time.Unix(0, now.Load()) }
+
+	intercept := &postCommitGuardStore{Store: f.store}
+	f.auth.Store = &authGuardInterceptStore{postCommitGuardStore: intercept}
+	cfgService := appconfiguration.New(intercept, f.auth, nil)
+	cfgService.Now = f.auth.Now
+
+	origin := f.server.URL
+	host := strings.TrimPrefix(origin, "http://")
+	handler, err := httpauth.New(
+		f.auth,
+		httpauth.Policy{Hosts: []string{host}, Origins: []string{origin}},
+		configAndQueryRoutes{
+			config:  httpconfiguration.New(cfgService),
+			queries: New(f.query, nil, nil),
+			imports: httpimports.New(f.imports),
+		},
+	)
+	Expect(err).NotTo(HaveOccurred())
+	f.server.Config.Handler = handler
+
+	// 1. Create a security policy plan (revision 1 -> session_idle_seconds: 300).
+	plan1Body := map[string]any{
+		"scope":                    map[string]any{"kind": "library"},
+		"expected_config_revision": 1,
+		"changes": map[string]any{
+			"security": map[string]any{
+				"remember_device_default":  false,
+				"session_idle_seconds":     300,
+				"session_absolute_seconds": nil,
+			},
+		},
+	}
+	plan1Raw, err := json.Marshal(plan1Body)
+	Expect(err).NotTo(HaveOccurred())
+	status, _, plan1Resp := f.request("POST", "/api/v1/configuration/plans", bytes.NewReader(plan1Raw), map[string]string{
+		"Content-Type":    "application/json",
+		"Idempotency-Key": id(t),
+	})
+	want(t, status, 200, plan1Resp)
+	plan1 := decoded[struct {
+		PlanID             string `json:"plan_id"`
+		BaseConfigRevision int64  `json:"base_config_revision"`
+	}](t, plan1Resp)
+	Expect(plan1.PlanID).NotTo(BeEmpty())
+	Expect(plan1.BaseConfigRevision).To(Equal(int64(1)))
+
+	// Arm a single store failure on the post-commit Auth.Guard right after
+	// Commit's durable SetConfiguration + CompleteOperation transaction commits.
+	intercept.armPostCommitGuardFailure.Store(true)
+	commit1Raw, err := json.Marshal(map[string]any{
+		"expected_config_revision": 1,
+		"confirmed":                true,
+	})
+	Expect(err).NotTo(HaveOccurred())
+	status, _, commit1Resp := f.request("POST", "/api/v1/configuration/plans/"+plan1.PlanID+"/commit", bytes.NewReader(commit1Raw), map[string]string{
+		"Content-Type":    "application/json",
+		"Idempotency-Key": plan1.PlanID,
+	})
+	Expect(status).To(Equal(503), string(commit1Resp))
+	Expect(string(commit1Resp)).To(ContainSubstring(`"code":"SERVICE_RECOVERING"`))
+	Expect(string(commit1Resp)).To(ContainSubstring(`"retryable":true`))
+
+	// The session remains valid (503 is not auth loss), the policy is durably
+	// committed at revision 2 in SQLite, and GET /api/v1/operations/{plan_id}
+	// returns the completed 200 receipt with the same token and no duplicate POST.
+	status, _, sessCheck := f.request("GET", "/api/v1/session", nil, nil)
+	want(t, status, 200, sessCheck)
+
+	status, _, op1Resp := f.request("GET", "/api/v1/operations/"+plan1.PlanID, nil, nil)
+	want(t, status, 200, op1Resp)
+	op1 := decoded[struct {
+		OperationID    string `json:"operation_id"`
+		State          string `json:"state"`
+		OriginalStatus int    `json:"original_status"`
+		ResultMetadata struct {
+			PlanID         string `json:"plan_id"`
+			ConfigRevision int64  `json:"config_revision"`
+		} `json:"result_metadata"`
+	}](t, op1Resp)
+	Expect(op1.OperationID).To(Equal(plan1.PlanID))
+	Expect(op1.State).To(Equal("completed"))
+	Expect(op1.OriginalStatus).To(Equal(200))
+	Expect(op1.ResultMetadata.PlanID).To(Equal(plan1.PlanID))
+	Expect(op1.ResultMetadata.ConfigRevision).To(Equal(int64(2)))
+
+	status, _, cfgAfter1 := f.request("GET", "/api/v1/configuration", nil, nil)
+	want(t, status, 200, cfgAfter1)
+	Expect(string(cfgAfter1)).To(ContainSubstring(`"config_revision":2`))
+	Expect(string(cfgAfter1)).To(ContainSubstring(`"session_idle_seconds":300`))
+
+	// 2. Advance clock by 2s so the current session is 2s old, then commit a plan
+	// setting session_absolute_seconds: 1. Commit durably writes revision 3 and
+	// completes the operation receipt under the pre-commit policy, and the final
+	// Auth.Guard immediately expires the committing session with 401 SESSION_EXPIRED.
+	now.Add(int64(2 * time.Second))
+	plan2Body := map[string]any{
+		"scope":                    map[string]any{"kind": "library"},
+		"expected_config_revision": 2,
+		"changes": map[string]any{
+			"security": map[string]any{
+				"remember_device_default":  false,
+				"session_idle_seconds":     300,
+				"session_absolute_seconds": 1,
+			},
+		},
+	}
+	plan2Raw, err := json.Marshal(plan2Body)
+	Expect(err).NotTo(HaveOccurred())
+	status, _, plan2Resp := f.request("POST", "/api/v1/configuration/plans", bytes.NewReader(plan2Raw), map[string]string{
+		"Content-Type":    "application/json",
+		"Idempotency-Key": id(t),
+	})
+	want(t, status, 200, plan2Resp)
+	plan2 := decoded[struct {
+		PlanID             string `json:"plan_id"`
+		BaseConfigRevision int64  `json:"base_config_revision"`
+	}](t, plan2Resp)
+	Expect(plan2.PlanID).NotTo(BeEmpty())
+	Expect(plan2.BaseConfigRevision).To(Equal(int64(2)))
+
+	commit2Raw, err := json.Marshal(map[string]any{
+		"expected_config_revision": 2,
+		"confirmed":                true,
+	})
+	Expect(err).NotTo(HaveOccurred())
+	status, _, commit2Resp := f.request("POST", "/api/v1/configuration/plans/"+plan2.PlanID+"/commit", bytes.NewReader(commit2Raw), map[string]string{
+		"Content-Type":    "application/json",
+		"Idempotency-Key": plan2.PlanID,
+	})
+	Expect(status).To(Equal(401), string(commit2Resp))
+	Expect(string(commit2Resp)).To(ContainSubstring(`"code":"SESSION_EXPIRED"`))
+
+	// The old session token is now expired.
+	status, _, oldSessResp := f.request("GET", "/api/v1/session", nil, nil)
+	Expect(status).To(Equal(401))
+	Expect(string(oldSessResp)).To(ContainSubstring(`"SESSION_EXPIRED"`))
+
+	// Issue a replacement same-owner session at current clock (age 0s < 1s) and
+	// reconcile the original operation receipt via GET /api/v1/operations/{plan_id}.
+	replacementPair, err := f.auth.CreatePairing(context.Background(), f.server.URL, "replacement owner", "query-fixture")
+	Expect(err).NotTo(HaveOccurred())
+	_, err = f.auth.BootstrapDecide(context.Background(), domain.PairingDecision{
+		ID:          replacementPair.ID,
+		Code:        replacementPair.Code,
+		Origin:      replacementPair.Origin,
+		ETag:        replacementPair.ETag,
+		OperationID: id(t),
+		Action:      "approve",
+	})
+	Expect(err).NotTo(HaveOccurred())
+	replacementPoll, err := f.auth.Poll(context.Background(), replacementPair.ID, replacementPair.PollingSecret, replacementPair.Origin)
+	Expect(err).NotTo(HaveOccurred())
+	f.token = replacementPoll.Token
+
+	status, _, op2Resp := f.request("GET", "/api/v1/operations/"+plan2.PlanID, nil, nil)
+	want(t, status, 200, op2Resp)
+	op2 := decoded[struct {
+		OperationID    string `json:"operation_id"`
+		State          string `json:"state"`
+		OriginalStatus int    `json:"original_status"`
+		ResultMetadata struct {
+			PlanID         string `json:"plan_id"`
+			ConfigRevision int64  `json:"config_revision"`
+		} `json:"result_metadata"`
+	}](t, op2Resp)
+	Expect(op2.OperationID).To(Equal(plan2.PlanID))
+	Expect(op2.State).To(Equal("completed"))
+	Expect(op2.OriginalStatus).To(Equal(200))
+	Expect(op2.ResultMetadata.PlanID).To(Equal(plan2.PlanID))
+	Expect(op2.ResultMetadata.ConfigRevision).To(Equal(int64(3)))
+
+	status, _, cfgAfter2 := f.request("GET", "/api/v1/configuration", nil, nil)
+	want(t, status, 200, cfgAfter2)
+	Expect(string(cfgAfter2)).To(ContainSubstring(`"config_revision":3`))
+	Expect(string(cfgAfter2)).To(ContainSubstring(`"session_absolute_seconds":1`))
 })

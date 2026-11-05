@@ -225,3 +225,50 @@ and limitations visibly separated. Invalidated or denied server views refresh
 or close independently of the unsent/uncertain local draft. The shared responsive
 layout keeps controls and long immutable identifiers readable; actual keyboard,
 mobile and native evidence remains an execution obligation, not a design claim.
+
+## Sessions and security policy implementation (TASK-007-02)
+
+`/connect` hosts the pending/approved-unredeemed pairing queue
+(`GET /api/v1/auth/pairings`), exact-request comparison-code `approve`/`reject`
+form, and a connected device list (`GET /api/v1/sessions`) showing each device's
+`device_label`, current-device marker (`(이 장치)`), `state`, peer revocation
+(`DELETE /api/v1/sessions/{id}`), current-device logout (`DELETE /api/v1/session`)
+and navigation to `/settings/sessions` (without creation, last-activity or
+derived-expiry timestamps on `/connect` device rows). Selecting a pairing row
+populates its request ID; approve and reject require the exact comparison code,
+origin, item ETag (`If-Match`) and an `Idempotency-Key`. A stale or concurrent
+`409`/`412` decision refreshes the queue and device list and reports the current
+active row state and revision (such as `approved` but unredeemed) or, if the row
+is absent from the active queue, reports that it is no longer active (ambiguously
+consumed, rejected or expired without inventing which terminal state occurred).
+`/connect` and `/settings/sessions` display transport security context (local
+loopback vs private HTTPS vs native IPC) and credential storage behavior
+(`localStorage` vs memory-only vs native credential store). Neither screen
+automatically dispatches active touching reads on background SSE stream
+open/close/invalidation; refreshes after initial load use explicit owner actions
+so open management screens cannot reset `last_seen_at`.
+
+`/settings/sessions` links to `/connect` for pairing approvals and displays the
+current session summary alongside the full device session inventory
+(`GET /api/v1/sessions`) with `device_label`, `(이 장치)`, `session_id`, `origin`,
+`state`, `created_at`, `last_seen_at`, `expires_at`, current-device logout
+(`DELETE /api/v1/session`) and peer device revocation
+(`DELETE /api/v1/sessions/{id}`). It edits `security` configuration
+(`remember_device_default`, `session_idle_seconds`, `session_absolute_seconds`)
+through explicit plan preview and confirmation
+(`POST /api/v1/configuration/plans` and `/plans/{id}/commit`). Positive integer
+bounds are validated before plan creation, and a fresh authorized
+`GET /api/v1/sessions` read is required before presenting a confirmable preview:
+an inventory-read failure surfaces the error and preserves the user's draft (and
+any already-reconciled plan) for safe retry without falling back to stale cached
+devices, leaving an undispatched plan as `UNKNOWN`, or sending a duplicate plan
+`POST`. The preview shows revision, current vs proposed values, estimated
+affected sessions and immediate self-expiry warnings without claiming hard push
+revocation. A stale plan or revision (`412`/`409`) refreshes the server revision
+while preserving the user's proposed draft inputs for explicit re-preview. If a
+committed policy immediately expires the submitting session and returns `401`
+(`SESSION_EXPIRED` or `SESSION_REVOKED`), encounters a retryable `503
+SERVICE_RECOVERING` or network error after dispatch, or if receipt lookup returns
+`404` or fails, the original `operation_id` remains `UNKNOWN` until an authorized
+same-owner session reconciles the receipt via `GET /api/v1/operations/{id}`. See
+[private device session evidence](../testing/private-device-sessions.md).

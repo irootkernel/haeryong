@@ -813,13 +813,19 @@ var _ = It("TestPassiveEventStreamHonorsConfiguredIdleExpiry", Label("persistenc
 		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
 
-	config["security"].(map[string]any)["session_idle_seconds"] = int64(1)
+	config["security"].(map[string]any)["session_idle_seconds"] = int64(2)
 	configuration.Value, _ = json.Marshal(config)
 	configuration.Actor = "fixture"
 	{
 		err := f.store.Write(context.Background(), func(tx storage.WriteTx) error { return tx.SetConfiguration(configuration, configuration.Revision) })
 		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
 	}
+
+	status, _, initialBody := f.request(t, "GET", "/api/v1/session", token, nil, nil)
+	Expect(status != 200).To(BeFalse(), func() string { return fmt.Sprintf("initial session HTTP%d", status) })
+	initialSession := dataAs[map[string]any](t, initialBody)
+	initialLastSeen := initialSession["last_seen_at"]
+	initialRevision, initialETag := wireValidator(t, initialSession)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -832,14 +838,41 @@ var _ = It("TestPassiveEventStreamHonorsConfiguredIdleExpiry", Label("persistenc
 	defer response.Body.Close()
 	Expect(response.StatusCode != 200).To(BeFalse(), func() string { return fmt.Sprintf("idle stream HTTP%d", response.StatusCode) })
 
+	f.now.Add(int64(time.Second))
+	for _, passivePath := range []string{"/api/v1/session", "/api/v1/events?transport=poll"} {
+		pStatus, _, _ := f.request(t, "GET", passivePath, token, nil, nil)
+		Expect(pStatus != 200).To(BeFalse(), func() string { return fmt.Sprintf("passive %s HTTP%d", passivePath, pStatus) })
+	}
+	reopenCtx, reopenCancel := context.WithCancel(ctx)
+	reopenReq, _ := http.NewRequestWithContext(reopenCtx, "GET", f.server.URL+"/api/v1/events", nil)
+	reopenReq.Header.Set("Authorization", "Bearer "+token)
+	reopenReq.Header.Set("Origin", f.server.URL)
+	reopenResp, err := http.DefaultClient.Do(reopenReq)
+	Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprint(err) })
+	reopenCancel()
+	reopenResp.Body.Close()
+	Expect(reopenResp.StatusCode != 200).To(BeFalse(), func() string { return fmt.Sprintf("passive reopen stream HTTP%d", reopenResp.StatusCode) })
+
+	status, _, afterPassiveBody := f.request(t, "GET", "/api/v1/session", token, nil, nil)
+	Expect(status != 200).To(BeFalse(), func() string { return fmt.Sprintf("after passive session HTTP%d", status) })
+	afterPassive := dataAs[map[string]any](t, afterPassiveBody)
+	passiveRevision, passiveETag := wireValidator(t, afterPassive)
+	Expect(afterPassive["last_seen_at"] != initialLastSeen || passiveRevision != initialRevision || passiveETag != initialETag).To(BeFalse(), func() string {
+		return fmt.Sprint("passive session/event activity unexpectedly touched last_seen_at or revision")
+	})
+
 	f.now.Add(int64(2 * time.Second))
 	{
 		_, err := io.ReadAll(response.Body)
 		Expect(err != nil).To(BeFalse(), func() string { return fmt.Sprintf("passive event stream renewed idle expiry or did not stop: %v", err) })
 	}
 
-	status, _, _ := f.request(t, "GET", "/api/v1/session", token, nil, nil)
-	Expect(status != 401).To(BeFalse(), func() string { return fmt.Sprintf("idle-expired session still authorized HTTP%d", status) })
+	for _, expiredPath := range []string{"/api/v1/session", "/api/v1/events?transport=poll", "/api/v1/sessions"} {
+		status, _, expBody := f.request(t, "GET", expiredPath, token, nil, nil)
+		Expect(status != 401 || !strings.Contains(string(expBody), `"SESSION_EXPIRED"`)).To(BeFalse(), func() string {
+			return fmt.Sprintf("idle-expired session on %s HTTP%d body=%s", expiredPath, status, string(expBody))
+		})
+	}
 
 })
 var _ = It("TestFutureCapabilitiesAndUnknownRoutesHaveDistinctErrors", Label("persistence"), func() {
@@ -1158,6 +1191,18 @@ var _ = It("TestSessionValidatorsTrackTouchRevocationAndDerivedExpiry", Label("p
 	peerBefore := listMember(t, body, "session_id", peer.Session.ID)
 	peerRevision, peerETag := wireValidator(t, peerBefore)
 	f.now.Add(int64(time.Second))
+	status, headers, body = f.request(t, "GET", "/api/v1/session", token, nil, nil)
+	Expect(status != 200).To(BeFalse(), func() string { return fmt.Sprintf("passive session HTTP%d", status) })
+
+	passive := dataAs[map[string]any](t, body)
+	passiveRevision, passiveETag := wireValidator(t, passive)
+	Expect(passiveRevision != revision || passiveETag != etag || headers.Get("ETag") != etag).To(BeFalse(), func() string {
+		return fmt.Sprint("passive GET /api/v1/session unexpectedly advanced durable revision/validator")
+	})
+
+	status, _, _ = f.request(t, "GET", "/api/v1/auth/pairings", token, nil, nil)
+	Expect(status != 200).To(BeFalse(), func() string { return fmt.Sprintf("active pairings read HTTP%d", status) })
+
 	status, headers, body = f.request(t, "GET", "/api/v1/session", token, nil, nil)
 	Expect(status != 200).To(BeFalse(), func() string { return fmt.Sprintf("touched session HTTP%d", status) })
 

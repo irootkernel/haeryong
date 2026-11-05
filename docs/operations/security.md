@@ -88,3 +88,20 @@ cookie has no management authority; current owner revocation ends new protected
 retrieval. The fixed companion-origin and headerless handoff exceptions remain
 local-only. [Private ingress evidence](../testing/private-ingress.md) owns actual
 same-host Chrome/Serve observations, cleanup and physical-device exclusions.
+
+TASK-007-02 completes browser pairing, `/settings/sessions` device/policy
+management and passive-activity isolation. Automatic status/event polling and
+active Reader lease renewal (`AuthenticatePassive`) do not extend
+`last_seen_at`, and background SSE stream open/close/invalidation notifications
+on `/settings/sessions` and `/connect` do not auto-dispatch touching reads, so
+configured idle and absolute limits expire idle sessions on schedule, close event
+streams and reject new protected reads/renewals and narrow delivery cookies.
+Memory-only browser sessions keep the bearer out of `localStorage`, drop
+management authority on reload while retaining the safe return route, and keep
+already-issued narrow delivery cookies bound to the live server session and lease
+until revocation or expiry. Same-owner sessions use explicit impact confirmation
+(with a required fresh authorized `GET /api/v1/sessions` read before security
+policy preview) for security policy, source scope and document Trash/Restore
+without a separate administrative credential, while generated frames remain
+denied management access. See
+[private device session evidence](../testing/private-device-sessions.md).

@@ -294,3 +294,14 @@ origin ownership, exact management/content boundary and executed web scope.
 provides setup and owned-route removal guidance. Same-host Tailscale web evidence
 is separate from physical-device, native UI and Stage A qualification. The
 ordered remaining EPIC-007 members retain their own criteria and gates.
+
+## Browser pairing and session management UX (TASK-007-02)
+
+[Private device session evidence](testing/private-device-sessions.md) owns the
+`/settings/sessions` and `/connect` pairing queue, exact code/origin/ETag
+approve/reject, device inventory, `security`-scope configuration plan/commit,
+passive-activity isolation (`AuthenticatePassive`), memory-only reload vs narrow
+delivery cookie lifecycle, and post-commit `401` (`SESSION_EXPIRED` /
+`SESSION_REVOKED`) `UNKNOWN` receipt reconciliation. Same-host Tailscale web
+verification remains separate from physical second-device/mobile and Stage A
+qualification.

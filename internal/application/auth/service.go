@@ -119,6 +119,9 @@ func (s *Service) authenticateTx(tx app.WriteTx, token string, touch bool) (doma
 func (s *Service) Authenticate(ctx context.Context, token string) (domain.Session, error) {
 	return s.checkSession(ctx, token, true)
 }
+func (s *Service) AuthenticatePassive(ctx context.Context, token string) (domain.Session, error) {
+	return s.checkSession(ctx, token, false)
+}
 func (s *Service) checkSession(ctx context.Context, token string, touch bool) (domain.Session, error) {
 	var record domain.Session
 	err := s.Store.Write(ctx, func(tx app.WriteTx) error { var e error; record, e = s.authenticateTx(tx, token, touch); return e })
@@ -870,7 +873,7 @@ func (s *Service) EventHead(ctx context.Context, token string) (string, int64, e
 	var epoch string
 	var head int64
 	err := s.Store.Write(ctx, func(tx app.WriteTx) error {
-		if _, e := s.authenticateTx(tx, token, true); e != nil {
+		if _, e := s.authenticateTx(tx, token, false); e != nil {
 			return e
 		}
 		var e error
