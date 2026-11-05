@@ -80,3 +80,11 @@ A plan is not a credential. Source visibility is rechecked within nested impact
 responses and receipt replay. Trash keeps private personal/object ownership but
 removes normal retrieval and invalidates active delivery/application authority;
 explicit restore does not revive an old renderer or worker generation.
+
+TASK-007-01's supported private browser construction keeps exact local/remote
+management Host/Origin pairs separate from content-only HTTPS origins. Only the
+latter enter CSP frame/form allowances. Its Secure/HttpOnly/Strict delivery
+cookie has no management authority; current owner revocation ends new protected
+retrieval. The fixed companion-origin and headerless handoff exceptions remain
+local-only. [Private ingress evidence](../testing/private-ingress.md) owns actual
+same-host Chrome/Serve observations, cleanup and physical-device exclusions.

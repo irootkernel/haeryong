@@ -326,6 +326,9 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 		}
 		id, err := service.ReadDiscovery(p)
 		if err != nil {
+			if command == "doctor" {
+				return fmt.Errorf("service discovery unavailable; use haeryong daemon run with the same --profile/--data-dir selection; for a port conflict choose an explicit unused --port, then rerun doctor: %w", err)
+			}
 			return fmt.Errorf("service discovery unavailable; daemon may be stopped: %w", err)
 		}
 		if opt.endpoint != "" {
@@ -344,6 +347,9 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 		}
 		actual, err := localcontrol.Verify(ctx, p, id)
 		if err != nil {
+			if command == "doctor" {
+				return fmt.Errorf("local endpoint identity check failed; preserve the existing listener, verify the selected profile and use daemon run with an explicit unused --port for recovery: %w", err)
+			}
 			return err
 		}
 		return emit(actual)
@@ -404,6 +410,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		var op *net.OpError
 		if errors.As(err, &op) && errors.Is(err, syscall.EADDRINUSE) {
 			code = 4
+			if strings.Join(opt.command, " ") == "daemon run" && op.Op == "listen" {
+				err = fmt.Errorf("%w; preserve the existing listener; run haeryong daemon run with an explicit unused --port and the same --profile/--data-dir selection for temporary recovery, then review the persisted network.listener through configuration", err)
+			}
 		}
 	}
 	var recorded *recordedCommandError

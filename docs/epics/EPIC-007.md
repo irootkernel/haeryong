@@ -2,7 +2,7 @@
 id: "EPIC-007"
 type: "epic"
 title: "Private remote web and multi-device operation"
-status: "planned"
+status: "in_progress"
 depends_on: ["EPIC-006"]
 completion_requires: ["TASK-007-01","TASK-007-02","TASK-007-03","TASK-007-04","TASK-007-05","TASK-007-06"]
 ---

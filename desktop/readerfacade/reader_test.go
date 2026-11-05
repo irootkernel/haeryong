@@ -1911,3 +1911,84 @@ func TestReaderQuestionClosedRoutesAndGuardedStreams(t *testing.T) {
 		t.Fatal("saved read executed another question")
 	}
 }
+
+func TestReaderRemoteEndpointRefusesNativeRendererAndPreservesClose(t *testing.T) {
+	daemon := &fakeDaemon{}
+	daemon.handler = func(w http.ResponseWriter, r *http.Request) bool {
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/api/v1/session":
+			dataReply(w, 200, map[string]any{"session_id": "s1", "library_id": "lib", "principal_id": "p1"})
+			return true
+		case r.Method == "GET" && r.URL.Path == "/api/v1/capabilities":
+			dataReply(w, 200, map[string]any{
+				"api_version":        "1.0",
+				"library_id":         "lib",
+				"runtime_generation": "g1",
+				"features":           map[string]any{"html_js_v1": true, "multi_page_loader": true, "renderer": true, "search": true},
+			})
+			return true
+		case r.Method == "GET" && r.URL.Path == "/api/v1/versions/v1/render-bootstrap":
+			dataReply(w, 200, map[string]any{
+				"version_id":            "v1",
+				"delivery":              "private_renderer_origin",
+				"renderer_available":    true,
+				"render_sessions_url":   "/api/v1/versions/v1/render-sessions",
+				"renderer_construction": "private_https_renderer_origin",
+			})
+			return true
+		case r.Method == "POST" && r.URL.Path == "/api/v1/versions/v1/render-sessions/s-old/close":
+			w.WriteHeader(204)
+			return true
+		}
+		return false
+	}
+	server := httptest.NewTLSServer(http.HandlerFunc(daemon.serve))
+	t.Cleanup(server.Close)
+	state := t.TempDir()
+	service := NewReaderService(server.URL, state, "test-owner-credential")
+	service.client = server.Client()
+	service.client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return errRedirectRejected
+	}
+
+	attached := invokeOK(t, service, "attachSession", "{}").(map[string]any)
+	caps := attached["capabilities"].(map[string]any)
+	features := caps["features"].(map[string]any)
+	if features["html_js_v1"] != false || features["multi_page_loader"] != false || features["renderer"] != false || features["search"] != true {
+		t.Fatalf("remote native attach must mask only renderer flags false: %#v", caps)
+	}
+	if caps["renderer_unavailable_reason"] != "renderer_remote_ingress" {
+		t.Fatalf("remote native attach must report renderer_remote_ingress: %#v", caps)
+	}
+
+	capsDirect := invokeOK(t, service, "capabilities", "{}").(map[string]any)
+	directFeatures := capsDirect["features"].(map[string]any)
+	if directFeatures["html_js_v1"] != false || directFeatures["multi_page_loader"] != false || directFeatures["renderer"] != false || capsDirect["renderer_unavailable_reason"] != "renderer_remote_ingress" {
+		t.Fatalf("remote native capabilities must mask renderer flags and report renderer_remote_ingress: %#v", capsDirect)
+	}
+
+	boot := invokeOK(t, service, "renderBootstrap", `{"version_id":"v1"}`).(map[string]any)
+	if boot["delivery"] != "authenticated_attachment" || boot["renderer_available"] != false || boot["render_sessions_url"] != "" || boot["renderer_construction"] != "" || boot["renderer_unavailable_reason"] != "renderer_remote_ingress" {
+		t.Fatalf("remote native renderBootstrap must report attachment/unavailable projection: %#v", boot)
+	}
+
+	before := len(daemon.seen())
+	openErr := invokeFail(t, service, "renderSessionOpen", `{"version_id":"v1","operation_id":"op-open"}`)
+	if openErr.Status != 503 || openErr.Code != "FEATURE_NOT_READY" || openErr.Retryable || openErr.Details["reason"] != "renderer_remote_ingress" || openErr.Details["endpoint"] != server.URL {
+		t.Fatalf("unexpected remote native renderSessionOpen error: %#v", openErr)
+	}
+	renewErr := invokeFail(t, service, "renderSessionRenew", `{"version_id":"v1","session_id":"s-old"}`)
+	if renewErr.Status != 503 || renewErr.Code != "FEATURE_NOT_READY" || renewErr.Retryable || renewErr.Details["reason"] != "renderer_remote_ingress" || renewErr.Details["endpoint"] != server.URL {
+		t.Fatalf("unexpected remote native renderSessionRenew error: %#v", renewErr)
+	}
+	if len(daemon.seen()) != before {
+		t.Fatalf("remote native Open/Renew must fail Go-side with zero HTTP calls; saw %v", daemon.seen()[before:])
+	}
+
+	// Explicit session close remains available for cleanup.
+	invokeOK(t, service, "renderSessionClose", `{"version_id":"v1","session_id":"s-old"}`)
+	seen := daemon.seen()
+	if seen[len(seen)-1] != "POST /api/v1/versions/v1/render-sessions/s-old/close" {
+		t.Fatalf("expected renderSessionClose to reach daemon; saw %v", seen)
+	}
+}

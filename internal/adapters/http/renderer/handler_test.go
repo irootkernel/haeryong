@@ -826,3 +826,254 @@ var _ = It("redirects proven top-level navigations to the public Reader route", 
 	Expect(data.Header.Get("Content-Type")).To(ContainSubstring("application/json"))
 	Expect(string(body)).To(ContainSubstring("authored"))
 })
+
+var _ = It("supports mapped private HTTPS renderer lifecycle, normalized browser origins, receipt preconditions and revocation", Label("persistence"), func() {
+	f := newFixture()
+	dLocal := f.open()
+	// Local handoff accepts CompanionUIOrigin, exact parent, Origin: null, and headerless POST,
+	// while rejecting foreign origins and duplicate Origin headers without consuming the secret.
+	badReq, err := http.NewRequest(http.MethodPost, dLocal.Handoff.URL, strings.NewReader(url.Values{"secret": {dLocal.Handoff.Secret}}.Encode()))
+	Expect(err).NotTo(HaveOccurred())
+	badReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	badReq.Header.Set("Origin", "http://127.0.0.1:9999")
+	badResp, err := f.client.Do(badReq)
+	Expect(err).NotTo(HaveOccurred())
+	badResp.Body.Close()
+	Expect(badResp.StatusCode).To(Equal(http.StatusForbidden))
+
+	dupReq, err := http.NewRequest(http.MethodPost, dLocal.Handoff.URL, strings.NewReader(url.Values{"secret": {dLocal.Handoff.Secret}}.Encode()))
+	Expect(err).NotTo(HaveOccurred())
+	dupReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	dupReq.Header.Add("Origin", "http://127.0.0.1:9270")
+	dupReq.Header.Add("Origin", render.CompanionUIOrigin)
+	dupResp, err := f.client.Do(dupReq)
+	Expect(err).NotTo(HaveOccurred())
+	dupResp.Body.Close()
+	Expect(dupResp.StatusCode).To(Equal(http.StatusForbidden))
+
+	companionReq, err := http.NewRequest(http.MethodPost, dLocal.Handoff.URL, strings.NewReader(url.Values{"secret": {dLocal.Handoff.Secret}}.Encode()))
+	Expect(err).NotTo(HaveOccurred())
+	companionReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	companionReq.Header.Set("Origin", render.CompanionUIOrigin)
+	companionResp, err := f.client.Do(companionReq)
+	Expect(err).NotTo(HaveOccurred())
+	companionResp.Body.Close()
+	Expect(companionResp.StatusCode).To(Equal(http.StatusOK))
+	_, err = f.core.Close(ctx, f.token, f.version, dLocal.ID)
+	Expect(err).NotTo(HaveOccurred())
+
+	// Shift renderer_pool away from the version's sticky local port and map that sticky upstream to a private HTTPS renderer origin.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	Expect(err).NotTo(HaveOccurred())
+	shiftedPoolPort := listener.Addr().(*net.TCPAddr).Port
+	Expect(listener.Close()).To(Succeed())
+	upstreamOrigin := dLocal.Origin
+	remoteParent := "https://Node.Tailnet.ts.net:443"
+	remoteRenderer := "https://Node.Tailnet.ts.net:09291"
+
+	setRemoteConfig := func(parent string, mappings []any) {
+		Expect(f.store.Write(ctx, func(tx app.WriteTx) error {
+			config, err := tx.Configuration()
+			if err != nil {
+				return err
+			}
+			var value map[string]any
+			if err = json.Unmarshal(config.Value, &value); err != nil {
+				return err
+			}
+			network := value["network"].(map[string]any)
+			network["renderer_pool"] = map[string]any{"base_port": shiftedPoolPort, "count": 1}
+			network["remote_enabled"] = true
+			network["external_base_url"] = parent
+			network["allowed_origins"] = []any{"http://127.0.0.1:9270", parent}
+			network["renderer_mappings"] = mappings
+			config.Value, err = json.Marshal(value)
+			if err != nil {
+				return err
+			}
+			return tx.SetConfiguration(config, config.Revision)
+		})).To(Succeed())
+	}
+	setRemoteConfig(remoteParent, []any{
+		map[string]any{"version_id": f.version, "origin": remoteRenderer, "upstream": upstreamOrigin, "reassignable": false},
+	})
+
+	q := query.New(f.store, f.auth, f.store)
+	lazy := render.NewLazy(func() (*render.Service, error) { return f.core, nil })
+	v1Handler := httpv1.New(q, lazy, func() (string, string) {
+		return "http://127.0.0.1:9270", remoteParent
+	})
+	v1Req := func(method, path, host, origin string, extra map[string]string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, "http://"+host+path, strings.NewReader("{}"))
+		r.Host = host
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		r.Header.Set("Authorization", "Bearer "+f.token)
+		for k, v := range extra {
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		v1Handler.ServeHTTP(w, r)
+		return w
+	}
+
+	capRec := v1Req(http.MethodGet, "/api/v1/capabilities", "node.tailnet.ts.net", "https://node.tailnet.ts.net", nil)
+	Expect(capRec.Code).To(Equal(http.StatusOK))
+	var capEnv struct {
+		Data struct {
+			Features                  map[string]bool `json:"features"`
+			RendererUnavailableReason any             `json:"renderer_unavailable_reason"`
+		} `json:"data"`
+	}
+	Expect(json.Unmarshal(capRec.Body.Bytes(), &capEnv)).To(Succeed())
+	Expect(capEnv.Data.Features["renderer"]).To(BeTrue())
+	Expect(capEnv.Data.RendererUnavailableReason).To(BeNil())
+
+	bootRec := v1Req(http.MethodGet, "/api/v1/versions/"+f.version+"/render-bootstrap", "node.tailnet.ts.net", "https://node.tailnet.ts.net", nil)
+	Expect(bootRec.Code).To(Equal(http.StatusOK))
+	var bootEnv struct {
+		Data struct {
+			Delivery                  string `json:"delivery"`
+			RendererAvailable         bool   `json:"renderer_available"`
+			RenderSessionsURL         string `json:"render_sessions_url"`
+			RendererUnavailableReason any    `json:"renderer_unavailable_reason"`
+		} `json:"data"`
+	}
+	Expect(json.Unmarshal(bootRec.Body.Bytes(), &bootEnv)).To(Succeed())
+	Expect(bootEnv.Data.Delivery).To(Equal("private_renderer_origin"))
+	Expect(bootEnv.Data.RendererAvailable).To(BeTrue())
+	Expect(bootEnv.Data.RenderSessionsURL).To(Equal("/api/v1/versions/" + f.version + "/render-sessions"))
+	Expect(bootEnv.Data.RendererUnavailableReason).To(BeNil())
+
+	localKey := key()
+	_, err = f.core.Open(ctx, f.token, localKey, f.version)
+	Expect(err).NotTo(HaveOccurred())
+	_, err = f.core.OpenWithIngress(ctx, f.token, localKey, f.version, render.Ingress{Remote: true, ParentOrigin: remoteParent})
+	Expect(errors.Is(err, domain.ErrConflict)).To(BeTrue())
+
+	opKey := key()
+	remoteIngress := render.Ingress{Remote: true, ParentOrigin: remoteParent}
+	openResp, err := f.core.OpenWithIngress(ctx, f.token, opKey, f.version, remoteIngress)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(openResp.Status).To(Equal(http.StatusCreated))
+	replayResp, err := f.core.OpenWithIngress(ctx, f.token, opKey, f.version, remoteIngress)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(replayResp.Body).To(Equal(openResp.Body))
+
+	// Replaying the same Idempotency-Key across local ingress or a changed remote parent conflicts.
+	_, err = f.core.Open(ctx, f.token, opKey, f.version)
+	Expect(errors.Is(err, domain.ErrConflict)).To(BeTrue())
+	setRemoteConfig("https://Node.Tailnet.ts.net:9443", []any{
+		map[string]any{"version_id": f.version, "origin": remoteRenderer, "upstream": upstreamOrigin, "reassignable": false},
+	})
+	_, err = f.core.OpenWithIngress(ctx, f.token, opKey, f.version, render.Ingress{Remote: true, ParentOrigin: "https://Node.Tailnet.ts.net:9443"})
+	Expect(errors.Is(err, domain.ErrConflict)).To(BeTrue())
+	setRemoteConfig(remoteParent, []any{
+		map[string]any{"version_id": f.version, "origin": remoteRenderer, "upstream": upstreamOrigin, "reassignable": false},
+	})
+
+	// An unchanged parent cannot replay the old key into another delivery origin.
+	setRemoteConfig(remoteParent, []any{
+		map[string]any{"version_id": f.version, "origin": "https://node.tailnet.ts.net:9492", "upstream": upstreamOrigin, "reassignable": false},
+	})
+	_, err = f.core.OpenWithIngress(ctx, f.token, opKey, f.version, remoteIngress)
+	Expect(errors.Is(err, domain.ErrConflict)).To(BeTrue())
+	setRemoteConfig(remoteParent, []any{
+		map[string]any{"version_id": f.version, "origin": remoteRenderer, "upstream": upstreamOrigin, "reassignable": false},
+	})
+
+	var dRemote delivery
+	Expect(json.Unmarshal(openResp.Body, &dRemote)).To(Succeed())
+	Expect(dRemote.Origin).To(Equal("https://node.tailnet.ts.net:9291"))
+	Expect(dRemote.Handoff.URL).To(Equal("https://node.tailnet.ts.net:9291/__haeryong/handoff"))
+
+	// Remote handoff rejects headerless POST, CompanionUIOrigin, and local parent without consuming the secret.
+	postRemote := func(hostHeader string, originHeaders []string, querySuffix string) (*http.Response, []byte) {
+		target := upstreamOrigin + "/__haeryong/handoff" + querySuffix
+		r, err := http.NewRequest(http.MethodPost, target, strings.NewReader(url.Values{"secret": {dRemote.Handoff.Secret}}.Encode()))
+		Expect(err).NotTo(HaveOccurred())
+		r.Host = hostHeader
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		for _, o := range originHeaders {
+			r.Header.Add("Origin", o)
+		}
+		resp, err := http.DefaultClient.Do(r)
+		Expect(err).NotTo(HaveOccurred())
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		Expect(err).NotTo(HaveOccurred())
+		return resp, b
+	}
+	resp, _ := postRemote("node.tailnet.ts.net:9291", nil, "")
+	Expect(resp.StatusCode).To(Equal(http.StatusForbidden))
+	resp, _ = postRemote("node.tailnet.ts.net:9291", []string{render.CompanionUIOrigin}, "")
+	Expect(resp.StatusCode).To(Equal(http.StatusForbidden))
+	resp, _ = postRemote("node.tailnet.ts.net:9291", []string{"http://127.0.0.1:9270"}, "")
+	Expect(resp.StatusCode).To(Equal(http.StatusForbidden))
+	resp, _ = postRemote("node.tailnet.ts.net:9291", []string{"null", "https://node.tailnet.ts.net"}, "")
+	Expect(resp.StatusCode).To(Equal(http.StatusForbidden))
+
+	// Browser-normalized Host and Origin: null succeed and issue a Secure, HttpOnly, SameSite=Strict cookie.
+	resp, landing := postRemote("node.tailnet.ts.net:9291", []string{"null"}, "?page=/hello.html")
+	Expect(resp.StatusCode).To(Equal(http.StatusOK))
+	Expect(string(landing)).To(ContainSubstring("hello.html"))
+	cookies := resp.Cookies()
+	Expect(cookies).To(HaveLen(1))
+	Expect(cookies[0].Name).To(HavePrefix("hyr_view_" + f.version + "_"))
+	Expect(cookies[0].Secure).To(BeTrue())
+	Expect(cookies[0].HttpOnly).To(BeTrue())
+	Expect(cookies[0].SameSite).To(Equal(http.SameSiteStrictMode))
+	Expect(cookies[0].Path).To(Equal("/"))
+
+	// Deliver HTML and loader over normalized remote Host and verify canonical parentOrigin injection.
+	getRemote := func(path string, headers map[string]string) (*http.Response, []byte) {
+		r, err := http.NewRequest(http.MethodGet, upstreamOrigin+path, nil)
+		Expect(err).NotTo(HaveOccurred())
+		r.Host = "node.tailnet.ts.net:9291"
+		r.AddCookie(cookies[0])
+		r.Header.Set("Sec-Fetch-Site", "same-origin")
+		for k, v := range headers {
+			r.Header.Set(k, v)
+		}
+		res, err := http.DefaultClient.Do(r)
+		Expect(err).NotTo(HaveOccurred())
+		defer res.Body.Close()
+		b, err := io.ReadAll(res.Body)
+		Expect(err).NotTo(HaveOccurred())
+		return res, b
+	}
+	pageResp, pageBody := getRemote("/hello.html", nil)
+	Expect(pageResp.StatusCode).To(Equal(http.StatusOK))
+	Expect(string(pageBody)).To(ContainSubstring("window.useful = true"))
+	loaderResp, loaderBody := getRemote("/__haeryong/loader.js?"+render.LoaderQuery, nil)
+	Expect(loaderResp.StatusCode).To(Equal(http.StatusOK))
+	Expect(string(loaderBody)).To(ContainSubstring("context.transfer.begin"))
+
+	// Top-level navigation redirects to the canonical remote parentOrigin.
+	navResp, navBody := getRemote("/hello.html", map[string]string{"Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate"})
+	Expect(navResp.StatusCode).To(Equal(http.StatusOK))
+	Expect(navResp.Header.Get("Haeryong-Derivative")).To(BeEmpty())
+	Expect(string(navBody)).To(ContainSubstring("https://node.tailnet.ts.net/documents/" + f.document + "/versions/" + f.version))
+
+	// Cross-endpoint renewal is denied without closing the session; RenewWithIngress succeeds.
+	_, err = f.core.Renew(ctx, f.token, f.version, dRemote.ID)
+	Expect(err).To(HaveOccurred())
+	_, err = f.core.RenewWithIngress(ctx, f.token, f.version, dRemote.ID, remoteIngress)
+	Expect(err).NotTo(HaveOccurred())
+
+	// Removing the renderer mapping revokes active remote delivery and renewal.
+	setRemoteConfig(remoteParent, []any{})
+	revokedResp, _ := getRemote("/hello.html", nil)
+	Expect(revokedResp.StatusCode).To(Equal(http.StatusUnauthorized))
+	_, err = f.core.RenewWithIngress(ctx, f.token, f.version, dRemote.ID, remoteIngress)
+	Expect(err).To(HaveOccurred())
+
+	// Revoking the owner bearer token rejects replay of the completed OpenWithIngress receipt with 401.
+	sess, err := f.auth.Authenticate(ctx, f.token)
+	Expect(err).NotTo(HaveOccurred())
+	_, err = f.auth.Revoke(ctx, f.token, sess.ID)
+	Expect(err).NotTo(HaveOccurred())
+	_, err = f.core.OpenWithIngress(ctx, f.token, opKey, f.version, remoteIngress)
+	Expect(err).To(HaveOccurred())
+})

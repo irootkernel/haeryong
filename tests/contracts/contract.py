@@ -80,7 +80,24 @@ def origin(value, kind='origin'):
         valid = valid and parts.scheme == 'https'
     if kind == 'loopback-origin':
         valid = valid and parts.scheme == 'http' and parts.hostname == '127.0.0.1'
-    return valid and (port is None or 1024 <= port <= 65535)
+    if not valid:
+        return False
+    if port is None:
+        return kind != 'loopback-origin' and not (parts.scheme == 'http' and parts.hostname in ('127.0.0.1', 'localhost'))
+    if kind == 'loopback-origin' or (parts.scheme == 'http' and parts.hostname in ('127.0.0.1', 'localhost')):
+        return 1024 <= port <= 65535
+    return 1 <= port <= 65535
+
+
+def canonical_authority(value):
+    parts = urlsplit(value)
+    host = (parts.hostname or '').lower()
+    if ':' in host and not host.startswith('['):
+        host = '[' + host + ']'
+    port = parts.port
+    if port is None:
+        port = 443 if parts.scheme == 'https' else 80
+    return f'{host}:{port}'
 
 
 def utc_time(value):
@@ -318,6 +335,29 @@ def configuration(value):
     origins = [m['origin'] for m in mappings]
     if len(set(origins)) != len(origins) or set(origins) & trusted:
         fail(field='/network/renderer_mappings', reason='unique separate quarantined origins required')
+    management_auth = {canonical_authority(local)}
+    if network['remote_enabled'] and network['external_base_url'] is not None:
+        ext_auth = canonical_authority(network['external_base_url'])
+        if ext_auth in management_auth:
+            fail(field='/network/external_base_url', reason='external base URL host must differ from the local management listener host')
+        management_auth.add(ext_auth)
+    seen_versions, seen_origins, seen_upstreams = set(), set(), set()
+    for i, mapping in enumerate(mappings):
+        at = f'/network/renderer_mappings/{i}'
+        up_parts = urlsplit(mapping['upstream'])
+        if up_parts.port is None or up_parts.port in (9272, 9273) or up_parts.port == network['listener']['port']:
+            fail(field=at + '/upstream', reason='invalid or reserved loopback upstream port')
+        origin_auth = canonical_authority(mapping['origin'])
+        up_auth = canonical_authority(mapping['upstream'])
+        if origin_auth in management_auth or origin_auth == up_auth or origin_auth in seen_origins:
+            fail(field=at + '/origin', reason='renderer mapping origin host conflicts with management or another mapping')
+        if mapping['version_id'] in seen_versions:
+            fail(field=at + '/version_id', reason='each version may have at most one renderer mapping')
+        if up_auth in seen_upstreams:
+            fail(field=at + '/upstream', reason='each renderer mapping must use a distinct loopback upstream port')
+        seen_versions.add(mapping['version_id'])
+        seen_origins.add(origin_auth)
+        seen_upstreams.add(up_auth)
     pool = network.get('renderer_pool')
     if pool is not None:
         base, count = pool['base_port'], pool['count']

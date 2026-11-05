@@ -48,6 +48,57 @@ func (e *wireError) Error() string {
 
 func networkError() *wireError { return &wireError{Status: 0, Code: "NETWORK_ERROR", Retryable: true} }
 
+func remoteNativeEndpoint(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "http" {
+		return true
+	}
+	host := u.Hostname()
+	return host != "127.0.0.1" && !strings.EqualFold(host, "localhost") && host != "::1"
+}
+
+func applyNativeRendererCapability(value any, endpoint string) any {
+	if !remoteNativeEndpoint(endpoint) {
+		return value
+	}
+	view, ok := value.(map[string]any)
+	if !ok {
+		return value
+	}
+	if features, ok := view["features"].(map[string]any); ok {
+		features["html_js_v1"] = false
+		features["multi_page_loader"] = false
+		features["renderer"] = false
+	}
+	view["renderer_unavailable_reason"] = "renderer_remote_ingress"
+	return view
+}
+
+func remoteNativeRenderBootstrap(value any, endpoint string) any {
+	if !remoteNativeEndpoint(endpoint) {
+		return value
+	}
+	view, ok := value.(map[string]any)
+	if !ok {
+		return value
+	}
+	view["delivery"] = "authenticated_attachment"
+	view["renderer_available"] = false
+	view["render_sessions_url"] = ""
+	view["renderer_construction"] = ""
+	view["renderer_unavailable_reason"] = "renderer_remote_ingress"
+	return view
+}
+
+func remoteNativeRendererRefusal(endpoint string) *wireError {
+	return &wireError{
+		Status:    503,
+		Code:      "FEATURE_NOT_READY",
+		Retryable: false,
+		Details:   map[string]any{"reason": "renderer_remote_ingress", "endpoint": endpoint},
+	}
+}
+
 type readerStream struct {
 	id     string
 	body   io.ReadCloser
@@ -640,7 +691,8 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 	case "currentSession":
 		return plain(s.request("GET", "/api/v1/session", nil, nil, nil, auth))
 	case "capabilities":
-		return plain(s.request("GET", "/api/v1/capabilities", nil, nil, nil, auth))
+		v, werr := plain(s.request("GET", "/api/v1/capabilities", nil, nil, nil, auth))
+		return applyNativeRendererCapability(v, auth.endpoint), werr
 	case "decidePairing":
 		var in struct {
 			PairingID   string `json:"pairing_id"`
@@ -1058,7 +1110,8 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 		if in.PagePath != nil {
 			query.Set("page_path", *in.PagePath)
 		}
-		return plain(s.request("GET", "/api/v1/versions/"+url.PathEscape(in.VersionID)+"/render-bootstrap", query, nil, nil, auth))
+		v, werr := plain(s.request("GET", "/api/v1/versions/"+url.PathEscape(in.VersionID)+"/render-bootstrap", query, nil, nil, auth))
+		return remoteNativeRenderBootstrap(v, auth.endpoint), werr
 	case "renderSessionOpen":
 		var in struct {
 			VersionID   string `json:"version_id"`
@@ -1066,6 +1119,9 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 		}
 		if werr := decodePayload(payload, &in); werr != nil {
 			return nil, werr
+		}
+		if remoteNativeEndpoint(auth.endpoint) {
+			return nil, remoteNativeRendererRefusal(auth.endpoint)
 		}
 		result := s.request("POST", "/api/v1/versions/"+url.PathEscape(in.VersionID)+"/render-sessions", nil,
 			map[string]string{"Idempotency-Key": in.OperationID}, jsonBody(map[string]any{}), auth)
@@ -1087,6 +1143,9 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 		}
 		if werr := decodePayload(payload, &in); werr != nil {
 			return nil, werr
+		}
+		if remoteNativeEndpoint(auth.endpoint) {
+			return nil, remoteNativeRendererRefusal(auth.endpoint)
 		}
 		return plain(s.request("POST", "/api/v1/versions/"+url.PathEscape(in.VersionID)+"/render-sessions/"+url.PathEscape(in.SessionID)+"/renew", nil, nil, jsonBody(map[string]any{}), auth))
 	case "renderSessionClose":
@@ -1600,7 +1659,7 @@ func (s *ReaderService) attach() (any, *wireError) {
 	return map[string]any{
 		"attachment_id": attachment,
 		"session":       sessionResult.value,
-		"capabilities":  capsResult.value,
+		"capabilities":  applyNativeRendererCapability(capsResult.value, auth.endpoint),
 		"public_origin": auth.endpoint,
 	}, nil
 }

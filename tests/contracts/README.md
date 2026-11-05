@@ -217,3 +217,17 @@ from its unchanged predeclared oracle, so its selected digest is refreshed.
 Production service/SQLite/HTTP/CLI and public-import evidence remains outside this
 pure fixture suite, in the static-search implementation record. This is an
 additive implementation/evidence update within schema 1.0, not a product gate pass.
+
+## Private ingress extension (TASK-007-01)
+
+The additive bootstrap delivery enum `private_renderer_origin` and construction
+`private_https_renderer_origin` select the
+same version/session handoff shape for supported private browsers. Configuration
+fixtures now normalize browser-equivalent HTTPS origins, keep external HTTPS
+port bounds separate from local nonprivileged listeners and reject duplicate
+version/upstream/origin ownership and ambiguous Host authorities. Existing
+schema1.0/APIv1 identities and the manifest digest domain remain unchanged.
+Updated machine/model/test digests record this explicit extension; pure fixtures
+do not prove proxy reachability, real browser rendering or device qualification.
+The production and web proof belongs to
+[private ingress evidence](../../docs/testing/private-ingress.md).

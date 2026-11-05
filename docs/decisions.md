@@ -89,3 +89,32 @@ The owner has resolved JavaScript freedom through D-08 and directory/multi-page 
 These are conditional environment or product decisions, not unanswered implementation details. Escalate only when the relevant evidence or authority is actually needed.
 
 No additional owner decision blocks the [1.6.2 implementation handoff](changes/2026-10-11-grok-reconciliation.md#2026-10-12-implementation-handoff-162). Continue from the earliest non-terminal Task and follow the existing dependencies; no additional specification-only review round is required before starting. D-10 settles permission to test additional private renderer ports, not the outcome of the experiment. Keep document project membership unchanged in v1 rather than silently adding document moves. Unfiled remains a normal configurable project, not a permanent loss of source functionality. Project moves can be proposed later with their effects on historical metadata, grants and in-flight jobs. Keep coalesced position saves under the existing conflict rules rather than silently adopting cross-device last-writer-wins. Renderer mechanisms, non-content transport timings and provider-version selection are implementation work; preserve original files, ordinary JavaScript and the existing Stage A scope.
+
+## Owner amendment 2026-11-05: Web-only EPIC-007 execution
+
+Master directed implementation to continue through the approved EPIC-007 dossier
+and selected actual web-browser verification through the current Mac's Tailscale
+private HTTPS route. Physical mobile-device verification is excluded from this
+run. Same-host HTTPS browsers prove the web route and their exercised workflows;
+they do not establish a second physical device or actual Wails/WebKit behavior.
+
+Complete the six members in their existing dependency order. For this run, the
+Coordinator may accept each exact bounded web-only member or correction after its
+due implementation, current checks and independent assessments pass, and may
+create its separately authorized local commit. An excluded actual-device check
+does not stop that bounded delivery or the next ordered implementation. Preserve
+the original assertion text and record actual-device evidence as `not_run` or
+`blocked`, with the web evidence and this exception separately identified. No
+synthetic fixture, viewport emulation, compilation or browser-origin test becomes
+physical-device or native UI proof. In particular, T-007-01-02 retains its actual
+second-device qualification even when its separate private-web and unrelated-route
+observations pass.
+
+The original whole Stage A/device assertions remain unverified. Final overall
+Epic acceptance remains with Master, and the conditional closeout commit and
+dossier retirement require that actual acceptance of the presented closeout.
+The Coordinator decides helper permissions within the already approved work;
+routine scratch reports, scoped code changes and required checks need no repeated
+owner approval. This direction grants no public/Funnel exposure, tailnet
+enrollment, new domain, service installation, unscoped provider call, push or
+release. Preserve the verified Ouroboros relative-link corrections.

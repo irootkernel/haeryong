@@ -68,8 +68,8 @@ func tag(b []byte) string {
 	return `"configuration-` + hex.EncodeToString(h[:]) + `"`
 }
 
-// validateEffectiveEndpoint rejects a candidate whose external HTTPS host
-// equals the effective local management Host. The candidate's own listener
+// validateEffectiveEndpoint rejects external or renderer endpoints whose Host
+// collides with the effective local management Host. The candidate's own listener
 // and external fields are compared within the same value, never a mixed
 // state. Without a CLI listener override the candidate configuration's
 // listener port names its normal restart destination; with ListenerOverride
@@ -80,27 +80,34 @@ func tag(b []byte) string {
 // scheme because the request Host header carries no scheme.
 func (s *Service) validateEffectiveEndpoint(candidate map[string]any) error {
 	network, ok := candidate["network"].(map[string]any)
-	if !ok || network["remote_enabled"] != true {
+	if !ok {
 		return nil
 	}
-	external, _ := network["external_base_url"].(string)
-	remote, err := url.Parse(external)
-	if err != nil || remote.Host == "" {
-		// Shape errors are owned by Validate.
-		return nil
-	}
-	localHost := ""
+	localEndpoint := ""
 	if s.ListenerOverride && s.RuntimeEndpoint != "" {
-		if endpoint, err := url.Parse(s.RuntimeEndpoint); err == nil {
-			localHost = endpoint.Host
-		}
+		localEndpoint = s.RuntimeEndpoint
 	} else if listener, ok := network["listener"].(map[string]any); ok {
-		if _, err := url.Parse("http://127.0.0.1:" + fmt.Sprint(listener["port"])); err == nil {
-			localHost = "127.0.0.1:" + fmt.Sprint(listener["port"])
+		localEndpoint = "http://127.0.0.1:" + fmt.Sprint(listener["port"])
+	}
+	local, err := url.Parse(localEndpoint)
+	if err != nil || local.Host == "" {
+		return nil
+	}
+	localHost := originAuthority(local)
+	if network["remote_enabled"] == true {
+		external, _ := network["external_base_url"].(string)
+		remote, err := url.Parse(external)
+		if err == nil && remote.Host != "" && originAuthority(remote) == localHost {
+			return invalid("/network/external_base_url", "external host must differ from the effective local management host")
 		}
 	}
-	if localHost != "" && remote.Host == localHost {
-		return invalid("/network/external_base_url", "external host must differ from the effective local management host")
+	for _, mapping := range RendererMappings(candidate) {
+		for _, endpoint := range []string{mapping.Origin, mapping.Upstream} {
+			parsed, err := url.Parse(endpoint)
+			if err == nil && parsed.Host != "" && originAuthority(parsed) == localHost {
+				return invalid("/network/renderer_mappings", "renderer origin and upstream must differ from the effective local management host")
+			}
+		}
 	}
 	return nil
 }
@@ -384,6 +391,7 @@ func (s *Service) Plan(ctx context.Context, token, key string, input PlanRequest
 	}
 	restart := !reflect.DeepEqual(old["network"], next["network"])
 	impact := map[string]any{"controlled_restart_required": restart, "security": "immediate", "workflow_scope": "new capture; current restrictions apply", "provider_execution": "admission_not_ready"}
+	impact["exposure"] = s.exposureImpact(old, next)
 	if old, next := networkPool(old), networkPool(next); old != next {
 		// A pool fully inside 9000..9999 is preferred; any other valid
 		// choice is accepted with an explicit preference note in the plan
@@ -481,6 +489,12 @@ func (s *Service) Commit(ctx context.Context, token, id, alias string, input Com
 			}
 			if e = s.validateEffectiveEndpoint(next); e != nil {
 				return e
+			}
+			// A legacy uncommitted exposure change must receive the current
+			// explicit preview. Completed receipts above retain their exact
+			// original response and never repeat this switch or its restart.
+			if s.exposureImpact(old, next).Changed && !hasExposurePreview(plan.Impact) {
+				return ErrStalePlan
 			}
 
 			for project, expected := range plan.Permissions {

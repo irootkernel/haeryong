@@ -349,7 +349,9 @@ func productCommand(ctx context.Context, opt options, emit func(any) error) erro
 		return fileCommand(ctx, opt, api, emit)
 	case "config":
 		return configCommand(ctx, opt, api, state, emit)
-	case "doctor", "status":
+	case "doctor":
+		return doctorCommand(ctx, api, emit)
+	case "status":
 		if _, e = api.Identity(ctx); e != nil {
 			return productError(e)
 		}

@@ -22,12 +22,13 @@ import (
 	"time"
 
 	appauth "haeryong.local/haeryong/internal/application/auth"
+	appconfig "haeryong.local/haeryong/internal/application/configuration"
 	"haeryong.local/haeryong/internal/domain"
 	"haeryong.local/haeryong/internal/security/session"
 	"haeryong.local/haeryong/internal/webassets"
 )
 
-type Policy struct{ Hosts, Origins []string }
+type Policy struct{ Hosts, Origins, RendererOrigins []string }
 type identityKey struct{}
 
 func SessionFromContext(ctx context.Context) (domain.Session, bool) {
@@ -38,6 +39,8 @@ func SessionFromContext(ctx context.Context) (domain.Session, bool) {
 type handler struct {
 	core           *appauth.Service
 	hosts, origins map[string]bool
+	hostOrigins    map[string]map[string]bool
+	csp            string
 	protected      http.Handler
 }
 
@@ -45,7 +48,19 @@ func New(core *appauth.Service, policy Policy, protected http.Handler) (http.Han
 	if core == nil || len(policy.Hosts) == 0 || len(policy.Origins) == 0 {
 		return nil, errors.New("auth core and exact hosts/origins required")
 	}
-	h := &handler{core: core, hosts: map[string]bool{}, origins: map[string]bool{}, protected: protected}
+	h := &handler{
+		core:        core,
+		hosts:       map[string]bool{},
+		origins:     map[string]bool{},
+		hostOrigins: map[string]map[string]bool{},
+		protected:   protected,
+	}
+	httpsHosts := map[string]bool{}
+	for _, origin := range policy.Origins {
+		if u, err := url.Parse(origin); err == nil && u.Scheme == "https" && u.Host != "" {
+			httpsHosts[u.Host] = true
+		}
+	}
 	for _, host := range policy.Hosts {
 		u, err := url.Parse("http://" + host)
 		if err != nil || u.Host != host || u.User != nil || u.Hostname() == "" || u.Path != "" || strings.ContainsAny(host, "*\\\r\n\t /?#") {
@@ -53,19 +68,75 @@ func New(core *appauth.Service, policy Policy, protected http.Handler) (http.Han
 		}
 		if port := u.Port(); port != "" {
 			number, err := strconv.Atoi(port)
-			if err != nil || number < 1024 || number > 65535 {
+			if err != nil || number < 1 || number > 65535 || (!httpsHosts[host] && (u.Hostname() == "127.0.0.1" || strings.EqualFold(u.Hostname(), "localhost")) && number < 1024) {
 				return nil, errors.New("invalid expected Host port")
 			}
+		} else if !httpsHosts[host] && (u.Hostname() == "127.0.0.1" || strings.EqualFold(u.Hostname(), "localhost")) {
+			return nil, errors.New("invalid expected Host port")
 		}
 		h.hosts[host] = true
 	}
+	managementAuth := map[string]bool{}
+	managementScheme := map[string]string{}
 	for _, origin := range policy.Origins {
 		u, err := url.Parse(origin)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.String() != origin || !h.hosts[u.Host] {
 			return nil, errors.New("invalid exact browser Origin")
 		}
+		if u.Scheme == "http" && (u.Hostname() == "127.0.0.1" || strings.EqualFold(u.Hostname(), "localhost")) {
+			number, err := strconv.Atoi(u.Port())
+			if err != nil || number < 1024 || number > 65535 {
+				return nil, errors.New("invalid expected Host port")
+			}
+		}
+		canonicalOrigin, canonicalHost, authKey, ok := appconfig.CanonicalOrigin(origin)
+		if !ok {
+			return nil, errors.New("invalid exact browser Origin")
+		}
+		if prev, exists := managementScheme[authKey]; exists && prev != u.Scheme {
+			return nil, errors.New("ambiguous management Host across schemes")
+		}
+		managementScheme[authKey] = u.Scheme
 		h.origins[origin] = true
+		h.origins[canonicalOrigin] = true
+		h.hosts[canonicalHost] = true
+		managementAuth[authKey] = true
+		for _, hostKey := range []string{u.Host, canonicalHost} {
+			if h.hostOrigins[hostKey] == nil {
+				h.hostOrigins[hostKey] = map[string]bool{}
+			}
+			h.hostOrigins[hostKey][origin] = true
+			h.hostOrigins[hostKey][canonicalOrigin] = true
+		}
 	}
+	formAction := "form-action 'self' http://127.0.0.1:* https://127.0.0.1:*"
+	frameSrc := "frame-src http://127.0.0.1:* https://127.0.0.1:*"
+	seenRenderer := map[string]bool{}
+	for _, origin := range policy.RendererOrigins {
+		u, err := url.Parse(origin)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.Hostname() == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.String() != origin || strings.ContainsAny(origin, "*\\\r\n\t ;'") {
+			return nil, errors.New("invalid exact renderer Origin")
+		}
+		if port := u.Port(); port != "" {
+			number, err := strconv.Atoi(port)
+			if err != nil || number < 1 || number > 65535 {
+				return nil, errors.New("invalid exact renderer Origin port")
+			}
+		}
+		canonicalOrigin, canonicalHost, authKey, ok := appconfig.CanonicalOrigin(origin)
+		if !ok || !strings.HasPrefix(canonicalOrigin, "https://") {
+			return nil, errors.New("invalid exact renderer Origin")
+		}
+		if managementAuth[authKey] || h.hosts[u.Host] || h.hosts[canonicalHost] || h.origins[origin] || h.origins[canonicalOrigin] || seenRenderer[origin] || seenRenderer[canonicalOrigin] || seenRenderer[authKey] {
+			return nil, errors.New("renderer Origin conflicts with management endpoint")
+		}
+		seenRenderer[origin] = true
+		seenRenderer[canonicalOrigin] = true
+		seenRenderer[authKey] = true
+		formAction += " " + canonicalOrigin
+		frameSrc += " " + canonicalOrigin
+	}
+	h.csp = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src data:; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; " + formAction + "; " + frameSrc
 	return h, nil
 }
 
@@ -79,13 +150,13 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src data:; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self' http://127.0.0.1:* https://127.0.0.1:*; frame-src http://127.0.0.1:* https://127.0.0.1:*")
+	w.Header().Set("Content-Security-Policy", h.csp)
 	if !h.hosts[r.Host] {
 		fail(w, r, session.ErrOrigin)
 		return
 	}
 	origin := r.Header.Get("Origin")
-	if origin != "" && (!h.origins[origin] || len(r.Header.Values("Origin")) != 1) {
+	if origin != "" && (!h.origins[origin] || !h.hostOrigins[r.Host][origin] || len(r.Header.Values("Origin")) != 1) {
 		fail(w, r, session.ErrOrigin)
 		return
 	}

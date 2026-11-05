@@ -22,12 +22,14 @@ import (
 	"sync"
 	"time"
 
+	appconfig "haeryong.local/haeryong/internal/application/configuration"
 	"haeryong.local/haeryong/internal/application/render"
 	"haeryong.local/haeryong/internal/domain"
 	"haeryong.local/haeryong/internal/webassets"
 )
 
-// Handler serves exactly one renderer origin bound to one immutable version.
+// Handler serves one loopback renderer origin bound to one immutable version,
+// and optionally its configured private HTTPS renderer origin.
 type Handler struct {
 	Core    *render.Service
 	Origin  string
@@ -36,6 +38,22 @@ type Handler struct {
 	// the unprivileged top-level redirect document. Nil keeps ordinary
 	// delivery for every request.
 	PublicReaderBase func() string
+
+	endpointMu            sync.RWMutex
+	remoteOrigin          string
+	remoteCanonicalOrigin string
+	remoteHost            string
+	remoteCanonicalHost   string
+	remoteParent          string
+	remoteCanonicalParent string
+}
+
+type endpointContext struct {
+	deliveryOrigin    string
+	rawDeliveryOrigin string
+	parentOrigin      string
+	rawParentOrigin   string
+	remote            bool
 }
 
 // New builds the per-origin HTTP server product wiring hands to the render
@@ -72,6 +90,34 @@ type Server struct {
 // the unprivileged top-level redirect document.
 func (s *Server) SetPublicReaderBase(base func() string) { s.handler.PublicReaderBase = base }
 
+// SetRemoteEndpoint activates or clears the exact private HTTPS renderer
+// origin and its trusted management parent for this listener.
+func (s *Server) SetRemoteEndpoint(origin, parent string) {
+	s.handler.SetRemoteEndpoint(origin, parent)
+}
+
+// SetRemoteEndpoint activates or clears the exact private HTTPS renderer
+// origin and its trusted management parent for this handler.
+func (h *Handler) SetRemoteEndpoint(origin, parent string) {
+	canonicalOrigin, canonicalHost, _, originOK := appconfig.CanonicalOrigin(origin)
+	canonicalParent, _, _, parentOK := appconfig.CanonicalOrigin(parent)
+	rawHost := ""
+	if originOK && strings.HasPrefix(canonicalOrigin, "https://") && parentOK && strings.HasPrefix(canonicalParent, "https://") {
+		if u, err := url.Parse(origin); err == nil {
+			rawHost = u.Host
+		}
+	}
+	h.endpointMu.Lock()
+	if rawHost == "" {
+		h.remoteOrigin, h.remoteCanonicalOrigin, h.remoteHost, h.remoteCanonicalHost, h.remoteParent, h.remoteCanonicalParent = "", "", "", "", "", ""
+	} else {
+		h.remoteOrigin, h.remoteCanonicalOrigin = origin, canonicalOrigin
+		h.remoteHost, h.remoteCanonicalHost = rawHost, canonicalHost
+		h.remoteParent, h.remoteCanonicalParent = parent, canonicalParent
+	}
+	h.endpointMu.Unlock()
+}
+
 func (s *Server) Close() error {
 	s.mu.Lock()
 	s.closed = true
@@ -81,18 +127,50 @@ func (s *Server) Close() error {
 	return err
 }
 
+func (h *Handler) matchEndpoint(r *http.Request) (endpointContext, bool) {
+	if r.Host == "" {
+		return endpointContext{}, false
+	}
+	if "http://"+r.Host == h.Origin {
+		parent := ""
+		if h.PublicReaderBase != nil {
+			parent = h.PublicReaderBase()
+		}
+		if parent == "" && h.Core != nil {
+			parent = h.Core.ManagementOrigin()
+		}
+		return endpointContext{deliveryOrigin: h.Origin, rawDeliveryOrigin: h.Origin, parentOrigin: parent, rawParentOrigin: parent, remote: false}, true
+	}
+	h.endpointMu.RLock()
+	remoteOrigin, remoteCanonicalOrigin := h.remoteOrigin, h.remoteCanonicalOrigin
+	remoteHost, remoteCanonicalHost := h.remoteHost, h.remoteCanonicalHost
+	remoteParent, remoteCanonicalParent := h.remoteParent, h.remoteCanonicalParent
+	h.endpointMu.RUnlock()
+	if remoteCanonicalHost != "" && (r.Host == remoteHost || r.Host == remoteCanonicalHost) {
+		return endpointContext{
+			deliveryOrigin:    remoteCanonicalOrigin,
+			rawDeliveryOrigin: remoteOrigin,
+			parentOrigin:      remoteCanonicalParent,
+			rawParentOrigin:   remoteParent,
+			remote:            true,
+		}, true
+	}
+	return endpointContext{}, false
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	// Exact origin binding: Host names this renderer origin only.
-	if r.Host == "" || "http://"+r.Host != h.Origin {
+	// Exact origin binding: Host names this local or activated remote renderer origin only.
+	endpoint, ok := h.matchEndpoint(r)
+	if !ok {
 		http.Error(w, "unknown origin", http.StatusNotFound)
 		return
 	}
 	// No management handlers are mounted here. Authored directories named
 	// api or __haeryong remain ordinary payload paths.
 	if r.URL.Path == "/__haeryong/handoff" && r.Method == http.MethodPost {
-		h.handoff(w, r)
+		h.handoff(w, r, endpoint)
 		return
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -104,7 +182,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// receives the small daemon-owned UNPRIVILEGED redirect document instead
 	// of delivery: the document reads its own exact location and moves the
 	// tab to the credential-free public management browser Reader route.
-	if h.topLevelNavigation(r) && h.redirectDocument(w, r) {
+	if h.topLevelNavigation(r) && h.redirectDocument(w, r, endpoint) {
 		return
 	}
 	// Ordinary content requests are same-origin only. Cookies share a
@@ -112,13 +190,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// renderer origin or the trusted host) is rejected even when this
 	// origin's cookie is attached; only the one-use authenticated handoff is
 	// cross-port.
+	origins := r.Header.Values("Origin")
 	supplied := r.Header.Get("Origin")
 	site := r.Header.Get("Sec-Fetch-Site")
-	if (supplied != "" && supplied != h.Origin) || (supplied == "" && site != "same-origin" && site != "none") {
+	if len(origins) > 1 || (len(origins) == 1 && supplied == "") || (supplied != "" && supplied != endpoint.deliveryOrigin && supplied != endpoint.rawDeliveryOrigin) || (supplied == "" && site != "same-origin" && site != "none") {
 		http.Error(w, "same-origin delivery context required", http.StatusForbidden)
 		return
 	}
-	delivery := h.authorize(w, r)
+	delivery := h.authorize(w, r, endpoint)
 	if delivery == nil {
 		return
 	}
@@ -157,11 +236,13 @@ func (h *Handler) topLevelNavigation(r *http.Request) bool {
 // location: the authored query string and fragment never pass through the
 // server, and page_query/page_fragment names are never reinterpreted as
 // host parameters — they may be legitimate artifact query names.
-func (h *Handler) redirectDocument(w http.ResponseWriter, r *http.Request) bool {
-	if h.PublicReaderBase == nil {
-		return false
+func (h *Handler) redirectDocument(w http.ResponseWriter, r *http.Request, endpoint endpointContext) bool {
+	base := ""
+	if endpoint.remote {
+		base = endpoint.parentOrigin
+	} else if h.PublicReaderBase != nil {
+		base = h.PublicReaderBase()
 	}
-	base := h.PublicReaderBase()
 	if base == "" {
 		return false
 	}
@@ -204,7 +285,7 @@ func (h *Handler) redirectDocument(w http.ResponseWriter, r *http.Request) bool 
 // authorize validates the narrow per-delivery cookie and the current owner
 // authority. A definitively invalid or expired cookie is cleared; a
 // transient owner check is retryable.
-func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) *render.DeliveryView {
+func (h *Handler) authorize(w http.ResponseWriter, r *http.Request, endpoint endpointContext) *render.DeliveryView {
 	prefix := "hyr_view_" + h.Binding.VersionID + "_"
 	for _, cookie := range r.Cookies() {
 		if !strings.HasPrefix(cookie.Name, prefix) {
@@ -212,10 +293,10 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) *render.Deli
 		}
 		id, secret, ok := strings.Cut(cookie.Value, ".")
 		if !ok {
-			h.clearCookie(w, cookie.Name)
+			h.clearCookie(w, cookie.Name, endpoint.remote)
 			continue
 		}
-		delivery, err := h.Core.AuthorizeDelivery(r.Context(), h.Binding.VersionID, h.Origin, id, secret)
+		delivery, err := h.Core.AuthorizeDelivery(r.Context(), h.Binding.VersionID, endpoint.deliveryOrigin, id, secret)
 		if err == nil {
 			return delivery
 		}
@@ -227,22 +308,50 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) *render.Deli
 		}
 		// Definitive denial: the narrow cookie never authorized this
 		// request, so it is cleared before the honest denial.
-		h.clearCookie(w, cookie.Name)
+		h.clearCookie(w, cookie.Name, endpoint.remote)
 	}
 	http.Error(w, "delivery denied", http.StatusUnauthorized)
 	return nil
 }
 
-func (h *Handler) clearCookie(w http.ResponseWriter, name string) {
-	http.SetCookie(w, &http.Cookie{Name: name, Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+func (h *Handler) clearCookie(w http.ResponseWriter, name string, secure bool) {
+	http.SetCookie(w, &http.Cookie{Name: name, Path: "/", MaxAge: -1, HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode})
+}
+
+func validHandoffOrigin(r *http.Request, endpoint endpointContext) bool {
+	values := r.Header.Values("Origin")
+	if len(values) == 0 {
+		return !endpoint.remote
+	}
+	if len(values) != 1 {
+		return false
+	}
+	origin := values[0]
+	if origin == "" || strings.ContainsAny(origin, ", \t\r\n") {
+		return false
+	}
+	if origin == "null" {
+		return true
+	}
+	if endpoint.parentOrigin != "" && (origin == endpoint.parentOrigin || origin == endpoint.rawParentOrigin) {
+		return true
+	}
+	if !endpoint.remote && origin == render.CompanionUIOrigin {
+		return true
+	}
+	return false
 }
 
 // handoff consumes the one-use secret (the only cross-port allowance) and
 // establishes the narrow delivery cookie, landing the frame on the target
 // page through a client redirect.
-func (h *Handler) handoff(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handoff(w http.ResponseWriter, r *http.Request, endpoint endpointContext) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "handoff is a form POST", http.StatusMethodNotAllowed)
+		return
+	}
+	if !validHandoffOrigin(r, endpoint) {
+		http.Error(w, "invalid handoff origin", http.StatusForbidden)
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<16)
@@ -255,7 +364,7 @@ func (h *Handler) handoff(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "handoff requires the one-use secret", http.StatusBadRequest)
 		return
 	}
-	delivery, err := h.Core.ConsumeHandoff(r.Context(), h.Binding.VersionID, h.Origin, secret)
+	delivery, err := h.Core.ConsumeHandoff(r.Context(), h.Binding.VersionID, endpoint.deliveryOrigin, secret)
 	if err != nil {
 		var typed *render.Error
 		if errors.As(err, &typed) && typed.Reason == render.ReasonTransientOwner {
@@ -271,7 +380,7 @@ func (h *Handler) handoff(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "delivery denied", http.StatusUnauthorized)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: name, Value: value, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	http.SetCookie(w, &http.Cookie{Name: name, Value: value, Path: "/", HttpOnly: true, Secure: endpoint.remote, SameSite: http.SameSiteStrictMode})
 	target := render.SanitizeHandoffTarget(r.URL.Query().Get("page"))
 	landing, err := json.Marshal(target)
 	if err != nil {

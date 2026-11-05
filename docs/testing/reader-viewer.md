@@ -169,12 +169,16 @@ origin) classify ingress; a request is remote when its supplied Origin is
 the external origin, or its Host is the external host while differing from
 the actual local host (local wins ties, and equal-host tuples are refused
 at startup and at configuration plan/commit). Remote ingress sees the
-renderer feature flags off with `renderer_unavailable_reason` on
-capabilities/bootstrap, and open/renew fail 503 FEATURE_NOT_READY with
-`details.reason=renderer_remote_ingress`, retryable false and no
-Retry-After before any lazy renderer construction, operation reservation
-or listener; ordinary queries, imports, downloads and known-owned-session
-close stay usable remotely. No physical-location claim is made from
+renderer only for supported exact same-host HTTPS mappings added by
+TASK-007-01; the historical local-only checkpoint below remains unchanged in
+scope. Unsupported/unmapped remote selections retain
+`renderer_unavailable_reason` on capabilities/bootstrap, and Open/renew fail
+503 FEATURE_NOT_READY with `details.reason=renderer_remote_ingress`, retryable
+false and no Retry-After before lazy construction, operation reservation or
+listener. Ordinary queries, imports, downloads and known-owned-session Close
+stay usable remotely. The local-only native facade continues to refuse remote
+construction. [Private ingress evidence](private-ingress.md) owns current web
+observations and limits. No physical-location claim is made from
 Forwarded/User-Agent or pairing history.
 
 ## Reader recovery and native local logout

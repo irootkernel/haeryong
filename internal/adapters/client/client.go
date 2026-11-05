@@ -58,6 +58,9 @@ type Client struct {
 	http       *http.Client
 }
 
+// Endpoint is the origin captured when the credential-bound client was created.
+func (c *Client) Endpoint() string { return c.origin }
+
 var operationIdentity = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 func Origin(raw string) (string, error) {

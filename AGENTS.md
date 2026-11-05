@@ -263,5 +263,21 @@ review predates the verified local correction and retains its original result.
 Retained real-provider, semantic, Reader/browser and native observations keep
 their individual qualifications. Current common and affected documentation
 checks do not establish physical private-device use or complete Stage A.
-EPIC-007 owns that gate and TASK-007-01 is the next ordered owner; it has not
-started. Maintenance, schedules and release retain their later Epic owners.
+EPIC-007 remains in progress. TASK-007-01 has completed its bounded private-web
+member delivery; TASK-007-02 is the next ordered owner. The
+[2026-11-05 owner direction](docs/decisions.md#owner-amendment-2026-11-05-web-only-epic-007-execution)
+selects actual Tailscale web verification for this run and excludes physical
+mobile verification. Original second-device and Stage A assertions retain their
+unverified scope; implementation is not blocked by the excluded device proof.
+Maintenance, schedules and release retain their later Epic owners.
+
+TASK-007-01 adds controlled same-host private HTTPS browser renderer mappings,
+additive permanent external-origin ownership, confirmed exposure previews and
+intent-only endpoint doctor. [Private ingress evidence](docs/testing/private-ingress.md)
+owns current executed scope and failures. Local-only native renderer refusal and
+fixed local companion handoff are preserved. Actual same-host Tailscale web
+proof is separate from physical-device/mobile/native UI and assembled Stage A
+qualification; those exclusions follow the current owner direction. The exact-current common, original independent
+Task panel and scoped Epic contribution assessment support the bounded member
+delivery under delegated acceptance. Its normal commit/native finalization
+follow; no Master overall Epic acceptance is asserted.

@@ -25,6 +25,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/url"
@@ -45,6 +46,20 @@ import (
 // keyed by immutable content digest, exact page path and this version.
 const RendererVersion = "haeryong-loader-v3"
 
+// Fixed local native companion UI origin shared by the companion binary and
+// the local renderer handoff boundary.
+const (
+	CompanionUIPort   = "9271"
+	CompanionUIOrigin = "http://127.0.0.1:" + CompanionUIPort
+)
+
+// Ingress describes the trusted management endpoint context that initiated a
+// render control operation.
+type Ingress struct {
+	Remote       bool
+	ParentOrigin string
+}
+
 // Binding is the immutable version identity one renderer origin serves.
 type Binding struct {
 	LibraryID     string
@@ -59,6 +74,13 @@ type Binding struct {
 // implementation so this package stays free of net/http.
 type Server interface {
 	Serve(net.Listener) error
+}
+
+// RemoteEndpointServer is implemented by renderer HTTP servers that support
+// activating a validated private HTTPS renderer origin and its trusted
+// management parent origin.
+type RemoteEndpointServer interface {
+	SetRemoteEndpoint(origin, parent string)
 }
 
 const (
@@ -111,6 +133,10 @@ type delivery struct {
 	cookieValue     string
 	secretHash      string
 	Binding         Binding
+	deliveryOrigin  string
+	parentOrigin    string
+	upstreamOrigin  string
+	remote          bool
 	OwnerSession    string
 	authorityKind   string
 	PrincipalID     string
@@ -128,6 +154,10 @@ type snapshot struct {
 	cookieValue     string
 	secretHash      string
 	binding         Binding
+	deliveryOrigin  string
+	parentOrigin    string
+	upstreamOrigin  string
+	remote          bool
 	ownerSession    string
 	authorityKind   string
 	principalID     string
@@ -138,7 +168,28 @@ type snapshot struct {
 }
 
 func (d *delivery) copy() snapshot {
-	return snapshot{ID: d.ID, cookieName: d.cookieName, cookieValue: d.cookieValue, secretHash: d.secretHash, binding: d.Binding, ownerSession: d.OwnerSession, authorityKind: d.authorityKind, principalID: d.PrincipalID, generation: d.Generation, leaseExpires: d.LeaseExpires, closed: d.closed, trashGeneration: d.TrashGeneration}
+	deliveryOrigin := d.deliveryOrigin
+	if deliveryOrigin == "" {
+		deliveryOrigin = d.Binding.Origin
+	}
+	return snapshot{
+		ID:              d.ID,
+		cookieName:      d.cookieName,
+		cookieValue:     d.cookieValue,
+		secretHash:      d.secretHash,
+		binding:         d.Binding,
+		deliveryOrigin:  deliveryOrigin,
+		parentOrigin:    d.parentOrigin,
+		upstreamOrigin:  d.upstreamOrigin,
+		remote:          d.remote,
+		ownerSession:    d.OwnerSession,
+		authorityKind:   d.authorityKind,
+		principalID:     d.PrincipalID,
+		generation:      d.Generation,
+		leaseExpires:    d.LeaseExpires,
+		closed:          d.closed,
+		trashGeneration: d.TrashGeneration,
+	}
 }
 
 // Service is lazily constructed by product wiring on the first render use so
@@ -203,6 +254,106 @@ func New(store app.Store, auth *appauth.Service, bytes byteReader, opts Options)
 	return &Service{store: store, auth: auth, bytes: bytes, opts: opts, ledger: origins.NewManager(base, origins.Faults{}), sessions: map[string]*delivery{}, listeners: map[string]net.Listener{}, servers: map[string]Server{}}, nil
 }
 
+// ManagementOrigin returns the configured local management origin when known.
+func (s *Service) ManagementOrigin() string {
+	if s == nil || s.opts.ManagementOrigin == nil {
+		return ""
+	}
+	return s.opts.ManagementOrigin()
+}
+
+type remoteOpenAuthority struct {
+	base         app.Authority
+	service      *Service
+	versionID    string
+	parentOrigin string
+	wantOrigin   string
+	wantUpstream string
+}
+
+func (a remoteOpenAuthority) Authorize(ctx context.Context, request domain.Request) error {
+	return a.base.Authorize(ctx, request)
+}
+
+func (a remoteOpenAuthority) AuthorizeWrite(ctx context.Context, tx app.WriteTx, request domain.Request) error {
+	if err := a.base.AuthorizeWrite(ctx, tx, request); err != nil {
+		return err
+	}
+	_, err := a.service.verifyRemoteRouteTx(tx, a.versionID, a.parentOrigin, a.wantOrigin, a.wantUpstream)
+	return err
+}
+
+func (a remoteOpenAuthority) Filter(ctx context.Context, request domain.Request, response domain.Response) (domain.Response, error) {
+	out, err := a.base.Filter(ctx, request, response)
+	if err != nil {
+		return out, err
+	}
+	if err := a.service.store.Write(ctx, func(tx app.WriteTx) error {
+		_, err := a.service.verifyRemoteRouteTx(tx, a.versionID, a.parentOrigin, a.wantOrigin, a.wantUpstream)
+		return err
+	}); err != nil {
+		return domain.Response{}, err
+	}
+	return out, nil
+}
+
+func sameExternalOrigin(left, right string) bool {
+	l, lErr := origins.CanonicalExternalOrigin(left)
+	r, rErr := origins.CanonicalExternalOrigin(right)
+	return lErr == nil && rErr == nil && l == r
+}
+
+func sameDeliveryOrigin(left, right string) bool {
+	if left == right && left != "" {
+		return true
+	}
+	return sameExternalOrigin(left, right)
+}
+
+func (s *Service) verifyRemoteRouteTx(tx app.WriteTx, versionID, parentOrigin, wantOrigin, wantUpstream string) (appconfig.RendererMapping, error) {
+	if parentOrigin == "" {
+		return appconfig.RendererMapping{}, &Error{Reason: ReasonRemoteIngress}
+	}
+	configuration, err := tx.Configuration()
+	if err != nil {
+		return appconfig.RendererMapping{}, err
+	}
+	value, err := appconfig.Decode(strings.NewReader(string(configuration.Value)), "json")
+	if err != nil {
+		return appconfig.RendererMapping{}, err
+	}
+	network, _ := value["network"].(map[string]any)
+	if network == nil || network["remote_enabled"] != true {
+		return appconfig.RendererMapping{}, &Error{Reason: ReasonRemoteIngress}
+	}
+	external, _ := network["external_base_url"].(string)
+	if external == "" || !sameExternalOrigin(external, parentOrigin) {
+		return appconfig.RendererMapping{}, &Error{Reason: ReasonRemoteIngress}
+	}
+	localOrigin := s.ManagementOrigin()
+	if localOrigin == "" {
+		if listener, ok := network["listener"].(map[string]any); ok {
+			localOrigin = "http://" + fmt.Sprint(listener["bind"]) + ":" + fmt.Sprint(listener["port"])
+		}
+	}
+	for _, mapping := range appconfig.RendererMappings(value) {
+		if mapping.VersionID != versionID {
+			continue
+		}
+		if appconfig.PrivateRendererMappingReason(parentOrigin, mapping, localOrigin) != "" {
+			return appconfig.RendererMapping{}, &Error{Reason: ReasonRemoteIngress}
+		}
+		if wantOrigin != "" && !sameExternalOrigin(mapping.Origin, wantOrigin) {
+			return appconfig.RendererMapping{}, &Error{Reason: ReasonRemoteIngress}
+		}
+		if wantUpstream != "" && mapping.Upstream != wantUpstream {
+			return appconfig.RendererMapping{}, &Error{Reason: ReasonRemoteIngress}
+		}
+		return mapping, nil
+	}
+	return appconfig.RendererMapping{}, &Error{Reason: ReasonRemoteIngress}
+}
+
 // Open performs the durable K render-session open: it authorizes the exact
 // version, checks the per-library ledger binding marker, reserves or reuses
 // the sticky origin of the exact immutable tuple, binds the lazy loopback
@@ -211,6 +362,12 @@ func New(store app.Store, auth *appauth.Service, bytes byteReader, opts Options)
 // the old handoff is inactive and the host opens a new session under a new
 // key once the original outcome is known; nothing here revives old state.
 func (s *Service) Open(ctx context.Context, token, key, versionID string) (domain.Response, error) {
+	return s.OpenWithIngress(ctx, token, key, versionID, Ingress{})
+}
+
+// OpenWithIngress performs a render-session open under the trusted ingress
+// context supplied by product wiring.
+func (s *Service) OpenWithIngress(ctx context.Context, token, key, versionID string, ingress Ingress) (domain.Response, error) {
 	if !validOperationKey(key) {
 		return domain.Response{}, sec.ErrInvalid
 	}
@@ -218,8 +375,55 @@ func (s *Service) Open(ctx context.Context, token, key, versionID string) (domai
 	if err != nil {
 		return domain.Response{}, err
 	}
-	request := domain.Request{Key: domain.OperationKey{PrincipalID: actor.PrincipalID, OperationID: key}, Method: "POST", Target: "/api/v1/versions/" + versionID + "/render-sessions", Preconditions: map[string]string{}}
-	return app.Execute(ctx, s.store, s.auth.Authority(token), request, nil, func(tx app.WriteTx, receipt domain.Receipt) (domain.Response, error) {
+	preconditions := map[string]string{}
+	authority := s.auth.Authority(token)
+	if ingress.Remote {
+		var preMapping appconfig.RendererMapping
+		if err := s.store.Write(ctx, func(tx app.WriteTx) error {
+			writer, err := s.auth.AuthenticateWrite(ctx, tx, token)
+			if err != nil {
+				return err
+			}
+			if err := s.auth.Authority(token).AuthorizeWrite(ctx, tx, domain.Request{
+				Key:    domain.OperationKey{PrincipalID: writer.PrincipalID, OperationID: key},
+				Method: "POST",
+				Target: "/api/v1/versions/" + versionID + "/render-sessions",
+			}); err != nil {
+				return err
+			}
+			if _, err := visibleVersion(tx, versionID); err != nil {
+				return err
+			}
+			var routeErr error
+			preMapping, routeErr = s.verifyRemoteRouteTx(tx, versionID, ingress.ParentOrigin, "", "")
+			return routeErr
+		}); err != nil {
+			return domain.Response{}, err
+		}
+		canonicalParent, err := origins.CanonicalExternalOrigin(ingress.ParentOrigin)
+		if err != nil {
+			return domain.Response{}, &Error{Reason: ReasonRemoteIngress}
+		}
+		canonicalDelivery, err := origins.CanonicalExternalOrigin(preMapping.Origin)
+		if err != nil {
+			return domain.Response{}, &Error{Reason: ReasonRemoteIngress}
+		}
+		preconditions = map[string]string{
+			"ingress_mode":    "remote",
+			"parent_origin":   canonicalParent,
+			"delivery_origin": canonicalDelivery,
+		}
+		authority = remoteOpenAuthority{
+			base:         s.auth.Authority(token),
+			service:      s,
+			versionID:    versionID,
+			parentOrigin: canonicalParent,
+			wantOrigin:   canonicalDelivery,
+			wantUpstream: preMapping.Upstream,
+		}
+	}
+	request := domain.Request{Key: domain.OperationKey{PrincipalID: actor.PrincipalID, OperationID: key}, Method: "POST", Target: "/api/v1/versions/" + versionID + "/render-sessions", Preconditions: preconditions}
+	return app.Execute(ctx, s.store, authority, request, nil, func(tx app.WriteTx, receipt domain.Receipt) (domain.Response, error) {
 		writer, err := s.auth.AuthenticateWrite(ctx, tx, token)
 		if err != nil {
 			return domain.Response{}, err
@@ -264,6 +468,43 @@ func (s *Service) Open(ctx context.Context, token, key, versionID string) (domai
 		}
 		exclude = func(port int) bool { return port == managementPort || configuredExclude(port) }
 		reservation := origins.Reservation{LibraryID: library.ID, VersionID: version.ID, ContentSetID: version.ContentSetID, PayloadSHA256: version.PayloadSHA}
+		remoteOrigin := ""
+		remoteParent := ""
+		canonicalRemoteOrigin := ""
+		canonicalRemoteParent := ""
+		upstreamOrigin := ""
+		if ingress.Remote {
+			mapping, err := s.verifyRemoteRouteTx(tx, versionID, ingress.ParentOrigin, "", "")
+			if err != nil {
+				return domain.Response{}, err
+			}
+			canonicalRemoteOrigin, err = origins.CanonicalExternalOrigin(mapping.Origin)
+			if err != nil {
+				return domain.Response{}, &Error{Reason: ReasonRemoteIngress}
+			}
+			canonicalRemoteParent, err = origins.CanonicalExternalOrigin(ingress.ParentOrigin)
+			if err != nil {
+				return domain.Response{}, &Error{Reason: ReasonRemoteIngress}
+			}
+			upstreamURL, err := url.Parse(mapping.Upstream)
+			if err != nil || upstreamURL.Port() == "" {
+				return domain.Response{}, &Error{Reason: ReasonRemoteIngress}
+			}
+			upstreamPort, err := strconv.Atoi(upstreamURL.Port())
+			if err != nil {
+				return domain.Response{}, &Error{Reason: ReasonRemoteIngress}
+			}
+			otherExclude, err := otherUpstreamsExclude(configuration.Value, version.ID, managementPort)
+			if err != nil {
+				return domain.Response{}, err
+			}
+			exclude = otherExclude
+			reservation.PreferredPort = upstreamPort
+			reservation.ExternalOrigin = canonicalRemoteOrigin
+			remoteOrigin = mapping.Origin
+			remoteParent = ingress.ParentOrigin
+			upstreamOrigin = mapping.Upstream
+		}
 		bound := true
 		marker, markerErr := tx.ResourceRow("origin_ledger_binding", library.ID)
 		if markerErr != nil {
@@ -282,7 +523,7 @@ func (s *Service) Open(ctx context.Context, token, key, versionID string) (domai
 		}
 		origin := origins.Origin(record.Port)
 		binding := Binding{LibraryID: library.ID, VersionID: version.ID, DocumentID: version.DocumentID, ContentSetID: version.ContentSetID, PayloadSHA256: version.PayloadSHA, Origin: origin}
-		if err := s.ensureListener(binding); err != nil {
+		if err := s.ensureListener(binding, remoteOrigin, remoteParent); err != nil {
 			// The reservation stays recorded and sticky; only the bind failed.
 			return domain.Response{}, err
 		}
@@ -290,7 +531,29 @@ func (s *Service) Open(ctx context.Context, token, key, versionID string) (domai
 		if err != nil {
 			return domain.Response{}, err
 		}
-		view, err := s.newDelivery(writer, binding, library.RuntimeGeneration, lifecycle.TrashGeneration)
+		deliveryOrigin := origin
+		parentOrigin := s.ManagementOrigin()
+		if parentOrigin == "" {
+			if network, ok := func() (map[string]any, bool) {
+				v, err := appconfig.Decode(strings.NewReader(string(configuration.Value)), "json")
+				if err != nil {
+					return nil, false
+				}
+				n, ok := v["network"].(map[string]any)
+				return n, ok
+			}(); ok {
+				if listener, ok := network["listener"].(map[string]any); ok {
+					parentOrigin = "http://" + fmt.Sprint(listener["bind"]) + ":" + fmt.Sprint(listener["port"])
+				}
+			}
+		}
+		if ingress.Remote {
+			deliveryOrigin = canonicalRemoteOrigin
+			parentOrigin = canonicalRemoteParent
+		} else {
+			upstreamOrigin = origin
+		}
+		view, err := s.newDelivery(writer, binding, deliveryOrigin, parentOrigin, upstreamOrigin, ingress.Remote, library.RuntimeGeneration, lifecycle.TrashGeneration)
 		if err != nil {
 			return domain.Response{}, err
 		}
@@ -309,9 +572,9 @@ func (s *Service) Open(ctx context.Context, token, key, versionID string) (domai
 		}
 		body, err := json.Marshal(map[string]any{
 			"version_id":       versionID,
-			"render_origin":    origin,
+			"render_origin":    deliveryOrigin,
 			"session_id":       view.ID,
-			"handoff":          map[string]any{"url": origin + "/__haeryong/handoff", "secret": view.OfferValue, "expires_at": view.OfferExpires.Format(time.RFC3339Nano)},
+			"handoff":          map[string]any{"url": deliveryOrigin + "/__haeryong/handoff", "secret": view.OfferValue, "expires_at": view.OfferExpires.Format(time.RFC3339Nano)},
 			"lease_expires_at": view.LeaseExpires.Format(time.RFC3339Nano),
 		})
 		if err != nil {
@@ -334,12 +597,22 @@ type openView struct {
 // after a lifecycle denial never resurrects a terminated delivery), and the
 // session's captured library generation to still be current.
 func (s *Service) Renew(ctx context.Context, token, versionID, sessionID string) (domain.Response, error) {
+	return s.RenewWithIngress(ctx, token, versionID, sessionID, Ingress{})
+}
+
+// RenewWithIngress extends an active session's lease under the caller's
+// trusted ingress context. Cross-ingress renewal is refused without mutating
+// or terminating the existing session.
+func (s *Service) RenewWithIngress(ctx context.Context, token, versionID, sessionID string, ingress Ingress) (domain.Response, error) {
 	current, err := s.controlKnownSession(ctx, token, versionID, sessionID)
 	if err != nil {
 		return domain.Response{}, err
 	}
 	if current.closed {
 		return domain.Response{}, &Error{Reason: ReasonClosedSession}
+	}
+	if current.remote != ingress.Remote || (ingress.Remote && !sameExternalOrigin(current.parentOrigin, ingress.ParentOrigin)) {
+		return domain.Response{}, &Error{Reason: ReasonDeniedDelivery}
 	}
 	switch s.authorizeCurrent(ctx, current) {
 	case authorityOK:
@@ -369,6 +642,30 @@ func (s *Service) Renew(ctx context.Context, token, versionID, sessionID string)
 		return domain.Response{}, err
 	}
 	return domain.Response{Status: 200, Body: body}, nil
+}
+
+// OwnsSession reports whether the given principal owns a known in-memory
+// session for the version.
+func (s *Service) OwnsSession(principalID, versionID, sessionID string) bool {
+	if s == nil {
+		return false
+	}
+	current := s.snapshot(sessionID)
+	return current.ID != "" && current.principalID == principalID && current.binding.VersionID == versionID
+}
+
+// TerminateRemoteSession marks a known remote session for the version closed
+// when its remote route is disabled or removed.
+func (s *Service) TerminateRemoteSession(principalID, versionID, sessionID string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if session := s.sessions[sessionID]; session != nil && session.remote && session.PrincipalID == principalID && session.Binding.VersionID == versionID {
+		session.closed = true
+		session.offer.used = true
+	}
 }
 
 // Close terminates a delivery session. Closing a known owned session stays
@@ -489,6 +786,38 @@ func currentPool(raw []byte) (origins.Pool, func(int) bool, error) {
 	return origins.Pool{BasePort: base, Count: count}, func(port int) bool { return excluded[port] }, nil
 }
 
+// otherUpstreamsExclude excludes the configured/runtime management port and
+// every renderer_mappings upstream except the selected version's own mapping.
+func otherUpstreamsExclude(raw []byte, versionID string, managementPort int) (func(int) bool, error) {
+	value, err := appconfig.Decode(strings.NewReader(string(raw)), "json")
+	if err != nil {
+		return nil, err
+	}
+	excluded := map[int]bool{}
+	if managementPort > 0 {
+		excluded[managementPort] = true
+	}
+	network, _ := value["network"].(map[string]any)
+	if network != nil {
+		if listener, ok := network["listener"].(map[string]any); ok {
+			if port, err := intValue(listener["port"]); err == nil {
+				excluded[port] = true
+			}
+		}
+	}
+	for _, mapping := range appconfig.RendererMappings(value) {
+		if mapping.VersionID == versionID {
+			continue
+		}
+		if u, err := url.Parse(mapping.Upstream); err == nil && u.Port() != "" {
+			if port, err := strconv.Atoi(u.Port()); err == nil {
+				excluded[port] = true
+			}
+		}
+	}
+	return func(port int) bool { return excluded[port] }, nil
+}
+
 // DeliveryView is the validated delivery session used by the renderer
 // origin server for one request.
 type DeliveryView struct {
@@ -515,13 +844,13 @@ func (s *Service) Cookie(sessionID string) (name, value string, ok bool) {
 func (s *Service) AuthorizeDelivery(ctx context.Context, versionID, origin, deliveryID, secret string) (*DeliveryView, error) {
 	current := s.snapshot(deliveryID)
 	if current.ID == "" || current.closed || s.opts.Now().After(current.leaseExpires) ||
-		current.binding.VersionID != versionID || current.binding.Origin != origin ||
+		current.binding.VersionID != versionID || !sameDeliveryOrigin(current.deliveryOrigin, origin) ||
 		subtle.ConstantTimeCompare([]byte(hashOf(secret)), []byte(current.secretHash)) != 1 {
 		return nil, &Error{Reason: ReasonDeniedDelivery}
 	}
 	switch s.authorizeCurrent(ctx, current) {
 	case authorityOK:
-		return &DeliveryView{ID: current.ID, VersionID: current.binding.VersionID, Origin: current.binding.Origin, OwnerSession: current.ownerSession, PrincipalID: current.principalID}, nil
+		return &DeliveryView{ID: current.ID, VersionID: current.binding.VersionID, Origin: current.deliveryOrigin, OwnerSession: current.ownerSession, PrincipalID: current.principalID}, nil
 	case authorityDefinite:
 		s.terminate(deliveryID)
 		return nil, &Error{Reason: ReasonDeniedDelivery}
@@ -567,8 +896,10 @@ const (
 
 // authorizeCurrent applies the one shared current-delivery authorization:
 // the remembered owner session or scoped credential plus the exact
-// version's current lifecycle and anchors. Definitive denials (revocation,
-// expiry, scope loss, hidden lifecycle) are terminal.
+// version's current lifecycle, anchors, and (for remote sessions) the
+// active supported private renderer route. Definitive denials (revocation,
+// expiry, scope loss, hidden lifecycle, disabled/changed remote mapping) are
+// terminal.
 func (s *Service) authorizeCurrent(ctx context.Context, current snapshot) authorityCheck {
 	var check authorityCheck
 	err := s.store.Write(ctx, func(tx app.WriteTx) error {
@@ -578,6 +909,16 @@ func (s *Service) authorizeCurrent(ctx context.Context, current snapshot) author
 			err = e
 			if err == nil && d.TrashGeneration != current.trashGeneration {
 				err = domain.ErrNotFound
+			}
+		}
+		if err == nil && current.remote {
+			if _, routeErr := s.verifyRemoteRouteTx(tx, current.binding.VersionID, current.parentOrigin, current.deliveryOrigin, current.upstreamOrigin); routeErr != nil {
+				var renderErr *Error
+				if errors.As(routeErr, &renderErr) && renderErr.Reason == ReasonRemoteIngress {
+					err = domain.ErrDenied
+				} else {
+					err = routeErr
+				}
 			}
 		}
 		if err == nil {
@@ -606,7 +947,11 @@ func (s *Service) ConsumeHandoff(ctx context.Context, versionID, origin, secret 
 	var current snapshot
 	s.mu.Lock()
 	for _, session := range s.sessions {
-		if session.Binding.VersionID != versionID || session.Binding.Origin != origin {
+		deliveryOrigin := session.deliveryOrigin
+		if deliveryOrigin == "" {
+			deliveryOrigin = session.Binding.Origin
+		}
+		if session.Binding.VersionID != versionID || !sameDeliveryOrigin(deliveryOrigin, origin) {
 			continue
 		}
 		offer := session.offer
@@ -650,21 +995,28 @@ func (s *Service) ConsumeHandoff(ctx context.Context, versionID, origin, secret 
 	}
 	session.offer.used = true
 	s.mu.Unlock()
-	return &DeliveryView{ID: current.ID, VersionID: current.binding.VersionID, Origin: current.binding.Origin, OwnerSession: current.ownerSession, PrincipalID: current.principalID}, nil
+	return &DeliveryView{ID: current.ID, VersionID: current.binding.VersionID, Origin: current.deliveryOrigin, OwnerSession: current.ownerSession, PrincipalID: current.principalID}, nil
 }
 
-func (s *Service) newDelivery(writer domain.Session, binding Binding, generation string, trashGeneration int64) (openView, error) {
+func (s *Service) newDelivery(writer domain.Session, binding Binding, deliveryOrigin, parentOrigin, upstreamOrigin string, remote bool, generation string, trashGeneration int64) (openView, error) {
 	id := randomUUID()
 	// The stored hash is over the SAME cookie secret issued at handoff.
 	cookieSecret, secretHash := randomToken()
 	handoffSecret, handoffHash := randomToken()
 	now := s.opts.Now()
+	if deliveryOrigin == "" {
+		deliveryOrigin = binding.Origin
+	}
 	session := &delivery{
 		ID:              id,
 		cookieName:      "hyr_view_" + binding.VersionID + "_" + id,
 		cookieValue:     id + "." + cookieSecret,
 		secretHash:      secretHash,
 		Binding:         binding,
+		deliveryOrigin:  deliveryOrigin,
+		parentOrigin:    parentOrigin,
+		upstreamOrigin:  upstreamOrigin,
+		remote:          remote,
 		OwnerSession:    writer.ID,
 		authorityKind:   writer.Scope.Kind,
 		PrincipalID:     writer.PrincipalID,
@@ -689,23 +1041,46 @@ func (s *Service) newDelivery(writer domain.Session, binding Binding, generation
 // A bind collision fails visibly; the reservation stays sticky and a
 // same-selection retry under current authority may re-attempt when the port
 // is actually free. No listener, delivery session or handoff secret exists
-// before the durable reservation.
-func (s *Service) ensureListener(binding Binding) error {
+// before the durable reservation. When a remote origin is activated, the
+// server's remote endpoint is configured even if a local listener already
+// exists.
+func (s *Service) ensureListener(binding Binding, remoteOrigin, remoteParent string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.stopped {
 		return &Error{Reason: ReasonClosedSession}
 	}
 	if _, ok := s.listeners[binding.Origin]; ok {
+		if remoteOrigin != "" {
+			server, hasServer := s.servers[binding.Origin]
+			remoteServer, supported := server.(RemoteEndpointServer)
+			if !hasServer || !supported {
+				return &Error{Reason: ReasonRemoteIngress}
+			}
+			remoteServer.SetRemoteEndpoint(remoteOrigin, remoteParent)
+		}
 		return nil
+	}
+	if remoteOrigin != "" && s.opts.NewServer == nil {
+		return &Error{Reason: ReasonRemoteIngress}
+	}
+	var server Server
+	if s.opts.NewServer != nil {
+		server = s.opts.NewServer(binding.Origin, binding)
+		if remoteOrigin != "" {
+			remoteServer, supported := server.(RemoteEndpointServer)
+			if !supported {
+				return &Error{Reason: ReasonRemoteIngress}
+			}
+			remoteServer.SetRemoteEndpoint(remoteOrigin, remoteParent)
+		}
 	}
 	listener, err := net.Listen("tcp", strings.TrimPrefix(binding.Origin, "http://"))
 	if err != nil {
 		return &Error{Reason: ReasonBindConflict}
 	}
 	s.listeners[binding.Origin] = listener
-	if s.opts.NewServer != nil {
-		server := s.opts.NewServer(binding.Origin, binding)
+	if server != nil {
 		s.servers[binding.Origin] = server
 		go func() { _ = server.Serve(listener) }()
 	}
@@ -773,6 +1148,8 @@ func mapLedgerError(err error) error {
 		switch ledgerErr.Reason {
 		case origins.ReasonExhausted:
 			return &Error{Reason: ReasonExhausted}
+		case origins.ReasonOriginConflict:
+			return &Error{Reason: ReasonBindConflict}
 		case origins.ReasonBindingMismatch:
 			return &Error{Reason: ReasonBindingMismatch}
 		case origins.ReasonRetiredIdentity:

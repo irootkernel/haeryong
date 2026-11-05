@@ -3487,7 +3487,8 @@
         "delivery": {
           "enum": [
             "authenticated_attachment",
-            "loopback_renderer_origin"
+            "loopback_renderer_origin",
+            "private_renderer_origin"
           ]
         },
         "renderer_available": {

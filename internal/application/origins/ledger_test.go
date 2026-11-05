@@ -82,8 +82,35 @@ var _ = Describe("Pool and origin math", Label("unit"), func() {
 		Expect(err).To(MatchError(&Error{Reason: ReasonInvalidLedger}))
 		_, err = manager.Reserve(reservation(id(1), id(101), id(201), digestFor(1)), Pool{BasePort: 9281, Count: 0}, nil)
 		Expect(err).To(MatchError(&Error{Reason: ReasonInvalidLedger}))
+		badPort := reservation(id(1), id(101), id(201), digestFor(1))
+		badPort.PreferredPort = 80
+		_, err = manager.Reserve(badPort, Pool{BasePort: 9281, Count: 8}, nil)
+		Expect(err).To(MatchError(&Error{Reason: ReasonInvalidLedger}))
+		badAlias := reservation(id(1), id(101), id(201), digestFor(1))
+		badAlias.ExternalOrigin = "http://node.tailnet.ts.net:9291"
+		_, err = manager.Reserve(badAlias, Pool{BasePort: 9281, Count: 8}, nil)
+		Expect(err).To(MatchError(&Error{Reason: ReasonInvalidLedger}))
 		// Invalid input never reaches the filesystem: no state was created.
 		Expect(untouched).NotTo(BeAnExistingFile())
+	})
+	It("canonicalizes external HTTPS origins and rejects non-origin forms", func() {
+		Expect(CanonicalExternalOrigin("https://Node.Tailnet.ts.net:443")).To(Equal("https://node.tailnet.ts.net"))
+		Expect(CanonicalExternalOrigin("https://node.tailnet.ts.net")).To(Equal("https://node.tailnet.ts.net"))
+		Expect(CanonicalExternalOrigin("https://Node.Tailnet.ts.net:09291")).To(Equal("https://node.tailnet.ts.net:9291"))
+		for _, invalid := range []string{
+			"",
+			"http://node.tailnet.ts.net:9291",
+			"HTTPS://node.tailnet.ts.net:9291",
+			"https://node.tailnet.ts.net:9291/",
+			"https://node.tailnet.ts.net:9291?x=1",
+			"https://node.tailnet.ts.net:9291#frag",
+			"https://user@node.tailnet.ts.net:9291",
+			"https://*.tailnet.ts.net:9291",
+			"https://node.tailnet.ts.net:70000",
+		} {
+			_, err := CanonicalExternalOrigin(invalid)
+			Expect(err).To(HaveOccurred(), "expected %q to fail canonicalization", invalid)
+		}
 	})
 })
 
@@ -510,5 +537,113 @@ var _ = Describe("Ledger reservations", Label("persistence"), func() {
 		Expect(os.Symlink(target, support)).To(Succeed())
 		_, err = NewManager(filepath.Join(support, "Haeryong"), Faults{}).Reserve(reservation(id(1+0), id(1+100), id(1+200), digestFor(1)), Pool{BasePort: 9281, Count: 8}, nil)
 		Expect(err).To(MatchError(&Error{Reason: ReasonPrivatePath}))
+	})
+
+	It("reserves outside-pool preferred ports, records canonical external origin history and refuses cross-tuple or sticky-port conflicts", func() {
+		manager := NewManager(base, Faults{})
+		pool := Pool{BasePort: 9281, Count: 4}
+		firstReq := reservation(id(1), id(101), id(201), digestFor(1))
+		firstReq.PreferredPort = 9291
+		firstReq.ExternalOrigin = "https://Node.Tailnet.ts.net:9291"
+		first, err := manager.Reserve(firstReq, pool, func(port int) bool { return port == 9270 })
+		Expect(err).NotTo(HaveOccurred())
+		Expect(first.Port).To(Equal(9291))
+		Expect(first.ExternalOrigins).To(Equal([]string{"https://node.tailnet.ts.net:9291"}))
+
+		// Repeating the same reservation reuses the record without rewriting the ledger.
+		before := ledgerBytes(base)
+		same, err := manager.Reserve(firstReq, pool, func(port int) bool { return port == 9270 })
+		Expect(err).NotTo(HaveOccurred())
+		Expect(same).To(Equal(first))
+		Expect(ledgerBytes(base)).To(Equal(before))
+
+		// A new external alias for the same immutable tuple appends durably without releasing the prior alias.
+		secondAliasReq := firstReq
+		secondAliasReq.ExternalOrigin = "https://Node.Tailnet.ts.net:443"
+		updated, err := manager.Reserve(secondAliasReq, pool, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(updated.Port).To(Equal(9291))
+		Expect(updated.ExternalOrigins).To(Equal([]string{"https://node.tailnet.ts.net:9291", "https://node.tailnet.ts.net"}))
+
+		// Sticky port never migrates when a different preferred port is requested for the same tuple.
+		wrongPortReq := firstReq
+		wrongPortReq.PreferredPort = 9292
+		_, err = manager.Reserve(wrongPortReq, pool, nil)
+		Expect(err).To(MatchError(&Error{Reason: ReasonOriginConflict}))
+
+		// Another tuple cannot claim an already-owned external alias (including default-port equivalent) or port.
+		otherAliasConflict := reservation(id(2), id(102), id(202), digestFor(2))
+		otherAliasConflict.PreferredPort = 9292
+		otherAliasConflict.ExternalOrigin = "https://node.tailnet.ts.net"
+		_, err = manager.Reserve(otherAliasConflict, pool, nil)
+		Expect(err).To(MatchError(&Error{Reason: ReasonOriginConflict}))
+
+		otherPortConflict := reservation(id(2), id(102), id(202), digestFor(2))
+		otherPortConflict.PreferredPort = 9291
+		otherPortConflict.ExternalOrigin = "https://node.tailnet.ts.net:9292"
+		_, err = manager.Reserve(otherPortConflict, pool, nil)
+		Expect(err).To(MatchError(&Error{Reason: ReasonOriginConflict}))
+
+		// Excluded or legacy preferred ports fail closed with origin_conflict.
+		excludedPortReq := reservation(id(2), id(102), id(202), digestFor(2))
+		excludedPortReq.PreferredPort = 9270
+		_, err = manager.Reserve(excludedPortReq, pool, func(port int) bool { return port == 9270 })
+		Expect(err).To(MatchError(&Error{Reason: ReasonOriginConflict}))
+
+		legacyPortReq := reservation(id(2), id(102), id(202), digestFor(2))
+		legacyPortReq.PreferredPort = 9272
+		_, err = manager.Reserve(legacyPortReq, pool, nil)
+		Expect(err).To(MatchError(&Error{Reason: ReasonOriginConflict}))
+	})
+
+	It("preserves fault semantics when appending an external origin alias and refuses tombstoned or corrupt external_origins", func() {
+		healthy := NewManager(base, Faults{})
+		pool := Pool{BasePort: 9281, Count: 4}
+		localRec, err := healthy.Reserve(reservation(id(1), id(101), id(201), digestFor(1)), pool, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(localRec.ExternalOrigins).To(BeEmpty())
+
+		aliasReq := reservation(id(1), id(101), id(201), digestFor(1))
+		aliasReq.PreferredPort = localRec.Port
+		aliasReq.ExternalOrigin = "https://node.tailnet.ts.net:9291"
+
+		beforeRenameMgr := NewManager(base, Faults{BeforeRename: func() error { return fmt.Errorf("crash before alias rename") }})
+		_, err = beforeRenameMgr.Reserve(aliasReq, pool, nil)
+		Expect(err).To(MatchError("crash before alias rename"))
+
+		afterRenameMgr := NewManager(base, Faults{AfterRename: func() error { return fmt.Errorf("crash after alias rename") }})
+		_, err = afterRenameMgr.Reserve(aliasReq, pool, nil)
+		Expect(err).To(MatchError(&Error{Reason: ReasonUnknownPublication}))
+		_, err = afterRenameMgr.Reserve(aliasReq, pool, nil)
+		Expect(err).To(MatchError(&Error{Reason: ReasonUnknownPublication}))
+
+		// Restart resolves the durable alias from the ledger.
+		restarted := NewManager(base, Faults{})
+		recovered, err := restarted.Reserve(aliasReq, pool, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(recovered.ExternalOrigins).To(Equal([]string{"https://node.tailnet.ts.net:9291"}))
+
+		// Tombstoning the record keeps its external alias permanently unavailable to other tuples.
+		ledgerPath := filepath.Join(base, "origin-state", "ledger.json")
+		var ledger ledgerFile
+		Expect(json.Unmarshal(ledgerBytes(base), &ledger)).To(Succeed())
+		ledger.Records[0].State = StateTombstoned
+		raw, err := json.Marshal(ledger)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.WriteFile(ledgerPath, raw, 0o600)).To(Succeed())
+
+		other := reservation(id(2), id(102), id(202), digestFor(2))
+		other.PreferredPort = 9292
+		other.ExternalOrigin = "https://node.tailnet.ts.net:9291"
+		_, err = NewManager(base, Faults{}).Reserve(other, pool, nil)
+		Expect(err).To(MatchError(&Error{Reason: ReasonOriginConflict}))
+
+		// Non-canonical external_origins on disk fail closed with invalid_ledger.
+		ledger.Records[0].ExternalOrigins = []string{"https://Node.Tailnet.ts.net:443"}
+		raw, err = json.Marshal(ledger)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.WriteFile(ledgerPath, raw, 0o600)).To(Succeed())
+		_, err = NewManager(base, Faults{}).Reserve(reservation(id(3), id(103), id(203), digestFor(3)), pool, nil)
+		Expect(err).To(MatchError(&Error{Reason: ReasonInvalidLedger}))
 	})
 })

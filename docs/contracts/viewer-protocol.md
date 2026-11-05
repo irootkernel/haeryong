@@ -238,3 +238,22 @@ Go-held credential with current attachment/daemon/record guards before each
 pull. These operations are neither arbitrary URLs nor filesystem selectors.
 Browser and native clients share the same captured request/history semantics;
 actual rendered and native-platform proof remains separately scoped evidence.
+
+## Supported private browser construction (TASK-007-01)
+
+Production bootstrap adds delivery `private_renderer_origin` and construction
+`private_https_renderer_origin` for a configured,
+version-bound HTTPS origin on the trusted external hostname with its own
+content-only loopback upstream. Distinct ports retain ordinary relative and
+root-relative pages, scripts, styles, modules and workers from each exact
+immutable version. The trusted parent, remote delivery origin and sticky local
+binding are separate. Remote-first allocation claims its configured upstream;
+external aliases and local tuple ownership remain permanently reserved through
+restart and mapping changes. An unmapped or unsupported selection explicitly
+retains attachment delivery rather than constructing a local renderer.
+
+The local-only native Reader facade does not consume this browser construction:
+it masks remote renderer features and refuses Open/renew before dispatch, while
+local companion-origin handoff remains supported. [Private ingress evidence](../testing/private-ingress.md)
+records actual Chrome/Serve web scope. It does not replace historical G-VIEW
+results or establish Wails, mobile, Service Worker replacement or Stage A proof.

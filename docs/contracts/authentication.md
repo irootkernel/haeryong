@@ -108,3 +108,26 @@ copy paths. Backup snapshots exclude credential rows and host secrets. Offline r
 rotates runtime/auth/stream epochs once, invalidates sessions/pairings/workflow/delivery
 authority and requires a new bootstrap; later normal restarts retain the new session.
 A missing older-snapshot receipt never authorizes external redispatch.
+
+## Production private ingress boundary (TASK-007-01)
+
+The same owner header-bearer model now serves the configured private HTTPS
+management route. Exact configured Host/Origin pairs remain distinct from
+renderer-only CSP sources; supplied forwarded/Tailscale identity never
+substitutes for current bearer authority. A renderer-only cookie cannot log in
+to the management API. External browser pairing and remembered storage remain
+origin-scoped and use the existing local-owner approval flow.
+
+Supported same-host HTTPS mappings use the existing one-use POST handoff and
+version/session-scoped HttpOnly delivery cookie with Secure, SameSite=Strict and
+Path=/. The exact external trusted parent or literal `null` Origin of the existing
+sandboxed form is accepted remotely, always with the one-use secret; local
+headerless/native and fixed companion-origin exceptions do not authorize remote
+handoffs. Bad/duplicate Origin leaves the handoff unconsumed. Current owner and
+version access is checked on each protected asset, including after revoke,
+restart or route changes. No owner bearer enters the renderer. Receipt replay
+retains the original result, while the expired in-memory handoff remains dead
+after restart; an authorized Reader selection obtains a fresh session.
+
+See [private ingress evidence](../testing/private-ingress.md) for same-host actual
+HTTPS web observations and their physical-device/native qualification limits.

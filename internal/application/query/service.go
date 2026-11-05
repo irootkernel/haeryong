@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	appauth "haeryong.local/haeryong/internal/application/auth"
+	appconfig "haeryong.local/haeryong/internal/application/configuration"
 	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
 	"net/url"
@@ -308,6 +309,116 @@ func (s *Service) Capabilities(ctx context.Context, token string) (map[string]an
 		return nil
 	})
 	return out, err
+}
+
+func remoteMappingsFromTx(tx app.WriteTx, externalOrigin string) ([]appconfig.RendererMapping, bool, error) {
+	if externalOrigin == "" {
+		return nil, false, nil
+	}
+	cfg, err := tx.Configuration()
+	if err != nil {
+		return nil, false, err
+	}
+	var value map[string]any
+	if err := json.Unmarshal(cfg.Value, &value); err != nil {
+		return nil, false, err
+	}
+	network, _ := value["network"].(map[string]any)
+	if network == nil || network["remote_enabled"] != true {
+		return nil, false, nil
+	}
+	configuredExternal, _ := network["external_base_url"].(string)
+	left, _, _, leftOK := appconfig.CanonicalOrigin(configuredExternal)
+	right, _, _, rightOK := appconfig.CanonicalOrigin(externalOrigin)
+	if !leftOK || !rightOK || left != right {
+		return nil, false, nil
+	}
+	return appconfig.RendererMappings(value), true, nil
+}
+
+// RemoteRendererConfigured reports whether the current persisted configuration
+// enables at least one supported private HTTPS renderer mapping for the given
+// external parent origin without touching per-account origin state.
+func (s *Service) RemoteRendererConfigured(ctx context.Context, token, localOrigin, externalOrigin string) (bool, error) {
+	supported := false
+	err := s.read(ctx, token, "/api/v1/capabilities", func(tx app.WriteTx) error {
+		mappings, ok, err := remoteMappingsFromTx(tx, externalOrigin)
+		if err != nil || !ok {
+			return err
+		}
+		for _, mapping := range mappings {
+			if appconfig.PrivateRendererMappingReason(externalOrigin, mapping, localOrigin) == "" {
+				supported = true
+				return nil
+			}
+		}
+		return nil
+	})
+	return supported, err
+}
+
+// RemoteVersionRendererSupported reports whether the authorized version has a
+// supported private HTTPS renderer mapping in the current configuration without
+// touching per-account origin state.
+func (s *Service) RemoteVersionRendererSupported(ctx context.Context, token, versionID, localOrigin, externalOrigin string) (bool, error) {
+	supported := false
+	err := s.read(ctx, token, "/api/v1/versions/"+versionID+"/render-bootstrap", func(tx app.WriteTx) error {
+		if _, err := visibleVersion(tx, versionID); err != nil {
+			return err
+		}
+		mappings, ok, err := remoteMappingsFromTx(tx, externalOrigin)
+		if err != nil || !ok {
+			return err
+		}
+		for _, mapping := range mappings {
+			if mapping.VersionID == versionID && appconfig.PrivateRendererMappingReason(externalOrigin, mapping, localOrigin) == "" {
+				supported = true
+				return nil
+			}
+		}
+		return nil
+	})
+	return supported, err
+}
+
+// AuthorizeRemoteRenderSession authenticates the caller, checks target
+// visibility (unless the caller already owns a known session for the version),
+// and reports whether the version currently has a supported private HTTPS
+// renderer mapping, before any lazy renderer construction or receipt creation.
+func (s *Service) AuthorizeRemoteRenderSession(ctx context.Context, token, versionID, localOrigin, externalOrigin string, ownsKnown func(principalID string) bool) (string, bool, error) {
+	principalID := ""
+	supported := false
+	err := s.Store.Write(ctx, func(tx app.WriteTx) error {
+		record, err := s.Auth.AuthenticateWrite(ctx, tx, token)
+		if err != nil {
+			return err
+		}
+		principalID = record.PrincipalID
+		if err := s.Auth.Authority(token).AuthorizeWrite(ctx, tx, domain.Request{
+			Key:    domain.OperationKey{PrincipalID: record.PrincipalID},
+			Method: "POST",
+			Target: "/api/v1/versions/" + versionID + "/render-sessions",
+		}); err != nil {
+			return err
+		}
+		if ownsKnown == nil || !ownsKnown(record.PrincipalID) {
+			if _, err := visibleVersion(tx, versionID); err != nil {
+				return err
+			}
+		}
+		mappings, ok, err := remoteMappingsFromTx(tx, externalOrigin)
+		if err != nil || !ok {
+			return err
+		}
+		for _, mapping := range mappings {
+			if mapping.VersionID == versionID && appconfig.PrivateRendererMappingReason(externalOrigin, mapping, localOrigin) == "" {
+				supported = true
+				return nil
+			}
+		}
+		return nil
+	})
+	return principalID, supported, err
 }
 
 func entryFile(id string, e domain.Entry) File {

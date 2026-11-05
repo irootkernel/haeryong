@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -37,13 +38,21 @@ const (
 // library; version identity is the exact immutable tuple
 // (library_id, version_id, content_set_id, payload_sha256).
 type Record struct {
-	Port          int    `json:"port"`
-	LibraryID     string `json:"library_id"`
-	VersionID     string `json:"version_id"`
-	ContentSetID  string `json:"content_set_id"`
-	PayloadSHA256 string `json:"payload_sha256"`
-	State         string `json:"state"`
-	CreatedAt     string `json:"created_at"`
+	Port            int      `json:"port"`
+	LibraryID       string   `json:"library_id"`
+	VersionID       string   `json:"version_id"`
+	ContentSetID    string   `json:"content_set_id"`
+	PayloadSHA256   string   `json:"payload_sha256"`
+	State           string   `json:"state"`
+	CreatedAt       string   `json:"created_at"`
+	ExternalOrigins []string `json:"external_origins,omitempty"`
+}
+
+func cloneRecord(r Record) Record {
+	if len(r.ExternalOrigins) > 0 {
+		r.ExternalOrigins = append([]string(nil), r.ExternalOrigins...)
+	}
+	return r
 }
 
 // SameTuple reports whether two records describe the same immutable version
@@ -56,6 +65,37 @@ func (r Record) SameTuple(other Record) bool {
 // are canonicalized to exactly http://127.0.0.1:<port> everywhere a
 // reservation or binding is recorded or compared.
 func Origin(port int) string { return fmt.Sprintf("http://127.0.0.1:%d", port) }
+
+// CanonicalExternalOrigin validates and canonicalizes an external HTTPS
+// renderer origin to URL origin identity (lowercase host, default port 443
+// omitted, explicit port normalized as a decimal integer without leading
+// zeros).
+func CanonicalExternalOrigin(raw string) (string, error) {
+	if raw == "" || strings.ContainsAny(raw, "* \r\n\t") {
+		return "", errors.New("exact HTTPS origin required")
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.Host == "" || u.Path != "" || u.RawPath != "" || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" || raw != u.Scheme+"://"+u.Host {
+		return "", errors.New("exact HTTPS origin required")
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "" {
+		return "", errors.New("exact HTTPS origin required")
+	}
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	if p := u.Port(); p != "" {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 1 || n > 65535 {
+			return "", errors.New("invalid origin port")
+		}
+		if n != 443 {
+			return "https://" + host + ":" + strconv.Itoa(n), nil
+		}
+	}
+	return "https://" + host, nil
+}
 
 type ledgerFile struct {
 	LedgerID  string   `json:"ledger_id"`
@@ -105,6 +145,7 @@ const (
 	ReasonExhausted          = "pool_exhausted"
 	ReasonUnknownPublication = "unknown_publication"
 	ReasonBindingMismatch    = "binding_mismatch"
+	ReasonOriginConflict     = "origin_conflict"
 )
 
 // Faults are test-injected crash points mirroring the repository's fault
@@ -166,12 +207,16 @@ type Identity struct {
 // identity. exclude names additional ports that must never back a NEW
 // allocation (the configured management listener and renderer_mappings
 // upstreams); a sticky existing record on such a port is returned unchanged
-// — origins are never reassigned to dodge a conflict.
+// — origins are never reassigned to dodge a conflict. PreferredPort and
+// ExternalOrigin optionally request a specific loopback upstream port and
+// canonical external HTTPS renderer origin for an authorized private mapping.
 type Reservation struct {
-	LibraryID     string
-	VersionID     string
-	ContentSetID  string
-	PayloadSHA256 string
+	LibraryID      string
+	VersionID      string
+	ContentSetID   string
+	PayloadSHA256  string
+	PreferredPort  int
+	ExternalOrigin string
 }
 
 func (r Reservation) record(port int, created string) Record {
@@ -191,9 +236,10 @@ func validDigest(value string) bool { return digestPattern.MatchString(value) }
 // An existing active record for the same tuple is reused (same-tuple retry,
 // sticky across pool changes); a tombstoned one is refused forever; the same
 // library/version under a differing content identity is rejected before
-// anything is published. A new record takes the first free pool port, never
-// a legacy fixture port, never an excluded port, and is confirmed only
-// after file fsync + rename + directory fsync all succeed.
+// anything is published. A new record takes the first free pool port (or the
+// explicitly requested PreferredPort), never a legacy fixture port, never an
+// excluded port, and is confirmed only after file fsync + rename + directory
+// fsync all succeed.
 func (m *Manager) Reserve(request Reservation, pool Pool, exclude func(port int) bool) (Record, error) {
 	if !validID(request.LibraryID) || !validID(request.VersionID) || !validID(request.ContentSetID) || !validDigest(request.PayloadSHA256) {
 		return Record{}, &Error{Reason: ReasonInvalidLedger}
@@ -201,24 +247,32 @@ func (m *Manager) Reserve(request Reservation, pool Pool, exclude func(port int)
 	if pool.BasePort < 1024 || pool.Count < 1 || pool.BasePort+pool.Count-1 > 65535 {
 		return Record{}, &Error{Reason: ReasonInvalidLedger}
 	}
+	if request.PreferredPort != 0 && (request.PreferredPort < 1024 || request.PreferredPort > 65535) {
+		return Record{}, &Error{Reason: ReasonInvalidLedger}
+	}
+	canonicalExternal := ""
+	if request.ExternalOrigin != "" {
+		var err error
+		canonicalExternal, err = CanonicalExternalOrigin(request.ExternalOrigin)
+		if err != nil {
+			return Record{}, &Error{Reason: ReasonInvalidLedger}
+		}
+	}
+	target := request.record(0, "")
 	var out Record
 	err := m.withLock(func() error {
 		ledger, _, err := m.ensureReady()
 		if err != nil {
 			return err
 		}
-		for _, existing := range ledger.Records {
-			if existing.SameTuple(request.record(0, "")) {
+		sameIdx := -1
+		for idx, existing := range ledger.Records {
+			if existing.SameTuple(target) {
 				if existing.State != StateActive {
 					return &Error{Reason: ReasonRetiredIdentity}
 				}
-				// Sticky ownership: the recorded origin is returned as-is,
-				// including records that predate a pool or exclusion change.
-				// Conflicts with the current management listener or mapping
-				// upstreams surface at bind time; the ledger never
-				// reassigns an origin to dodge them.
-				out = existing
-				return nil
+				sameIdx = idx
+				break
 			}
 		}
 		for _, existing := range ledger.Records {
@@ -228,30 +282,99 @@ func (m *Manager) Reserve(request Reservation, pool Pool, exclude func(port int)
 				return &Error{Reason: ReasonInvalidLedger}
 			}
 		}
+		if canonicalExternal != "" {
+			for _, existing := range ledger.Records {
+				if existing.SameTuple(target) {
+					continue
+				}
+				for _, alias := range existing.ExternalOrigins {
+					if alias == canonicalExternal {
+						return &Error{Reason: ReasonOriginConflict}
+					}
+				}
+			}
+		}
+		if request.PreferredPort != 0 {
+			if LegacyReserved(request.PreferredPort) || (exclude != nil && exclude(request.PreferredPort)) {
+				return &Error{Reason: ReasonOriginConflict}
+			}
+			for _, existing := range ledger.Records {
+				if !existing.SameTuple(target) && existing.Port == request.PreferredPort {
+					return &Error{Reason: ReasonOriginConflict}
+				}
+			}
+		}
+		if sameIdx >= 0 {
+			existing := ledger.Records[sameIdx]
+			if request.PreferredPort != 0 && existing.Port != request.PreferredPort {
+				return &Error{Reason: ReasonOriginConflict}
+			}
+			if canonicalExternal != "" {
+				seen := false
+				for _, alias := range existing.ExternalOrigins {
+					if alias == canonicalExternal {
+						seen = true
+						break
+					}
+				}
+				if !seen {
+					updated := *ledger
+					updated.Records = make([]Record, len(ledger.Records))
+					for i, rec := range ledger.Records {
+						updated.Records[i] = cloneRecord(rec)
+					}
+					updated.Records[sameIdx].ExternalOrigins = append(updated.Records[sameIdx].ExternalOrigins, canonicalExternal)
+					if err := m.publish(&updated); err != nil {
+						return err
+					}
+					out = cloneRecord(updated.Records[sameIdx])
+					return nil
+				}
+			}
+			// Sticky ownership: the recorded origin is returned as-is,
+			// including records that predate a pool or exclusion change.
+			// Conflicts with the current management listener or mapping
+			// upstreams surface at bind time; the ledger never
+			// reassigns an origin to dodge them.
+			out = cloneRecord(existing)
+			return nil
+		}
 		taken := map[int]bool{}
 		for _, existing := range ledger.Records {
 			taken[existing.Port] = true
 		}
 		port := 0
-		for candidate := pool.BasePort; candidate < pool.BasePort+pool.Count; candidate++ {
-			if taken[candidate] || LegacyReserved(candidate) {
-				continue
+		if request.PreferredPort != 0 {
+			port = request.PreferredPort
+		} else {
+			for candidate := pool.BasePort; candidate < pool.BasePort+pool.Count; candidate++ {
+				if taken[candidate] || LegacyReserved(candidate) {
+					continue
+				}
+				if exclude != nil && exclude(candidate) {
+					continue
+				}
+				port = candidate
+				break
 			}
-			if exclude != nil && exclude(candidate) {
-				continue
+			if port == 0 {
+				return &Error{Reason: ReasonExhausted}
 			}
-			port = candidate
-			break
 		}
-		if port == 0 {
-			return &Error{Reason: ReasonExhausted}
+		created := request.record(port, m.now().Format(time.RFC3339Nano))
+		if canonicalExternal != "" {
+			created.ExternalOrigins = []string{canonicalExternal}
 		}
 		updated := *ledger
-		updated.Records = append(append([]Record{}, ledger.Records...), request.record(port, m.now().Format(time.RFC3339Nano)))
+		updated.Records = make([]Record, 0, len(ledger.Records)+1)
+		for _, rec := range ledger.Records {
+			updated.Records = append(updated.Records, cloneRecord(rec))
+		}
+		updated.Records = append(updated.Records, created)
 		if err := m.publish(&updated); err != nil {
 			return err
 		}
-		out = updated.Records[len(updated.Records)-1]
+		out = cloneRecord(updated.Records[len(updated.Records)-1])
 		return nil
 	})
 	return out, err
@@ -541,8 +664,10 @@ func decodeLedger(raw []byte) (*ledgerFile, error) {
 	ports := map[int]bool{}
 	tuples := map[string]bool{}
 	versions := map[string]string{}
+	externalOrigins := map[string]bool{}
+	requiredRecordFields := []string{"port", "library_id", "version_id", "content_set_id", "payload_sha256", "state", "created_at"}
 	for _, entry := range entries {
-		recordFields, err := strictObject(entry, "port", "library_id", "version_id", "content_set_id", "payload_sha256", "state", "created_at")
+		recordFields, err := strictObjectOptional(entry, requiredRecordFields, "external_origins")
 		if err != nil {
 			return nil, &Error{Reason: ReasonCorruptState}
 		}
@@ -568,6 +693,24 @@ func decodeLedger(raw []byte) (*ledgerFile, error) {
 		}
 		if record.CreatedAt, err = strictTimestamp(recordFields["created_at"]); err != nil {
 			return nil, &Error{Reason: ReasonInvalidLedger}
+		}
+		if rawExternal, ok := recordFields["external_origins"]; ok {
+			var rawOrigins []json.RawMessage
+			if err := json.Unmarshal(rawExternal, &rawOrigins); err != nil || rawOrigins == nil {
+				return nil, &Error{Reason: ReasonInvalidLedger}
+			}
+			for _, rawOrigin := range rawOrigins {
+				var alias string
+				if err := json.Unmarshal(rawOrigin, &alias); err != nil {
+					return nil, &Error{Reason: ReasonInvalidLedger}
+				}
+				canon, err := CanonicalExternalOrigin(alias)
+				if err != nil || canon != alias || externalOrigins[canon] {
+					return nil, &Error{Reason: ReasonInvalidLedger}
+				}
+				externalOrigins[canon] = true
+				record.ExternalOrigins = append(record.ExternalOrigins, canon)
+			}
 		}
 		if ports[record.Port] {
 			return nil, &Error{Reason: ReasonInvalidLedger}
@@ -615,13 +758,20 @@ func decodeMarker(raw []byte) (*markerFile, error) {
 // strictObject decodes one closed JSON object with duplicate-key detection
 // and an exact key-set requirement; unknown or missing fields fail.
 func strictObject(raw []byte, keys ...string) (map[string]json.RawMessage, error) {
+	return strictObjectOptional(raw, keys)
+}
+
+func strictObjectOptional(raw []byte, required []string, optional ...string) (map[string]json.RawMessage, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	open, err := decoder.Token()
 	if err != nil || open != json.Delim('{') {
 		return nil, errors.New("object required")
 	}
 	wanted := map[string]bool{}
-	for _, key := range keys {
+	for _, key := range required {
+		wanted[key] = true
+	}
+	for _, key := range optional {
 		wanted[key] = true
 	}
 	out := map[string]json.RawMessage{}
@@ -649,8 +799,10 @@ func strictObject(raw []byte, keys ...string) (map[string]json.RawMessage, error
 	if _, err := decoder.Token(); err != io.EOF {
 		return nil, errors.New("trailing content")
 	}
-	if len(out) != len(keys) {
-		return nil, errors.New("missing field")
+	for _, key := range required {
+		if _, exists := out[key]; !exists {
+			return nil, errors.New("missing field")
+		}
 	}
 	return out, nil
 }

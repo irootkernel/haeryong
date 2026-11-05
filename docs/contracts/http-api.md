@@ -69,9 +69,9 @@ In the last column, `K` means a required Idempotency-Key; `N` means a named natu
 | POST /uploads/{id}/abandon | owner or originating workflow principal, with current purpose/target scope | Stop further transfer/seal acceptance, retain existing adopted references and protect active/unknown work before reclaiming unreferenced staging | K |
 | POST /imports | owner or current import.publish scope | Canonical import request requires upload_id and explicit document_id; publish 201, return identical explicit version 200, or commit a 202 receipt for job.kind=import pending atomic publication | K |
 | POST /packages/validate | owner/scoped agent | Validate a sealed upload or stream a raw directory/archive/file into validation staging; optional metadata, no author manifest or arbitrary server path | O |
-| GET /versions/{id}/render-bootstrap | authenticated host with version.read scope | Small selected-version/default-page/loader context and the selected delivery construction; no whole-directory HTML/asset envelope or owner bearer in the artifact. Availability is request-context honest: remote ingress (exact runtime Host/Origin classification) reports `renderer_available=false` with an optional `renderer_unavailable_reason=renderer_remote_ingress` and keeps the attachment fallback, while local callers keep the loopback construction | - |
-| POST /versions/{id}/render-sessions | owner or current version.read for the exact version/project | Reserve/reuse its sticky renderer origin and return one ephemeral delivery session with a one-use form-POST handoff. Remote ingress is denied `503 FEATURE_NOT_READY` with `details.reason=renderer_remote_ingress` and retryable false (no Retry-After, no owner logout or retry loop) before any renderer construction, operation reservation or listener; remote construction belongs to EPIC-007 | K |
-| POST /versions/{id}/render-sessions/{session_id}/renew | same current originating principal and exact known session | Reauthorize a live selection; lease expiry alone is not logout, and explicit close is terminal. Remote ingress carries the same 503 FEATURE_NOT_READY availability denial | N |
+| GET /versions/{id}/render-bootstrap | authenticated host with version.read scope | Small selected-version/default-page/loader context; no whole-directory envelope or owner bearer. Local callers retain loopback delivery. Supported mapped private HTTPS ingress reports renderer_available=true and delivery=private_renderer_origin; unsupported or unmapped remote ingress reports renderer_available=false with renderer_unavailable_reason=renderer_remote_ingress and attachment fallback. Availability describes configured construction, not successful reservation or reachability | - |
+| POST /versions/{id}/render-sessions | owner or current version.read for the exact version/project | Reserve/reuse the immutable sticky origin and return 201 with an ephemeral one-use form-POST handoff. Supported mapped private HTTPS ingress uses its exact configured delivery origin and upstream. Unsupported/unmapped remote ingress refuses 503 FEATURE_NOT_READY, details.reason=renderer_remote_ingress, retryable=false before construction, operation reservation or listener; no Retry-After or owner logout | K |
+| POST /versions/{id}/render-sessions/{session_id}/renew | same current originating principal and exact known session | Reauthorize a live local or supported mapped private HTTPS selection under current owner, version and route authority; return 200 for a current session. Lease expiry alone is not logout; explicit close is terminal. Unsupported/unmapped remote ingress refuses the same 503 FEATURE_NOT_READY construction denial | N |
 | POST /versions/{id}/render-sessions/{session_id}/close | current principal owning that known session | Idempotent terminal close, including after document visibility changes and from remote ingress; never release its origin reservation | N |
 | GET /versions/{id}/files | owner or current version.read scope | Cursor listing/stream of exact file/page/directory/link entries, byte sizes, media/preview metadata and digests | - |
 | GET /versions/{id}/file?path={path} | owner or current version.read scope | Stream an immutable regular file or return typed directory/link metadata; resolve_link=true explicitly resolves in-version links and reports exact requested/resolved paths and target validator | - |
@@ -1053,3 +1053,32 @@ terminal proof and preserves the immutable original request/key/history; only a
 subsequent explicit new intent gets a new key. Receipt404 is never proof that an
 in-flight request drained. Generic status/visibility failures, transport
 uncertainty, pending/conflict and changed-runtime cases remain fenced.
+
+## Private browser renderer delivery (TASK-007-01)
+
+A supported exact HTTPS mapping adds bootstrap delivery
+`private_renderer_origin` and construction `private_https_renderer_origin`, with
+the same Open/renew/close response shape.
+The configured external origin is the trusted parent; its renderer origin and
+loopback listener are separate from the sticky local binding. Capability reads
+are nonconstructing and advertise support only when mappings support the current
+request context. An unmapped version retains attachment/bootstrap access and
+Open/renew return 503 `FEATURE_NOT_READY`, reason `renderer_remote_ingress`,
+without reserving an operation, warming the ledger or opening a socket. Closed
+known-session cleanup remains available. Current configuration, exact route and
+version authority are rechecked before reservation/replay and by the response
+guard; a completed receipt cannot be replayed into a newly unsupported route.
+
+The handoff checks the exact canonical renderer Host and external parent Origin.
+A duplicate or foreign Origin cannot consume its secret. Headerless native and
+the fixed local companion `http://127.0.0.1:9271` handoff remain local-only; remote
+handoffs accept the selected external parent or the existing literal `null`
+Origin from the sandboxed form; neither is itself authentication without the
+one-use handoff secret. Remote delivery keeps the existing
+per-version/session cookie name and uses Secure, HttpOnly, SameSite=Strict,
+Path=/ with no management authority. Renderer origins enter only the trusted
+shell's CSP frame/form sources and never its management allowlist. Exact local
+and remote Host/Origin pairs cannot be crossed. Forwarded/Tailscale identity
+headers grant no session authority. The local-only native facade masks remote
+renderer capabilities and rejects remote Open/renew before dispatch; general
+native APIs and Close keep their existing scope.

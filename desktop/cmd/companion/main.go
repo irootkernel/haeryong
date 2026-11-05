@@ -34,6 +34,7 @@ import (
 
 	"haeryong.local/haeryong/desktop/onboarding"
 	facade "haeryong.local/haeryong/desktop/readerfacade"
+	"haeryong.local/haeryong/internal/application/render"
 )
 
 // productAPIVersion is the product API pin every effective authority
@@ -43,7 +44,7 @@ const productAPIVersion = "1.0"
 // companionUIPort is the fixed loopback port of the companion's static
 // native UI origin. It is deliberately distinct from the daemon API port
 // and never falls back: a collision is a typed startup failure.
-const companionUIPort = "9271"
+const companionUIPort = render.CompanionUIPort
 
 // automationAttach is installed only by haeryong_native_automation builds;
 // production leaves it nil and contains no automation code at all.

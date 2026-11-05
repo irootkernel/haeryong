@@ -68,5 +68,19 @@ func (l *Lazy) Unavailable() bool {
 	return l.closed || l.new == nil || l.err != nil
 }
 
+// Peek returns the initialized service without invoking the constructor or
+// creating app state.
+func (l *Lazy) Peek() *Service {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed {
+		return nil
+	}
+	return l.service
+}
+
 // Context carries the lazy facade through adapters without forcing use.
 func (l *Lazy) Context() context.Context { return context.Background() }

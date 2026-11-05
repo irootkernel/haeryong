@@ -62,5 +62,10 @@ EPIC-006 is **Completed** after actual Master overall acceptance of its prepared
 closeout. The [production AI gate](testing/epic-006-ai-gate.md) indexes the six
 completed members, accepted shared-client correction, independent final
 assessment and bounded evidence. The complete Stage A/private second-device
-gate remains EPIC-007; [TASK-007-01](tasks/EPIC-007/TASK-007-01.md) is the next
-ordered owner and has not started. Its Detailed SOT is the [EPIC-007 execution dossier](todo/TODO-EPIC-007.md); this roadmap and canonical frontmatter retain identity, order, dependencies and status.
+gate remains EPIC-007. [TASK-007-01](tasks/EPIC-007/TASK-007-01.md) has completed
+its bounded member delivery under the
+[web-only execution direction](decisions.md#owner-amendment-2026-11-05-web-only-epic-007-execution);
+[TASK-007-02](tasks/EPIC-007/TASK-007-02.md) is the next ordered owner.
+Original actual second-device and Stage A evidence remain unverified. Its Detailed
+SOT is the [EPIC-007 execution dossier](todo/TODO-EPIC-007.md); this roadmap and
+canonical frontmatter retain identity, order, dependencies and status.

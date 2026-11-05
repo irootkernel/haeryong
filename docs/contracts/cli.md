@@ -515,3 +515,20 @@ and stream full question/context/body under current authority. Reopening saved
 history never executes the provider. Partial/error output is not a completed
 verified answer. Jobs cancel/resume retains the existing explicit decision,
 ETag, expected-generation, restore-hold and receipt-first semantics.
+
+## Endpoint doctor (TASK-007-01)
+
+Authenticated `haeryong doctor` preserves the status envelope and adds
+`endpoint_checks` from coherent current status/configuration reads. It reports
+the selected `connected_endpoint`, persisted `configured_local_endpoint`, actual
+`runtime_local_endpoint`, `ephemeral_override`, `remote_enabled`, nullable
+`external_base_url` and each configured renderer mapping's
+`configured`/`supported`/nullable `reason`. Support describes configuration,
+not an allocated listener or successful private route. `reachability` verifies
+only the already selected authenticated endpoint and marks other endpoints
+`not_tested`; doctor neither probes arbitrary configured URLs nor opens an origin
+ledger/listener. A revision change between reads requires retry. Local recovery
+shows the same profile/data directory selection and an explicit unused `--port`
+override, which remains ephemeral. Missing discovery/identity errors give local
+startup/recovery guidance; no random listener fallback or credential forwarding
+is performed. The status API itself is unchanged.

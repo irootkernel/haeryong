@@ -1294,3 +1294,99 @@ var _ = It("TestCORSRequestBindingAllowedResponseVerifiedExposedForFreshProof", 
 	})
 	Expect(rejected != 403).To(BeFalse(), func() string { return fmt.Sprintf("response marker accepted as request header HTTP%d", rejected) })
 })
+
+var _ = It("TestPrivateIngressRendererOriginsCSPNormalizedHostOriginAndExplicit443Policy", Label("persistence"), func() {
+	t := GinkgoT()
+	f := newFixture(t)
+	token, _ := f.owner(t)
+
+	// Local plain-HTTP loopback ports below 1024 remain rejected.
+	for _, invalidPolicy := range []Policy{
+		{Hosts: []string{"127.0.0.1:80"}, Origins: []string{"http://127.0.0.1:80"}},
+		{Hosts: []string{"127.0.0.1:443"}, Origins: []string{"http://127.0.0.1:443"}},
+		{Hosts: []string{"localhost:80"}, Origins: []string{"http://localhost:80"}},
+		{
+			Hosts:           []string{"127.0.0.1:9270", "Node.Tailnet.ts.net:443"},
+			Origins:         []string{"http://127.0.0.1:9270", "https://Node.Tailnet.ts.net:443"},
+			RendererOrigins: []string{"https://node.tailnet.ts.net"},
+		},
+		{
+			Hosts:           []string{"127.0.0.1:9270", "node.tailnet.ts.net:9271"},
+			Origins:         []string{"http://127.0.0.1:9270", "https://node.tailnet.ts.net:9271"},
+			RendererOrigins: []string{"https://NODE.tailnet.ts.net:09271"},
+		},
+	} {
+		_, err := New(f.core, invalidPolicy, nil)
+		Expect(err).To(HaveOccurred())
+	}
+
+	// Explicit external HTTPS 443 (including 127.0.0.1:443 and IP literal) and
+	// normalized browser Host/Origin are accepted while keeping per-endpoint
+	// Host/Origin separation.
+	for _, ext := range []struct {
+		host, canonicalHost, origin, canonicalOrigin, rendererOrigin, canonicalRenderer string
+	}{
+		{
+			host:              "127.0.0.1:443",
+			canonicalHost:     "127.0.0.1",
+			origin:            "https://127.0.0.1:443",
+			canonicalOrigin:   "https://127.0.0.1",
+			rendererOrigin:    "https://127.0.0.1:09291",
+			canonicalRenderer: "https://127.0.0.1:9291",
+		},
+		{
+			host:              "100.64.0.1:443",
+			canonicalHost:     "100.64.0.1",
+			origin:            "https://100.64.0.1:443",
+			canonicalOrigin:   "https://100.64.0.1",
+			rendererOrigin:    "https://100.64.0.1:9291",
+			canonicalRenderer: "https://100.64.0.1:9291",
+		},
+		{
+			host:              "Node.Tailnet.ts.net:443",
+			canonicalHost:     "node.tailnet.ts.net",
+			origin:            "https://Node.Tailnet.ts.net:443",
+			canonicalOrigin:   "https://node.tailnet.ts.net",
+			rendererOrigin:    "https://Node.Tailnet.ts.net:09291",
+			canonicalRenderer: "https://node.tailnet.ts.net:9291",
+		},
+	} {
+		h, err := New(f.core, Policy{
+			Hosts:           []string{"127.0.0.1:9270", ext.host},
+			Origins:         []string{"http://127.0.0.1:9270", ext.origin},
+			RendererOrigins: []string{ext.rendererOrigin},
+		}, nil)
+		Expect(err).NotTo(HaveOccurred(), ext.origin)
+
+		for _, valid := range []struct{ host, origin string }{
+			{"127.0.0.1:9270", "http://127.0.0.1:9270"},
+			{ext.host, ext.origin},
+			{ext.canonicalHost, ext.canonicalOrigin},
+		} {
+			r := httptest.NewRequest(http.MethodGet, "http://"+valid.host+"/api/v1/session", nil)
+			r.Host = valid.host
+			r.Header.Set("Origin", valid.origin)
+			r.Header.Set("Authorization", "Bearer "+token)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			Expect(w.Code).To(Equal(http.StatusOK), fmt.Sprintf("%+v", valid))
+			Expect(w.Header().Get("Content-Security-Policy")).To(ContainSubstring("form-action 'self' http://127.0.0.1:* https://127.0.0.1:* " + ext.canonicalRenderer))
+			Expect(w.Header().Get("Content-Security-Policy")).To(ContainSubstring("frame-src http://127.0.0.1:* https://127.0.0.1:* " + ext.canonicalRenderer))
+		}
+
+		for _, mismatched := range []struct{ host, origin string }{
+			{"127.0.0.1:9270", ext.origin},
+			{"127.0.0.1:9270", ext.canonicalOrigin},
+			{ext.host, "http://127.0.0.1:9270"},
+			{ext.canonicalHost, "http://127.0.0.1:9270"},
+		} {
+			r := httptest.NewRequest(http.MethodGet, "http://"+mismatched.host+"/api/v1/session", nil)
+			r.Host = mismatched.host
+			r.Header.Set("Origin", mismatched.origin)
+			r.Header.Set("Authorization", "Bearer "+token)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			Expect(w.Code).To(Equal(http.StatusForbidden), fmt.Sprintf("%+v", mismatched))
+		}
+	}
+})

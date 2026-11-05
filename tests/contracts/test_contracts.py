@@ -45,10 +45,11 @@ class TestContracts:
     def test_Task00303RendererBootstrapDeliveryAndRemoteReason(self):
         base = {'version_id': V, 'viewer_profile': 'html_js_v1', 'default_page': None, 'selected_page': 'page.html', 'requested_page': 'page.html', 'navigation_path': None, 'files_url': '/api/v1/versions/' + V + '/files', 'selected_file_url': '/api/v1/versions/' + V + '/file?path=page.html'}
         available = {**base, 'delivery': 'loopback_renderer_origin', 'renderer_available': True, 'render_sessions_url': '/api/v1/versions/' + V + '/render-sessions', 'renderer_construction': 'loopback_renderer_origin'}
+        private_remote = {**base, 'delivery': 'private_renderer_origin', 'renderer_available': True, 'render_sessions_url': '/api/v1/versions/' + V + '/render-sessions', 'renderer_construction': 'private_https_renderer_origin'}
         remote = {**base, 'selected_file_url': None, 'delivery': 'authenticated_attachment', 'renderer_available': False, 'render_sessions_url': '', 'renderer_construction': '', 'renderer_unavailable_reason': 'renderer_remote_ingress'}
         unavailable = {**remote}
         del unavailable['renderer_unavailable_reason']
-        for item in (available, remote, unavailable):
+        for item in (available, private_remote, remote, unavailable):
             c.validate('render_bootstrap', item)
         for invalid in (
             {**available, 'delivery': 'untrusted_proxy'},
@@ -651,6 +652,25 @@ class TestContracts:
             bad = deepcopy(default)
             bad['network'].update(remote_enabled=True, external_base_url=bad_origin, allowed_origins=['http://127.0.0.1:9270', bad_origin])
             self.error('INVALID_REQUEST', c.configuration, bad)
+        remote_valid = deepcopy(default)
+        remote_valid['network'].update(
+            remote_enabled=True,
+            external_base_url='https://node.tailnet.ts.net',
+            allowed_origins=['http://127.0.0.1:9270', 'https://node.tailnet.ts.net'],
+            renderer_mappings=[
+                {'version_id': V, 'origin': 'https://node.tailnet.ts.net:444', 'upstream': 'http://127.0.0.1:9291', 'reassignable': False},
+                {'version_id': R, 'origin': 'https://node.tailnet.ts.net:9292', 'upstream': 'http://127.0.0.1:9292', 'reassignable': False},
+            ],
+        )
+        c.configuration(remote_valid)
+        for bad_mappings, field in [
+            ([{'version_id': V, 'origin': 'https://Node.Tailnet.ts.net:443', 'upstream': 'http://127.0.0.1:9291', 'reassignable': False}], '/network/renderer_mappings/0/origin'),
+            ([{'version_id': V, 'origin': 'https://node.tailnet.ts.net:9291', 'upstream': 'http://127.0.0.1:9291', 'reassignable': False}, {'version_id': V, 'origin': 'https://node.tailnet.ts.net:9292', 'upstream': 'http://127.0.0.1:9292', 'reassignable': False}], '/network/renderer_mappings/1/version_id'),
+            ([{'version_id': V, 'origin': 'https://node.tailnet.ts.net:9291', 'upstream': 'http://127.0.0.1:9291', 'reassignable': False}, {'version_id': R, 'origin': 'https://node.tailnet.ts.net:9292', 'upstream': 'http://127.0.0.1:9291', 'reassignable': False}], '/network/renderer_mappings/1/upstream'),
+        ]:
+            bad = deepcopy(remote_valid)
+            bad['network']['renderer_mappings'] = bad_mappings
+            self.error('INVALID_REQUEST', c.configuration, bad, field=field)
         self.model.policy = deepcopy(default)
         first = self.model.commit_config(P, 1, default, True)
         assert first == {'config_revision': 2, 'permissions_revision': 1}

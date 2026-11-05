@@ -215,7 +215,10 @@ func Validate(value map[string]any) error {
 	network := value["network"].(map[string]any)
 	listener := network["listener"].(map[string]any)
 	local := "http://127.0.0.1:" + fmt.Sprint(listener["port"])
+	localEndpoint, _ := url.Parse(local)
+	localHost := originAuthority(localEndpoint)
 	trusted := map[string]bool{local: true}
+	trustedHosts := map[string]bool{localHost: true}
 	if network["remote_enabled"] == true {
 		origin, ok := network["external_base_url"].(string)
 		if !ok {
@@ -228,9 +231,11 @@ func Validate(value map[string]any) error {
 		// the wire. The runtime effective-endpoint check covers a CLI
 		// listener override against its actual endpoint.
 		if remote, err := url.Parse(origin); err == nil {
-			if localEndpoint, err := url.Parse(local); err == nil && remote.Host == localEndpoint.Host {
+			remoteHost := originAuthority(remote)
+			if remoteHost == localHost {
 				return invalid("/network/external_base_url", "external host must differ from the local listener host")
 			}
+			trustedHosts[remoteHost] = true
 		}
 	}
 	allowed := map[string]bool{}
@@ -241,13 +246,40 @@ func Validate(value map[string]any) error {
 		return invalid("/network/allowed_origins", "exact configured management endpoints required")
 	}
 	seen := map[string]bool{}
+	seenHosts := map[string]bool{}
+	seenVersions := map[string]bool{}
 	if mappings, ok := network["renderer_mappings"].([]any); ok {
 		for _, v := range mappings {
-			o := v.(map[string]any)["origin"].(string)
-			if seen[o] || trusted[o] {
+			entry := v.(map[string]any)
+			versionID := entry["version_id"].(string)
+			if seenVersions[versionID] {
+				return invalid("/network/renderer_mappings", "each version may have at most one active renderer mapping")
+			}
+			seenVersions[versionID] = true
+			o := entry["origin"].(string)
+			u := entry["upstream"].(string)
+			originURL, originErr := url.Parse(o)
+			upstreamURL, upstreamErr := url.Parse(u)
+			if originErr != nil || upstreamErr != nil {
+				return invalid("/network/renderer_mappings", "valid origin and upstream required")
+			}
+			upstreamPort, portErr := strconv.Atoi(upstreamURL.Port())
+			if portErr != nil || upstreamPort < 1024 || upstreamPort > 65535 {
+				return invalid("/network/renderer_mappings", "renderer upstream port must be between 1024 and 65535")
+			}
+			if origins.LegacyReserved(upstreamPort) {
+				return invalid("/network/renderer_mappings", "renderer upstream must not use the frozen legacy fixture origins 9272-9273")
+			}
+			originHost := originAuthority(originURL)
+			upstreamHost := originAuthority(upstreamURL)
+			if seen[o] || trusted[o] || originHost == upstreamHost ||
+				trustedHosts[originHost] || trustedHosts[upstreamHost] ||
+				seenHosts[originHost] || seenHosts[upstreamHost] {
 				return invalid("/network/renderer_mappings", "unique separate origins required")
 			}
 			seen[o] = true
+			seenHosts[originHost] = true
+			seenHosts[upstreamHost] = true
 		}
 	}
 	if pool, ok := network["renderer_pool"].(map[string]any); ok {

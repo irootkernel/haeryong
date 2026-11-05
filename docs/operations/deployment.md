@@ -1,6 +1,6 @@
 # Deployment and local/remote operation
 
-**Planning runbook:** The initial foreground lifecycle and protected local-control subset is implemented by [TASK-002-01](../testing/profile-lifecycle.md). [TASK-002-02](../testing/storage-foundation.md) implements storage preparation and its fail-closed recovery boundary. TASK-002-03 adds current owner/browser sessions and the trusted connect shell. TASK-002-04 runs the durable upload-seal/import worker on that same daemon and listener. Shutdown drains request handlers and worker activity before closing storage or releasing the profile writer lock. OS service installation, private-ingress deployment and other product commands below remain to be implemented. The [executed fixture experiment](#executed-authentication-and-private-ingress-experiment) separately records its temporary listener and private foreground proxy; it does not establish a production installation.
+**Planning runbook:** The initial foreground lifecycle and protected local-control subset is implemented by [TASK-002-01](../testing/profile-lifecycle.md). [TASK-002-02](../testing/storage-foundation.md) implements storage preparation and its fail-closed recovery boundary. TASK-002-03 adds current owner/browser sessions and the trusted connect shell. TASK-002-04 runs the durable upload-seal/import worker on that same daemon and listener. Shutdown drains request handlers and worker activity before closing storage or releasing the profile writer lock. TASK-007-01 adds controlled private browser ingress and endpoint doctor; OS service installation remains separately owned. The [executed fixture experiment](#executed-authentication-and-private-ingress-experiment) separately records its temporary listener and private foreground proxy; it does not establish a production installation.
 
 ## Proposed support tiers
 
@@ -34,7 +34,7 @@ Both local and remote trusted browsers use remembered bearer sessions. With Reme
 
 Origin is scheme, host and port, not a URL path. One loopback Go/API listener can underlie more than one browser origin; it does not settle renderer routing. The trusted application's origin hosts its own UI code, while executable artifacts use a separate origin/context without owner/agent credentials or native authority under the [viewer contract](../contracts/viewer-protocol.md). D-10 approves additional tailnet-only HTTPS renderer ports on the existing private node name as the first experiment. Host routing/proxy mapping and native contexts remain implementation choices; no wildcard domain, owner-managed certificate or second daemon is mandatory. Exact trusted Host/Origin checks stay in force; choosing renderer addresses must not broaden management authorization.
 
-Renderer availability is classified from the exact trusted runtime endpoints only (the actual local management endpoint from product wiring plus the configured external origin when `remote_enabled`), never from Forwarded/User-Agent headers, `Session.Origin` pairing history or any physical-location claim: a request is remote ingress when its supplied Origin is the external origin, or its Host is the external host while differing from the actual local host. Supported private ingress therefore **preserves the upstream Host** and forwards any browser Origin unchanged or absent. This is also a resource-integrity condition, not only an authorization nicety: through an unsupported Host-rewriting, Origin-stripping proxy a remote caller is indistinguishable from a local headerless native client, is classified local, and any (unreachable) render session it opens permanently consumes that library's sticky origin reservation — under the no-reassignment ownership policy the only recovery is renderer-pool expansion and a daemon restart. Such ambiguous ties (an external URL whose host equals the actual local endpoint) are refused at startup and at configuration plan/commit time rather than served; no private-deployment qualification is claimed here (EPIC-007 owns real remote construction).
+Renderer availability is classified from the exact trusted runtime endpoints only (the actual local management endpoint from product wiring plus the configured external origin when `remote_enabled`), never from Forwarded/User-Agent headers, `Session.Origin` pairing history or any physical-location claim: a request is remote ingress when its supplied Origin is the external origin, or its Host is the external host while differing from the actual local host. Supported private ingress therefore **preserves the upstream Host** and forwards any browser Origin unchanged or absent. This is also a resource-integrity condition, not only an authorization nicety: through an unsupported Host-rewriting, Origin-stripping proxy a remote caller is indistinguishable from a local headerless native client, is classified local, and any (unreachable) render session it opens permanently consumes that library's sticky origin reservation — under the no-reassignment ownership policy the only recovery is renderer-pool expansion and a daemon restart. Such ambiguous ties (an external URL whose host equals the actual local endpoint) are refused at startup and at configuration plan/commit time rather than served; TASK-007-01 implements the exact same-host HTTPS renderer construction described below; its web evidence does not establish physical-device qualification.
 
 G-VIEW selects and records each endpoint's construction before G-CONTRACT; Wails and private browsers may differ while passing the same acceptance behavior. Record actual trusted/render URLs or contexts, same-site/cross-site relation, proxy-to-listener mapping, trusted/render route separation and the narrow Wails Go-proxy API path. Record delivery placement/lifetime through the normative [authority rules](../contracts/authentication.md#content-delivery-authority), leaving construction-dependent config/wire values TBD until evidence. Use the complete [TASK-001-04 closing checklist](../tasks/EPIC-001/TASK-001-04.md#observable-completion-and-tests) as the authority for required environments and early proof, including concurrent root-relative fetch/module/worker paths and exact navigation/new-tab context. Apply the [viewer proof](../contracts/viewer-protocol.md#focused-g-view-evidence) for storage, authored worker replacement and safe origin reuse. A missing required target remains blocked; a shared path prefix, Referer guess or labelled cross-version mixup cannot pass.
 
@@ -117,3 +117,274 @@ passed full Go race/build and local/private-HTTPS Chrome checks again on
 Aside private-browser renderer and streaming-download proof remain TASK-001-04
 under the subsequent owner amendment. Android Chrome and Safari remain later
 platform-support obligations.
+
+## Current controlled private browser setup (TASK-007-01)
+
+Use the existing one-owner daemon/profile and authenticated configuration
+plan/apply flow under the
+[configuration contract](../contracts/configuration.md#controlled-private-ingress-task-007-01).
+Keep a verified local owner session and the exact protected
+`--profile`/`--data-dir` selection available throughout setup and recovery.
+Applying a configuration plan updates persisted Haeryong configuration and
+performs a controlled daemon restart; it never mutates Tailscale Serve, installs
+certificates or probes secondary endpoints.
+
+### 1. Fresh remote-first versus already-local / unknown-history versions
+
+Each rendered version binds its immutable tuple to one permanent sticky loopback
+port in the per-account origin ledger. `haeryong doctor` reports configured
+intent only and never reads the cold origin ledger or probes renderer ports.
+Before configuring `network.renderer_mappings`, classify each target version:
+
+- **Fresh remote-first version (imported via CLI and never opened locally):**
+  Choose an unused loopback `upstream` (`http://127.0.0.1:<DEDICATED_PORT>`)
+  **outside** `network.renderer_pool` (`[base_port, base_port + count - 1]`) and
+  distinct from the management listener and frozen ports `9272`/`9273`. Its
+  first remote `Open` reserves that exact port and records its canonical
+  external HTTPS origin alias. Do **not** open a fresh mapped version locally
+  before its first remote `Open`: local `Open` allocates from the dynamic pool
+  (which excludes configured mapping upstreams), permanently binding a pool port
+  so a later remote `Open` on the different configured upstream fails with
+  `409 INVALID_TRANSITION` (`reason: "renderer_bind_conflict"`).
+- **Already-local or unknown-history version:**
+  A version that has ever been opened locally already owns a fixed sticky
+  loopback port that cannot be reassigned. Discover that exact port through the
+  verified local management endpoint's existing
+  `POST /api/v1/versions/{version_id}/render-sessions` route using a current
+  local owner credential, read **only** `render_origin` (and `session_id`), and
+  immediately close the ephemeral session via
+  `POST /api/v1/versions/{version_id}/render-sessions/{session_id}/close`.
+  Never guess a port, read or edit `origin-state/ledger.json`, or send a
+  credential across origins.
+
+Retain the exact UUID in a private operation record before dispatch. A pending,
+reconciling, missing or failed receipt stops this recipe; reconcile that original
+key before any new operation. Never print the Open response, which includes a
+one-use handoff secret. The following is a standalone shell script with
+placeholder-only values and immediate close (using a
+mode-`0600` header file so the bearer token never appears in process arguments
+or logs):
+
+```sh
+#!/bin/sh
+set -eu
+umask 077
+# 1. Verify the protected local owner credential matches the local management endpoint.
+LOCAL_ENDPOINT="http://127.0.0.1:9270"
+CREDENTIAL_FILE="/path/to/protected/clients/<PROFILE>/credential.json"
+VERSION_ID="<LOCAL_VERSION_ID>"
+OPERATION_UUID="<LOWERCASE_UUID_V4>"
+
+jq -e --arg ep "$LOCAL_ENDPOINT" '.endpoint == $ep' "$CREDENTIAL_FILE" >/dev/null
+
+HEADER_FILE="$(mktemp -t haeryong-auth-header.XXXXXX)"
+RESPONSE_FILE="$(mktemp -t haeryong-render-open.XXXXXX)"
+trap 'rm -f "$HEADER_FILE" "$RESPONSE_FILE"' EXIT
+chmod 600 "$HEADER_FILE" "$RESPONSE_FILE"
+printf 'Authorization: Bearer %s\n' "$(jq -r '.token' "$CREDENTIAL_FILE")" >"$HEADER_FILE"
+
+# 2. Request a local render session with the closed empty JSON body {} and retained UUID.
+if HTTP_CODE="$(
+  curl -sS -o "$RESPONSE_FILE" -w '%{http_code}' \
+    -X POST "${LOCAL_ENDPOINT}/api/v1/versions/${VERSION_ID}/render-sessions" \
+    --header @"$HEADER_FILE" \
+    --header "Idempotency-Key: ${OPERATION_UUID}" \
+    --header "Content-Type: application/json" \
+    --data '{}'
+)"; then
+  CURL_STATUS=0
+else
+  CURL_STATUS=$?
+  HTTP_CODE=""
+fi
+
+# 3. Handle the outcome without minting a new UUID on transport loss or 202:
+if [ "$CURL_STATUS" -eq 0 ] && [ "$HTTP_CODE" = "201" ]; then
+  jq -e --arg ver "$VERSION_ID" '
+    .data.version_id == $ver and
+    (.data.render_origin | type == "string" and length > 0) and
+    (.data.session_id | type == "string" and length > 0)
+  ' "$RESPONSE_FILE" >/dev/null
+  STICKY_UPSTREAM="$(jq -r '.data.render_origin' "$RESPONSE_FILE")"
+  SESSION_ID="$(jq -r '.data.session_id' "$RESPONSE_FILE")"
+elif [ "$CURL_STATUS" -ne 0 ] || [ "$HTTP_CODE" = "202" ]; then
+  # Uncertain transport or accepted pending state: reconcile the original OPERATION_UUID first.
+  haeryong --profile "<PROFILE>" --credential "$CREDENTIAL_FILE" \
+    operations show "$OPERATION_UUID" --json >"$RESPONSE_FILE"
+  jq -e --arg ver "$VERSION_ID" '
+    .data.state == "completed" and
+    .data.original_status == 201 and
+    .data.result_metadata.version_id == $ver and
+    (.data.result_metadata.render_origin | type == "string" and length > 0) and
+    (.data.result_metadata.session_id | type == "string" and length > 0)
+  ' "$RESPONSE_FILE" >/dev/null
+  STICKY_UPSTREAM="$(jq -r '.data.result_metadata.render_origin' "$RESPONSE_FILE")"
+  SESSION_ID="$(jq -r '.data.result_metadata.session_id' "$RESPONSE_FILE")"
+else
+  # Definitive HTTP failure (4xx/5xx): stop setup and inspect the typed error code/details.
+  jq '.error' "$RESPONSE_FILE" >&2
+  exit 1
+fi
+
+# 4. Immediately close the owned ephemeral delivery session; the sticky port reservation remains durable.
+CLOSE_CODE="$(curl -sS -o /dev/null -w '%{http_code}' \
+  -X POST "${LOCAL_ENDPOINT}/api/v1/versions/${VERSION_ID}/render-sessions/${SESSION_ID}/close" \
+  --header @"$HEADER_FILE" \
+  --header "Content-Type: application/json" \
+  --data '{}')"
+[ "$CLOSE_CODE" = "204" ] || exit 1
+
+printf 'Discovered sticky upstream for %s: %s\n' "$VERSION_ID" "$STICKY_UPSTREAM"
+```
+
+If discovery or a subsequent open returns a definitive error (`409`
+`INVALID_TRANSITION` with `reason: "renderer_bind_conflict"` or
+`"renderer_pool_exhausted"`, a `503` ledger/binding error, or `401`/`403`), stop
+setup for that version and follow section 4 below; never infer a port or
+reassign a reservation.
+
+### 2. Preview exposure impact, confirm apply, verify restart and add private Serve routes
+
+`haeryong config plan` merges the supplied JSON/YAML changes into the current
+configuration. When an already-local version's discovered `STICKY_UPSTREAM`
+port lies inside the current `network.renderer_pool` (for example,
+`http://127.0.0.1:9281` when `base_port` is `9281`), shift or expand
+`network.renderer_pool` **in the same configuration plan** so every mapped
+`upstream` is outside the new dynamic pool. Existing reservations remain sticky
+across pool changes.
+
+```sh
+# 1. Inspect existing Tailscale Serve routes, daemon identity and current config_revision.
+tailscale serve status --json
+haeryong --profile "<PROFILE>" service status --json
+haeryong --profile "<PROFILE>" config show --json
+
+# 2. Prepare a network patch combining:
+#    - <LOCAL_VERSION_ID>: already-local version mapped to its discovered sticky upstream (9281)
+#    - <FRESH_VERSION_ID>: fresh remote-first version mapped to an unused outside-pool upstream (9292)
+#    - renderer_pool shifted to base_port 9283 (count 8: 9283..9290) in the same plan so 9281 and 9292 lie outside the pool.
+cat >./private-ingress.json <<'EOF'
+{
+  "network": {
+    "remote_enabled": true,
+    "external_base_url": "https://<NODE_NAME>.<TAILNET>.ts.net:9271",
+    "allowed_origins": [
+      "http://127.0.0.1:9270",
+      "https://<NODE_NAME>.<TAILNET>.ts.net:9271"
+    ],
+    "renderer_pool": {
+      "base_port": 9283,
+      "count": 8
+    },
+    "renderer_mappings": [
+      {
+        "version_id": "<LOCAL_VERSION_ID>",
+        "origin": "https://<NODE_NAME>.<TAILNET>.ts.net:9291",
+        "upstream": "http://127.0.0.1:9281",
+        "reassignable": false
+      },
+      {
+        "version_id": "<FRESH_VERSION_ID>",
+        "origin": "https://<NODE_NAME>.<TAILNET>.ts.net:9292",
+        "upstream": "http://127.0.0.1:9292",
+        "reassignable": false
+      }
+    ]
+  }
+}
+EOF
+
+# 3. Preview the plan and verify impact.exposure (changed, before, after,
+#    private_proxy_action, proxy_configuration_changed_by_commit: false) and controlled_restart_required.
+haeryong --profile "<PROFILE>" \
+  config plan ./private-ingress.json --expected-config-revision "<REV>" --json
+
+# 4. Commit with explicit --confirmed (omitting --confirmed is refused with exit 2).
+haeryong --profile "<PROFILE>" \
+  config apply "<PLAN_ID>" --expected-config-revision "<REV>" --confirmed --json
+
+# 5. After the automatic controlled restart, verify that instance_id rotated while
+#    library_id, profile_id and endpoint remained intact, and check doctor endpoint_checks.
+haeryong --profile "<PROFILE>" service status --json
+haeryong --profile "<PROFILE>" doctor --json
+
+# 6. Add only the approved private HTTPS Tailscale Serve routes (preserving upstream Host and browser Origin).
+tailscale serve --bg --https=9271 http://127.0.0.1:9270
+tailscale serve --bg --https=9291 http://127.0.0.1:9281
+tailscale serve --bg --https=9292 http://127.0.0.1:9292
+tailscale serve status --json
+```
+
+The bounded web proof ([private ingress evidence](../testing/private-ingress.md))
+selected these disposable routes after fresh host inspection:
+
+| External private HTTPS port | Loopback upstream | Role |
+| --- | --- | --- |
+| 9271 | `http://127.0.0.1:9270` | Trusted application and API |
+| 9291 | `http://127.0.0.1:9291` | First immutable version renderer (already-local discovery branch) |
+| 9292 | `http://127.0.0.1:9292` | Second immutable version renderer (fresh remote-first branch) |
+
+These ports are observed fixture values, not reservations or a version/storage
+quota. Pair the private browser origin once through normal Connect and an
+existing local owner through its trusted Connect approval controls. Protected
+CLI approval requires the complete exact JSON intent in the
+[authenticated session instructions](../testing/authenticated-sessions.md).
+Local and HTTPS origins keep separate remembered bearer credentials. Remove only owned routes
+with `tailscale serve --https=<PORT> off` and compare
+`tailscale serve status --json` with the pre-change baseline; never reset Serve,
+delete unrelated mappings or enable Funnel.
+
+### 3. Manual per-version provisioning handoff (TASK-007-02 / TASK-007-03 / TASK-007-04)
+
+Haeryong does not automatically provision a `renderer_mappings` entry or a
+Tailscale Serve route when a version is imported or generated. Every additional
+version to be rendered over private HTTPS requires its own non-reassignable
+`renderer_mappings` entry, a confirmed `config plan` / `config apply ... --confirmed`
+cycle (which restarts the daemon), and its matching `tailscale serve --bg --https=<PORT>`
+route. This is a current endpoint-provisioning procedure handed off to
+[TASK-007-03](../tasks/EPIC-007/TASK-007-03.md) (and retained across
+TASK-007-02 and TASK-007-04), never a package size, HTML page count or storage
+quota. Unmapped remote versions remain available for metadata, search, evidence,
+review, notes, Ask/Q&A and authenticated attachment downloads while reporting
+`renderer_available: false` (`renderer_unavailable_reason: "renderer_remote_ingress"`),
+whereas every version selected for private browser or mobile/tablet Reader
+verification must be mapped so its multi-page HTML/CSS/JS renders in its
+isolated HTTPS origin (attachment fallback never satisfies a Reader gate).
+
+### 4. Occupied-listener, bind-conflict and forward recovery
+
+- **Occupied management listener recovery (`T-007-01-01`):** An occupied
+  configured `network.listener.port` fails startup (`address already in use`)
+  without listener takeover or silent fallback, leaving the existing listener on
+  that port untouched. Recover locally by starting the daemon with an explicit
+  unused `--port <UNUSED_PORT>` on the same `--profile`/`--data-dir`, then run
+  `haeryong doctor --json` through that verified local runtime endpoint
+  (`ephemeral_override: true`) and review or update the persisted
+  `network.listener.port` via `haeryong config plan` and
+  `haeryong config apply ... --confirmed`.
+- **Renderer bind conflict or pool exhaustion recovery:** If `Open` returns
+  `409 INVALID_TRANSITION` with `reason: "renderer_bind_conflict"`, either the
+  version was opened locally before its first remote open and owns a different
+  sticky pool port, another immutable tuple already owns the requested
+  `upstream` or external origin alias, or another local process occupies that
+  port. Do not delete the ledger or reassign ports: discover the version's
+  actual sticky `render_origin` locally (section 1) and update its mapping
+  `upstream` (and shift/expand `renderer_pool` if needed) in a confirmed config
+  plan, or choose an unused external origin if another tuple owns that alias.
+  An existing sticky loopback port never moves: if another process occupies it,
+  preserve that listener and stop setup until the port is legitimately available.
+  A different unused loopback port is an option only for a never-reserved version. On `reason: "renderer_pool_exhausted"`, widen
+  `network.renderer_pool` and apply with `--confirmed`.
+- **Old-binary forward recovery (no ledger deletion):** Remote `Open` records
+  the tuple's canonical HTTPS origin in the additive `external_origins` field of
+  `origin-state/ledger.json` (purely local seven-field records remain
+  unchanged). Once `external_origins` is present, an older pre-`TASK-007-01`
+  binary may fail closed when reading that ledger. Always recover **forward** by
+  running the current compatible `haeryong` binary; **never** delete, truncate
+  or edit `app-state.json` or `origin-state/ledger.json`, and never attempt to
+  release or reassign reserved ports or external origin aliases as rollback.
+
+[Private ingress evidence](../testing/private-ingress.md) owns the actual browser,
+route preservation, failures, cleanup and qualification limits. Physical mobile
+and second-device use were excluded by the current owner direction; no Stage A
+or other platform passage follows from the same-host HTTPS proof.

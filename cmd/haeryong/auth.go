@@ -12,6 +12,7 @@ import (
 	httpauth "haeryong.local/haeryong/internal/adapters/http/auth"
 	"haeryong.local/haeryong/internal/adapters/localcontrol"
 	appauth "haeryong.local/haeryong/internal/application/auth"
+	appconfig "haeryong.local/haeryong/internal/application/configuration"
 	"haeryong.local/haeryong/internal/application/service"
 	"haeryong.local/haeryong/internal/domain"
 )
@@ -27,9 +28,31 @@ func productHandler(core *appauth.Service, local string, configuration []byte, p
 	if err := json.Unmarshal(configuration, &c); err != nil {
 		return nil, err
 	}
+	var value map[string]any
+	if err := json.Unmarshal(configuration, &value); err != nil {
+		return nil, err
+	}
 	u, err := url.Parse(local)
 	if err != nil {
 		return nil, err
+	}
+	_, localCanonicalHost, localAuth, localOK := appconfig.CanonicalOrigin(local)
+	mappings := appconfig.RendererMappings(value)
+	for _, mapping := range mappings {
+		_, originCanonicalHost, originAuth, originOK := appconfig.CanonicalOrigin(mapping.Origin)
+		if (originOK && localOK && (originAuth == localAuth || originCanonicalHost == localCanonicalHost)) || (!originOK && func() bool {
+			originURL, err := url.Parse(mapping.Origin)
+			return err == nil && originURL.Host == u.Host
+		}()) {
+			return nil, errors.New("configured renderer mapping origin host must differ from the actual local management listener host")
+		}
+		_, upstreamCanonicalHost, upstreamAuth, upstreamOK := appconfig.CanonicalOrigin(mapping.Upstream)
+		if (upstreamOK && localOK && (upstreamAuth == localAuth || upstreamCanonicalHost == localCanonicalHost)) || (!upstreamOK && func() bool {
+			upstreamURL, err := url.Parse(mapping.Upstream)
+			return err == nil && upstreamURL.Host == u.Host
+		}()) {
+			return nil, errors.New("configured renderer mapping upstream must differ from the actual local management listener host")
+		}
 	}
 	policy := httpauth.Policy{Hosts: []string{u.Host}, Origins: []string{local}}
 	// Explicit daemon --port selects its actual local origin. Remote trust remains
@@ -40,6 +63,10 @@ func productHandler(core *appauth.Service, local string, configuration []byte, p
 		}
 		remote, err := url.Parse(*c.Network.External)
 		if err != nil || remote.Scheme != "https" || remote.Host == "" || remote.User != nil || remote.Path != "" || remote.RawQuery != "" || remote.Fragment != "" {
+			return nil, errors.New("invalid configured private HTTPS origin")
+		}
+		_, remoteCanonicalHost, remoteAuth, remoteOK := appconfig.CanonicalOrigin(*c.Network.External)
+		if !remoteOK {
 			return nil, errors.New("invalid configured private HTTPS origin")
 		}
 		allowed := false
@@ -53,7 +80,7 @@ func productHandler(core *appauth.Service, local string, configuration []byte, p
 		}
 		policy.Hosts = append(policy.Hosts, remote.Host)
 		policy.Origins = append(policy.Origins, *c.Network.External)
-		if remote.Host == u.Host {
+		if remote.Host == u.Host || (localOK && (remoteAuth == localAuth || remoteCanonicalHost == localCanonicalHost)) {
 			// The request Host header carries no scheme, so an external URL
 			// differing only by scheme from the actual local endpoint cannot
 			// be distinguished on the wire. Serving such a tuple would let
@@ -61,6 +88,18 @@ func productHandler(core *appauth.Service, local string, configuration []byte, p
 			// construction fails visibly instead (including startup from an
 			// externally modified persisted configuration).
 			return nil, errors.New("configured external base URL host must differ from the actual local management listener host")
+		}
+		for _, mapping := range mappings {
+			_, originCanonicalHost, originAuth, originOK := appconfig.CanonicalOrigin(mapping.Origin)
+			if (originOK && (originAuth == remoteAuth || originCanonicalHost == remoteCanonicalHost)) || (!originOK && func() bool {
+				originURL, err := url.Parse(mapping.Origin)
+				return err == nil && originURL.Host == remote.Host
+			}()) {
+				return nil, errors.New("configured renderer mapping origin host must differ from the external management host")
+			}
+			if appconfig.PrivateRendererMappingReason(*c.Network.External, mapping, local) == "" {
+				policy.RendererOrigins = append(policy.RendererOrigins, mapping.Origin)
+			}
 		}
 	}
 	var next http.Handler

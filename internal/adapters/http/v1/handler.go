@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	appconfig "haeryong.local/haeryong/internal/application/configuration"
 	"haeryong.local/haeryong/internal/application/query"
 	"haeryong.local/haeryong/internal/application/render"
 	"haeryong.local/haeryong/internal/application/service"
@@ -48,19 +49,35 @@ func New(core *query.Service, renderer *render.Lazy, endpoints func() (local, ex
 // from the actual local management host (the local endpoint wins ties;
 // construction refuses ambiguous equal hosts). An absent Origin never
 // proves locality, and no Forwarded or User-Agent signal is consulted.
-func (h *Handler) ingressRemote(r *http.Request) bool {
+func (h *Handler) endpoints() (local, external string) {
 	if h.Endpoints == nil {
+		return "", ""
+	}
+	return h.Endpoints()
+}
+
+func (h *Handler) ingressRemote(r *http.Request) bool {
+	if h.Endpoints == nil || r == nil {
 		return false
 	}
 	local, external := h.Endpoints()
 	if external == "" {
 		return false
 	}
-	if origin := r.Header.Get("Origin"); origin != "" && origin == external {
+	extCanonicalOrigin, extCanonicalHost, extAuth, ok := appconfig.CanonicalOrigin(external)
+	if !ok || !strings.HasPrefix(extCanonicalOrigin, "https://") {
+		return false
+	}
+	if local != "" {
+		if _, _, localAuth, localOK := appconfig.CanonicalOrigin(local); localOK && localAuth == extAuth {
+			return false
+		}
+	}
+	if origin := r.Header.Get("Origin"); origin != "" && (origin == external || origin == extCanonicalOrigin) {
 		return true
 	}
 	externalURL, err := url.Parse(external)
-	if err != nil || externalURL.Host == "" || r.Host != externalURL.Host {
+	if err != nil || externalURL.Host == "" || (r.Host != externalURL.Host && r.Host != extCanonicalHost) {
 		return false
 	}
 	if local == "" {
@@ -70,7 +87,13 @@ func (h *Handler) ingressRemote(r *http.Request) bool {
 	if localErr != nil || localURL.Host == "" {
 		return true
 	}
-	return localURL.Host != r.Host
+	if localURL.Host == r.Host {
+		return false
+	}
+	if _, localCanonicalHost, _, localOK := appconfig.CanonicalOrigin(local); localOK && localCanonicalHost == r.Host {
+		return false
+	}
+	return true
 }
 func route(r *http.Request) []string {
 	parts := strings.Split(strings.TrimPrefix(strings.TrimSuffix(r.URL.EscapedPath(), "/"), "/api/v1/"), "/")
@@ -266,10 +289,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var capabilities map[string]any
 		capabilities, err = h.Core.Capabilities(r.Context(), token)
 		if err == nil && h.ingressRemote(r) {
-			// The loopback renderer construction is unreachable from remote
-			// ingress; the honest advertisement keeps the feature flags off
-			// and names the condition. Remote construction is EPIC-007.
-			capabilities["renderer_unavailable_reason"] = render.ReasonRemoteIngress
+			localOrigin, externalOrigin := h.endpoints()
+			if h.Render != nil && !h.Render.Unavailable() {
+				var supported bool
+				supported, err = h.Core.RemoteRendererConfigured(r.Context(), token, localOrigin, externalOrigin)
+				if err == nil && supported {
+					features := capabilities["features"].(map[string]bool)
+					features["html_js_v1"], features["multi_page_loader"], features["renderer"] = true, true, true
+				} else if err == nil {
+					capabilities["renderer_unavailable_reason"] = render.ReasonRemoteIngress
+				}
+			} else {
+				capabilities["renderer_unavailable_reason"] = render.ReasonRemoteIngress
+			}
 		} else if err == nil && h.Render != nil && !h.Render.Unavailable() {
 			features := capabilities["features"].(map[string]bool)
 			features["html_js_v1"], features["multi_page_loader"], features["renderer"] = true, true, true
@@ -330,7 +362,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var bootstrap query.Bootstrap
 		bootstrap, err = h.Core.RenderBootstrap(r.Context(), token, p[1], values.Get("page_path"))
 		if err == nil && h.ingressRemote(r) {
-			bootstrap.RendererUnavailableReason = render.ReasonRemoteIngress
+			localOrigin, externalOrigin := h.endpoints()
+			if h.Render != nil && !h.Render.Unavailable() {
+				var supported bool
+				supported, err = h.Core.RemoteVersionRendererSupported(r.Context(), token, p[1], localOrigin, externalOrigin)
+				if err == nil && supported {
+					bootstrap.RendererAvailable = true
+					bootstrap.Delivery = "private_renderer_origin"
+					bootstrap.RenderSessionsURL = "/api/v1/versions/" + p[1] + "/render-sessions"
+					bootstrap.RendererConstruction = "private_https_renderer_origin"
+				} else if err == nil {
+					bootstrap.RendererUnavailableReason = render.ReasonRemoteIngress
+				}
+			} else {
+				bootstrap.RendererUnavailableReason = render.ReasonRemoteIngress
+			}
 		} else if err == nil && h.Render != nil && !h.Render.Unavailable() {
 			bootstrap.RendererAvailable = true
 			bootstrap.Delivery = "loopback_renderer_origin"
@@ -422,31 +468,88 @@ func (h *Handler) renderSession(w http.ResponseWriter, r *http.Request, token st
 			return
 		}
 	}
-	// Remote ingress never constructs the renderer subsystem, reserves an
-	// operation or binds a listener: the loopback construction is a known
-	// unavailable capability for this caller (remote construction belongs to
-	// EPIC-007). Renew shares the boundary; close stays usable so a known
-	// owned session can still be cleaned up from any ingress.
-	if (len(p) == 3 && p[2] == "render-sessions" || len(p) == 5 && p[4] == "renew") && h.ingressRemote(r) {
-		failure(w, r, &render.Error{Reason: render.ReasonRemoteIngress})
-		return
-	}
-	if h.Render == nil {
-		failure(w, r, &render.Error{Reason: render.ReasonUnsupportedAccount})
-		return
-	}
-	core, err := h.Render.Get()
-	if err != nil {
-		failure(w, r, err)
-		return
+	remote := h.ingressRemote(r)
+	localOrigin, externalOrigin := h.endpoints()
+	ingress := render.Ingress{Remote: remote, ParentOrigin: localOrigin}
+	if remote {
+		ingress.ParentOrigin = externalOrigin
 	}
 	var response domain.Response
+	var err error
 	switch {
 	case len(p) == 3 && p[2] == "render-sessions":
-		response, err = core.Open(r.Context(), token, key, p[1])
+		if remote {
+			_, supported, authErr := h.Core.AuthorizeRemoteRenderSession(r.Context(), token, p[1], localOrigin, externalOrigin, nil)
+			if authErr != nil {
+				failure(w, r, authErr)
+				return
+			}
+			if !supported {
+				failure(w, r, &render.Error{Reason: render.ReasonRemoteIngress})
+				return
+			}
+		}
+		if h.Render == nil {
+			failure(w, r, &render.Error{Reason: render.ReasonUnsupportedAccount})
+			return
+		}
+		core, getErr := h.Render.Get()
+		if getErr != nil {
+			failure(w, r, getErr)
+			return
+		}
+		response, err = core.OpenWithIngress(r.Context(), token, key, p[1], ingress)
 	case len(p) == 5 && p[2] == "render-sessions" && p[4] == "renew":
-		response, err = core.Renew(r.Context(), token, p[1], p[3])
+		if remote {
+			var existing *render.Service
+			if h.Render != nil {
+				existing = h.Render.Peek()
+			}
+			principalID, supported, authErr := h.Core.AuthorizeRemoteRenderSession(r.Context(), token, p[1], localOrigin, externalOrigin, func(principalID string) bool {
+				return existing != nil && existing.OwnsSession(principalID, p[1], p[3])
+			})
+			if authErr != nil {
+				failure(w, r, authErr)
+				return
+			}
+			if !supported {
+				if existing != nil {
+					existing.TerminateRemoteSession(principalID, p[1], p[3])
+				}
+				failure(w, r, &render.Error{Reason: render.ReasonRemoteIngress})
+				return
+			}
+			if h.Render == nil || h.Render.Unavailable() {
+				failure(w, r, &render.Error{Reason: render.ReasonUnsupportedAccount})
+				return
+			}
+			if existing == nil {
+				failure(w, r, &render.Error{Reason: render.ReasonUnknownSession})
+				return
+			}
+			response, err = existing.RenewWithIngress(r.Context(), token, p[1], p[3], ingress)
+		} else {
+			if h.Render == nil {
+				failure(w, r, &render.Error{Reason: render.ReasonUnsupportedAccount})
+				return
+			}
+			core, getErr := h.Render.Get()
+			if getErr != nil {
+				failure(w, r, getErr)
+				return
+			}
+			response, err = core.RenewWithIngress(r.Context(), token, p[1], p[3], ingress)
+		}
 	case len(p) == 5 && p[2] == "render-sessions" && p[4] == "close":
+		if h.Render == nil {
+			failure(w, r, &render.Error{Reason: render.ReasonUnsupportedAccount})
+			return
+		}
+		core, getErr := h.Render.Get()
+		if getErr != nil {
+			failure(w, r, getErr)
+			return
+		}
 		response, err = core.Close(r.Context(), token, p[1], p[3])
 	default:
 		failure(w, r, domain.ErrNotFound)

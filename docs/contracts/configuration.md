@@ -56,7 +56,7 @@ Asia/Seoul is an initial display/schedule timezone, not timestamp storage. Reten
 
 One loopback management listener serves the owner UI and API, default 127.0.0.1:9270. Private management HTTPS proxies to it. D-10 separately authorizes additional tailnet-only HTTPS renderer ports on the existing node name; start with the [same-daemon mapping experiment](../operations/deployment.md#approved-additional-port-renderer-experiment). This does not require a second management API, library or identity system. remote_enabled and external_base_url describe trusted ingress; selected renderer mappings are separate and must not be added to allowed_origins.
 
-Validate ports 1024..65535, with 9000..9999 preferred. Other valid explicitly chosen ports receive a preference warning rather than an implicit ban. A collision fails visibly; no random fallback or listener takeover. The daemon bind remains loopback. An optional private proxy handles remote reachability and TLS.
+Validate local listener/upstream ports 1024..65535, with 9000..9999 preferred. External HTTPS origins accept ports 1..65535, including the implicit default 443. Other valid explicitly chosen ports receive a preference warning rather than an implicit ban. A collision fails visibly; no random fallback or listener takeover. The daemon bind remains loopback. An optional private proxy handles remote reachability and TLS.
 
 Remote enablement requires a validated HTTPS external origin. A dedicated hostname is convenient but not required. The trusted UI/API base URLs reject embedded credentials, wildcard trust entries, arbitrary forwarded origins and unconfigured hosts. allowed_origins contains exact trusted browser origins; Host and Origin checks use the configured local/remote endpoints and validated proxy information. Renderer addresses belong to a separate delivery mapping and never become trusted UI/API origins merely by being reachable through the same listener. The first approved renderer candidate uses distinct private HTTPS ports with exact upstream mappings; any variable address is checked against its active version/delivery mapping. Choose unused ports after inspecting actual service impact, preserve unrelated routes and never enable Funnel/public exposure. A custom domain or wildcard certificate is not authorized by D-10. TASK-001-03 records trusted authentication/private ingress; TASK-001-04 records the actual renderer address, proxy, authority, revocation and safe reuse behavior. G-CONTRACT freezes the selected configuration shape only after those distinct closing checklists pass. No wildcard DNS/certificate, second API service or broad origin allowlist is required in advance. Listening on a port or possessing network access does not authenticate a caller.
 
@@ -229,3 +229,46 @@ permission limitations are reported without modifying remembered source or
 provider settings, inferring entitlement from catalog entries, or overriding
 owner model/effort defaults. Existing current-policy and restore-hold fences
 still govern every job payload and dispatch.
+
+## Controlled private ingress (TASK-007-01)
+
+The supported browser construction uses the configured HTTPS management origin
+and distinct HTTPS renderer origins on the same hostname, each forwarded to its
+own content-only `http://127.0.0.1:PORT` upstream. Configure
+`network.renderer_mappings` entries with `version_id`, `origin`, `upstream` and
+`reassignable: false`. One mapping per version, external origin and upstream is
+required. Normalized URL origins compare case-insensitively by hostname, omit
+default ports and normalize numeric ports; equivalent spellings cannot allocate
+an origin twice. Management and content origins/Host authorities must remain
+distinct, including under an explicit runtime listener override. Other HTTPS
+host constructions remain unavailable for rendering rather than falling back to
+local addresses. Configuration validation alone does not prove proxy reachability.
+
+External origins and sticky loopback tuple reservations survive delivery close,
+restart, mapping removal and pool changes. A remote-first Open claims its exact
+configured upstream even when it is outside the current pool. A prior local
+reservation for the same version must match that upstream. A fresh local-first
+Open uses the dynamic pool outside all mapping upstreams; it does not claim a
+configured remote mapping. Discover its actual sticky port through authenticated
+local Open, close that ephemeral session, then map the returned port and shift or
+expand the pool in the same plan as described in the
+[setup runbook](../operations/deployment.md#current-controlled-private-browser-setup-task-007-01). Previously owned
+origins/upstreams cannot be transferred to another version or library; a conflict
+requires an unused mapping or pool expansion, never reassignment. Existing
+seven-field origin-ledger records remain readable; permanent external-origin
+aliases are an additive field, without a SQLite schema change.
+
+Every new configuration plan includes `impact.exposure`: `changed`, `before`,
+`after`, `private_proxy_action` and `proxy_configuration_changed_by_commit: false`.
+Each snapshot contains `remote_enabled`, nullable `management_origin`,
+`configured_local_endpoint`, `local_forwarding_endpoint` and sorted
+`renderer_mappings` tuples. The forwarding endpoint includes an actual ephemeral
+listener override separately from persisted intent. Apply requires the existing
+explicit owner confirmation. A still-fresh pre-upgrade exposure-changing plan
+without that preview must be replanned; completed natural/alias receipt replay
+and non-exposure plans retain their existing semantics. Commit never executes
+Tailscale or installs a certificate. Inspect, apply, verify and remove private
+proxy routes separately under owner authority; preserve unrelated routes.
+
+See [private ingress evidence](../testing/private-ingress.md) for executed scope
+and the distinction between same-host web proof and physical-device qualification.
