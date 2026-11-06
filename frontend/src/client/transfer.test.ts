@@ -33,6 +33,7 @@ import type { ImportJournal, JournalStore } from "./transfer.ts";
 import type { HaeryongClient, ListPage, OperationView, UploadCheckpoint, UploadDetail, GenerationRequest } from "./types.ts";
 import { ApiError } from "./types.ts";
 import type { FileLike, PlannedEntry, PlannedInput } from "./transfer.ts";
+import { runImportPipeline } from "../app/screens/pipeline.ts";
 
 function fileFrom(path: string, bytes: Uint8Array): File {
   const file = new File([bytes as unknown as BlobPart], path.slice(path.lastIndexOf("/") + 1));
@@ -820,6 +821,50 @@ test("the first-completion gate runs only for a new first S and blocks before an
   assert.equal(gateCalls, beforeGate + 1);
   assert.equal(fake.completeCalls.length, 2);
   assert.notEqual(fake.completeCalls[1].key, "s-kept");
+});
+
+test("shared import pipeline reports failed sealing while retaining deliberate new-key recovery", async () => {
+  const fake = new FakeClient(), journal = new FakeJournal();
+  const engine = new TransferEngine(client(fake), journal);
+  const record = await engine.begin("lib", "p1", { kind: "new", projectId: "proj-1" }, planFromArchive(new File(["bad"], "corrupt.zip")));
+  record.phase = "sealing";
+  record.jobId = "failed-seal";
+  record.completeCheckpoint = emptyCheckpoint(2);
+  const originalKey = record.completeKey;
+  fake.detail.error = "PACKAGE_INVALID";
+  const stages: string[] = [];
+  await assert.rejects(
+    runImportPipeline(client(fake), engine, record, null, { onStage: stage => stages.push(stage) }),
+    (error: unknown) => error instanceof ImportJobError && error.code === "PACKAGE_INVALID",
+  );
+  assert.deepEqual(stages, ["sealing"]);
+  assert.equal(record.phase, "transfer-cancelled");
+  assert.notEqual(record.completeKey, originalKey);
+  assert.equal(record.completeCheckpoint, null);
+  assert.equal(record.jobId, null);
+  assert.deepEqual(journal.records.get(record.importKey!), record);
+  assert.equal(fake.completeCalls.length, 0);
+  assert.equal(fake.importCalls, 0);
+});
+
+test("shared import pipeline keeps confirmed seal cancellation distinct from failure", async () => {
+  const fake = new FakeClient(), journal = new FakeJournal();
+  const engine = new TransferEngine(client(fake), journal);
+  const record = await engine.begin("lib", "p1", { kind: "new", projectId: "proj-1" }, planFromArchive(new File(["retained"], "input.zip")));
+  record.phase = "sealing";
+  record.jobId = "cancelled-seal";
+  record.completeCheckpoint = emptyCheckpoint(2);
+  const originalKey = record.completeKey;
+  fake.detail.error = "cancelled";
+  const stages: string[] = [];
+  const settled = await runImportPipeline(client(fake), engine, record, null, { onStage: stage => stages.push(stage) });
+  assert.deepEqual(stages, ["sealing", "cancelled"]);
+  assert.equal(settled.phase, "transfer-cancelled");
+  assert.notEqual(settled.completeKey, originalKey);
+  assert.equal(settled.completeCheckpoint, null);
+  assert.equal(settled.jobId, null);
+  assert.equal(fake.completeCalls.length, 0);
+  assert.equal(fake.importCalls, 0);
 });
 
 test("GCLIENT03 generation/draft preparation journals before upload, replays exact U and never enters the import publisher", async()=>{

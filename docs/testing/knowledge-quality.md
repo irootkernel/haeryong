@@ -174,3 +174,44 @@ The [TASK-004-02 worksheet](search-relevance-worksheet.md) preserves the fixed
 rules, alias rank control and approved sample exact identities. M1/M2 do not
 execute retrieval or claim usefulness. Owner-authored queries are separate;
 absence remains owner use unmeasured. Partial extraction is never complete no-match.
+
+### Stage A connected-reader progressive use checkpoint (TASK-007-06)
+
+The [private-web record](stage-a-gate.md) repeats the approved real Mulgae
+(`cef337cf927b820316f42a41f1441fbc653203f8`) and Gaori
+(`393af5999bbbb30b5d11e2a17a2325c8cf1833b7`) corpus on actual Tailscale HTTPS.
+Before acquisition, the Coordinator fixed this reader question:
+
+> After an incomplete Mulgae review with an accepted required role and failed
+> selected optional role, what recovery is supported, what remains accepted,
+> and what happens with uncertain publication or missing required sources?
+> Compare Gaori after a waiter ends, cancellation is accepted, or its MCP
+> connection disappears. Follow its exact prior-compose reference and state
+> what the analogy establishes and what it does not.
+
+The six material fact families were observed through fixed search, the original
+interactive controls and exact Reader navigation:
+
+1. Inspect original status/get_run, exactly replay available returned attempts,
+   then compose committed reruns; do not omit a failed selected optional role.
+2. Accepted roles remain accepted; recovery cannot replace acceptance.
+3. Uncertain publication needs exact-run inspection. Missing required sources
+   block the source-validated path; a new review needs authorization.
+4. Wait expiry ends the waiter. Accepted cancellation is neither terminal status
+   nor success, and re-await needs the original surviving session.
+5. Disconnect requires command/final-artifact reconciliation. A new server
+   cannot recover the old invocation ID; missing artifacts do not prove
+   non-execution.
+6. Gaori `gaori/lifecycle.html#G12` still resolves the exact old Mulgae
+   `recovery/compose.html#M11` after successor publication. The link supplies an
+   analogy, not a dependency, Gaori source proof or freshness propagation.
+
+Each project's own fixed citations remain separate. This was a familiar,
+agent-operated task; it was not blinded, and owner preference, time saving and
+ongoing use remain unmeasured. The synthetic successor tests the pin and
+version-specific Notes/Review without becoming another real explanation.
+
+Recommended optional owner task: open Gaori G12 in the private Reader, follow
+its prior-compose link and explain why a lost MCP session does not authorize a
+replacement command. Owner performance remains `unmeasured`; this recommendation
+adds no permission question, required participation or gate.

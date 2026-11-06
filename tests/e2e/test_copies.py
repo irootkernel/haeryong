@@ -39,6 +39,38 @@ def test_local_backup_status_replay_corruption_and_protected_restore(product, ow
     note_history = product.data('GET', path + '/history', client=owner)
     review_history = product.data('GET', '/api/v1/versions/' + version + '/review/history', client=owner)
     product.cli(['revisit','set','--document',imported['document_id'],'--flag','true','--if-none-match','*'],client=owner)
+    ext_host = 'node.private.ts.net:9443'
+    ext_origin = 'https://' + ext_host
+    render_origin = 'https://node.private.ts.net:9444'
+    pool_base = 9281 if not (9281 <= product.address <= 9284) else 9285
+    upstream_port = 9291 if product.address != 9291 else 9292
+    mapping = dict(version_id=version, origin=render_origin, upstream=f'http://127.0.0.1:{upstream_port}', reassignable=False)
+    doctor_mapping = dict(version_id=version, origin=render_origin, upstream=f'http://127.0.0.1:{upstream_port}')
+    private_policy = tmp_path / 'private-network.json'
+    private_policy.write_text(json.dumps(dict(
+        network=dict(
+            listener=dict(bind='127.0.0.1', port=product.address),
+            remote_enabled=True,
+            external_base_url=ext_origin,
+            allowed_origins=[product.endpoint, ext_origin],
+            renderer_pool=dict(base_port=pool_base, count=4),
+            renderer_mappings=[mapping],
+        ),
+        retention=dict(auto_purge_enabled=True),
+    )))
+    cfg_plan = product.cli(['config', 'plan', str(private_policy)], client=owner)['data']['result']
+    product.cli(['config', 'apply', cfg_plan['plan_id'], '--expected-config-revision', str(cfg_plan['base_config_revision']), '--confirmed'], client=owner)
+    product.stop(kill=True)
+    product.start(configured=True)
+    pre_doctor = product.cli(['doctor'], client=owner)['data']['endpoint_checks']
+    assert pre_doctor['configured_local_endpoint'] == product.endpoint
+    assert pre_doctor['runtime_local_endpoint'] == product.endpoint
+    assert pre_doctor['ephemeral_override'] is False
+    assert pre_doctor['remote_enabled'] is True
+    assert pre_doctor['external_base_url'] == ext_origin
+    assert pre_doctor['renderer_mappings'] == [{**doctor_mapping, 'configured': True, 'supported': True, 'reason': None}]
+    remembered = product.owner('remembered device')
+    assert product.data('GET', '/api/v1/session', client=remembered)['session_id'] == remembered['session']['session_id']
     before = product.data('GET', '/api/v1/capabilities', client=owner)
     operation = str(uuid.uuid4())
     destination = tmp_path / 'backups'
@@ -58,14 +90,21 @@ def test_local_backup_status_replay_corruption_and_protected_restore(product, ow
     product.cli(['backup', 'verify', '--input', str(backup)], code=2)
     one_object.write_bytes(original)
     copy_cli(product, owner, ['backup', 'create', '--destination', str(tmp_path / 'ignored'), '--encryption', 'age'], code=2)
+    product.cli(['auth', 'sessions', 'revoke', remembered['session']['session_id']], client=owner)
+    assert product.request('GET', '/api/v1/session', client=remembered)[0] == 401
+    current_policy = tmp_path / 'current-before-restore.json'
+    current_policy.write_text(json.dumps(dict(security=dict(pairing_expiry_seconds=180))))
+    cur_plan = product.cli(['config', 'plan', str(current_policy)], client=owner)['data']['result']
+    product.cli(['config', 'apply', cur_plan['plan_id'], '--expected-config-revision', str(cur_plan['base_config_revision']), '--confirmed'], client=owner)
 
     product.stop()
     plan = product.cli(['restore', 'plan', '--input', str(backup)])['data']
     result = product.cli(['restore', 'apply', plan['plan_id'], '--confirm'])['data']
     assert product.cli(['restore', 'apply', plan['plan_id'], '--confirm'])['data'] == result
     assert result['library_id'] == before['library_id']
-    product.start()
+    product.start(configured=True)
     assert product.request('GET', '/api/v1/capabilities', client=owner)[0] == 401
+    assert product.request('GET', '/api/v1/capabilities', client=remembered)[0] == 401
     fresh = product.owner('fresh restored owner')
     assert product.data('GET', path + '/history', client=fresh) == note_history
     assert product.data('GET', '/api/v1/versions/' + version + '/review/history', client=fresh) == review_history
@@ -77,17 +116,38 @@ def test_local_backup_status_replay_corruption_and_protected_restore(product, ow
     restored = product.data('GET', '/api/v1/annotations/' + note['annotation_id'], client=fresh)
     assert restored['deleted_at'] and restored['body'] is None
     assert product.request('GET', '/api/v1/versions/' + version + '/file?path=unknown.bin', client=fresh, raw=True)[1] == b'\x00\xffbackup bytes'
-    product.stop(); product.start()
+    product.stop(); product.start(configured=True)
     assert product.data('GET', '/api/v1/capabilities', client=fresh)['runtime_generation'] == after['runtime_generation']
     configuration = product.data('GET', '/api/v1/configuration', client=fresh)
+    net_cfg = configuration['configuration']['network']
+    assert net_cfg['remote_enabled'] is False
+    assert net_cfg['external_base_url'] is None
+    assert net_cfg['listener'] == dict(bind='127.0.0.1', port=product.address)
+    assert net_cfg['allowed_origins'] == [product.endpoint]
+    assert net_cfg['renderer_mappings'] == [mapping]
     assert configuration['configuration']['retention']['auto_purge_enabled'] is False
+    post_doctor = product.cli(['doctor'], client=fresh)['data']['endpoint_checks']
+    assert post_doctor['configured_local_endpoint'] == product.endpoint
+    assert post_doctor['runtime_local_endpoint'] == product.endpoint
+    assert post_doctor['ephemeral_override'] is False
+    assert post_doctor['remote_enabled'] is False
+    assert post_doctor['external_base_url'] is None
+    assert post_doctor['renderer_mappings'] == [{**doctor_mapping, 'configured': True, 'supported': False, 'reason': 'renderer_remote_ingress'}]
+    assert product.request('GET', '/api/v1/session', client=fresh, headers={'Host': ext_host, 'Origin': ext_origin})[0] == 403
+    assert product.request('POST', f'/api/v1/versions/{version}/render-sessions', client=fresh, headers={'Host': ext_host, 'Origin': ext_origin, 'Idempotency-Key': str(uuid.uuid4())}, body={})[0] == 403
+    assert render_origin not in product.request('GET', '/', raw=True)[2]['Content-Security-Policy']
     choices = tmp_path / 'review.json'
     choices.write_text(json.dumps(dict(configuration=configuration['configuration'], expected_config_revision=configuration['config_revision'], resume_cleanup_job_ids=[])))
     product.stop()
     preview = copy_cli(product, fresh, ['restore', 'review'])['data']
     assert preview['state'] == 'pending_review'
+    assert preview['original_configuration']['network']['remote_enabled'] is True
+    assert preview['original_configuration']['network']['external_base_url'] == ext_origin
+    assert preview['original_configuration']['network']['allowed_origins'] == [product.endpoint, ext_origin]
+    assert preview['original_configuration']['network']['renderer_mappings'] == [mapping]
+    assert preview['current_configuration']['security']['pairing_expiry_seconds'] == 180
     assert copy_cli(product, fresh, ['restore', 'review', '--choices', str(choices), '--confirm'])['data']['state'] == 'reviewed'
-    product.start()
+    product.start(configured=True)
     assert product.data('GET', '/api/v1/capabilities', client=fresh)['runtime_generation'] == after['runtime_generation']
 
 

@@ -309,3 +309,11 @@ recovery composition with two projects and browser/native clients, stale-write
 and lifecycle races, and full original-directory export/reimport with portable
 metadata checked separately in [owner composition](owner-records.md).
 DF-02 remains conservatively deferred and DF-03 retains its existing read-drain behavior.
+
+## Private-exposure restore origin normalization (TASK-007-06)
+
+The original TASK-005-05 backup and protected-restore verification exercised local-only listener origins. During TASK-007-06, a normal binary reproduced `restore apply` exit 5 during strict protected-staging validation: clearing remote exposure while retaining an external allowed origin left an invalid effective configuration. This was a refused restore, not an observed post-restore daemon startup failure.
+
+`ProtectRestoredDatabase` in `internal/adapters/sqlite/copy_restore.go` now normalizes effective allowed origins to the preserved listener's `http://127.0.0.1:<port>` endpoint. The recovery hold keeps the backup's `OriginalConfiguration` and destination's pre-restore `CurrentConfiguration`; effective renderer mappings remain inactive intent. After restore, endpoint doctor reports those mappings as `configured: true`, `supported: false`, with reason `renderer_remote_ingress`.
+
+The enriched existing public-CLI case `test_local_backup_status_replay_corruption_and_protected_restore` in [tests/e2e/test_copies.py](../../tests/e2e/test_copies.py) passed both focused execution and the complete E2E layer. The separate extracted normal binary also passed apply/replay, safe startup, protected epoch/session rotation and original/current review preservation. See [the selected private-web record](stage-a-gate.md) for actual execution, historical failures and qualification limits.

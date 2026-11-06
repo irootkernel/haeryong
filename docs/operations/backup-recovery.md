@@ -382,3 +382,9 @@ bytes are not implicitly included; explicit retained-source selection retains
 its existing scope/ancestry rules. Plain export stays the original result tree.
 Trash and purge retain their current confirmed plans, reusable-owner protections
 and resumable pin-safe deletion behavior for the new record family.
+
+### Private-exposure origin normalization on protected restore (TASK-007-06)
+
+When a backup was captured with private exposure enabled, protected restore (`ProtectRestoredDatabase` in `internal/adapters/sqlite/copy_restore.go`) disables remote access, clears `network.external_base_url`, and normalizes `network.allowed_origins` to the preserved listener's `http://127.0.0.1:<port>` endpoint. Strict configuration validation remains in force.
+
+The recovery hold preserves the backup's `OriginalConfiguration` and the destination's pre-restore `CurrentConfiguration` for owner review. The normalized effective configuration is stored separately. Renderer mappings remain configured as inactive intent; the owner must explicitly review recovery and re-enable private exposure. Permanent origin ownership is preserved. See [the selected private-web record](../testing/stage-a-gate.md).

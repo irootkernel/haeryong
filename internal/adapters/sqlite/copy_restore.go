@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	app "haeryong.local/haeryong/internal/application/storage"
 	"regexp"
 	"strings"
@@ -71,9 +72,11 @@ func ProtectRestoredDatabase(ctx context.Context, path string, p service.Profile
 		return lib, e
 	}
 	network := value["network"].(map[string]any)
+	listener := network["listener"].(map[string]any)
 	network["remote_enabled"] = false
 	network["external_base_url"] = nil
-	network["listener"].(map[string]any)["bind"] = "127.0.0.1"
+	listener["bind"] = "127.0.0.1"
+	network["allowed_origins"] = []any{"http://127.0.0.1:" + fmt.Sprint(listener["port"])}
 	value["retention"].(map[string]any)["auto_purge_enabled"] = false
 	schedule := value["maintenance"].(map[string]any)["schedule"].(map[string]any)
 	schedule["mode"] = "manual"

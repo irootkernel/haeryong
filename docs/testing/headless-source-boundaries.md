@@ -37,8 +37,8 @@ or graphical login on this Mac.
 
 No product Go, TypeScript, compiled asset, schema or provider implementation
 changed in this Task. The opt-in drivers are
-[check_headless_sources.py](../../internal/adapters/http/auth/browser/check_headless_sources.py)
-and [check_headless_sources.js](../../internal/adapters/http/auth/browser/check_headless_sources.js).
+`internal/adapters/http/auth/browser/check_headless_sources.py`
+and `internal/adapters/http/auth/browser/check_headless_sources.js`.
 The [current owner direction](../decisions.md#owner-amendment-2026-11-05-web-only-epic-007-execution)
 selects web verification and excludes physical-device proof.
 

@@ -368,3 +368,23 @@ commit/native finalization and retained-output handoff precede TASK-007-06.
 Original failures, unchanged-product common and historical provider proof keep
 their individual scope; full physical Stage A and Master overall acceptance
 remain unclaimed.
+
+## Selected private-web integration (TASK-007-06)
+
+The [selected gate record](testing/stage-a-gate.md) records actual same-host Tailscale Reader,
+source verification, saved Q&A, F12, owner state, session revoke and reconnect
+observations, with physical/mobile/Wails GUI limits preserved. The integrated
+run reproduced and corrected protected-restore origin normalization and large
+saved Ask-context rendering. Finite C02 follow-up also corrects a confirmed
+failed-seal reason hidden as cancellation; actual private error presentation and
+unchanged accepted versions passed on the final normal package. The corrected extracted normal package displays
+all 3,061,646 context bytes with the original digest and responsive controls;
+no new provider call was used. Both owned web cohorts naturally stopped and
+restored the complete original Serve configuration. The completed common passed
+all Go and E2E checks but failed three documentation-fixture assertions. The
+six source-pointer corrections passed the complete 64-case Python integration
+selection; the failed aggregate stays failed. The original independent first
+assessments and finite corrections now compose ready, with all current member
+duties met and no required findings open. The Coordinator accepts this exact
+bounded web member under delegation. Its normal completion commit/native handoff
+and the separate assembled Epic audit follow; no whole-Epic acceptance is asserted.

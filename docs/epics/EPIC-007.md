@@ -47,3 +47,14 @@ Stage A passing record with actual provider, primary browser/WebView, second dev
 ## Execution sources
 
 Detailed SOT: [EPIC-007 execution dossier](../todo/TODO-EPIC-007.md). It maps the six Tasks to their canonical requirement, acceptance, environment and authority owners. Frontmatter and the [roadmap](../roadmap.md) retain identity, order, dependencies and status. At closeout, promote durable content and replace this link with Canonical Outcomes; dossier removal requires the approved closeout envelope.
+
+The [selected private-web integration record](../testing/stage-a-gate.md) owns
+TASK-007-06's current actual observations and internal normal-package handoff.
+Its failed aggregate and passing affected Python integration retain their exact
+scope. Original first assessments and the finite C02/C06/record corrections are
+preserved. The original Task panel and scoped Epic contribution, exact
+same-primary closures, retained bounded correction confirmation and current
+checks compose ready. Task06 is accepted as the bounded web member under
+delegation; its normal commit/native handoff precede the separate assembled
+original-Epic audit. Original physical Stage A and Master overall acceptance
+remain unclaimed.

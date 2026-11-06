@@ -395,3 +395,14 @@ isolated HTTPS origin (attachment fallback never satisfies a Reader gate).
 route preservation, failures, cleanup and qualification limits. Physical mobile
 and second-device use were excluded by the current owner direction; no Stage A
 or other platform passage follows from the same-host HTTPS proof.
+
+### 5. Internal darwin/arm64 test package and Stage A handoff (TASK-007-06)
+
+For `TASK-007-06` (`EPIC-007`), the internal test package is staged outside the
+repository working tree and contains only:
+
+- `haeryong`: the normal untagged `darwin/arm64` headless binary built from `go build ./cmd/haeryong` (`sha256:86e42c5654ce33eca31f72129cc402565d65aa7985d5a35d58b2da2f02c9d222`, verified free of `haeryong_test_state` or provider live/replay build tags);
+- `SHA256SUMS`: exact SHA-256 digests for the staged files;
+- `INSTALL.md`: concise operator notes using only supported flags (`--profile <PROFILE>`, `--data-dir <PATH>`, `--client-dir <PATH>`, `--credential <PATH>`, `--port <PORT>`, `--provider-binary <PATH>`) and `<existing-node>` / `<tailnet>` placeholders for `network.external_base_url`, `network.allowed_origins`, `network.renderer_mappings`, and `tailscale serve --bg --https=<PORT> http://127.0.0.1:<UPSTREAM_PORT>`.
+
+The internal package bundles no owner credentials, no library data, no Codex/provider binary, and no Tailscale certificates, performs no global installation (`/usr/local/bin` or launchd registration), and makes no production release pipeline (`EPIC-010`) or desktop `Wails` GUI (`EPIC-009`) claim. See [`docs/testing/stage-a-gate.md`](../testing/stage-a-gate.md) for the Stage A verification record and qualification limits.

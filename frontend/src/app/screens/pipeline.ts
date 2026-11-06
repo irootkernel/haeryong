@@ -9,6 +9,7 @@
 import type { HaeryongClient } from "../../client/types.ts";
 import type { ImportJournal, PlannedInput, TransferCallbacks } from "../../client/transfer.ts";
 import type { TransferEngine } from "../../client/transfer.ts";
+import { ImportJobError } from "../../client/transfer.ts";
 
 export interface PipelineHooks {
   onStage: (stage: "transferring" | "sealing" | "sealed" | "publishing" | "published" | "cancelled" | "abandoned", journal: ImportJournal) => void;
@@ -78,6 +79,7 @@ export async function runImportPipeline(client: HaeryongClient, engine: Transfer
       if (detail.state === "sealed") break;
       if (detail.state === "open") {
         current = engine.markSealSettled(current);
+        if (detail.error && detail.error !== "cancelled") throw new ImportJobError(detail.error);
         hooks.onNotice?.("봉인이 열린 상태로 확정되었습니다. 이어하기는 새로운 완료 키로 진행됩니다.");
         hooks.onStage("cancelled", current);
         return current;
