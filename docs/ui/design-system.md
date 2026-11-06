@@ -74,3 +74,7 @@ This table proposes copy and localization-ready keys; it does not add full multi
 LifecycleImpactDialog uses the existing semantic modal Sheet, safe initial focus and
 focus return, with 44 px controls, wrapping identifiers and scrollable impact pages at
 390×844, 844×390, 820×1180 and 1440×900. No form-default Enter triggers deletion.
+
+## Current responsive host controls
+
+Below 768px, only Files/Context remain in the compact sticky host row; secondary version/default/import controls flow normally. The existing native dialogs retain modal focus/return, and tablet Context stays modal. Search/untyped/number controls, textarea typography, disclosure targets and digest-choice labels follow the shared floor. Four-edge cover padding and viewport resizing metadata are implemented, with browser/platform limits. [Current measurements](../testing/mobile-reader-workflows.md) distinguish desktop Chrome viewport observations from physical mobile/IME qualification.

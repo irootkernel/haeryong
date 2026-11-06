@@ -274,3 +274,21 @@ Reader. Network or dispatch-gate failure leaves unsent host edits available.
 Sources directs the owner to AI settings for provider readiness without probing
 an account on Sources entry. See the
 [assembled correction record](../docs/testing/ai-workflows.md#whole-epic-client-availability-correction).
+
+## TASK-007-03 responsive workflow boundary
+
+The phone sticky row contains only the existing Files/Context toggles. Version,
+default-page and import actions remain in normal flow; the same native-dialog
+sheets and viewer/channel survive resizing. Shared inputs/textarea/disclosures
+and cover surfaces receive bounded typography/44px/safe-area adjustments. Ask
+progress is outside the conditional draft. The shell retains outage history
+across keyed owner-screen replacement so Provider does not auto-probe on
+reconnection; initial healthy AI entry and explicit refresh retain their roles.
+
+The existing private driver selects Task03 with `--task03-only`; optional
+`--task03-stages` runs affected independent stages without Task01/02 cohorts.
+[The current record](../docs/testing/mobile-reader-workflows.md) separates real
+Chrome/Tailscale transfers and controls, HTTP presentation peers, focused checks,
+failed collections, the separately approved completed one-call partial Ask and
+unmeasured physical/native routes. Input, inherited-capability and cleanup
+qualifications remain explicit; member closeout is still pending.

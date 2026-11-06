@@ -42,21 +42,21 @@
 html, body { margin: 0; padding: 0; }
 body { background: var(--canvas); color: var(--text-primary); }
 #root { min-height: 100vh; }
-button, input, select { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
 a { color: var(--accent); }
 :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 .shell { display: flex; min-height: 100vh; }
-.shell-sidebar { width: 224px; flex: 0 0 auto; background: var(--surface); border-right: 1px solid var(--border); padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; }
+.shell-sidebar { width: 224px; flex: 0 0 auto; background: var(--surface); border-right: 1px solid var(--border); padding: max(16px, env(safe-area-inset-top)) 12px max(16px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); display: flex; flex-direction: column; gap: 4px; }
 .shell-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
-.shell-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 24px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.shell-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: max(12px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) 12px max(24px, env(safe-area-inset-left)); background: var(--surface); border-bottom: 1px solid var(--border); }
 .shell-brand { font-weight: 700; font-size: 1.05rem; margin: 0; }
 .service-indicator { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 0.875rem; }
 .service-state { padding: 2px 10px; border: 1px solid var(--border); border-radius: 999px; white-space: nowrap; }
 .service-state[data-state="verified"] { color: var(--accent); border-color: var(--accent); }
 .service-state[data-state="degraded"], .service-state[data-state="checking"] { color: var(--warning-text); border-color: var(--warning-text); }
 .service-state[data-state="incompatible"] { color: var(--danger-text); border-color: var(--danger-text); }
-.shell-content { padding: 24px; flex: 1 1 auto; min-width: 0; }
+.shell-content { padding: 24px max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) 24px; flex: 1 1 auto; min-width: 0; }
 
 .nav-group-label { font-size: 0.75rem; letter-spacing: 0.08em; color: var(--text-secondary); margin: 12px 8px 4px; }
 .nav-link { display: block; padding: 8px 12px; border-radius: 8px; text-decoration: none; color: var(--text-primary); min-width: 44px; min-height: 44px; line-height: 1.4; }
@@ -71,7 +71,7 @@ a { color: var(--accent); }
 .hint { color: var(--text-secondary); font-size: 0.875rem; }
 .muted-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.85rem; background: var(--surface-muted); border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; word-break: break-all; }
 
-.banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 24px; font-size: 0.9rem; }
+.banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: max(12px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) 12px max(24px, env(safe-area-inset-left)); font-size: 0.9rem; }
 .banner[data-tone="warning"] { background: var(--warning-surface); color: var(--warning-text); }
 .banner[data-tone="danger"] { background: var(--danger-surface); color: var(--danger-text); }
 .banner p { margin: 0; }
@@ -85,7 +85,9 @@ button:hover:not(:disabled) { background: var(--surface-muted); }
 button:disabled { color: var(--text-secondary); cursor: not-allowed; opacity: 0.6; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
 button.primary:hover:not(:disabled) { filter: brightness(1.05); }
-input[type="text"] { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-height: 44px; width: 100%; }
+input[type="text"], input[type="search"], input[type="number"], input:not([type]) { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-height: 44px; width: 100%; max-width: 100%; box-sizing: border-box; }
+textarea { max-width: 100%; box-sizing: border-box; }
+summary { min-height: 44px; min-width: 44px; padding: 8px 12px; cursor: pointer; box-sizing: border-box; }
 /* Selects opt out of system appearance so the shared 44px control floor is a
    real box on every client: measured 23px before in the native viewer and
    ~45px after this change. A currentColor gradient draws the themed chevron
@@ -123,17 +125,17 @@ label.choice input { width: 18px; height: 18px; }
 .narrow-only { display: none; }
 @media (min-width: 768px) and (max-width: 1279px) {
   /* Tablet: compact navigation rail; the reader stays primary. */
-  .shell-sidebar { width: 72px; flex: 0 0 auto; padding: 12px 8px; }
+  .shell-sidebar { width: 72px; flex: 0 0 auto; padding: max(12px, env(safe-area-inset-top)) 8px max(12px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
   .nav-group-label { display: none; }
   .nav-link { padding: 10px 6px; text-align: center; }
-  .shell-content { padding: 16px; }
+  .shell-content { padding: 16px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) 16px; }
 }
 @media (max-width: 767px) {
   .shell { flex-direction: column; }
-  .shell-sidebar { width: auto; flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--border); padding: 8px; padding-left: max(8px, env(safe-area-inset-left)); padding-right: max(8px, env(safe-area-inset-right)); }
+  .shell-sidebar { width: auto; flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--border); padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 8px max(8px, env(safe-area-inset-left)); }
   .nav-group-label { display: none; }
   .nav-link { padding: 6px 10px; }
-  .shell-content { padding: 16px; padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+  .shell-content { padding: 16px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
   .shell-header { flex-wrap: wrap; }
   .service-indicator { min-width: 0; flex-wrap: wrap; }
   .panel { min-width: 0; overflow-wrap: anywhere; }
@@ -156,7 +158,7 @@ label.choice input { width: 18px; height: 18px; }
 .reader-side li a, .reader-side li button.link { min-height: 44px; display: inline-flex; align-items: center; }
 .reader-side li a[aria-current="page"] { font-weight: 700; color: var(--accent); }
 .reader-content { min-width: 0; }
-.reader-actions { margin-bottom: 1rem; }
+.reader-actions, .reader-secondary-actions { margin-bottom: 1rem; }
 .reader-context { min-width: 0; overflow-wrap: anywhere; }
 .region-outline { margin-bottom: 1rem; padding: .75rem; background: var(--surface-muted); border: 1px solid var(--border); border-radius: .5rem; }
 .region-outline h3 { margin: 0 0 .5rem; font-size: .95rem; }
@@ -203,7 +205,7 @@ label.choice input { width: 18px; height: 18px; }
 }
 @media (min-width: 768px) and (max-width: 1279px) {
   /* Tablet: the Context dialog overlays the reader (modal, background inert). */
-  dialog.reader-context:modal { position: fixed; top: 0; right: 0; bottom: 0; left: auto; width: min(340px, 92vw); height: 100dvh; max-height: none; margin: 0; z-index: 30; overflow: auto; padding: 1rem; padding-right: max(1rem, env(safe-area-inset-right)); background: var(--surface, #fff); border-left: 1px solid var(--border); border-radius: 0; box-shadow: -8px 0 24px rgb(0 0 0 / .18); }
+  dialog.reader-context:modal { position: fixed; top: 0; right: 0; bottom: 0; left: auto; width: min(340px, 92vw); height: 100dvh; max-height: none; margin: 0; z-index: 30; overflow: auto; padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)); background: var(--surface, #fff); border-left: 1px solid var(--border); border-radius: 0; box-shadow: -8px 0 24px rgb(0 0 0 / .18); }
   dialog.reader-context:modal::backdrop { background: rgb(0 0 0 / .25); }
 }
 @media (max-width: 767px) {
@@ -212,9 +214,9 @@ label.choice input { width: 18px; height: 18px; }
   .reader-body { grid-template-columns: minmax(0, 1fr); }
   .reader-content { grid-column: 1; grid-row: 1; }
   .reader-actions { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10; background: var(--canvas); padding: .5rem 0; border-bottom: 1px solid var(--border); }
-  dialog.reader-side:modal { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-height: none; margin: 0; z-index: 40; overflow: auto; border-radius: 0; padding: 1rem; padding-top: max(1rem, env(safe-area-inset-top)); }
+  dialog.reader-side:modal { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-height: none; margin: 0; z-index: 40; overflow: auto; border-radius: 0; padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)); }
   dialog.reader-side:modal::backdrop { background: rgb(0 0 0 / .3); }
-  dialog.reader-context:modal { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-height: none; margin: 0; z-index: 40; overflow: auto; padding: 1rem; padding-top: max(1rem, env(safe-area-inset-top)); background: var(--surface, #fff); border-radius: 0; }
+  dialog.reader-context:modal { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-height: none; margin: 0; z-index: 40; overflow: auto; padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)); background: var(--surface, #fff); border-radius: 0; }
   dialog.reader-context:modal::backdrop { background: rgb(0 0 0 / .3); }
   .reader-frame { height: max(10rem, calc(100dvh - 15rem)); }
 }
@@ -242,7 +244,7 @@ label.choice input { width: 18px; height: 18px; }
 .versions-screen td, .versions-screen th { padding: .6rem; text-align: left; vertical-align: top; min-width: 10rem; }
 .versions-screen pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .versions-texts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1rem; }
-.versions-screen select, .reader-actions input { max-width: 100%; }
+.versions-screen select, .reader-secondary-actions input, .reader-actions input { max-width: 100%; }
 
 /* Saved note controls remain separate, readable rows in the narrow Reader Sheet. */
 .notes-panel, .annotation-editor { display: grid; gap: 1rem; min-width: 0; }
@@ -254,14 +256,14 @@ label.choice input { width: 18px; height: 18px; }
 
 /* Host-only lifecycle impact; every item remains reachable on narrow screens. */
 .lifecycle-control button,.lifecycle-control summary{min-width:44px;min-height:44px;padding:10px 14px;cursor:pointer}
-.lifecycle-dialog{max-width:min(700px,calc(100vw - 24px));max-height:calc(100dvh - 32px);overflow:auto;padding:16px;border:1px solid var(--border);border-radius:8px}
+.lifecycle-dialog{max-width:min(700px,calc(100vw - 24px));max-height:calc(100dvh - 32px);overflow:auto;padding:max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));border:1px solid var(--border);border-radius:8px}
 .lifecycle-dialog li{overflow-wrap:anywhere;margin-block:8px}.lifecycle-dialog dl>div{display:flex;gap:16px}.lifecycle-dialog dd{margin:0}
-@media(max-width:767px){.lifecycle-dialog{width:calc(100vw - 16px);max-height:calc(100dvh - 16px);padding:12px}}
+@media(max-width:767px){.lifecycle-dialog{width:calc(100vw - 16px);max-height:calc(100dvh - 16px);padding:max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left))}}
 
 .backup-screen { min-width: 0; overflow-wrap: anywhere; }
 .backup-screen pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .backup-screen button { min-height: 44px; }
-.note-confirmation { overflow-wrap: anywhere; max-width: min(36rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow-y: auto; }
+.note-confirmation { overflow-wrap: anywhere; max-width: min(36rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow-y: auto; padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)); }
 .note-confirmation button { white-space: normal; }
 
 
@@ -274,7 +276,7 @@ label.choice input { width: 18px; height: 18px; }
 .note-context-controls button { min-width: 44px; min-height: 44px; }
 
 /* Generation uses the existing modal sheet and ordinary shared controls. */
-.generation-sheet { width: min(54rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow: auto; padding: 1.25rem; border: 1px solid var(--border); border-radius: 1rem; background:var(--surface); color:var(--text-primary); }
+.generation-sheet { width: min(54rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow: auto; padding: max(1.25rem, env(safe-area-inset-top)) max(1.25rem, env(safe-area-inset-right)) max(1.25rem, env(safe-area-inset-bottom)) max(1.25rem, env(safe-area-inset-left)); border: 1px solid var(--border); border-radius: 1rem; background:var(--surface); color:var(--text-primary); }
 .generation-sheet::backdrop { background: rgb(0 0 0 / .45); }
 .generation-sheet header { display:flex; justify-content:space-between; align-items:center; gap:1rem; }
 .generation-sheet label { display:flex; flex-direction:column; gap:.4rem; margin-block:.7rem; min-width:0; }

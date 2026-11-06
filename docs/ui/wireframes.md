@@ -127,3 +127,7 @@ The counts are fictional. A stale preview cannot authorize a changed operation. 
 | Return destination | Exact document/version/page/query/fragment/region route | Resume after successful session check |
 
 The short-lived pairing secret stays out of the URL. Reloads, new tabs and ordinary browser restarts reuse the remembered owner session. Page location is preserved independently from authentication credentials.
+
+## Current TASK-007-03 implementation overlay
+
+The implemented phone Files/Context row is compact and sticky; secondary actions remain in flow. Tablet Context uses the selected modal overlay, preserving the same viewer. Maintenance/job shells identify unavailable scanning and useful navigation without fabricating findings. Provider outage, feature absence and unavailable account transport remain distinct. These are bounded current behaviors, not approval of the complete sample wireframes. [Executed scope](../testing/mobile-reader-workflows.md) separates controlled presentation from the separately approved completed one-call partial Ask, retaining input/cleanup limits and pending member closeout.

@@ -25,14 +25,40 @@ const reasons: Record<string, string> = {
   initialize_failed: "로컬 제공자 연결을 시작할 수 없습니다",
   transport_unavailable: "로컬 제공자 연결을 사용할 수 없습니다",
 };
-export function ProviderScreen({ controller }: { controller: ShellController }) {
-  const busy = useRef(true);
+export function ProviderScreen({ controller, initialProbeAllowed }: { controller: ShellController; initialProbeAllowed: boolean }) {
+  const verified = controller.state.phase === "verified";
+  const busy = useRef(false);
+  const sawDegraded = useRef(!initialProbeAllowed || (!verified && controller.state.phase !== "checking"));
+  const probedAuthority = useRef<string | null>(null);
+  const lastRefresh = useRef(0);
   const [status, setStatus] = useState<ProviderStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(verified);
   const authority = `${controller.state.capabilities?.library_id}:${controller.state.capabilities?.runtime_generation}:${controller.state.session?.principal_id}`;
+  const genEnabled = Boolean(controller.state.capabilities?.features.generation);
+  const askEnabled = Boolean(controller.state.capabilities?.features.questions);
   useEffect(() => {
+    if (!verified) {
+      if (controller.state.phase !== "checking") {
+        sawDegraded.current = true;
+      }
+      busy.current = false;
+      setLoading(false);
+      setStatus(null);
+      setError(null);
+      return;
+    }
+    const explicitRefresh = refresh !== lastRefresh.current;
+    const authorityChanged = probedAuthority.current !== authority;
+    if (!explicitRefresh && (sawDegraded.current || !authorityChanged)) {
+      busy.current = false;
+      setLoading(false);
+      return;
+    }
+    lastRefresh.current = refresh;
+    sawDegraded.current = false;
+    probedAuthority.current = authority;
     let active = true;
     busy.current = true;
     setLoading(true);
@@ -41,16 +67,20 @@ export function ProviderScreen({ controller }: { controller: ShellController }) 
     void controller.client.providerStatus().then(value => { if (active) setStatus(value); })
       .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); })
       .finally(() => { if (active) { busy.current = false; setLoading(false); } });
-    return () => { active = false; };
-  }, [controller, authority, refresh]);
+    return () => {
+      active = false;
+      busy.current = false;
+    };
+  }, [controller, authority, refresh, verified]);
   return <section className="screen" data-provider-screen>
     <h1>AI 제공자</h1>
     <p>호스트의 Codex 구독 연결 상태입니다. 서비스 기능 지원과 계정 준비는 별개입니다.</p>
-    <p>생성 {controller.state.capabilities?.features.generation?"지원됨":"제공되지 않음"} · 질문 {controller.state.capabilities?.features.questions?"지원됨":"제공되지 않음"}. 연결 확인은 요청의 완료나 원본 접근을 보장하지 않습니다.</p>
-    <button type="button" aria-disabled={loading} onClick={() => { if (busy.current) return; busy.current = true; setRefresh(value => value + 1); }}>제공자 상태 새로 고침</button>
-    <p role="status" aria-live="polite" aria-atomic="true">{loading ? "제공자 상태 확인 중…" : error ? "제공자 상태 확인 실패" : status ? labels[status.state] : "연결 상태를 확인할 수 없습니다"}</p>
+    <p>생성 {genEnabled?"지원됨":"제공되지 않음"} · 질문 {askEnabled?"지원됨":"제공되지 않음"}. 연결 확인은 요청의 완료나 원본 접근을 보장하지 않습니다.</p>
+    {controller.state.capabilities && !genEnabled && !askEnabled && <p data-provider-feature-absence>현재 이 서비스에서는 생성과 질문 기능이 모두 제공되지 않습니다. 이는 서비스 기능 설정에 따른 것이며 호스트 Codex 계정 로그인이나 사용량 문제와는 별개입니다.</p>}
+    <button type="button" aria-disabled={!verified || loading} onClick={() => { if (!verified || busy.current) return; busy.current = true; setRefresh(value => value + 1); }}>제공자 상태 새로 고침</button>
+    <p role="status" aria-live="polite" aria-atomic="true">{!verified ? "서비스 연결이 확인되지 않아 현재 제공자 준비 상태를 확인할 수 없습니다. 연결 복구 후 새로 고침하세요." : loading ? "제공자 상태 확인 중…" : error ? "제공자 상태 확인 실패" : status ? labels[status.state] : "연결 상태를 확인할 수 없습니다"}</p>
     {error && <p role="alert">{error}</p>}
-    {status && <div data-provider-status>
+    {verified && status && <div data-provider-status>
       <h2>Codex</h2><p data-provider-state>{labels[status.state]}</p>
       {status.reason && <p data-provider-reason>{reasons[status.reason] ?? "호스트에서 제공자 상태를 확인하세요"}</p>}
       <dl><dt>로그인 방식</dt><dd>{status.authentication_mode === "chatgpt" ? "ChatGPT 구독" : status.authentication_mode === "apiKey" ? "API 키 로그인 (지원되지 않음)" : "확인되지 않음"}</dd>

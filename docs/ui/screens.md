@@ -272,3 +272,7 @@ SERVICE_RECOVERING` or network error after dispatch, or if receipt lookup return
 `404` or fails, the original `operation_id` remains `UNKNOWN` until an authorized
 same-owner session reconciles the receipt via `GET /api/v1/operations/{id}`. See
 [private device session evidence](../testing/private-device-sessions.md).
+
+## Responsive host implementation (TASK-007-03)
+
+Reader keeps the existing full-height native Files/Context dialogs and tablet overlay. Phone secondary actions do not fill the sticky row. Ask progress/errors remain near the composer during draft, history and recovery states. Provider clears ready presentation on lost service verification; the shell retains outage history when keyed screens are replaced, requiring explicit refresh after reconnection. Maintenance/job unavailable shells offer disabled scanning and useful navigation, with separate disconnected copy. [The current workflow record](../testing/mobile-reader-workflows.md) owns measured web behavior, presentation peers and unqualified physical/native environments.

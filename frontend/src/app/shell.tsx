@@ -8,7 +8,7 @@ import { parseRegionIntent } from "./screens/reader-navigation.ts";
 // Trusted application shell: navigation, service indicator, route screens and
 // the connection-state banner. Screens without an implementing owner render a
 // truthful not-implemented placeholder; capability absence is never faked.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NOTICE, ShellController } from "../client/controller.ts";
 import type { ShellState } from "../client/controller.ts";
 import { ConnectScreen } from "./connect.tsx";
@@ -111,18 +111,66 @@ function Banner({ state, controller }: { state: ShellState; controller: ShellCon
   return cleanup || authBanner;
 }
 
-function PlaceholderScreen({ screen }: { screen: ScreenId }) {
+function PlaceholderScreen({ screen, controller }: { screen: ScreenId; controller: ShellController }) {
+  const isMaintenance = screen === "maintenance" || screen === "job";
+  const verified = controller.state.phase === "verified";
   return (
-    <section className="panel">
+    <section className="panel" data-placeholder-screen={screen}>
       <h1>{SCREEN_TITLES[screen]}</h1>
-      <p>이 화면은 아직 구현되지 않았습니다.</p>
-      <p className="placeholder-note">
-        아래에서 다른 화면으로 이동하거나, 연결 화면에서 연결 상태를 확인할 수 있습니다.
-      </p>
+      {isMaintenance ? (
+        <>
+          <p data-maintenance-unavailable>
+            자동·수동 정비 스캔과 점검 보고서 기능은 현재 제공되지 않습니다.
+          </p>
+          <p className="placeholder-note">
+            {verified
+              ? "이 안내 화면은 정비 기능 미제공 상태를 나타내며, AI 제공자 계정 상태나 서비스 연결 이상이 아닙니다. 아래에서 홈이나 서재로 이동해 문서를 읽고 관리할 수 있습니다."
+              : "현재 서비스 연결이 확인되지 않았습니다. 상단 안내에서 연결을 다시 확인하거나 연결 화면으로 이동할 수 있습니다."}
+          </p>
+          <div className="form-row">
+            <button type="button" data-maintenance-scan-disabled disabled>
+              정비 스캔 실행 (제공되지 않음)
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p>이 화면은 아직 구현되지 않았습니다.</p>
+          <p className="placeholder-note">
+            아래에서 다른 화면으로 이동하거나, 연결 화면에서 연결 상태를 확인할 수 있습니다.
+          </p>
+        </>
+      )}
       <div className="form-row">
         <button type="button" className="primary" onClick={() => navigate("/")}>
           홈으로
         </button>
+        {isMaintenance && (
+          <>
+            <a
+              className="action-link"
+              href="/library"
+              onClick={(event) => {
+                if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                navigate("/library");
+              }}
+            >
+              서재 열기
+            </a>
+            <a
+              className="action-link"
+              href="/settings/ai"
+              onClick={(event) => {
+                if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                navigate("/settings/ai");
+              }}
+            >
+              AI 제공자
+            </a>
+          </>
+        )}
         {screen === "settings" && (
           <>
             <a
@@ -178,6 +226,12 @@ function ReaderRoute({ controller, path }: { controller: ShellController; path: 
 
 export function App({ controller }: { controller: ShellController }) {
   const [state, setState] = useState<ShellState>(controller.state);
+  // Initial identity can be absent during an outage. Its later verification
+  // replaces the keyed screen, so keep the no-reconnect-probe policy here.
+  const providerWasDisconnected = useRef(false);
+  useEffect(() => {
+    if (state.phase === "degraded") providerWasDisconnected.current = true;
+  }, [state.phase]);
   const { route, url } = useShellRoute();
 
   useEffect(() => controller.subscribe(setState), [controller]);
@@ -273,14 +327,14 @@ export function App({ controller }: { controller: ShellController }) {
             <SourcesScreen key={route.path.split("/")[2]} controller={controller} projectId={route.path.split("/")[2]!} />
           ) : screen === "settings" && route.section === "projects" ? (
             <SourceSettings key={new URLSearchParams(location.search).get("project")} controller={controller} projectId={new URLSearchParams(location.search).get("project")!} />
-          ) : screen === "settings" && route.section === "ai" ? (<ProviderScreen controller={controller} />
+          ) : screen === "settings" && route.section === "ai" ? (<ProviderScreen controller={controller} initialProbeAllowed={!providerWasDisconnected.current} />
           ) : screen === "settings" && route.section === "sessions" ? (
             <SessionsScreen controller={controller} />
           ) : screen === "settings" && route.section === "backup" ? (<BackupScreen controller={controller} />
 ) : screen === "settings" && route.section === "storage" ? (
             <StorageScreen controller={controller} />
           ) : (
-            <PlaceholderScreen screen={screen} />
+            <PlaceholderScreen screen={screen} controller={controller} />
           )}
         </main>
       </div>

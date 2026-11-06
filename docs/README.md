@@ -277,8 +277,9 @@ review predates the verified local correction and retains its original result.
 Retained real-provider, semantic, Reader/browser and native observations keep
 their individual qualifications. Current common and affected documentation
 checks do not establish physical private-device use or complete Stage A.
-EPIC-007 remains in progress. TASK-007-01 has completed its bounded private-web
-member delivery; TASK-007-02 is the next ordered owner. The
+EPIC-007 remains in progress. TASK-007-01 and TASK-007-02 have completed their
+bounded member deliveries and verified commits/native handoffs. TASK-007-03 has completed its bounded web member; TASK-007-04 follows its
+verified normal commit/native handoff. The
 [2026-11-05 owner direction](decisions.md#owner-amendment-2026-11-05-web-only-epic-007-execution)
 selects actual Tailscale web verification for this run and excludes physical
 mobile verification. Original second-device and Stage A assertions retain their
@@ -305,3 +306,17 @@ delivery cookie lifecycle, and post-commit `401` (`SESSION_EXPIRED` /
 `SESSION_REVOKED`) `UNKNOWN` receipt reconciliation. Same-host Tailscale web
 verification remains separate from physical second-device/mobile and Stage A
 qualification.
+
+## Responsive private-web workflows (TASK-007-03)
+
+The bounded Reader/control changes and independent private-web checks are
+recorded in [responsive workflow evidence](testing/mobile-reader-workflows.md). Files/Context
+remain native dialogs; compact phone sticky actions, safe-area/control typography,
+always-mounted Ask progress and reconnect-safe Provider presentation are current.
+Actual import/download/context/Notes/Review and controlled Ask presentation retain
+their stated scope. One separately approved real application Ask saved a useful
+partial answer through the designated Aside account, with one attempt and exact
+retained-source reads; its input/cleanup qualifications remain in the record.
+Independent result composition and delegated member acceptance are complete;
+the normal completion commit/native handoff precedes Task04. Physical mobile, Wails GUI and whole Stage A remain
+unqualified under the current web-only owner direction.

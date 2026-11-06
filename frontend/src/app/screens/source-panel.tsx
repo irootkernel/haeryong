@@ -215,7 +215,7 @@ export function EvidenceRow(props: {
     </button>
     {source !== null && <p className="muted">소스 {source.id}({source.kind ?? "알 수 없음"}{typeof source.release_label === "string" && source.release_label !== "" ? `, ${source.release_label}` : ""}{typeof source.exact_revision === "string" ? `, ${source.exact_revision.slice(0, 12)}…` : ""})</p>}
     {expanded && <div className="evidence-detail">
-      {typeof evidence.bytes_sha256 === "string" && <label><input type="checkbox" checked={compareDigest} disabled={check?.phase === "loading" || check?.phase === "pending"} onChange={(event) => setCompareDigest(event.target.checked)} />작성자 선언 다이제스트와 비교</label>}
+      {typeof evidence.bytes_sha256 === "string" && <label className="choice"><input type="checkbox" checked={compareDigest} disabled={check?.phase === "loading" || check?.phase === "pending"} onChange={(event) => setCompareDigest(event.target.checked)} />작성자 선언 다이제스트와 비교</label>}
       <p><button type="button" disabled={!enabled || check?.phase === "loading"} onClick={() => onVerify(compareDigest)}>{check?.phase === "pending" ? "원래 작업 결과 다시 확인" : check?.phase === "loading" ? "출처 근거 확인 중…" : "출처 근거 확인"}</button></p>
       {check?.reason && <p role="alert">{check.reason}</p>}
       {check?.result && <p role="status">확인 결과: {outcomeLabel(check.result.outcome)} · 확인 {check.result.checked_at ?? "시간 없음"} · 검증 {check.result.verified_at ?? "없음"}{check.result.reason ? ` · 사유 ${check.result.reason}` : ""}</p>}

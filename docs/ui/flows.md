@@ -138,8 +138,12 @@ literal inline spans in a wrapping noneditable scroll area. Start, End, Select t
 reading actions; they do not save, discard, reattach or confirm a Note mutation.
 Typing and responsive resize retain a still-authorized view. Closing, changing
 the active reader scope or losing current authority retires the owned read and
-its protected presentation. Complete large-context access and focus/cancellation
-execution remain unqualified. Selection.toString() is a rendered serialization observation for the three
+its protected presentation. At the earlier owner-records checkpoint, complete large-context access and
+focus/cancellation execution remained unqualified. Selection.toString() is a rendered serialization observation for the three
 identified terminal-newline workloads; complete decoded DOM and actual selected
 Range text/global offsets remain required for every interval; the
 [Task6 record](../testing/owner-records.md) records the unresolved boundary.
+
+## Current responsive execution scope (TASK-007-03)
+
+Actual Tailscale browser reading, large display context, exact Notes and whole-version Review, host lifecycle confirmation cancellation and represented import/download paths have bounded executed proof. A controlled Question peer verifies UI preparation and saved stream presentation; it supplies no real Ask or semantic-source judgment. Provider reconnect waits for explicit refresh even after keyed owner-screen replacement. [Current workflow evidence](../testing/mobile-reader-workflows.md) preserves failed collections, focused applicability and the separately approved completed one-call partial application Ask with its input/cleanup limits; physical mobile/IME and release targets stay unqualified.

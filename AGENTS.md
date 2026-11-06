@@ -263,8 +263,9 @@ review predates the verified local correction and retains its original result.
 Retained real-provider, semantic, Reader/browser and native observations keep
 their individual qualifications. Current common and affected documentation
 checks do not establish physical private-device use or complete Stage A.
-EPIC-007 remains in progress. TASK-007-01 has completed its bounded private-web
-member delivery; TASK-007-02 is the next ordered owner. The
+EPIC-007 remains in progress. TASK-007-01 and TASK-007-02 have completed their
+bounded member deliveries and verified commits/native handoffs. TASK-007-03 has completed its bounded web member; TASK-007-04 follows its
+verified normal commit/native handoff. The
 [2026-11-05 owner direction](docs/decisions.md#owner-amendment-2026-11-05-web-only-epic-007-execution)
 selects actual Tailscale web verification for this run and excludes physical
 mobile verification. Original second-device and Stage A assertions retain their
@@ -293,3 +294,17 @@ The bounded Task02 member is accepted under delegation. Its record preserves the
 format-only failed full aggregate and the passing affected-prepare/current-check
 composition, with actual private-web proof. TASK-007-03 follows the verified
 normal completion commit and native finalization; physical Stage A stays unclaimed.
+
+## Responsive private-web workflows (TASK-007-03)
+
+The bounded Reader/control changes and independent private-web checks are
+recorded in [responsive workflow evidence](docs/testing/mobile-reader-workflows.md). Files/Context
+remain native dialogs; compact phone sticky actions, safe-area/control typography,
+always-mounted Ask progress and reconnect-safe Provider presentation are current.
+Actual import/download/context/Notes/Review and controlled Ask presentation retain
+their stated scope. One separately approved application Ask saved a useful
+partial answer with one attempt and exact retained-source reads. The evidence
+record preserves input, capability and cleanup qualifications. Independent
+result composition and delegated bounded member acceptance are complete; the
+normal completion commit/native handoff precedes Task04. Physical mobile, Wails GUI and whole Stage A remain
+unqualified under the current web-only owner direction.
