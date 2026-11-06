@@ -85,6 +85,13 @@ The complete directory need not fit in browser memory before its first page open
 
 ## Source and provider availability
 
+[The headless-source record](../testing/headless-source-boundaries.md) exercises
+the normal embedded service through private HTTPS after owned original source
+and import directories are removed. Current source failure, retained snapshot
+availability and historical provider permission evidence remain separate. It
+records same-Mac web scope, not clean-machine installation or another platform.
+
+
 Reading saved explanations requires a reachable daemon/content store. Source-grounded Q&A also needs the selected exact source and a supported provider route. Project/source/provider selections are remembered; a routine read does not prompt again. A missing provider does not prevent reading saved content.
 
 Pinned retained evidence may remain usable while its checkout is offline, but it does not become the current working copy. Show source identity, availability, bytes origin and limits separately. A phone cannot access a sleeping laptop repository merely because it reaches Haeryong. A current-source request without that source remains unavailable rather than silently substituting an old snapshot.

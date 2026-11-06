@@ -341,3 +341,27 @@ finalization and the retained-output handoff precede TASK-007-05; no Master
 overall Epic acceptance is claimed.
 Physical mobile, second-device and Wails GUI qualification remain excluded for
 this owner-amended web run.
+
+## Headless source and provider boundaries (TASK-007-05)
+
+[Headless source evidence](docs/testing/headless-source-boundaries.md) records the normal
+untagged embedded service from a non-repository CWD, complete sourced and
+metadata-absent multi-page private-web reading after owned source/import removal
+and restart, current missing-source zero-dispatch Question, independent retained
+snapshot reads and honest posthoc/source/provider presentation. Production code
+and schema stay unchanged. Current backend acquisition and same-fixture actual
+Tailscale browser continuation compose with their original failures; no fresh
+whole-driver aggregate or new real-provider call is claimed. Browser/daemon
+cleanup and complete Serve restoration passed. Physical/mobile/Wails GUI and
+whole Stage A retain the current owner direction; canonical Task lifecycle and
+TASK-007-06 keep their ordered acceptance and assembled-gate ownership.
+
+
+The original Task Evaluator confirmed the finite exact-selection/approved-root
+proof and driver/record corrections. Original Task Operator and scoped Epic
+contribution coverage remain applicable; strict current composition has no due
+gap. Coordinator delegated bounded member acceptance is complete. Normal local
+commit/native finalization and retained-output handoff precede TASK-007-06.
+Original failures, unchanged-product common and historical provider proof keep
+their individual scope; full physical Stage A and Master overall acceptance
+remain unclaimed.
