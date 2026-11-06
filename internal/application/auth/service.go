@@ -116,6 +116,35 @@ func (s *Service) authenticateTx(tx app.WriteTx, token string, touch bool) (doma
 	}
 	return record, err
 }
+
+type passiveReadKey struct{}
+
+// WithPassiveRead marks a read-only request context so current session validation
+// suppresses last_seen_at / idle_expires_at renewal while still enforcing full
+// current revocation, auth_epoch, idle-expiry, absolute-expiry and scope checks.
+func WithPassiveRead(ctx context.Context) context.Context {
+	return context.WithValue(ctx, passiveReadKey{}, true)
+}
+
+// IsPassiveRead reports whether ctx suppresses session idle-window renewal.
+func IsPassiveRead(ctx context.Context) bool {
+	v, _ := ctx.Value(passiveReadKey{}).(bool)
+	return v
+}
+
+// ValidatePassiveRead validates Haeryong-Passive-Read header values on an HTTP request.
+// Only a single value "1" on GET or HEAD is valid; any other value, duplicate header,
+// or non-GET/HEAD method returns sec.ErrInvalid before touching session state.
+func ValidatePassiveRead(ctx context.Context, method string, values []string) (context.Context, error) {
+	if len(values) == 0 {
+		return ctx, nil
+	}
+	if len(values) != 1 || values[0] != "1" || (method != "GET" && method != "HEAD") {
+		return ctx, sec.ErrInvalid
+	}
+	return WithPassiveRead(ctx), nil
+}
+
 func (s *Service) Authenticate(ctx context.Context, token string) (domain.Session, error) {
 	return s.checkSession(ctx, token, true)
 }
@@ -123,6 +152,7 @@ func (s *Service) AuthenticatePassive(ctx context.Context, token string) (domain
 	return s.checkSession(ctx, token, false)
 }
 func (s *Service) checkSession(ctx context.Context, token string, touch bool) (domain.Session, error) {
+	touch = touch && !IsPassiveRead(ctx)
 	var record domain.Session
 	err := s.Store.Write(ctx, func(tx app.WriteTx) error { var e error; record, e = s.authenticateTx(tx, token, touch); return e })
 	return record, err
@@ -210,7 +240,7 @@ func (s *Service) pairings(ctx context.Context, token string, bootstrap bool) ([
 	out := []domain.Pairing{}
 	err := s.Store.Write(ctx, func(tx app.WriteTx) error {
 		if !bootstrap {
-			if record, e := s.authenticateTx(tx, token, true); e != nil {
+			if record, e := s.authenticateTx(tx, token, !IsPassiveRead(ctx)); e != nil {
 				return e
 			} else if record.Scope.Kind != "owner" {
 				return domain.ErrDenied
@@ -313,7 +343,7 @@ func (s *Service) decide(ctx context.Context, token string, d domain.PairingDeci
 func (s *Service) Sessions(ctx context.Context, token string) ([]domain.Session, error) {
 	out := []domain.Session{}
 	err := s.Store.Write(ctx, func(tx app.WriteTx) error {
-		if record, e := s.authenticateTx(tx, token, true); e != nil {
+		if record, e := s.authenticateTx(tx, token, !IsPassiveRead(ctx)); e != nil {
 			return e
 		} else if record.Scope.Kind != "owner" {
 			return domain.ErrDenied
@@ -415,7 +445,7 @@ func (s *Service) Health(ctx context.Context, token string) (domain.Health, erro
 func (s *Service) Operation(ctx context.Context, token, id string) (domain.Receipt, error) {
 	var out domain.Receipt
 	err := s.Store.Write(ctx, func(tx app.WriteTx) error {
-		a, e := s.authenticateTx(tx, token, true)
+		a, e := s.authenticateTx(tx, token, !IsPassiveRead(ctx))
 		if e != nil {
 			return e
 		}
@@ -449,7 +479,7 @@ func (s *Service) Operation(ctx context.Context, token, id string) (domain.Recei
 func (s *Service) Job(ctx context.Context, token, id string) (domain.Job, error) {
 	var out domain.Job
 	err := s.Store.Write(ctx, func(tx app.WriteTx) error {
-		record, e := s.authenticateTx(tx, token, true)
+		record, e := s.authenticateTx(tx, token, !IsPassiveRead(ctx))
 		if e != nil {
 			return e
 		}
@@ -467,7 +497,7 @@ func (s *Service) Job(ctx context.Context, token, id string) (domain.Job, error)
 func (s *Service) Jobs(ctx context.Context, token string) ([]domain.Job, error) {
 	var out []domain.Job
 	err := s.Store.Write(ctx, func(tx app.WriteTx) error {
-		record, e := s.authenticateTx(tx, token, true)
+		record, e := s.authenticateTx(tx, token, !IsPassiveRead(ctx))
 		if e != nil {
 			return e
 		}

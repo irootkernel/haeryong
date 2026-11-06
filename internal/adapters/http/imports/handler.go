@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	appauth "haeryong.local/haeryong/internal/application/auth"
 	generation "haeryong.local/haeryong/internal/application/generation"
 	importer "haeryong.local/haeryong/internal/application/import"
 	"haeryong.local/haeryong/internal/application/questions"
@@ -42,6 +43,12 @@ func (h *handler) Handles(r *http.Request) bool {
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if ctx, err := appauth.ValidatePassiveRead(r.Context(), r.Method, r.Header.Values("Haeryong-Passive-Read")); err != nil {
+		fail(w, err)
+		return
+	} else {
+		r = r.WithContext(ctx)
+	}
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if _, err := h.core.Auth.Authenticate(r.Context(), token); err != nil {
 		fail(w, err)

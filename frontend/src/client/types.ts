@@ -124,6 +124,8 @@ export interface OperationView {
   result_ref: unknown;
   job_id: string | null;
   result_metadata: unknown;
+  result_etag?: string | null;
+  error?: { code?: string; message?: string; retryable?: boolean; details?: Record<string, unknown> } | null;
 }
 
 export type PairingDecisionAction = "approve" | "reject";
@@ -159,9 +161,20 @@ export interface DeviceSession {
   etag?: string;
 }
 
+export interface EventStreamResync {
+  reason: string;
+  stream_epoch: string;
+  head: string;
+  resume_cursor: string;
+}
+
 export interface EventSubscription {
   /** Content-free change hint; callers must re-read under current authority. */
-  onInvalidation?(listener: () => void): () => void;
+  onInvalidation?(listener: () => unknown): () => void;
+  /** Explicit resync required signal when incremental event replay cannot continue or on bootstrap head capture. */
+  onResync?(listener: (resync: EventStreamResync) => unknown): () => void;
+  /** Consumer-acknowledged cursor update after an event or resync frame completes. */
+  onCursor?(listener: (cursor: string) => void): () => void;
   closed: Promise<void>;
   close(): void;
 }
@@ -898,6 +911,8 @@ export interface QuestionView {
 }
 
 export interface HaeryongClient {
+  /** Read-only view that suppresses session idle-window renewal while preserving current authority checks. */
+  passive?(): HaeryongClient;
   consumeContext(binding:{version_id:string;page_path:string|null;render_instance_id:string|null},uploadId:string,operationId:string):Promise<DecisionResult>;
   questionStart(versionId:string,request:QuestionRequest,operationId:string):Promise<QuestionAccepted>;
   questionList(versionId:string,cursor?:string):Promise<ListPage<QuestionView>>;

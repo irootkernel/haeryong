@@ -2,8 +2,8 @@ import {useEffect,useRef,useState} from "react";
 import {createPortal} from "react-dom";
 import type {ShellController} from "../../client/controller.ts";
 import type {AnnotationAnchor,AnnotationView,AnnotationStream,VersionView} from "../../client/types.ts";
-import {ApiError} from "../../client/types.ts";
-import {NoteJournal,prepareNoteBody,definitiveNoteRejection,dispatchNote,noteSaveIntent,noteAnchorChanged,reconcileNoteDraft,dropNoteContext,completeNoteIntent,ownsNoteDraft,noteStreamText,noteComparisonText,noteRecordIdentity,requireNoteRecord,requireNotePending,type NoteDraft,type NoteIntent,type NoteRecord} from "./notes-operations.ts";
+import {ApiError,StaleResponseError} from "../../client/types.ts";
+import {NoteJournal,prepareNoteBody,definitiveNoteRejection,resolveRejectedNoteAction,dispatchNote,noteSaveIntent,noteAnchorChanged,reconcileNoteDraft,dropNoteContext,completeNoteIntent,ownsNoteDraft,noteStreamText,noteComparisonText,noteRecordIdentity,requireNoteRecord,requireNotePending,type NoteDraft,type NoteIntent,type NoteRecord} from "./notes-operations.ts";
 import {Sheet} from "../sheet.tsx";
 import {SafeMarkdown} from "./safe-markdown.tsx";
 import {pinnedReaderURL} from "../routes.ts";
@@ -38,10 +38,14 @@ export function NotesPanel({controller,documentId,anchor,selection=emptySelectio
  const scopeKey=JSON.stringify([owner,documentId,anchor,navigationContext,active,modal,listVersion,scope,selection]);
  const liveScope=useRef(scopeKey);liveScope.current=scopeKey;
  const guardFor=(scoped=false)=>{const authority=controller.captureDispatchAuthority(),generation=life.current,captured=scopeKey,route=location.href,entry=window.history.state?.haeryongReaderContext;return ()=>{controller.requireVerifiedDispatch(authority);if(generation!==life.current||scoped&&(captured!==liveScope.current||route!==location.href||entry!==window.history.state?.haeryongReaderContext))throw Error("이전 노트 화면입니다.");};};
+ const reads=useRef({notes:0,versions:0,history:0,comparison:0}),currentListVersion=useRef(listVersion);currentListVersion.current=listVersion;
+ const readGuardFor=(kind:keyof typeof reads.current="notes")=>{const guard=guardFor(),readGen=controller.readGeneration,version=listVersion,run=++reads.current[kind];return()=>{guard();if(controller.readGeneration!==readGen||currentListVersion.current!==version||reads.current[kind]!==run)throw new StaleResponseError();};};
+ const currentServer=useRef(server);
+ const updateServer=(next:AnnotationView|null)=>{reads.current.comparison++;currentServer.current=next;setServer(next);};
  const eligible=()=>{if(controller.state.capabilities?.features.annotations!==true||controller.state.session?.scope.kind!=="owner")throw Error("소유자 노트 권한을 확인하세요.");};
  const persist=(next:NoteRecord,guard=guardFor())=>{guard();record.current=next;setDraft(next.draft);setPending(next.pending);const store=journal.current;if(!store)return Promise.reject(Error("노트 복구 저장소를 사용할 수 없습니다."));const result=queue.current.then(()=>store.write(next,guard));queue.current=result.catch(()=>{});return result;};
  // Unlike typing, replacement is published only after the real locked write.
- const replaceLocal=(next:NoteRecord,expected:string,guard:()=>void,clearServer=true)=>{guard();requireNoteRecord(record.current,expected);const store=journal.current;if(!store)return Promise.reject(Error("노트 복구 저장소를 사용할 수 없습니다."));const check=()=>{guard();eligible();requireNoteRecord(record.current,expected);};const result=queue.current.then(async()=>{check();await store.write(next,check);check();record.current=next;setDraft(next.draft);setPending(next.pending);if(clearServer)setServer(null);});queue.current=result.catch(()=>{});return result;};
+ const replaceLocal=(next:NoteRecord,expected:string,guard:()=>void,clearServer=true)=>{guard();requireNoteRecord(record.current,expected);const store=journal.current;if(!store)return Promise.reject(Error("노트 복구 저장소를 사용할 수 없습니다."));const check=()=>{guard();eligible();requireNoteRecord(record.current,expected);};const result=queue.current.then(async()=>{check();await store.write(next,check);check();record.current=next;setDraft(next.draft);setPending(next.pending);if(clearServer)updateServer(null);});queue.current=result.catch(()=>{});return result;};
  const dismiss=()=>{returnFocus.current=ticket.current;ticket.current=null;setConfirmation(null);};
  useEffect(()=>{if(ticket.current){try{ticket.current.guard();}catch{dismiss();}}},[scopeKey]);
  useEffect(()=>controller.subscribe(()=>{if(ticket.current){try{ticket.current.guard();}catch{dismiss();}}}),[controller]);
@@ -49,25 +53,222 @@ export function NotesPanel({controller,documentId,anchor,selection=emptySelectio
  const propose=(label:string,detail:string,run:(guard:()=>void)=>Promise<void>,confirmed:boolean)=>{try{if(ticket.current||admitted.current)return;const guard=guardFor(true),expected=noteRecordIdentity(record.current);const scopeGuard=()=>{guard();eligible();if(!active)throw Error("현재 노트 패널을 열어 주세요.");};const check=()=>{scopeGuard();requireNoteRecord(record.current,expected);if(record.current.pending&&!record.current.pending.rejected)throw Error("확인되지 않은 저장 요청을 먼저 확인하세요.");};check();const proposal:NoteConfirmation={label,detail,opener:document.activeElement instanceof HTMLElement?document.activeElement:null,guard:check,scopeGuard,run};if(confirmed){ticket.current=proposal;setConfirmation(proposal);}else void execute(proposal);}catch(e){setIssue(message(e));}};
  const execute=async(proposal:NoteConfirmation)=>{if(admitted.current)return;const mounted=guardFor();try{proposal.guard();admitted.current=true;setBusy(true);await proposal.run(proposal.scopeGuard);}catch(e){try{proposal.scopeGuard();setIssue(message(e));}catch{}}finally{admitted.current=false;try{mounted();setBusy(false);}catch{}}};
  const confirmAction=()=>{const proposal=ticket.current;if(!proposal)return;ticket.current=null;returnFocus.current=proposal;setConfirmation(null);void execute(proposal);};
- useEffect(()=>{++life.current;setRows([]);setServer(null);setHistory([]);setIssue("");try{journal.current=new NoteJournal(localStorage,namespace);const r=journal.current.read();record.current=r;setDraft(r.draft);setPending(r.pending);}catch(e){journal.current=null;setIssue(message(e));}return()=>{life.current++;};},[namespace,owner]);
- useEffect(()=>{if(!enabled)return;let active=true;const guard=guardFor();void controller.client.annotationList(listVersion).then(p=>{guard();if(active){setRows(p.items);setCursor(p.next_cursor);}}).catch(e=>{if(active)setIssue(message(e));});return()=>{active=false;};},[controller,enabled,listVersion,refresh,namespace]);
- useEffect(()=>{let active=true;if(enabled)void controller.client.documentVersions(documentId).then(p=>{if(active){setVersions(p.items);setVersionCursor(p.next_cursor);}}).catch(e=>{if(active)setIssue(message(e));});return()=>{active=false;};},[controller,documentId,enabled,namespace]);
+ useEffect(()=>{++life.current;setRows([]);updateServer(null);setHistory([]);setIssue("");try{journal.current=new NoteJournal(localStorage,namespace);const r=journal.current.read();record.current=r;setDraft(r.draft);setPending(r.pending);}catch(e){journal.current=null;setIssue(message(e));}return()=>{life.current++;};},[namespace,owner]);
+ useEffect(()=>{if(!enabled)return;let active=true;const guard=readGuardFor();void controller.client.annotationList(listVersion).then(p=>{guard();if(active){setRows(p.items);setCursor(p.next_cursor);}}).catch(e=>{if(active&&!(e instanceof StaleResponseError))setIssue(message(e));});return()=>{active=false;};},[controller,enabled,listVersion,refresh,namespace]);
+ useEffect(()=>{let active=true;const guard=readGuardFor("versions");if(enabled)void controller.client.documentVersions(documentId).then(p=>{guard();if(active){setVersions(p.items);setVersionCursor(p.next_cursor);}}).catch(e=>{if(active&&!(e instanceof StaleResponseError))setIssue(message(e));});return()=>{active=false;};},[controller,documentId,enabled,namespace]);
  useEffect(()=>{let active=true;const guard=guardFor();setServerText(null);setComparisonIssue("");if(server)void noteComparisonText(controller.client,server,guard).then(text=>{if(active)setServerText(text);}).catch(e=>{if(active)setComparisonIssue(message(e));});return()=>{active=false;};},[controller,server,namespace]);
  useEffect(()=>{const warn=(event:BeforeUnloadEvent)=>{if(record.current.draft){event.preventDefault();event.returnValue="";}};window.addEventListener("beforeunload",warn);return()=>window.removeEventListener("beforeunload",warn);},[]);
- useReviewInvalidation(controller,enabled,()=>setRefresh(n=>n+1),()=>busy);
+ useReviewInvalidation(
+   controller,
+   enabled,
+   async (ev) => {
+     const captured = controller.captureDispatchAuthority();
+     const readGen = ev?.readGeneration ?? controller.readGeneration;
+     const gen = life.current;
+     const notesGuard=readGuardFor("notes"),versionsGuard=readGuardFor("versions");
+     try {
+       const [notesPage, versionsPage] = await Promise.all([
+         controller.passiveClient.annotationList(listVersion),
+         controller.passiveClient.documentVersions(documentId),
+       ]);
+       if (gen !== life.current || !controller.isCurrentReadAuthority(captured, readGen)) return;
+       notesGuard();versionsGuard();
+       setRows(notesPage.items);
+       setCursor(notesPage.next_cursor);
+       setVersions(versionsPage.items);
+       setVersionCursor(versionsPage.next_cursor);
+       if (server) {
+         const comparisonRun=++reads.current.comparison;
+         try {
+           const freshServer = await controller.passiveClient.annotationGet(server.annotation_id);
+           if (gen === life.current && controller.isCurrentReadAuthority(captured, readGen)) {
+             if (reads.current.comparison === comparisonRun && currentServer.current?.annotation_id === server.annotation_id) updateServer(freshServer);
+             else if (ev?.resync && currentServer.current !== null) throw new StaleResponseError();
+           }
+         } catch (error) {
+           if (gen !== life.current || !controller.isCurrentReadAuthority(captured, readGen)) return;
+           if (!(error instanceof StaleResponseError)) setComparisonIssue(message(error));
+           if (ev?.resync) throw error;
+         }
+       }
+       if (historyID) {
+         const historyGuard=readGuardFor("history");
+         try {
+           const hp = await controller.passiveClient.annotationHistory(historyID);
+           if (gen === life.current && controller.isCurrentReadAuthority(captured, readGen)) {
+             historyGuard();
+             setHistory(hp.items);
+             setHistoryCursor(hp.next_cursor);
+           }
+         } catch (error) {
+           if (gen !== life.current || !controller.isCurrentReadAuthority(captured, readGen)) return;
+           if (!(error instanceof StaleResponseError)) setIssue(message(error));
+           if (error instanceof ApiError && [401,403,404,410].includes(error.status)) { setHistory([]); setHistoryCursor(null); }
+           if (ev?.resync) throw error;
+         }
+       }
+     } catch (e) {
+       if (!(e instanceof StaleResponseError) && gen === life.current && controller.isCurrentReadAuthority(captured, readGen)) {
+         setIssue(message(e));
+       }
+       if (ev?.resync) throw e;
+     }
+   },
+   () => busy || admitted.current,
+ );
  const target=():AnnotationAnchor=>scope==="version"||!anchor.page_path?{version_id:anchor.version_id,page_path:null,region_id:null,page_query:"",page_fragment:""}:{...anchor,region_id:scope==="region"?anchor.region_id:null};
  const newDraft=()=>{const expected=noteRecordIdentity(record.current),next:NoteRecord=structuredClone({draft:{id:crypto.randomUUID(),revision:0,anchor:target(),text:"",selectedText:selection.selectedText,contextRef:scope==="version"?null:selection.contextRef,context:scope==="version"?null:selection.context,base:null},pending:null});propose("초안 버리고 새 노트", "저장하지 않은 초안을 버리고 새 노트를 작성할까요?",guard=>replaceLocal(next,expected,guard),!!record.current.draft);};
  const edit=(value:AnnotationView)=>{const n=structuredClone(value),expected=noteRecordIdentity(record.current),id=crypto.randomUUID();propose("초안 버리고 노트 불러오기","현재 초안을 버리고 이 노트를 편집할까요?",async guard=>{const text=n.body??(n.body_ref?await noteStreamText(await controller.client.annotationBodyStream(n.annotation_id,n.revision),guard):"");guard();await replaceLocal({draft:{id,revision:0,anchor:n.anchor,text,selectedText:n.selected_text,contextRef:n.context_ref,context:null,base:n},pending:null},expected,guard);},!!record.current.draft);};
- const submit=async(intent:NoteIntent,recover=false,capturedGuard?:()=>void)=>{if(!capturedGuard&&admitted.current)return;const priorRejected=record.current.pending?.rejected?record.current.pending.key:null;const ownAdmission=!capturedGuard;if(ownAdmission)admitted.current=true;const scopeGuard=capturedGuard??guardFor(true),mounted=guardFor();const guard=()=>{scopeGuard();eligible();requireNotePending(record.current,intent.key,priorRejected);};try{scopeGuard();eligible();setBusy(true);setIssue("");if(!recover&&intent.generation!==(controller.state.capabilities?.runtime_generation??""))throw Error("서비스 세대가 바뀌었습니다. 현재 상태와 이력으로 이전 요청을 확인하세요.");if(!recover){if(record.current.pending&&!record.current.pending.rejected)throw Error("확인되지 않은 저장 요청을 먼저 확인하세요.");await persist({...record.current,pending:intent},guard);}guard();let value:AnnotationView|undefined;
- if(recover){try{const op=await controller.client.operation(intent.key);guard();if(op.state==="completed"){value=op.result_metadata as AnnotationView;}else if(op.state==="failed"){throw new ApiError(op.original_status??409,"OPERATION_FAILED",false);}else throw Error("저장 결과 확인 중입니다. 원래 요청으로 다시 확인하세요.");}catch(e){if(!(e instanceof ApiError&&e.status===404)||intent.generation!==(controller.state.capabilities?.runtime_generation??""))throw e;}}
- if(recover&&!value)await persist({...record.current,pending:intent},guard);
- if(!value){intent=await prepareNoteBody(controller.client,intent,guard,next=>persist({...record.current,pending:next},guard));guard();const store=journal.current;if(!store)throw Error("노트 복구 저장소를 사용할 수 없습니다.");value=await store.dispatch(intent,guard,()=>dispatchNote(controller.client,intent));}guard();if(!value?.annotation_id)throw Error("노트 저장 응답을 확인할 수 없습니다.");const savedDraft=record.current.pending?.key===intent.key&&ownsNoteDraft(intent,record.current.draft);await replaceLocal(completeNoteIntent(record.current,intent,value),noteRecordIdentity(record.current),guard,savedDraft);guard();setRefresh(n=>n+1);window.dispatchEvent(new Event("haeryong-notes-changed"));
- }catch(e){try{guard();setIssue(message(e));if(definitiveNoteRejection(e)){await persist({...record.current,pending:{...intent,rejected:true}},guard);guard();if(intent.kind==="patch"&&ownsNoteDraft(intent,record.current.draft)){const fresh=await controller.client.annotationGet(intent.target);guard();if(ownsNoteDraft(intent,record.current.draft))setServer(fresh);}}}catch{} }finally{if(ownAdmission)admitted.current=false;try{mounted();setBusy(false);}catch{}}};
+ const submit=async(intent:NoteIntent,recover=false,capturedGuard?:()=>void)=>{
+   if(!capturedGuard&&admitted.current)return;
+   const priorRejected=record.current.pending?.rejected?record.current.pending.key:null;
+   const ownAdmission=!capturedGuard;
+   if(ownAdmission)admitted.current=true;
+   const scopeGuard=capturedGuard??guardFor(true),mounted=guardFor();
+   const guard=()=>{scopeGuard();eligible();requireNotePending(record.current,intent.key,priorRejected);};
+   try{
+     scopeGuard();eligible();setBusy(true);setIssue("");
+     const currentGen=controller.state.capabilities?.runtime_generation??"";
+     if(!recover&&intent.generation!==currentGen)throw Error("서비스 세대가 바뀌었습니다. 현재 상태와 이력으로 이전 요청을 확인하세요.");
+     if(!recover){
+       if(record.current.pending&&!record.current.pending.rejected)throw Error("확인되지 않은 저장 요청을 먼저 확인하세요.");
+       await persist({...record.current,pending:intent},guard);
+     }
+     guard();
+     let value:AnnotationView|undefined;
+     let receiptCompleted=false;
+     if(recover){
+       let missingReceipt=false;
+       let op=null;
+       try{
+         op=await controller.client.operation(intent.key);
+       }catch(e){
+         guard();
+         if(e instanceof ApiError&&e.status===404){
+           missingReceipt=true;
+         }else{
+           throw e;
+         }
+       }
+       guard();
+       if(missingReceipt){
+         const genChanged=intent.generation===""?currentGen!=="":intent.generation!==currentGen;
+         if(genChanged){
+           await persist({...record.current,pending:{...intent,rejected:true}},guard);
+           guard();
+           if(intent.kind!=="create"){
+             try{const fresh=await controller.client.annotationGet(intent.target);guard();updateServer(fresh);}catch{}
+           }
+           setIssue("서버 실행 세대가 변경되어(복원 또는 초기화) 이전 노트 요청 기록을 자동 재전송하지 않았습니다. 현재 서버 상태와 비교해 선택하세요.");
+           return;
+         }
+       }else if(op){
+         if(op.state==="completed"){
+           receiptCompleted=true;
+           const meta=op.result_metadata as AnnotationView|undefined;
+           const targetId=intent.kind==="create"?meta?.annotation_id:intent.target;
+           if(targetId){
+             try{
+               value=await controller.client.annotationGet(targetId);
+             }catch(err){
+               guard();
+               if(err instanceof ApiError&&(err.status===404||err.status===410)){
+                 value=meta;
+               }else{
+                 const clearedDraft=ownsNoteDraft(intent,record.current.draft)&&record.current.draft?.revision===intent.draftSave?.revision?null:record.current.draft;
+                 await replaceLocal({draft:clearedDraft,pending:null},noteRecordIdentity(record.current),guard,true);
+                 throw Error("원래 노트 저장 요청은 완료되었으나 현재 서버 상태를 불러오지 못했습니다. 목록을 다시 확인해 주세요.");
+               }
+             }
+           }else{
+             value=meta;
+           }
+         }else if(op.state==="failed"){
+           throw new ApiError(op.original_status??409,"OPERATION_FAILED",false);
+         }else{
+           throw Error("저장 결과 확인 중입니다. 원래 요청으로 다시 확인하세요.");
+         }
+       }
+     }
+     if(recover&&!value&&!receiptCompleted)await persist({...record.current,pending:intent},guard);
+     if(!value){
+       intent=await prepareNoteBody(controller.client,intent,guard,next=>persist({...record.current,pending:next},guard));
+       guard();
+       const store=journal.current;
+       if(!store)throw Error("노트 복구 저장소를 사용할 수 없습니다.");
+       value=await store.dispatch(intent,guard,()=>dispatchNote(controller.client,intent));
+       guard();
+       // A first transport call can already have reconciled a lost response
+       // through its historical receipt. Never adopt that DTO as a live base.
+       if(value?.annotation_id){
+         try{
+           value=await controller.client.annotationGet(value.annotation_id);
+         }catch(err){
+           guard();
+           if(!(err instanceof ApiError&&(err.status===404||err.status===410))){
+             const clearedDraft=ownsNoteDraft(intent,record.current.draft)&&record.current.draft?.revision===intent.draftSave?.revision?null:record.current.draft;
+             await replaceLocal({draft:clearedDraft,pending:null},noteRecordIdentity(record.current),guard,true);
+             throw Error("원래 노트 저장 요청은 완료되었으나 현재 서버 상태를 불러오지 못했습니다. 목록을 다시 확인해 주세요.");
+           }
+         }
+       }
+     }
+     guard();
+     if(!value?.annotation_id)throw Error("노트 저장 응답을 확인할 수 없습니다.");
+     const savedDraft=record.current.pending?.key===intent.key&&ownsNoteDraft(intent,record.current.draft);
+     await replaceLocal(completeNoteIntent(record.current,intent,value),noteRecordIdentity(record.current),guard,savedDraft);
+     guard();
+     controller.bumpReadGeneration();
+     setRefresh(n=>n+1);
+     window.dispatchEvent(new Event("haeryong-notes-changed"));
+   }catch(e){
+     try{
+       guard();
+       setIssue(message(e));
+       if(definitiveNoteRejection(e)){
+         await persist({...record.current,pending:{...intent,rejected:true}},guard);
+         guard();
+         if(intent.kind!=="create"){
+           try{
+             const fresh=await controller.client.annotationGet(intent.target);
+             guard();
+             updateServer(fresh);
+           }catch{}
+         }
+       }
+     }catch{}
+   }finally{
+     if(ownAdmission)admitted.current=false;
+     try{mounted();setBusy(false);}catch{}
+   }
+ };
  const save=()=>{if(!draft||busy||pending&&!pending.rejected)return;try{const intent=noteSaveIntent(draft,controller.state.capabilities?.runtime_generation??"",crypto.randomUUID());void submit(intent);}catch(e){setIssue(message(e));}};
  const reattach=(n:AnnotationView)=>{const destination=structuredClone(target()),intent:NoteIntent=structuredClone({kind:"patch",target:n.annotation_id,key:crypto.randomUUID(),etag:n.etag,generation:controller.state.capabilities?.runtime_generation??"",body:{action:"reattach",anchor:destination,selected_text:selection.selectedText,context:scope==="version"||selection.contextRef?null:selection.context,context_ref:scope==="version"?null:selection.contextRef}});propose("이 위치로 재연결",`이 노트를 선택한 버전의 ${destination.page_path??"전체 디렉터리"}${destination.region_id?` · ${destination.region_id}`:""}에 재연결할까요? 이전 앵커와 이력은 보존됩니다.`,guard=>submit(intent,false,guard),true);};
  const remove=(n:AnnotationView)=>{const intent:NoteIntent={kind:"delete",target:n.annotation_id,key:crypto.randomUUID(),generation:controller.state.capabilities?.runtime_generation??"",etag:n.etag,body:null};propose("이 노트 삭제","이 노트를 삭제할까요? 허용된 이력은 보존됩니다.",guard=>submit(intent,false,guard),true);};
  const discard=()=>{const expected=noteRecordIdentity(record.current);propose("초안 버리기","저장하지 않은 초안을 버릴까요?",guard=>replaceLocal({draft:null,pending:null},expected,guard,false),true);};
- const loadHistory=async(id:string,more=false)=>{const guard=guardFor();try{const p=await controller.client.annotationHistory(id,more?historyCursor??undefined:undefined);guard();setHistory(more?[...history,...p.items]:p.items);setHistoryCursor(p.next_cursor);setHistoryID(id);}catch(e){setIssue(message(e));}};
+ const clearRejected=()=>{
+   const guard=guardFor();
+   void persist({...record.current,pending:null},guard).then(()=>{updateServer(null);setIssue("");setRefresh(n=>n+1);}).catch(e=>setIssue(message(e)));
+ };
+ const applyRejectedAction=async()=>{
+   if(!pending||!pending.rejected||busy||admitted.current)return;
+   const guard=guardFor(true),mounted=guardFor();
+   setIssue("");
+   try{
+     await resolveRejectedNoteAction(
+       admitted,
+       (b)=>{try{if(b)guard();else mounted();setBusy(b);}catch{}},
+       pending,
+       controller.state.capabilities?.runtime_generation??"",
+       async(targetId)=>{const fresh=await controller.client.annotationGet(targetId);guard();return fresh;},
+       async()=>{await persist({...record.current,pending:null},guard);updateServer(null);setRefresh(n=>n+1);},
+       async(nextIntent)=>{updateServer(null);await submit(nextIntent,false,guard);},
+     );
+   }catch(e){
+     try{guard();setIssue(message(e));}catch{}
+   }
+ };
+ const loadHistory=async(id:string,more=false)=>{const guard=readGuardFor("history");setHistoryID(id);try{const p=await controller.client.annotationHistory(id,more?historyCursor??undefined:undefined);guard();setHistory(more?[...history,...p.items]:p.items);setHistoryCursor(p.next_cursor);}catch(e){if(!(e instanceof StaleResponseError))setIssue(message(e));}};
  const showContext=async(n:AnnotationView,opener:HTMLElement)=>{retireContext();const authority=controller.captureDispatchAuthority(),captured=contextKey,route=location.href,entry=window.history.state?.haeryongReaderContext;let stream:AnnotationStream|null=null,cancelled=false;
  const read:ContextRead={note:structuredClone(n),opener,cancel:()=>{cancelled=true;stream?.cancel();},guard:()=>{controller.requireVerifiedDispatch(authority);eligible();if(!active||captured!==liveContext.current||route!==location.href||entry!==window.history.state?.haeryongReaderContext)throw Error("이전 노트 문맥입니다.");}};
  const guard=()=>{read.guard();if(contextRead.current!==read||cancelled)throw Error("닫힌 노트 문맥입니다.");};
@@ -77,13 +278,16 @@ export function NotesPanel({controller,documentId,anchor,selection=emptySelectio
  if(!enabled)return <p>노트: 아직 제공되지 않습니다.</p>;
  const cue=(id:string)=>{const v=versions.find(v=>v.version_id===id);return v?`v${v.sequence}`:"선택한 버전";};
  const anchorChanged=!!(draft&&server&&noteAnchorChanged(draft.anchor,server.anchor));
+ const isReattachRejected=!!(pending?.rejected&&pending.kind==="patch"&&pending.body&&"action" in pending.body&&pending.body.action==="reattach");
+ const isDeleteRejected=!!(pending?.rejected&&pending.kind==="delete");
  const note=(n:AnnotationView)=><article key={`${n.annotation_id}:${n.revision}`} className="note-entry"><p>{cue(n.anchor.version_id)} · {n.anchor.page_path??"전체 디렉터리"}{n.anchor.region_id?` · 영역 ${n.anchor.region_id}`:""} · 개정 {n.revision}{n.deleted_at?" · 삭제됨":""}</p><p>원래 위치: {cue(n.original_anchor.version_id)} · {n.original_anchor.page_path??"전체 디렉터리"}{n.original_anchor.region_id?` · ${n.original_anchor.region_id}`:""}</p>{(n.resolution.status==="unresolved"||n.anchor.version_id!==anchor.version_id)&&<p role="status">앵커 미해결: 현재 위치로 자동 이동하지 않습니다. 원래 위치를 확인하거나 명시적으로 재연결하세요.</p>}<a href={pinnedReaderURL(documentId,n.anchor.version_id,n.anchor.page_path,n.anchor.page_query,n.anchor.page_fragment,n.anchor.region_id)}>저장된 위치 열기</a>{n.body!==null&&<SafeMarkdown text={n.body}/>} {n.body_ref&&<button onClick={()=>void edit(n)}>전체 본문 읽기·편집</button>}{n.selected_text&&<blockquote>{n.selected_text}</blockquote>}{n.context_ref&&<button onClick={e=>void showContext(n,e.currentTarget)}>저장된 context 읽기</button>}{!n.deleted_at&&<div className="form-row"><button disabled={busy||!!pending&&!pending.rejected} onClick={()=>void edit(n)}>편집</button><button disabled={!canWrite||busy||!!pending&&!pending.rejected} onClick={()=>reattach(n)}>현재 읽는 위치로 재연결</button><button disabled={!canWrite||busy||!!pending&&!pending.rejected} onClick={()=>remove(n)}>노트 삭제</button></div>}<button onClick={()=>void loadHistory(n.annotation_id)}>이력</button></article>;
  return <section aria-label="Notes" className="notes-panel" tabIndex={-1}><h2>노트</h2><p>현재 위치: {cue(anchor.version_id)} · {anchor.page_path??"전체 디렉터리"}{anchor.region_id?` · ${anchor.region_id}`:""}</p><label>새 노트·재연결 범위<select value={scope} onChange={e=>setScope(e.target.value)}><option value="version">전체 디렉터리 버전</option><option value="page" disabled={!anchor.page_path}>현재 페이지</option><option value="region" disabled={!anchor.region_id}>현재 페이지 영역</option></select></label><button id="note-new" disabled={busy} onClick={newDraft}>새 노트</button>
- <label>노트가 저장된 버전<select value={listVersion} onChange={e=>setListVersion(e.target.value)}>{versions.map(v=><option key={v.version_id} value={v.version_id}>v{v.sequence}</option>)}</select></label>{versionCursor&&<button onClick={()=>{const guard=guardFor();void controller.client.documentVersions(documentId,versionCursor).then(p=>{guard();setVersions(v=>[...v,...p.items]);setVersionCursor(p.next_cursor);}).catch(e=>setIssue(message(e)));}}>이전 버전 더 보기</button>}
+ <label>노트가 저장된 버전<select value={listVersion} onChange={e=>setListVersion(e.target.value)}>{versions.map(v=><option key={v.version_id} value={v.version_id}>v{v.sequence}</option>)}</select></label>{versionCursor&&<button onClick={()=>{const guard=readGuardFor("versions");void controller.client.documentVersions(documentId,versionCursor).then(p=>{guard();setVersions(v=>[...v,...p.items]);setVersionCursor(p.next_cursor);}).catch(e=>{if(!(e instanceof StaleResponseError))setIssue(message(e));});}}>이전 버전 더 보기</button>}
  {issue&&<p role="alert">{issue}</p>}{busy&&<p role="status">노트 저장 결과 확인 중…</p>}{pending&&!pending.rejected&&<div><p role="status">저장 결과가 확인되지 않았습니다. 원래 요청을 먼저 확인하세요.</p><button disabled={!canWrite||busy} onClick={()=>void submit(pending,true)}>원래 저장 요청 확인</button></div>}
+ {pending?.rejected&&!server&&<div><p role="status">거절된 노트 요청이 있습니다. 서버 상태를 유지하거나 다시 시도하세요.</p><button disabled={busy} onClick={clearRejected}>서버 값 유지</button></div>}
  {draft&&<div className="annotation-editor"><p role="status">저장하지 않은 초안 · {cue(draft.anchor.version_id)} · {draft.anchor.page_path??"전체 디렉터리"}</p><label>노트 본문<textarea id="note-body" rows={8} value={draft.text} onChange={e=>{const next={...draft,revision:draft.revision+1,text:e.target.value};void persist({...record.current,draft:next}).catch(e=>setIssue(`초안을 로컬에 보관하지 못했습니다. 본문은 화면에 남아 있습니다: ${message(e)}`));}}/></label><label>선택한 텍스트·앵커 대체 문맥<textarea id="note-selection" value={draft.selectedText??""} onChange={e=>void persist({...record.current,draft:{...draft,revision:draft.revision+1,selectedText:e.target.value||null}}).catch(e=>setIssue(message(e)))}/></label><SafeMarkdown text={draft.text}/>{(draft.contextRef||draft.context!==null||draft.base&&noteAnchorChanged(draft.anchor,draft.base.anchor))&&<button onClick={()=>void persist({...record.current,draft:draft.base?reconcileNoteDraft(draft,draft.base,"drop"):dropNoteContext(draft)}).catch(e=>setIssue(message(e)))}>{draft.base&&noteAnchorChanged(draft.anchor,draft.base.anchor)?"기준 개정 위치로 정렬하고 이전 문맥 제외":"초안 문맥 제외"}</button>}<button id="note-save" disabled={!canWrite||busy||!!pending&&!pending.rejected} onClick={save}>저장</button><button disabled={busy||!!pending&&!pending.rejected} onClick={discard}>취소</button></div>}
- {server&&<div aria-label="노트 충돌 비교"><h3>서버의 최신 개정 {server.revision}</h3>{serverText!==null?<SafeMarkdown text={serverText}/>:<p role="status">서버 비교 본문을 읽는 중입니다.</p>}{comparisonIssue&&<p role="alert">{comparisonIssue}</p>}<button onClick={()=>setServer({...server})}>서버 비교 본문 다시 읽기</button><p>로컬 초안은 위 편집기에 유지됩니다.</p>{anchorChanged&&draft&&<div aria-label="변경된 노트 위치와 이전 문맥"><p>다른 편집에서 노트 위치가 변경되었습니다. 병합은 서버 위치를 사용하며, 이전 위치의 문맥과 선택 텍스트를 제외합니다.</p><p>이전 초안 위치: {cue(draft.anchor.version_id)} · {draft.anchor.page_path??"전체 디렉터리"}</p><p>서버 위치: {cue(server.anchor.version_id)} · {server.anchor.page_path??"전체 디렉터리"}</p>{draft.selectedText&&<blockquote>{draft.selectedText}</blockquote>}{draft.contextRef&&draft.base&&(draft.contextRef===draft.base.context_ref?<button onClick={e=>void showContext(draft.base!,e.currentTarget)}>이전 초안 문맥 읽기</button>:<p>이전 문맥의 저장 개정을 확인할 수 없습니다. 병합에서 제외하세요.</p>)}</div>}<button onClick={()=>void edit(server)}>서버 내용으로 다시 불러오기</button>{draft&&pending&&ownsNoteDraft(pending,draft)&&!server.deleted_at&&<button disabled={serverText===null} onClick={()=>{void persist({draft:reconcileNoteDraft(draft,server,anchorChanged?"drop":"keep"),pending:null}).catch(e=>setIssue(message(e)));setServer(null);}}>{anchorChanged?"서버 위치로 병합 준비 · 이전 문맥 제외":"현재 개정과 합친 초안으로 저장 준비"}</button>}</div>}
- {rows.length===0&&<p>이 버전에 저장된 노트가 없습니다.</p>}{rows.map(note)}{cursor&&<button onClick={()=>{const guard=guardFor();void controller.client.annotationList(listVersion,cursor).then(p=>{guard();setRows(r=>[...r,...p.items]);setCursor(p.next_cursor);}).catch(e=>setIssue(message(e)));}}>노트 더 보기</button>}<button onClick={()=>setRefresh(n=>n+1)}>목록 새로고침</button>
+ {server&&<div aria-label="노트 충돌 비교"><h3>서버의 최신 개정 {server.revision}</h3>{serverText!==null?<SafeMarkdown text={serverText}/>:<p role="status">서버 비교 본문을 읽는 중입니다.</p>}{comparisonIssue&&<p role="alert">{comparisonIssue}</p>}<button onClick={()=>updateServer({...server})}>서버 비교 본문 다시 읽기</button>{draft&&<p>로컬 초안은 위 편집기에 유지됩니다.</p>}{anchorChanged&&draft&&<div aria-label="변경된 노트 위치와 이전 문맥"><p>다른 편집에서 노트 위치가 변경되었습니다. 병합은 서버 위치를 사용하며, 이전 위치의 문맥과 선택 텍스트를 제외합니다.</p><p>이전 초안 위치: {cue(draft.anchor.version_id)} · {draft.anchor.page_path??"전체 디렉터리"}</p><p>서버 위치: {cue(server.anchor.version_id)} · {server.anchor.page_path??"전체 디렉터리"}</p>{draft.selectedText&&<blockquote>{draft.selectedText}</blockquote>}{draft.contextRef&&draft.base&&(draft.contextRef===draft.base.context_ref?<button onClick={e=>void showContext(draft.base!,e.currentTarget)}>이전 초안 문맥 읽기</button>:<p>이전 문맥의 저장 개정을 확인할 수 없습니다. 병합에서 제외하세요.</p>)}</div>}<div className="form-row"><button disabled={busy} onClick={clearRejected}>서버 값 유지</button><button onClick={()=>void edit(server)}>서버 내용으로 다시 불러오기</button>{draft&&pending&&ownsNoteDraft(pending,draft)&&!server.deleted_at&&<button disabled={serverText===null} onClick={()=>{void persist({draft:reconcileNoteDraft(draft,server,anchorChanged?"drop":"keep"),pending:null}).catch(e=>setIssue(message(e)));updateServer(null);}}>{anchorChanged?"서버 위치로 병합 준비 · 이전 문맥 제외":"현재 개정과 합친 초안으로 저장 준비"}</button>}{isDeleteRejected&&!server.deleted_at&&<button disabled={!canWrite||busy} onClick={()=>void applyRejectedAction()}>최신 개정 삭제 계속 진행</button>}{isReattachRejected&&!server.deleted_at&&<button disabled={!canWrite||busy} onClick={()=>void applyRejectedAction()}>최신 개정 이 위치로 재연결</button>}</div></div>}
+ {rows.length===0&&<p>이 버전에 저장된 노트가 없습니다.</p>}{rows.map(note)}{cursor&&<button onClick={()=>{const guard=readGuardFor();void controller.client.annotationList(listVersion,cursor).then(p=>{guard();setRows(r=>[...r,...p.items]);setCursor(p.next_cursor);}).catch(e=>{if(!(e instanceof StaleResponseError))setIssue(message(e));});}}>노트 더 보기</button>}<button onClick={()=>setRefresh(n=>n+1)}>목록 새로고침</button>
  {historyID&&<div aria-label="노트 이력"><h3>노트 이력</h3>{history.map(note)}{historyCursor&&<button onClick={()=>void loadHistory(historyID,true)}>이력 더 보기</button>}</div>}{contextView&&<div className="note-context"><h3>저장된 context · 개정 {contextView.read.note.revision}</h3>{contextView.error&&<p role="alert">{contextView.error}</p>}{contextView.text===null?(!contextView.error&&<p role="status">저장된 문맥을 읽는 중입니다.</p>):<pre ref={contextViewport} className="note-context-text" tabIndex={0} aria-label="저장된 문맥 전체 텍스트">{contextView.text.parts.map((part,index)=><span key={index}>{part}</span>)}</pre>}<div className="note-context-controls"><button disabled={contextView.text===null} onClick={()=>contextEdge(false)}>문맥 처음</button><button disabled={contextView.text===null} onClick={()=>contextEdge(true)}>문맥 끝</button><button disabled={contextView.text===null} onClick={selectContext}>문맥 전체 선택</button><button onClick={closeContext}>context 닫기</button></div></div>}
  {createPortal(<Sheet id="note-confirmation" openerId="" open={confirmation!==null} modal label="노트 변경 확인" className="lifecycle-dialog note-confirmation" onClose={dismiss}><button type="button" autoFocus data-note-cancel onClick={dismiss}>닫기</button><h2>노트 변경 확인</h2><p>{confirmation?.detail}</p><button type="button" data-note-confirm disabled={!canWrite} onClick={confirmAction}>{confirmation?.label}</button></Sheet>,document.body)}
  </section>;

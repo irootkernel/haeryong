@@ -1288,3 +1288,17 @@ semantic request fingerprint and terminal receipt immutability prevent delayed
 same-key admission. The error's question_admission marker alone and a missing
 receipt cannot authorize acknowledgement; the client requires the matching
 current-authorized failed receipt under the original runtime and owner.
+
+## Multi-device passive read and native event cursor projections (TASK-007-04)
+
+The API remains v1 and package schema 1.0 at SQLite revision 19. Touching
+`GET`/`HEAD` routes accept the optional header `Haeryong-Passive-Read: 1`;
+any other header value, multiple values or any non-`GET`/`HEAD` method fails
+`400 INVALID_REQUEST`. Closed read-only native operations accept optional
+`passive?: boolean` (`true` forwards `Haeryong-Passive-Read: 1`).
+
+Closed native `subscribeEvents` accepts `{cursor?: string}` and returns
+`{subscription_id, cursor?, resync?: {reason, stream_epoch, head, resume_cursor}}`.
+Closed native `eventsPoll` accepts `{subscription_id}` and returns
+`{closed: boolean, invalidated: boolean, cursor?: string, resync?: {reason, stream_epoch, head, resume_cursor}}`.
+See [multi-device reconciliation evidence](../testing/multi-device-reconciliation.md).

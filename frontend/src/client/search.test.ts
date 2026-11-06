@@ -45,9 +45,78 @@ for (const reject of [false, true]) test(`SC18 native search era discards late $
 test("SC17 SSE split event names emit content-free search hints only", async () => {
   const { searchEventLines } = await import("./search-events.ts");
   let hints = 0; const feed = searchEventLines(() => hints++);
-  feed(': heartbeat\nevent: job.progress\ndata: private\n\nevent: search.index_'); assert.equal(hints, 0);
-  feed('updated\ndata: {"private":"ignored"}\n\nevent: version.published\n\nevent: library.invalidated\n');
+  feed(': heartbeat\n\nevent: search.index_'); assert.equal(hints, 0);
+  feed('updated\ndata: {"private":"ignored"}\n\nevent: version.published\n\nevent: library.invalidated\n\n');
   assert.equal(hints, 3);
+});
+
+test("Task04 SSE incomplete frame after id never advances cursor or notifies before blank line", async () => {
+  const { searchEventLines } = await import("./search-events.ts");
+  let hints = 0;
+  const cursors: string[] = [];
+  const feed = searchEventLines(() => { hints++; }, { onCursor: (c) => cursors.push(c) });
+  // Disconnect / partial chunk after id and event without terminating blank line:
+  feed("id: epoch-1:41\nevent: review.changed\ndata: {}\n");
+  assert.equal(hints, 0);
+  assert.deepEqual(cursors, []);
+  // Terminating blank line completes the frame and commits the cursor:
+  feed("\n");
+  assert.equal(hints, 1);
+  assert.deepEqual(cursors, ["epoch-1:41"]);
+});
+
+test("Task04 SSE owner-record *.changed events and resync.required barrier ordering", async () => {
+  const { searchEventLines } = await import("./search-events.ts");
+  const events = [
+    "review.changed",
+    "annotation.changed",
+    "revisit.changed",
+    "reading_position.changed",
+    "page_position.changed",
+    "reader_preference.changed",
+    "question.changed",
+  ];
+  let hints = 0;
+  const cursors: string[] = [];
+  const resyncs: unknown[] = [];
+  let failResync = false;
+  const feed = searchEventLines(
+    () => { hints++; },
+    {
+      onCursor: (c) => cursors.push(c),
+      onResync: async (r) => {
+        resyncs.push(r);
+        if (failResync) throw new Error("resync sweep failed");
+      },
+    },
+  );
+  for (let i = 0; i < events.length; i++) {
+    await feed(`id: ep:${i + 1}\nevent: ${events[i]}\ndata: {}\n\n`);
+  }
+  assert.equal(hints, events.length);
+  assert.equal(cursors.length, events.length);
+  assert.equal(cursors.at(-1), `ep:${events.length}`);
+
+  // Split resync.required frame across chunks:
+  const p1 = feed('id: ep:100\nevent: resync.required\ndata: {"reason":"cursor_expired",');
+  assert.equal( p1, undefined);
+  assert.equal(cursors.at(-1), `ep:${events.length}`);
+  await feed('"stream_epoch":"ep","head":"100","resume_cursor":"ep:100"}\n\n');
+  assert.equal(resyncs.length, 1);
+  assert.equal(cursors.at(-1), "ep:100");
+
+  // Failed resync must reject and must not advance cursor for resync or trailing frame in same chunk:
+  failResync = true;
+  await assert.rejects(
+    async () => {
+      await feed(
+        'id: ep:200\nevent: resync.required\ndata: {"reason":"gap","stream_epoch":"ep","head":"200","resume_cursor":"ep:200"}\n\n' +
+        "id: ep:201\nevent: review.changed\ndata: {}\n\n",
+      );
+    },
+    /resync sweep failed/,
+  );
+  assert.equal(cursors.at(-1), "ep:100");
 });
 test("SC17 HTTP event hints stop after credential era invalidation", async () => {
   const original=globalThis.fetch;let push!: ReadableStreamDefaultController<Uint8Array>;

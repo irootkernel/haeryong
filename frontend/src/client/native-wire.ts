@@ -3,7 +3,7 @@
 import { NATIVE_OPERATIONS } from "./native.ts";
 import type { NativePort } from "./native.ts";
 import { ApiError, NetworkError, UncertainResponseError } from "./types.ts";
-import type { EventSubscription, PackageStream } from "./types.ts";
+import type { EventStreamResync, EventSubscription, PackageStream } from "./types.ts";
 type Operation = typeof NATIVE_OPERATIONS[number];
 export type NativeWireOperation = Operation | "streamRead" | "streamCancel" | "eventsPoll" | "eventsClose";
 export interface NativeWire {
@@ -75,30 +75,135 @@ export function createNativePort(wire: NativeWire): NativePort {
       void closeRemote();
     } };
   };
+  const parseWireResync = (raw: unknown): EventStreamResync | null => {
+    if (!record(raw)) return null;
+    const reason = typeof raw.reason === "string" ? raw.reason : "";
+    const streamEpoch = typeof raw.stream_epoch === "string" ? raw.stream_epoch : "";
+    const head = typeof raw.head === "string" ? raw.head : "";
+    const resumeCursor = typeof raw.resume_cursor === "string" ? raw.resume_cursor : "";
+    if (!reason && !streamEpoch && !head && !resumeCursor) return null;
+    return {
+      reason: reason || "resync.required",
+      stream_epoch: streamEpoch,
+      head,
+      resume_cursor: resumeCursor,
+    };
+  };
   const subscription = (value: unknown): EventSubscription => {
     if (!record(value) || typeof value.subscription_id !== "string" || !value.subscription_id) throw invalid();
     const id = value.subscription_id;
-    const listeners = new Set<() => void>();
+    const initialResync = parseWireResync(value.resync);
+    const initialInvalidated = value.invalidated === true;
+    const initialCursor = typeof value.cursor === "string" && value.cursor ? value.cursor : (initialResync?.resume_cursor || "");
+    const listeners = new Set<() => unknown>();
+    const resyncListeners = new Set<(resync: EventStreamResync) => unknown>();
+    const cursorListeners = new Set<(cursor: string) => void>();
     let active = true, finish!: () => void;
+    let resolveReady!: () => void;
+    let readyScheduled = false;
+    const listenerReady = new Promise<void>((resolve) => {
+      resolveReady = resolve;
+    });
+    const fallbackTimer = setTimeout(() => {
+      resolveReady();
+    }, 20);
+    const signalListenerReady = () => {
+      if (readyScheduled) return;
+      readyScheduled = true;
+      void Promise.resolve().then(() => {
+        clearTimeout(fallbackTimer);
+        resolveReady();
+      });
+    };
     const closed = new Promise<void>((resolve) => { finish = resolve; });
     const close = () => {
       if (!active) return;
-      active = false; listeners.clear(); finish();
+      active = false;
+      clearTimeout(fallbackTimer);
+      resolveReady();
+      listeners.clear();
+      resyncListeners.clear();
+      cursorListeners.clear();
+      finish();
       void invoke("eventsClose", { subscription_id: id }).catch(() => undefined);
+    };
+    const notifyResync = async (resync: EventStreamResync) => {
+      for (const listener of [...resyncListeners]) {
+        if (!active) return;
+        await Promise.resolve(listener(resync));
+      }
+    };
+    const notifyInvalidation = async () => {
+      for (const listener of [...listeners]) {
+        if (!active) return;
+        await Promise.resolve(listener());
+      }
+    };
+    const notifyCursor = (cursor: string) => {
+      if (!active || !cursor) return;
+      for (const listener of [...cursorListeners]) {
+        if (!active) return;
+        listener(cursor);
+      }
     };
     void (async () => {
       try {
+        if (initialResync || initialInvalidated || initialCursor) {
+          await listenerReady;
+          if (active && initialResync) {
+            await notifyResync(initialResync);
+          }
+          if (active && initialInvalidated) {
+            await notifyInvalidation();
+          }
+          if (active && initialCursor) {
+            notifyCursor(initialCursor);
+          }
+        }
         while (active) {
           const next = await invoke("eventsPoll", { subscription_id: id });
           if (!record(next) || typeof next.closed !== "boolean") throw invalid();
           if (next.closed) break;
-          if (active && next.invalidated === true) for (const listener of listeners) listener();
+          const pollResync = parseWireResync(next.resync);
+          const nextCursor = typeof next.cursor === "string" && next.cursor ? next.cursor : (pollResync?.resume_cursor || "");
+          if (active && pollResync) {
+            await notifyResync(pollResync);
+          }
+          if (active && next.invalidated === true) {
+            await notifyInvalidation();
+          }
+          if (active && nextCursor) {
+            notifyCursor(nextCursor);
+          }
           // Content-free hints require authenticated re-read; no body is exposed.
           if (active) await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       } finally { close(); }
     })().catch(() => undefined);
-    return { closed, close, onInvalidation: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; } };
+    return {
+      closed,
+      close,
+      onInvalidation: (listener) => {
+        listeners.add(listener);
+        signalListenerReady();
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+      onResync: (listener) => {
+        resyncListeners.add(listener);
+        signalListenerReady();
+        return () => {
+          resyncListeners.delete(listener);
+        };
+      },
+      onCursor: (listener) => {
+        cursorListeners.add(listener);
+        return () => {
+          cursorListeners.delete(listener);
+        };
+      },
+    };
   };
   const call = async (operation: Operation, payload: Record<string, unknown>): Promise<unknown> => {
     if (!(NATIVE_OPERATIONS as readonly string[]).includes(operation)) throw new Error("Undeclared native operation");

@@ -1,6 +1,6 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {NoteJournal,prepareNoteBody,dispatchNote,definitiveNoteRejection,noteSaveIntent,completeNoteIntent,noteComparisonText,reconcileNoteDraft,noteBindingChanged,noteRecordIdentity,requireNoteRecord,requireNotePending,type NoteDraft,type NoteRecord,type NoteIntent} from "./notes-operations.ts";
+import {NoteJournal,prepareNoteBody,dispatchNote,definitiveNoteRejection,resolveRejectedNoteAction,noteSaveIntent,completeNoteIntent,noteComparisonText,reconcileNoteDraft,noteBindingChanged,noteRecordIdentity,requireNoteRecord,requireNotePending,type NoteDraft,type NoteRecord,type NoteIntent} from "./notes-operations.ts";
 import {ApiError,type HaeryongClient,type AnnotationView,type AnnotationStream} from "../../client/types.ts";
 import {prepareNoteContext} from "./notes-context.ts";
 const anchor={version_id:"original",page_path:"pages/한글.html",region_id:"retry",page_query:"q=+%2F",page_fragment:"part"};
@@ -215,4 +215,61 @@ test("RR2-B-1 stale edit after page/version reattach explicitly drops old contex
   const legacy={...local,base:remote};assert.throws(()=>noteSaveIntent(legacy,"era","blocked"),/위치/);assert.equal(noteSaveIntent(reconcileNoteDraft(legacy,remote,"drop"),"era","reconciled").body?.context_ref,null);
  }
  const local=draft(note("note-A"));local.contextRef="same-page-context";const server=note("note-A",2);const merged=reconcileNoteDraft(local,server,"keep");assert.equal(merged.contextRef,local.contextRef);assert.equal(merged.text,local.text);
+});
+
+test("Task04 G7 resolveRejectedNoteAction acquires admission guard before annotationGet and completes submit without self-blocking",async()=>{
+ const admitted={current:false};
+ const busyTransitions:boolean[]=[];
+ const rejectedIntent:NoteIntent={
+  kind:"delete",
+  target:"note-A",
+  key:"old-rejected-key",
+  generation:"gen-1",
+  etag:'"note-A1"',
+  body:null,
+  rejected:true,
+ };
+ const getGate=deferred<AnnotationView>();
+ let getCalls=0;
+ const submitted:NoteIntent[]=[];
+ const firstRun=resolveRejectedNoteAction(
+  admitted,
+  b=>busyTransitions.push(b),
+  rejectedIntent,
+  "gen-2",
+  async()=>{
+   getCalls++;
+   assert.equal(admitted.current,true,"admitted.current must be true before annotationGet awaits");
+   return getGate.promise;
+  },
+  async()=>{throw Error("must not take deleted branch");},
+  async nextIntent=>{
+   // Simulate NotesPanel.submit(..., false, guard) running while admitted.current is owned by resolveRejectedNoteAction:
+   assert.equal(admitted.current,true);
+   submitted.push(nextIntent);
+  },
+  ()=>"fresh-retry-key",
+ );
+ // A second click while annotationGet is in flight must be rejected by admitted.current:
+ const secondRun=await resolveRejectedNoteAction(
+  admitted,
+  b=>busyTransitions.push(b),
+  rejectedIntent,
+  "gen-2",
+  async()=>{getCalls++;return note("note-A",2);},
+  async()=>{},
+  async()=>{},
+ );
+ assert.equal(secondRun,false);
+ assert.equal(getCalls,1);
+
+ getGate.resolve(note("note-A",2));
+ assert.equal(await firstRun,true);
+ assert.equal(admitted.current,false);
+ assert.deepEqual(busyTransitions,[true,false]);
+ assert.equal(submitted.length,1);
+ assert.equal(submitted[0]!.key,"fresh-retry-key");
+ assert.equal(submitted[0]!.etag,'"note-A2"');
+ assert.equal(submitted[0]!.generation,"gen-2");
+ assert.equal(submitted[0]!.rejected,undefined);
 });

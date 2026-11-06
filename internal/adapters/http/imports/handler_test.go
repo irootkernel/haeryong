@@ -569,3 +569,34 @@ var _ = It("TestActualZIPAndSingleFileTypedEntries", Label("persistence"), func(
 		}()
 	}
 })
+
+var _ = It("TestImportsPassiveReadHeaderPreservesIdleAndRejectsInvalidUsage", Label("persistence"), func() {
+	t := GinkgoT()
+	f := newHTTPFixture(t)
+	uploadID := f.upload("file", "selected.html")
+	now := time.Now().UTC().Truncate(time.Second)
+	f.auth.Now = func() time.Time { return now }
+
+	initialSess, err := f.auth.Authenticate(context.Background(), f.token)
+	Expect(err).NotTo(HaveOccurred())
+
+	now = now.Add(45 * time.Second)
+	status, _, data := f.request("GET", "/api/v1/uploads/"+uploadID, nil, map[string]string{"Haeryong-Passive-Read": "1"})
+	requireStatus(t, status, 200, data)
+
+	status, _, badVal := f.request("GET", "/api/v1/uploads/"+uploadID, nil, map[string]string{"Haeryong-Passive-Read": "0"})
+	requireStatus(t, status, 400, badVal)
+	Expect(string(badVal)).To(ContainSubstring(`"INVALID_REQUEST"`))
+
+	status, _, badPost := f.request("POST", "/api/v1/uploads", strings.NewReader(`{"project_id":"`+f.project+`","mode":"directory"}`), map[string]string{
+		"Content-Type":          "application/json",
+		"Idempotency-Key":       operation(t),
+		"Haeryong-Passive-Read": "1",
+	})
+	requireStatus(t, status, 400, badPost)
+	Expect(string(badPost)).To(ContainSubstring(`"INVALID_REQUEST"`))
+
+	afterPassive, err := f.auth.AuthenticatePassive(context.Background(), f.token)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(afterPassive.LastSeenAt).To(Equal(initialSess.LastSeenAt))
+})

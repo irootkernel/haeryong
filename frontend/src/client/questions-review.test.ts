@@ -5,7 +5,7 @@ import {JournalReadError} from "./transfer.ts";
 import type {QuestionRecord} from "./questions.ts";
 import {ApiError,NetworkError} from "./types.ts";
 import type {HaeryongClient,QuestionView,ListPage} from "./types.ts";
-import {QuestionHistory} from "../app/screens/question-history.ts";
+import {QuestionHistory,revalidateInspectedQuestion} from "../app/screens/question-history.ts";
 
 const journal=()=>{const rows=new Map<string,QuestionRecord>();return {read:()=>[...rows.values()].map(row=>structuredClone(row)),save:(row:QuestionRecord)=>{rows.set(row.operationId,structuredClone(row));}};};
 const lock=async<T>(_name:string,action:()=>Promise<T>)=>action();
@@ -88,4 +88,66 @@ test("T5QRCLIENT05 lost refusal reply recovers the same terminal receipt before 
   const submission=new QuestionSubmission(client,records,"library","owner",undefined,lock,()=>"original-runtime");record=submission.capture("original-version",{page_path:"a.html",region_id:null},"original prefix question",()=>{});const original=structuredClone(record);
   await assert.rejects(submission.send(record,"",{}));const saved=records.read()[0]!;assert.equal(saved.dispatchReady,true);assert.equal(saved.admissionRefusal,undefined);assert.equal(questionUnresolved(saved),true);assert.deepEqual(saved.request,original.request);assert.equal(saved.operationId,original.operationId);assert.equal(saved.textSHA,original.textSHA);assert.equal(posts,0);assert.equal(reads,2);await assert.rejects(submission.acknowledgeRefusal(saved,()=>{}));
  }
+});
+
+test("Task04 G2+G4 QuestionHistory.load rethrows on resync and revalidateInspectedQuestion preserves inspected answer on domain hint while clearing on 401/403/404",async()=>{
+ const history=new QuestionHistory({questionList:async()=>{throw new NetworkError();}} as unknown as HaeryongClient);
+ await assert.rejects(history.load("v1",()=>{},false,undefined,true),NetworkError);
+ assert.equal(history.state.phase,"error");
+
+ // G4: ordinary domain hint revalidates the currently inspected question without clearing it:
+ let currentSaved:QuestionView|null=question("v1");
+ let cleared=0;
+ const issues:unknown[]=[];
+ await revalidateInspectedQuestion(
+  {questionGet:async(id:string)=>({...question("v1"),question_id:id,job_state:"completed"} as QuestionView)},
+  "q-v1",
+  ()=>true,
+  fresh=>{currentSaved=fresh;},
+  ()=>{cleared++;currentSaved=null;},
+  err=>{issues.push(err);},
+  false,
+ );
+ assert.equal(cleared,0);
+ assert.equal(currentSaved?.question_id,"q-v1");
+ assert.equal(currentSaved?.job_state,"completed");
+
+ // Transient error on resync surfaces issue and rethrows without clearing saved question:
+ await assert.rejects(
+  revalidateInspectedQuestion(
+   {questionGet:async()=>{throw new NetworkError();}},
+   "q-v1",
+   ()=>true,
+   fresh=>{currentSaved=fresh;},
+   ()=>{cleared++;currentSaved=null;},
+   err=>{issues.push(err);},
+   true,
+  ),
+  NetworkError,
+ );
+ assert.equal(cleared,0);
+ assert.equal(issues.length,1);
+
+ // Permission/not-found loss (404) clears the inspected saved question immediately:
+ await revalidateInspectedQuestion(
+  {questionGet:async()=>{throw new ApiError(404,"NOT_FOUND",false);}},
+  "q-v1",
+  ()=>true,
+  fresh=>{currentSaved=fresh;},
+  ()=>{cleared++;currentSaved=null;},
+  err=>{issues.push(err);},
+  true,
+ );
+ assert.equal(cleared,1);
+ assert.equal(currentSaved,null);
+});
+
+test("mandatory saved history superseded by a newer enumeration remains unacknowledged",async()=>{
+ const old=held<ListPage<QuestionView>>();let calls=0;
+ const reader={questionList:async()=>++calls===1?old.promise:{items:[question("new")],next_cursor:null}} as unknown as HaeryongClient;
+ const history=new QuestionHistory(reader);
+ const pending=history.load("v",()=>{},false,reader,true);
+ const rejected=assert.rejects(pending,{name:"StaleResponseError"});
+ await history.load("v",()=>{});old.resolve({items:[question("old")],next_cursor:null});await rejected;
+ assert.deepEqual(history.state.items,[question("new")]);assert.equal(history.state.phase,"ready");
 });

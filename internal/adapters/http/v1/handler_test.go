@@ -925,3 +925,37 @@ var _ = It("TestPolicyCommitDurableBeforePostCommitGuard503And401ReconcileViaOpe
 	Expect(string(cfgAfter2)).To(ContainSubstring(`"config_revision":3`))
 	Expect(string(cfgAfter2)).To(ContainSubstring(`"session_absolute_seconds":1`))
 })
+
+var _ = It("TestV1PassiveReadHeaderPreservesIdleAndRejectsInvalidUsage", Label("persistence"), func() {
+	t := GinkgoT()
+	f := newFixture(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	f.auth.Now = func() time.Time { return now }
+
+	status, _, sessBeforeRaw := f.request("GET", "/api/v1/session", nil, nil)
+	want(t, status, 200, sessBeforeRaw)
+	sessBefore := decoded[domain.Session](t, sessBeforeRaw)
+
+	now = now.Add(45 * time.Second)
+	status, _, projRaw := f.request("GET", "/api/v1/projects", nil, map[string]string{"Haeryong-Passive-Read": "1"})
+	want(t, status, 200, projRaw)
+	status, _, _ = f.request("HEAD", "/api/v1/projects", nil, map[string]string{"Haeryong-Passive-Read": "1"})
+	Expect(status).To(Equal(200))
+
+	status, _, badValRaw := f.request("GET", "/api/v1/projects", nil, map[string]string{"Haeryong-Passive-Read": "0"})
+	Expect(status).To(Equal(400), string(badValRaw))
+	Expect(string(badValRaw)).To(ContainSubstring(`"INVALID_REQUEST"`))
+
+	status, _, badMethodRaw := f.request("POST", "/api/v1/projects", strings.NewReader(`{"name":"x"}`), map[string]string{
+		"Content-Type":          "application/json",
+		"Idempotency-Key":       id(t),
+		"Haeryong-Passive-Read": "1",
+	})
+	Expect(status).To(Equal(400), string(badMethodRaw))
+	Expect(string(badMethodRaw)).To(ContainSubstring(`"INVALID_REQUEST"`))
+
+	status, _, sessAfterRaw := f.request("GET", "/api/v1/session", nil, map[string]string{"Haeryong-Passive-Read": "1"})
+	want(t, status, 200, sessAfterRaw)
+	sessAfter := decoded[domain.Session](t, sessAfterRaw)
+	Expect(sessAfter.LastSeenAt).To(Equal(sessBefore.LastSeenAt))
+})

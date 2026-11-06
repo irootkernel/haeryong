@@ -1,5 +1,5 @@
 import {ApiError} from "../../client/types.ts";
-import type {HaeryongClient,LifecycleCommitRequest,LifecycleResult,LifecycleAction} from "../../client/types.ts";
+import type {HaeryongClient,LifecycleCommitRequest,LifecycleResult,LifecycleAction,OperationView} from "../../client/types.ts";
 export interface LifecycleIntent {body:LifecycleCommitRequest;generation:string;operation:LifecycleAction}
 export const lifecycleJournalKey=(library:unknown,owner:unknown,document:string)=>"haeryong.lifecycle.v1:"+JSON.stringify([library,owner,document]);
 export function pendingLifecycleJournals(storage:Pick<Storage,"length"|"key"|"getItem">,library:string,owner:string):Array<{key:string;documentId:string;intent:LifecycleIntent}>{
@@ -27,7 +27,12 @@ export function finishLifecycleJournal(storage:Pick<Storage,"getItem"|"setItem"|
 }
 export async function reconcileLifecycle(client:HaeryongClient,intent:LifecycleIntent):Promise<LifecycleResult>{
  const receipt=await client.operation(intent.body.plan_id);
- if(receipt.state!=="completed")throw Error("원래 요청 결과가 아직 확인되지 않았습니다.");
+ const result=lifecycleResultFromReceipt(intent,receipt);
+ if(!result)throw Error("원래 요청 결과가 아직 확인되지 않았습니다.");
+ return result;
+}
+export function lifecycleResultFromReceipt(intent:LifecycleIntent,receipt:OperationView):LifecycleResult|null{
+ if(receipt.state!=="completed")return null;
  const result=receipt.result_metadata as LifecycleResult;
  if(result?.plan_id!==intent.body.plan_id)throw Error("계획 결과가 일치하지 않습니다.");
  return result;

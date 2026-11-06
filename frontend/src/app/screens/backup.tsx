@@ -1,24 +1,50 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ShellController } from "../../client/controller.ts";
+import {StaleResponseError} from "../../client/types.ts";
 import type { BackupStatus } from "../../client/types.ts";
 import { backupSummary, readBackupStatus, backupAttemptLabel } from "./backup-state.ts";
+import { useReviewInvalidation } from "./review-refresh.ts";
 
 export function BackupScreen({ controller }: { controller: ShellController }) {
   const [status, setStatus] = useState<BackupStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
+  const mountedRef = useRef(true),readSequence=useRef(0);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const authority = `${controller.state.capabilities?.library_id}:${controller.state.capabilities?.runtime_generation}:${controller.state.session?.principal_id}`;
   useEffect(() => { setStatus(null); setError(null); }, [authority]);
   useEffect(() => {
     let active = true;
+    const run=++readSequence.current,auth=controller.captureDispatchAuthority(),gen=controller.readGeneration;
+    const current=()=>active&&run===readSequence.current&&controller.isCurrentReadAuthority(auth,gen);
     setLoading(true);
     void controller.client.serviceStatus().then(value => {
       const next = readBackupStatus(value);
-      if (active) { setStatus(next); setError(null); }
-    }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); }).finally(() => { if (active) setLoading(false); });
+      if (current()) { setStatus(next); setError(null); }
+    }).catch(cause => { if (current()) setError(cause instanceof Error ? cause.message : String(cause)); }).finally(() => { if (current()) setLoading(false); });
     return () => { active = false; };
   }, [controller, authority, revision]);
+  const refreshPassive = useCallback(async (ev?: { resync?: boolean }) => {
+    const startReadGen = controller.readGeneration,auth=controller.captureDispatchAuthority(),run=++readSequence.current;
+    const current=()=>mountedRef.current&&controller.isCurrentReadAuthority(auth,startReadGen);
+    try {
+      const value = await controller.passiveClient.serviceStatus();
+      if(!current())return;
+      if(run!==readSequence.current){if(ev?.resync)throw new StaleResponseError();return;}
+      setStatus(readBackupStatus(value));
+      setError(null);
+    } catch (cause) {
+      if (current()&&run===readSequence.current) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
+      if (ev?.resync) throw cause;
+    } finally {if(current()&&run===readSequence.current)setLoading(false);}
+  }, [controller, authority]);
+  useReviewInvalidation(controller, true, refreshPassive);
   return <section className="screen backup-screen" data-backup-screen>
     <h1>백업 및 내보내기</h1>
     <p>백업·보호 복원·개인 기록 내보내기는 해룡 daemon이 실행되는 호스트의 로컬 CLI에서 수행합니다.</p>

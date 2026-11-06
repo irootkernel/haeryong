@@ -320,3 +320,27 @@ retained-source reads; its input/cleanup qualifications remain in the record.
 Independent result composition and delegated member acceptance are complete;
 the normal completion commit/native handoff precedes Task04. Physical mobile, Wails GUI and whole Stage A remain
 unqualified under the current web-only owner direction.
+
+## Multi-device reconciliation and conflict UI (TASK-007-04)
+
+[Multi-device reconciliation evidence](testing/multi-device-reconciliation.md)
+owns the bounded TASK-007-04 delivery: `Haeryong-Passive-Read: 1` and
+native `passive: true` background activity isolation on touching `GET`/`HEAD`
+routes, blank-line-framed SSE/native `Last-Event-ID` cursor continuity and
+no-cursor native bootstrap, the single-flight `resync.required` barrier with
+`readGeneration` fencing, receipt-first recovery (`GET /api/v1/operations/{id}`
+followed by a fresh resource `GET` and queued-edit conflict preservation),
+independent `reader-preference`/`reading-position`/`page-position` validators,
+and local-vs-server conflict comparison UI across Review, Revisit, Notes and
+personal reader state. Focused Go persistence, desktop `readerfacade` +
+`cmd/companion`, focused Python E2E and frontend default verification passed;
+Selected actual Tailscale private HTTPS stages passed, including personal
+conflicts, receipt/job recovery, actual trimmed-cursor/passive-idle behavior and
+the affected Provider direct-entry and Reader page-recovery paths. Original and
+affected review negatives remain preserved. The corrected frozen product passed
+its complete common (1,378 unique Go It specs, six suite setup/cleanup entries,
+253 Python tests; all 15 native command statuses zero). Original-role current
+confirmations and exact delegated member acceptance are complete. The factual
+closeout and AST-identical EOF formatting carry separate affected verification;
+normal commit/native finalization precede TASK-007-05. Physical/global Stage A
+and Master overall acceptance remain separate.

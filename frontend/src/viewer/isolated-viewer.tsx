@@ -93,9 +93,9 @@ export function IsolatedViewer(props: ViewerProps) {
     });
   }, [props.controller, props.owner, props.versionId, props.context, retry]);
 
-  useReviewInvalidation(props.controller, true, () => {
-    void lease.revalidate().catch(() => { /* Lease failure disposes its captured viewer. */ });
-  });
+  useReviewInvalidation(props.controller, true, () =>
+    lease.revalidate().catch(() => { /* Lease failure disposes its captured viewer. */ }),
+  );
 
   const reopen = async () => {
     if (reopening.current) return;

@@ -6,7 +6,7 @@ import {HttpHaeryongClient} from "./http.ts";
 import {NativeHaeryongClient,type NativePort,NATIVE_OPERATIONS} from "./native.ts";
 import {ApiError} from "./types.ts";
 import type {LifecycleCommitRequest} from "./types.ts";
-import {finishLifecycleJournal,lifecycleJournalKey,pendingLifecycleJournals,reconcileLifecycle,updateLifecycleJournal} from "../app/screens/lifecycle-operations.ts";
+import {finishLifecycleJournal,lifecycleResultFromReceipt,lifecycleJournalKey,pendingLifecycleJournals,reconcileLifecycle,updateLifecycleJournal} from "../app/screens/lifecycle-operations.ts";
 
 test("Lifecycle HTTP preserves closed body key omission exact identity and page arguments",async()=>{
  const old=globalThis.fetch,calls:Array<[string,RequestInit|undefined]>=[];
@@ -99,4 +99,14 @@ test("pending and paused purge IDs persist across reloads and cannot be dismisse
   assert.equal(purgeJobsNeedPoll(rows),true);for(const row of rows)assert.throws(()=>dismissPurgeJob(storage,key,row),/진행/);
   assert.deepEqual(rememberedPurgeJobs(storage,key),["pending","paused"]);
  }
+});
+
+test("known unfinished lifecycle receipts preserve intent without claiming a read failure or completion",()=>{
+ const intent={body:{plan_id:"plan",expected_revision:4,confirmed:true as const},generation:"old",operation:"purge" as const};
+ const receipt={operation_id:"plan",state:"pending",original_status:null,result_ref:null,job_id:null,result_metadata:null};
+ for(const state of ["pending","reconciling","failed"])assert.equal(lifecycleResultFromReceipt(intent,{...receipt,state}),null);
+ assert.throws(()=>lifecycleResultFromReceipt(intent,{...receipt,state:"completed",result_metadata:{plan_id:"other"}}),/일치/);
+ const result={plan_id:"plan",document_id:"doc",lifecycle:"purged",job_id:"original-job"};
+ assert.equal(lifecycleResultFromReceipt(intent,{...receipt,state:"completed",result_metadata:result}),result);
+ assert.equal(intent.body.plan_id,"plan");
 });

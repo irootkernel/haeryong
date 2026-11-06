@@ -1,3 +1,4 @@
+import {StaleResponseError} from "../../client/types.ts";
 import { useEffect, useRef, useState } from "react";
 import type { ShellController } from "../../client/controller.ts";
 import type { DraftView, ProjectView, DocumentView } from "../../client/types.ts";
@@ -9,6 +10,8 @@ import type { PlannedInput } from "../../client/transfer.ts";
 import { planFromNativeSource, verifyNativeSourceStable } from "../../client/native-fs.ts";
 import type { NativeFsClient } from "../../client/native-fs.ts";
 import { navigate } from "../router.tsx";
+import { refreshDraftMountedState } from "./generation-context.ts";
+import { useReviewInvalidation } from "./review-refresh.ts";
 
 const text=(error:unknown)=>error instanceof ApiError&&(error.status===412||error.status===409&&error.code==="VERSION_CONFLICT")?draftRefusalText(error):error instanceof Error?error.message:String(error);
 const stateLabel:Record<string,string>={preparing:"생성 중",ready:"검토 가능한 초안",published:"발행됨",rejected:"거부됨",failed:"생성 실패"};
@@ -20,7 +23,8 @@ export function DraftControl({controller,projects}:{controller:ShellController;p
  const [store]=useState(()=>new BrowserJournalStore("haeryong.draft-uploads.v1"));
  const [engine]=useState(()=>new TransferEngine(client,store));
  const [project,setProject]=useState(""),[rows,setRows]=useState<DraftView[]>([]),[cursor,setCursor]=useState<string|null>(null),[selected,setSelected]=useState<DraftView|null>(null);
- const [history,setHistory]=useState<DraftView[]>([]),[historyCursor,setHistoryCursor]=useState<string|null>(null);
+ const [history,setHistory]=useState<DraftView[]>([]),[historyCursor,setHistoryCursor]=useState<string|null>(null),[historyLoaded,setHistoryLoaded]=useState(false);
+ const reads=useRef({labels:0,project:0});
  const labelAuthority=controller.captureDispatchAuthority();
  const labelAuthorityKey=labelAuthority===null?"":JSON.stringify(labelAuthority);
  const documentIds=JSON.stringify([...new Set([...rows.map(row=>row.document_id),selected?.document_id].filter((id):id is string=>!!id))].sort());
@@ -28,16 +32,16 @@ export function DraftControl({controller,projects}:{controller:ShellController;p
  useEffect(()=>{
   let live=true;setDocumentLabels({authority:labelAuthorityKey,items:{}});
   if(labelAuthority===null)return()=>{live=false;};
+  const readGen=controller.readGeneration,read=++reads.current.labels;
   const ids=JSON.parse(documentIds) as string[];
-  void Promise.allSettled(ids.map(async id=>({id,detail:await client.documentDetail(id)}))).then(results=>{
-   if(!live)return;
-   try{controller.requireVerifiedDispatch(labelAuthority);}catch{return;}
+  void Promise.allSettled(ids.map(async id=>({id,detail:await controller.passiveClient.documentDetail(id)}))).then(results=>{
+   if(!live||read!==reads.current.labels||!controller.isCurrentReadAuthority(labelAuthority,readGen))return;
    const items:Record<string,DocumentView|null>={};
    results.forEach((result,index)=>{items[ids[index]!]=result.status==="fulfilled"?result.value.detail:null;});
    setDocumentLabels({authority:labelAuthorityKey,items});
   });
   return()=>{live=false;};
- },[client,controller,documentIds,labelAuthorityKey]);
+ },[controller,documentIds,labelAuthorityKey]);
  const projectLabel=(row:DraftView)=>projects.find(p=>p.project_id===row.project_id)?.name??"프로젝트 이름 확인 불가";
  const documentLabel=(row:DraftView)=>{
   if(row.document_id===null)return "새 문서";
@@ -48,16 +52,69 @@ export function DraftControl({controller,projects}:{controller:ShellController;p
  const [pending,setPending]=useState<PendingDraft|null>(null),[input,setInput]=useState<PlannedInput|null>(null);
  const [busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null),[notice,setNotice]=useState("");
  const [actionOwner]=useState(()=>new DraftActionOwner());
- const alive=useRef(true),handle=useRef<string|null>(null),busyRef=useRef(false);
+ const alive=useRef(true),handle=useRef<string|null>(null),busyRef=useRef(false),actionSeq=useRef(0);
+ const projectRef=useRef(project);projectRef.current=project;
+ const selectedRef=useRef(selected);selectedRef.current=selected;
+ const historyLoadedRef=useRef(historyLoaded);historyLoadedRef.current=historyLoaded;
  const native=typeof (client as unknown as Partial<NativeFsClient>).chooseImportSource==="function"?client as unknown as NativeFsClient:null;
  useEffect(()=>{alive.current=true;return()=>{alive.current=false;actionOwner.stop();if(native&&handle.current)void native.releaseSource(handle.current).catch(()=>{});};},[native,actionOwner]);
- useEffect(()=>{let live=true;setRows([]);setCursor(null);setError(null);void client.draftList(project||undefined).then(page=>{if(live){setRows(page.items);setCursor(page.next_cursor);}}).catch(e=>{if(live)setError(text(e));});return()=>{live=false;};},[client,project]);
+ useEffect(()=>{
+  let live=true;actionSeq.current+=1;controller.bumpReadGeneration();
+  const auth=controller.captureDispatchAuthority(),readGen=controller.readGeneration,act=actionSeq.current,read=++reads.current.project;
+  setRows([]);setCursor(null);setError(null);
+  void client.draftList(project||undefined).then(page=>{if(live&&read===reads.current.project&&actionSeq.current===act&&controller.isCurrentReadAuthority(auth,readGen)){setRows(page.items);setCursor(page.next_cursor);}}).catch(e=>{if(live&&read===reads.current.project&&actionSeq.current===act&&controller.isCurrentReadAuthority(auth,readGen))setError(text(e));});
+  return()=>{live=false;};
+ },[client,controller,project]);
  const read=(id:string):PendingDraft|null=>{const raw=localStorage.getItem(prefix+id);if(raw===null)return null;const record=JSON.parse(raw) as PendingDraft;if(record.draftId!==id || !record.key || !record.etag)throw new Error("초안 복구 기록을 확인해 주세요.");return record;};
  const save=(record:PendingDraft)=>{localStorage.setItem(prefix+record.draftId,JSON.stringify(record));if(alive.current)setPending(structuredClone(record));};
+ useReviewInvalidation(
+  controller,
+  true,
+  async(ev)=>{
+   const auth=controller.captureDispatchAuthority();
+   if(auth===null)return;
+   const readGen=ev?.readGeneration??controller.readGeneration,act=actionSeq.current,authKey=JSON.stringify(auth);
+   const read={labels:++reads.current.labels,project:++reads.current.project};
+   try{
+    const applied=await refreshDraftMountedState({
+     passiveClient:controller.passiveClient,
+     project:projectRef.current,
+     selectedId:selectedRef.current?.draft_id??null,
+     includeHistory:historyLoadedRef.current,
+     canApply:()=>alive.current&&!busyRef.current&&actionSeq.current===act&&read.labels===reads.current.labels&&read.project===reads.current.project&&controller.isCurrentReadAuthority(auth,readGen),
+     isCurrentProject:(pid)=>projectRef.current===pid,
+     isCurrentSelected:(did)=>(selectedRef.current?.draft_id??null)===did,
+     isHistoryOpen:()=>historyLoadedRef.current,
+     applyList:(items,nextCursor)=>{
+      setRows(items);
+      setCursor(nextCursor);
+     },
+     applySelected:(draft)=>{
+      setSelected(draft);
+     },
+     applyHistory:(items,nextCursor)=>{
+      setHistory(items);
+      setHistoryCursor(nextCursor);
+     },
+     applyDocumentLabels:(items)=>{
+      setDocumentLabels({authority:authKey,items});
+     },
+    });
+    if(!applied&&ev?.resync&&alive.current)throw new StaleResponseError();
+   }catch(e){
+    if(alive.current&&!busyRef.current&&actionSeq.current===act&&controller.isCurrentReadAuthority(auth,readGen)){
+     setError(text(e));
+    }
+    if(ev?.resync&&alive.current)throw e;
+   }
+  },
+  ()=>busyRef.current,
+ );
  const act=async(action:(control:DraftActionControl)=>Promise<void>)=>{
   if(busyRef.current)return;
   // A new explicit action starts only after the previous busy promise settles.
   // Its fresh control never clears the prior action's stopped state.
+  actionSeq.current+=1;controller.bumpReadGeneration();
   const control=actionOwner.begin();busyRef.current=true;setBusy(true);setError(null);
   try{await action(control);}catch(e){if(alive.current)setError(text(e));}
   finally{busyRef.current=false;if(alive.current)setBusy(false);}
@@ -65,7 +122,7 @@ export function DraftControl({controller,projects}:{controller:ShellController;p
  const guard=(control:DraftActionControl)=>{if(!alive.current)throw new Error("이전 초안 화면입니다.");actionOwner.require(control);controller.requireVerifiedDispatch();};
  const select=async(row:DraftView,control:DraftActionControl)=>{
   const current=await client.draftGet(row.draft_id);guard(control);
-  setSelected(current);setHistory([]);setHistoryCursor(null);setInput(null);setPending(read(current.draft_id));
+  setSelected(current);setHistory([]);setHistoryCursor(null);setHistoryLoaded(false);setInput(null);setPending(read(current.draft_id));
   if(native&&handle.current){await native.releaseSource(handle.current);handle.current=null;}
  };
  const chooseNative=async(control:DraftActionControl)=>{
@@ -134,7 +191,7 @@ export function DraftControl({controller,projects}:{controller:ShellController;p
  };
  return <section aria-label="초안 관리" aria-busy={busy}>
   <h3>초안 관리</h3><p>생성과 교체는 개인 Review를 바꾸지 않습니다. 발행은 초안에 저장된 원래 문서 기준을 사용합니다.</p>
-  <label className="field"><span>초안 프로젝트</span><select value={project} disabled={busy} onChange={e=>{setProject(e.target.value);setSelected(null);setHistory([]);setPending(null);}}><option value="">전체</option>{projects.map(p=><option key={p.project_id} value={p.project_id}>{p.name}</option>)}</select></label>
+  <label className="field"><span>초안 프로젝트</span><select value={project} disabled={busy} onChange={e=>{actionSeq.current+=1;setProject(e.target.value);setSelected(null);setHistory([]);setHistoryCursor(null);setHistoryLoaded(false);setPending(null);}}><option value="">전체</option>{projects.map(p=><option key={p.project_id} value={p.project_id}>{p.name}</option>)}</select></label>
   {error?<p role="alert">{error}</p>:null}<p role="status" aria-live="polite">{notice}</p>
   <button type="button" disabled={busy} onClick={()=>void act(async()=>{const page=await client.draftList(project||undefined);setRows(page.items);setCursor(page.next_cursor);})}>초안 새로고침</button>
   <ul>{rows.map(row=><li key={row.draft_id}><button className="draft-choice" type="button" disabled={busy} onClick={()=>void act(control=>select(row,control))}><strong>{projectLabel(row)} · {documentLabel(row)}</strong><br/>{row.document_id??"새 문서 생성"}<br/>초안 {row.draft_id} · 기준 {baseLabel(row)}<br/>{stateLabel[row.state]} · {new Date(row.created_at).toLocaleString()}</button></li>)}</ul>
@@ -149,7 +206,7 @@ export function DraftControl({controller,projects}:{controller:ShellController;p
    </dl><p>문서 제목은 현재 표시 이름입니다. 저장된 기준 버전은 바뀌지 않습니다.</p><p>{selected.failure_reason}</p>
    {selected.published_version_id?<button type="button" disabled={busy} onClick={()=>void act(async control=>{const version=await client.versionDetail(selected.published_version_id!);guard(control);navigate(`/documents/${version.document_id}/versions/${version.version_id}`);})}>발행 버전 읽기</button>:null}
    <button type="button" disabled={busy} onClick={()=>void act(control=>select(selected,control))}>초안 상태 확인</button>
-   <button type="button" disabled={busy} onClick={()=>void act(async()=>{const page=await client.draftHistory(selected.draft_id);setHistory(page.items);setHistoryCursor(page.next_cursor);})}>초안 이력</button>
+   <button type="button" disabled={busy} onClick={()=>void act(async()=>{const page=await client.draftHistory(selected.draft_id);setHistoryLoaded(true);setHistory(page.items);setHistoryCursor(page.next_cursor);})}>초안 이력</button>
    <ul>{history.map(row=><li key={row.revision}>#{row.revision} · {stateLabel[row.state]} · {new Date(row.updated_at).toLocaleString()} · 초안 {row.draft_id} · 문서 {row.document_id??"새 문서"} · 기준 {baseLabel(row)}</li>)}</ul>
    {historyCursor?<button type="button" disabled={busy} onClick={()=>void act(async()=>{const page=await client.draftHistory(selected.draft_id,historyCursor);setHistory(old=>[...old,...page.items]);setHistoryCursor(page.next_cursor);})}>이력 더 보기</button>:null}
    {pending?<><p>원래 {pending.action} 작업을 확인해야 합니다. 새 작업을 자동으로 만들지 않습니다.</p>{pending.refused?<><p>{draftRefusalText(pending.refused)}</p><button type="button" disabled={!canWrite||busy} onClick={()=>void act(acknowledgeRefusal)}>거부 확인 · 새 동작 선택</button></>:<button type="button" disabled={!canWrite||busy} onClick={()=>void act(control=>run(control,pending.action,true))}>원래 초안 작업 복구</button>}</>:null}

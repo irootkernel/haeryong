@@ -115,9 +115,11 @@ type readerStream struct {
 }
 
 type readerSubscription struct {
-	id     string
-	gen    uint64
-	cursor string
+	id                 string
+	gen                uint64
+	cursor             string
+	pendingInvalidated bool
+	pendingResync      map[string]any
 }
 
 type renderRef struct {
@@ -155,6 +157,8 @@ type ReaderService struct {
 	referenceReadID uint64
 	streams         map[string]*readerStream
 	subs            map[string]*readerSubscription
+	lastEventGen    uint64
+	lastEventCursor string
 	renders         []renderRef
 	diagnostics     ReceiptObserver
 	client          *http.Client
@@ -287,6 +291,7 @@ type authority struct {
 	endpoint     string
 	attachmentID string
 	gen          uint64
+	passive      bool
 }
 
 func (s *ReaderService) authority() (authority, *wireError) {
@@ -343,6 +348,9 @@ func (s *ReaderService) requestContext(parent context.Context, method, path stri
 	request = request.WithContext(ctx)
 	if auth.token != "" {
 		request.Header.Set("Authorization", "Bearer "+auth.token)
+	}
+	if auth.passive && (method == "GET" || method == "HEAD") {
+		request.Header.Set("Haeryong-Passive-Read", "1")
 	}
 	for key, value := range headers {
 		request.Header.Set(key, value)
@@ -584,7 +592,67 @@ func (s *ReaderService) Invoke(in struct {
 	return map[string]any{"ok": true, "value": value}, nil
 }
 
+func passiveAllowedOperation(operation string) bool {
+	switch operation {
+	case "currentSession", "capabilities", "pendingPairings", "listSessions", "operation",
+		"providerStatus", "serviceStatus", "listProjects", "search", "listDocuments",
+		"documentDetail", "documentVersions", "versionDetail", "versionBacklinks",
+		"validateVersionIndexes", "versionReferences", "resolveReference", "versionFiles",
+		"versionSuppliedMetadata", "configurationView", "retainedSourceReads", "projectSources",
+		"versionEvidence", "evidenceVerifications", "versionAssessments", "assessmentCoverage",
+		"renderBootstrap", "lifecyclePlanGet", "trashList",
+		"annotationList", "annotationGet", "annotationHistory", "annotationBodyStream", "annotationContextStream",
+		"revisitGet", "reviewGet", "reviewHistory", "personalGet",
+		"listUploads", "uploadDetail", "uploadEntries", "uploadRanges", "uploadPins",
+		"jobGet", "verifyContextFresh", "packageStream", "fileStream",
+		"draftList", "draftGet", "draftHistory",
+		"questionList", "questionGet", "questionAnswers", "answerGet",
+		"questionTextStream", "questionContextStream", "answerBodyStream", "answerCitationStream":
+		return true
+	default:
+		return false
+	}
+}
+
+func extractPassivePayload(operation string, payload json.RawMessage) (json.RawMessage, bool, *wireError) {
+	if len(payload) == 0 {
+		return payload, false, nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &fields); err != nil || fields == nil {
+		return payload, false, nil
+	}
+	raw, ok := fields["passive"]
+	if !ok {
+		return payload, false, nil
+	}
+	if !passiveAllowedOperation(operation) {
+		return nil, false, &wireError{Status: 400, Code: "NATIVE_PAYLOAD_INVALID", Retryable: false}
+	}
+	trimmed := bytes.TrimSpace(raw)
+	var passive bool
+	switch {
+	case bytes.Equal(trimmed, []byte("true")):
+		passive = true
+	case bytes.Equal(trimmed, []byte("false")):
+		passive = false
+	default:
+		return nil, false, &wireError{Status: 400, Code: "NATIVE_PAYLOAD_INVALID", Retryable: false}
+	}
+	delete(fields, "passive")
+	cleaned, err := json.Marshal(fields)
+	if err != nil {
+		return nil, false, &wireError{Status: 400, Code: "NATIVE_PAYLOAD_INVALID", Retryable: false}
+	}
+	return cleaned, passive, nil
+}
+
 func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, *wireError) {
+	cleanedPayload, passive, werr := extractPassivePayload(operation, payload)
+	if werr != nil {
+		return nil, werr
+	}
+	payload = cleanedPayload
 	switch operation {
 	case "attachSession":
 		return s.attach()
@@ -676,6 +744,7 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 	if werr != nil {
 		return nil, werr
 	}
+	auth.passive = passive
 	itemsOnly := func(result outcome) (any, *wireError) {
 		if result.werr != nil {
 			return nil, result.werr
@@ -1547,7 +1616,7 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 		s.dropStream(in.StreamID)
 		return nil, nil
 	case "subscribeEvents":
-		return s.subscribeEvents(auth)
+		return s.subscribeEvents(payload, auth)
 	case "eventsPoll":
 		return s.eventsPoll(payload, auth)
 	case "eventsClose":
@@ -2277,9 +2346,80 @@ func (s *ReaderService) dropStream(id string) {
 	}
 }
 
-func (s *ReaderService) subscribeEvents(auth authority) (any, *wireError) {
+func boundedResync(raw any) map[string]any {
+	m, ok := raw.(map[string]any)
+	if !ok || m == nil {
+		return nil
+	}
+	reason, _ := m["reason"].(string)
+	epoch, _ := m["stream_epoch"].(string)
+	head, _ := m["head"].(string)
+	resume, _ := m["resume_cursor"].(string)
+	if reason == "" && epoch == "" && head == "" && resume == "" {
+		return nil
+	}
+	return map[string]any{
+		"reason":        reason,
+		"stream_epoch":  epoch,
+		"head":          head,
+		"resume_cursor": resume,
+	}
+}
+
+func extractPollInvalidation(page map[string]any) (bool, map[string]any) {
+	resync := boundedResync(page["resync"])
+	invalidated := resync != nil || page["resync"] != nil
+	if items, ok := page["items"].([]any); ok {
+		for _, item := range items {
+			if event, ok := item.(map[string]any); ok {
+				kind, _ := event["type"].(string)
+				if kind == "" {
+					kind, _ = event["kind"].(string)
+				}
+				if kind != "" {
+					invalidated = true
+				}
+			}
+		}
+	}
+	return invalidated, resync
+}
+
+func (s *ReaderService) subscribeEvents(payload json.RawMessage, auth authority) (any, *wireError) {
+	var in struct {
+		Cursor *string `json:"cursor"`
+	}
+	if len(payload) > 0 {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(payload, &fields) != nil || fields == nil {
+			return nil, &wireError{Status: 400, Code: "NATIVE_PAYLOAD_INVALID", Retryable: false}
+		}
+		for k, v := range fields {
+			if k != "cursor" || bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
+				return nil, &wireError{Status: 400, Code: "NATIVE_PAYLOAD_INVALID", Retryable: false}
+			}
+		}
+		if werr := decodePayload(payload, &in); werr != nil {
+			return nil, werr
+		}
+	}
+	resumeCursor := ""
+	if in.Cursor != nil && *in.Cursor != "" {
+		resumeCursor = *in.Cursor
+	}
+
 	query := url.Values{}
 	query.Set("transport", "poll")
+	resuming := false
+	if resumeCursor != "" {
+		resuming = true
+		if epoch, after, ok := strings.Cut(resumeCursor, ":"); ok {
+			query.Set("stream_epoch", epoch)
+			query.Set("after", after)
+		} else {
+			query.Set("stream_epoch", resumeCursor)
+		}
+	}
 	result := s.request("GET", "/api/v1/events", query, nil, nil, auth)
 	if result.werr != nil {
 		return nil, result.werr
@@ -2288,14 +2428,65 @@ func (s *ReaderService) subscribeEvents(auth authority) (any, *wireError) {
 	if id == "" {
 		return nil, networkError()
 	}
-	s.mu.Lock()
 	cursor := ""
+	pendingInvalidated := false
+	var pendingResync map[string]any
+	var bootstrapResync map[string]any
 	if page, ok := result.value.(map[string]any); ok {
 		cursor, _ = page["next_cursor"].(string)
+		pendingInvalidated, pendingResync = extractPollInvalidation(page)
+		if !resuming {
+			epoch, _ := page["stream_epoch"].(string)
+			head, _ := page["head"].(string)
+			if (epoch == "" || head == "") && cursor != "" {
+				if e, h, ok := strings.Cut(cursor, ":"); ok && e != "" && h != "" {
+					epoch, head = e, h
+				}
+			}
+			if epoch != "" && head != "" {
+				cursor = epoch + ":" + head
+				if pendingResync == nil {
+					bootstrapResync = map[string]any{
+						"reason":        "bootstrap",
+						"stream_epoch":  epoch,
+						"head":          head,
+						"resume_cursor": cursor,
+					}
+				}
+			}
+		}
+		if pendingResync != nil {
+			if rc, _ := pendingResync["resume_cursor"].(string); rc != "" {
+				cursor = rc
+			}
+		}
 	}
-	s.subs[id] = &readerSubscription{id: id, gen: auth.gen, cursor: cursor}
+	s.mu.Lock()
+	if s.generation == auth.gen {
+		s.lastEventGen = auth.gen
+		if cursor != "" {
+			s.lastEventCursor = cursor
+		}
+	}
+	s.subs[id] = &readerSubscription{
+		id:     id,
+		gen:    auth.gen,
+		cursor: cursor,
+	}
 	s.mu.Unlock()
-	return map[string]any{"subscription_id": id}, nil
+	reply := map[string]any{"subscription_id": id}
+	if cursor != "" {
+		reply["cursor"] = cursor
+	}
+	if pendingInvalidated {
+		reply["invalidated"] = true
+	}
+	if pendingResync != nil {
+		reply["resync"] = pendingResync
+	} else if bootstrapResync != nil {
+		reply["resync"] = bootstrapResync
+	}
+	return reply, nil
 }
 
 func (s *ReaderService) eventsPoll(payload json.RawMessage, auth authority) (any, *wireError) {
@@ -2333,28 +2524,44 @@ func (s *ReaderService) eventsPoll(payload json.RawMessage, auth authority) (any
 		}
 		return nil, result.werr
 	}
-	// Only a boolean hint crosses the native wire; never event resources/body.
+	// Only a boolean hint and bounded resync metadata cross the native wire;
+	// never event resources or bodies.
 	invalidated := false
+	nextCursor := ""
+	var resync map[string]any
 	if page, ok := result.value.(map[string]any); ok {
-		invalidated = page["resync"] != nil
-		if items, ok := page["items"].([]any); ok {
-			for _, item := range items {
-				if event, ok := item.(map[string]any); ok {
-					switch event["type"] {
-					case "search.index_updated", "version.published", "library.invalidated", "resource.invalidated", "resync.required", "policy.changed", "document.lifecycle_changed", "document.archived", "document.trashed", "document.restored", "document.purged":
-						invalidated = true
-					}
-				}
-			}
+		pageInvalidated, pageResync := extractPollInvalidation(page)
+		if pageInvalidated {
+			invalidated = true
+		}
+		if pageResync != nil {
+			resync = pageResync
 		}
 		next, _ := page["next_cursor"].(string)
+		if pageResync != nil {
+			if rc, _ := pageResync["resume_cursor"].(string); rc != "" {
+				next = rc
+			}
+		}
+		nextCursor = next
 		s.mu.Lock()
 		if s.subs[in.SubscriptionID] == subscription && s.generation == auth.gen {
 			subscription.cursor = next
+			if next != "" {
+				s.lastEventGen = auth.gen
+				s.lastEventCursor = next
+			}
 		}
 		s.mu.Unlock()
 	}
-	return map[string]any{"closed": false, "invalidated": invalidated}, nil
+	reply := map[string]any{"closed": false, "invalidated": invalidated}
+	if nextCursor != "" {
+		reply["cursor"] = nextCursor
+	}
+	if resync != nil {
+		reply["resync"] = resync
+	}
+	return reply, nil
 }
 
 // CloseOwned is the normal window-close path: explicit typed closes for every
@@ -2456,6 +2663,9 @@ func (s *ReaderService) requestRaw(method, path string, query url.Values, header
 	request = request.WithContext(ctx)
 	if auth.token != "" {
 		request.Header.Set("Authorization", "Bearer "+auth.token)
+	}
+	if auth.passive && (method == "GET" || method == "HEAD") {
+		request.Header.Set("Haeryong-Passive-Read", "1")
 	}
 	for key, value := range headers {
 		request.Header.Set(key, value)

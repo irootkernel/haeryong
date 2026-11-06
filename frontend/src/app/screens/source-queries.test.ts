@@ -8,7 +8,7 @@ import { SourceWriteIntents } from "../../client/source-write-intents.ts";
 // late reply from a previous context never lands.
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { ApplicableFreshness, AssessmentRecord, CoverageUnit, HaeryongClient, ListPage, VerificationRecord } from "../../client/types.ts";
+import type { ApplicableFreshness, AssessmentRecord, CoverageUnit, EvidenceItemView, HaeryongClient, ListPage, VerificationRecord } from "../../client/types.ts";
 import { ApiError } from "../../client/types.ts";
 import { SourceQueries } from "./source-queries.ts";
 
@@ -16,6 +16,7 @@ type AssessmentPage = ListPage<AssessmentRecord> & { applicable?: ApplicableFres
 
 function fakeClient(handlers: {
   assessments?: (cursor?: string) => Promise<AssessmentPage>;
+  evidence?: () => Promise<EvidenceItemView>;
   coverage?: (cursor?: string) => Promise<ListPage<CoverageUnit>>;
   verifications?: (evidenceId: string, cursor?: string) => Promise<ListPage<VerificationRecord>>;
 }): HaeryongClient {
@@ -32,6 +33,7 @@ function fakeClient(handlers: {
     versionAssessments: (_versionId: string, filter?: { cursor?: string }) => handlers.assessments!(filter?.cursor),
     assessmentCoverage: (_versionId: string, _coverageSetId: string, cursor?: string) => handlers.coverage!(cursor),
     evidenceVerifications: (_versionId: string, evidenceId: string, cursor?: string) => handlers.verifications!(evidenceId, cursor),
+    versionEvidence: () => handlers.evidence!(),
   } as unknown as HaeryongClient;
 }
 
@@ -483,4 +485,60 @@ test("T5 newer applicable capture survives late older history; blocked/not_check
   assert.deepEqual(view.coverage.units.items.map(u => u.outcome), ['blocked', 'not_checked']);
   assert.equal(view.coverage.units.items[1]!.page_path, 'regionless.html');
   assert.equal(queries.scope(), undefined);
+});
+
+test("Task04 G2 SourceQueries.refreshPassive surfaces error state and rethrows when resync is true", async () => {
+  let failPassive = false;
+  const client = fakeClient({
+    assessments: async () => {
+      if (failPassive) throw new ApiError(503, "SERVICE_UNAVAILABLE", true);
+      return { items: [], next_cursor: null, applicable: null };
+    },
+    evidence: async () => {
+      if (failPassive) throw new ApiError(503, "SERVICE_UNAVAILABLE", true);
+      return { evidence_id: "ev-1", version_id: "v1", authored: {}, source: {}, availability: "available", bytes_origin: null, reason: null, service_verification: null, verifications_url: "/api/v1/versions/v1/evidence/ev-1/verifications" };
+    },
+    verifications: async () => {
+      if (failPassive) throw new ApiError(503, "SERVICE_UNAVAILABLE", true);
+      return { items: [], next_cursor: null };
+    },
+  });
+  const queries = new SourceQueries(client, "v1", null, null, "g2", new SourceWriteIntents());
+  await queries.loadAssessments();
+  await queries.loadEvidence("ev-1");
+  await queries.loadVerifications("ev-1");
+  assert.equal(queries.snapshot().assessments.phase, "ready");
+  assert.equal(queries.snapshot().items["ev-1"]?.phase, "ready");
+  assert.equal(queries.snapshot().verifications["ev-1"]?.phase, "ready");
+
+  failPassive = true;
+  await assert.rejects(
+    queries.refreshPassive(client, () => false, true),
+    (err: unknown) => err instanceof ApiError && err.status === 503,
+  );
+  assert.equal(queries.snapshot().assessments.phase, "error");
+  assert.equal(queries.snapshot().items["ev-1"]?.phase, "error");
+  assert.equal(queries.snapshot().verifications["ev-1"]?.phase, "error");
+
+  // Subsequent recovery via refreshPassive restores ready state:
+  failPassive = false;
+  await queries.refreshPassive(client, () => false, true);
+  assert.equal(queries.snapshot().assessments.phase, "ready");
+  assert.equal(queries.snapshot().items["ev-1"]?.phase, "ready");
+  assert.equal(queries.snapshot().verifications["ev-1"]?.phase, "ready");
+});
+
+
+for (const resync of [false, true]) test(`Task04 Evidence refresh retires an older initial assessment response (resync=${resync})`, async () => {
+  let release!: (page: AssessmentPage) => void;
+  let calls = 0;
+  const oldPage = new Promise<AssessmentPage>(resolve => { release = resolve; });
+  const page = (id: string): AssessmentPage => ({ items: [{ assessment_id: id } as AssessmentRecord], next_cursor: null, applicable: null });
+  const client = fakeClient({ assessments: async () => ++calls === 1 ? oldPage : page("current") });
+  const queries = new SourceQueries(client, "v1", null, null, "same-context", new SourceWriteIntents());
+  const initial = queries.loadAssessments();
+  await queries.refreshPassive(client, undefined, resync);
+  release(page("old"));
+  await initial;
+  assert.deepEqual(queries.snapshot().assessments.history.items.map(row => row.assessment_id), ["current"]);
 });

@@ -1409,3 +1409,45 @@ var _ = It("AIWF06P actual active source-read ownership survives concurrent GC a
 	Expect(a.driver.entries.Load()).To(Equal(int32(1)))
 	Expect(a.driver.inputReads.Load()).To(Equal(int32(1)))
 })
+
+var _ = It("AIWF07P Task04 Ask and Generation lost-ACK and client-absence recovery reconcile via original operation receipts with Execute count one", Label("persistence"), func() {
+	w := freshWorld()
+	pair2, e := w.auth.CreatePairing(w.ctx, "http://127.0.0.1:9270", "reconnected peer session", "test-peer")
+	Expect(e).NotTo(HaveOccurred())
+	_, e = w.auth.BootstrapDecide(w.ctx, domain.PairingDecision{ID: pair2.ID, Code: pair2.Code, Origin: pair2.Origin, ETag: pair2.ETag, OperationID: id(), Action: "approve"})
+	Expect(e).NotTo(HaveOccurred())
+	poll2, e := w.auth.Poll(w.ctx, pair2.ID, pair2.PollingSecret, pair2.Origin)
+	Expect(e).NotTo(HaveOccurred())
+
+	for _, kind := range []string{"generation", "question"} {
+		a := admit(w, kind)
+		// While the job is queued (before completion), receipt is pending/accepted and replay returns the same admission without starting another attempt.
+		opPending, e := w.auth.Operation(w.ctx, w.owner, a.key)
+		Expect(e).NotTo(HaveOccurred(), kind)
+		Expect(opPending.Key.OperationID).To(Equal(a.key), kind)
+		Expect(opPending.Response).NotTo(BeNil(), kind)
+		Expect(field(*opPending.Response, "job_id")).To(Equal(a.job), kind)
+		a.replay(w)
+
+		// Process the durable job while the original client is absent (or lost the 202 ACK), then use the second owner session to reconcile.
+		p := w.coordinator(a.driver)
+		Expect(p.Process(w.ctx, a.job)).To(Succeed(), kind)
+		Expect(p.StopProviders()).To(Succeed(), kind)
+		Expect(a.driver.entries.Load()).To(Equal(int32(1)), kind+" must execute exactly once")
+
+		opAfter, e := w.auth.Operation(w.ctx, poll2.Token, a.key)
+		Expect(e).NotTo(HaveOccurred(), kind)
+		Expect(opAfter.Key.OperationID).To(Equal(a.key), kind)
+		Expect(opAfter.Response).NotTo(BeNil(), kind)
+		Expect(field(*opAfter.Response, "job_id")).To(Equal(a.job), kind)
+		jAfter, e := w.auth.Job(w.ctx, poll2.Token, a.job)
+		Expect(e).NotTo(HaveOccurred(), kind)
+		Expect(jAfter.State).To(Equal("completed"), kind)
+
+		// Same-key replay after completion still returns the original admission and never triggers a second Execute.
+		a.replay(w)
+		Expect(a.driver.entries.Load()).To(Equal(int32(1)), kind+" replay after completion must not execute again")
+		at := attempt(w, a.job)
+		a.assertCompleted(w, at)
+	}
+})

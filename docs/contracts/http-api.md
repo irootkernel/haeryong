@@ -1082,3 +1082,30 @@ and remote Host/Origin pairs cannot be crossed. Forwarded/Tailscale identity
 headers grant no session authority. The local-only native facade masks remote
 renderer capabilities and rejects remote Open/renew before dispatch; general
 native APIs and Close keep their existing scope.
+
+## Multi-device reconciliation and passive reads (TASK-007-04)
+
+Touching `GET`/`HEAD` routes across `/api/v1/*` accept the optional request
+header `Haeryong-Passive-Read: 1` for background invalidation, `resync.required`
+barrier sweeps, `visibilitychange` rechecks and background status polling.
+Only `GET` and `HEAD` permit a single exact `"1"` header value; any other value,
+multiple values or any non-`GET`/`HEAD` method fails `400 INVALID_REQUEST`
+before touching `last_seen_at`. Valid passive reads still enforce session
+revocation, `auth_epoch`, idle expiry and absolute expiry without advancing
+`last_seen_at`. Closed read-only native operations in `desktop/readerfacade`
+accept optional `passive: true` and forward `Haeryong-Passive-Read: 1`.
+
+Personal reader state (`reader-preference`, `reading-position` and per-page
+`page-position?page={path}`), version `review`, document `revisit` and anchored
+`annotations` maintain independent validators (`ETag` / `If-None-Match: *`).
+Updating `page-position` on one page never alters `reading-position` or another
+page's `page-position` validator. When a mutation response is lost (`503`,
+network failure or post-commit `401`), clients query `GET /api/v1/operations/{id}`
+first: a `completed` receipt proves only that the historical operation committed
+(`result_metadata`) and is always followed by a fresh passive `GET` on the target
+resource so the client adopts the current server `ETag` and preserves any newer
+queued local edit as an explicit conflict if a peer modified the resource after
+that receipt. A `404` receipt under the same `runtime_generation` refreshes the
+resource and retries with the same `operation_id` only if the captured
+precondition is still current; a changed `runtime_generation` never auto-resends.
+See [multi-device reconciliation evidence](../testing/multi-device-reconciliation.md).

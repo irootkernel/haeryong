@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	appauth "haeryong.local/haeryong/internal/application/auth"
 	appconfig "haeryong.local/haeryong/internal/application/configuration"
 	"haeryong.local/haeryong/internal/application/query"
 	"haeryong.local/haeryong/internal/application/render"
@@ -186,13 +187,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if ctx, err := appauth.ValidatePassiveRead(r.Context(), r.Method, r.Header.Values("Haeryong-Passive-Read")); err != nil {
+		failure(w, r, err)
+		return
+	} else {
+		r = r.WithContext(ctx)
+	}
 	token, err := bearer(r)
 	if err != nil {
 		failure(w, r, err)
 		return
 	}
 	authenticate := h.Core.Auth.Authenticate
-	if passiveRoute(r.Method, p) {
+	if passiveRoute(r.Method, p) || appauth.IsPassiveRead(r.Context()) {
 		authenticate = h.Core.Auth.AuthenticatePassive
 	}
 	if _, err = authenticate(r.Context(), token); err != nil {

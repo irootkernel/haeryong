@@ -165,3 +165,18 @@ applied or not-applied state. See
 [private device session evidence](../testing/private-device-sessions.md) for
 executed local, browser and private HTTPS cohort coverage and its physical-device
 exclusions.
+
+## Passive background read header and native flag (TASK-007-04)
+
+In addition to always-passive status/event/capability/renew routes, background
+invalidation refreshes, `resync.required` barrier sweeps, `visibilitychange`
+rechecks and background status polls on otherwise touching `GET`/`HEAD` routes
+may send `Haeryong-Passive-Read: 1` (or `passive: true` on closed read-only
+native facade operations). The HTTP adapters validate `Haeryong-Passive-Read`
+before touching session activity: only `GET` and `HEAD` accept a single exact
+`"1"` header value; any other value, multiple header values, or any mutating
+method (`POST`, `PUT`, `PATCH`, `DELETE`) returns `400 INVALID_REQUEST` without
+advancing `last_seen_at`. Valid passive reads still enforce revocation,
+`auth_epoch`, configured idle expiry and absolute expiry. Interactive owner
+reads and mutations omit the header and continue to update `last_seen_at`. See
+[multi-device reconciliation evidence](../testing/multi-device-reconciliation.md).

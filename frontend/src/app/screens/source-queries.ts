@@ -418,4 +418,145 @@ export class SourceQueries {
     const existing = this.#verifications.get(evidenceId);
     if (existing && (existing.phase === "error" || existing.phase === "unavailable")) void this.loadVerifications(evidenceId);
   }
+
+  async refreshPassive(passiveClient: HaeryongClient, isStale?: () => boolean, resync = false): Promise<void> {
+    if (this.#disposed || isStale?.()) return;
+    const currentRead = (scope: string, token: ReturnType<SelectionQueryGuard["begin"]>): boolean => {
+      if (this.#disposed || isStale?.()) return false;
+      if (this.#guard.accept(scope, token)) return true;
+      if (resync) throw new StaleResponseError();
+      return false;
+    };
+    const versionId = this.#guard.key.versionId;
+    const tasks: Promise<void>[] = [];
+    if (
+      this.#assessmentsPhase === "ready" || this.#assessmentsPhase === "error" || this.#assessmentsPhase === "loading"
+    ) {
+      tasks.push((async () => {
+        const token = this.#guard.begin("assessments");
+        const coverageToken = this.#guard.begin("coverage");
+        const currentAssessmentRead = () => currentRead("assessments", token) && currentRead("coverage", coverageToken);
+        let state: EnumerationState<AssessmentRecord> = initialEnumeration();
+        let applicable: ApplicableFreshness | null = null;
+        let foreignApplicable: ApplicableFreshness | null = null;
+        let cursor: string | undefined;
+        try {
+          for (;;) {
+            const page = await passiveClient.versionAssessments(versionId, { scope: this.scope(), cursor });
+            if (!currentAssessmentRead()) return;
+            if (applicable === null && page.applicable != null) {
+              if (scopeMatchesSelection(page.applicable.scope, this.scope())) {
+                applicable = page.applicable;
+              } else {
+                foreignApplicable = page.applicable;
+              }
+            }
+            state = mergeEnumerationPage(state, page);
+            if (page.next_cursor === null) break;
+            cursor = page.next_cursor;
+          }
+          let covState: EnumerationState<CoverageUnit> = initialEnumeration();
+          let covPhase: Phase = "idle";
+          if (applicable !== null && applicable.coverage.coverage_set_id !== null) {
+            const params = this.#coverageParams(applicable);
+            if (params !== null) {
+              let covCursor: string | undefined;
+              for (;;) {
+                const covPage = await passiveClient.assessmentCoverage(versionId, params.coverageSetId, covCursor, params.attemptRunId);
+                if (!currentAssessmentRead()) return;
+                covState = mergeEnumerationPage(covState, covPage);
+                if (covPage.next_cursor === null) break;
+                covCursor = covPage.next_cursor;
+              }
+              covPhase = "ready";
+            }
+          }
+          if (!currentAssessmentRead()) return;
+          this.#assessmentsState = state;
+          this.#assessmentsPhase = "ready";
+          this.#assessmentsReason = null;
+          this.#applicable = applicable;
+          this.#foreignApplicable = foreignApplicable;
+          this.#coverageState = covState;
+          this.#coveragePhase = covPhase;
+          this.#coverageReason = null;
+          this.#emit();
+        } catch (error) {
+          if (!currentAssessmentRead()) return;
+          if (isFeatureNotReady(error)) {
+            this.#assessmentsPhase = "unavailable";
+            this.#assessmentsReason = unavailableText;
+          } else {
+            this.#assessmentsState = { ...this.#assessmentsState, failed: true, resumeFrom: this.#assessmentsState.nextCursor };
+            this.#assessmentsPhase = "error";
+            this.#assessmentsReason = errorText(error);
+          }
+          this.#emit();
+          if (resync && !isFeatureNotReady(error)) throw error;
+        }
+      })());
+    }
+    for (const [evidenceId, entry] of this.#items.entries()) {
+      if (entry.phase === "ready" || entry.phase === "error" || entry.phase === "loading") {
+        tasks.push((async () => {
+          const token = this.#guard.begin(`evidence:${evidenceId}`);
+          try {
+            const view = await passiveClient.versionEvidence(versionId, evidenceId);
+            if (!currentRead(`evidence:${evidenceId}`, token)) return;
+            this.#items.set(evidenceId, { phase: "ready", reason: null, view });
+            this.#emit();
+          } catch (error) {
+            if (!currentRead(`evidence:${evidenceId}`, token)) return;
+            this.#items.set(evidenceId, {
+              phase: isFeatureNotReady(error) ? "unavailable" : "error",
+              reason: isFeatureNotReady(error) ? unavailableText : errorText(error),
+              view: entry.view,
+            });
+            this.#emit();
+            if (resync && !isFeatureNotReady(error)) throw error;
+          }
+        })());
+      }
+    }
+    for (const [evidenceId, entry] of this.#verifications.entries()) {
+      if (entry.phase === "ready" || entry.phase === "error" || entry.phase === "loading") {
+        tasks.push((async () => {
+          const token = this.#guard.begin(`verifications:${evidenceId}`);
+          let state: EnumerationState<VerificationRecord> = initialEnumeration();
+          let cursor: string | undefined;
+          try {
+            for (;;) {
+              const page = await passiveClient.evidenceVerifications(versionId, evidenceId, cursor);
+              if (!currentRead(`verifications:${evidenceId}`, token)) return;
+              state = mergeEnumerationPage(state, page);
+              if (page.next_cursor === null) break;
+              cursor = page.next_cursor;
+            }
+            if (!currentRead(`verifications:${evidenceId}`, token)) return;
+            this.#verifications.set(evidenceId, { phase: "ready", reason: null, state });
+            this.#emit();
+          } catch (error) {
+            if (!currentRead(`verifications:${evidenceId}`, token)) return;
+            const priorState = entry.state;
+            if (isFeatureNotReady(error)) {
+              this.#verifications.set(evidenceId, { phase: "unavailable", reason: unavailableText, state: priorState });
+            } else {
+              this.#verifications.set(evidenceId, {
+                phase: "error",
+                reason: errorText(error),
+                state: { ...priorState, failed: true, resumeFrom: priorState.nextCursor },
+              });
+            }
+            this.#emit();
+            if (resync && !isFeatureNotReady(error)) throw error;
+          }
+        })());
+      }
+    }
+    const settled = await Promise.allSettled(tasks);
+    if (resync) {
+      const rejected = settled.find((r): r is PromiseRejectedResult => r.status === "rejected");
+      if (rejected) throw rejected.reason;
+    }
+  }
 }

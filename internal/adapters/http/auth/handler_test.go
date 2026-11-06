@@ -1435,3 +1435,51 @@ var _ = It("TestPrivateIngressRendererOriginsCSPNormalizedHostOriginAndExplicit4
 		}
 	}
 })
+
+var _ = It("TestPassiveReadHeaderPreservesIdleActivityAndRejectsInvalidUsage", Label("persistence"), func() {
+	t := GinkgoT()
+	f := newFixture(t)
+	token, initial := f.owner(t)
+
+	// Advance clock by 45s; passive GET/HEAD requests must preserve last_seen_at.
+	f.now.Add(int64(45 * time.Second))
+	for _, path := range []string{
+		"/api/v1/session",
+		"/api/v1/capabilities",
+		"/api/v1/sessions",
+		"/api/v1/auth/pairings",
+		"/api/v1/status",
+		"/api/v1/events?transport=poll",
+	} {
+		status, _, body := f.request(t, http.MethodGet, path, token, nil, map[string]string{"Haeryong-Passive-Read": "1"})
+		Expect(status).To(Equal(http.StatusOK), path+": "+string(body))
+	}
+	status, _, sessRaw := f.request(t, http.MethodGet, "/api/v1/session", token, nil, map[string]string{"Haeryong-Passive-Read": "1"})
+	Expect(status).To(Equal(http.StatusOK))
+	sessAfterPassive := dataAs[domain.Session](t, sessRaw)
+	Expect(sessAfterPassive.LastSeenAt).To(Equal(initial.LastSeenAt))
+
+	// Invalid Haeryong-Passive-Read values or mutating methods are rejected with 400 INVALID_REQUEST without touching last_seen_at.
+	f.now.Add(int64(30 * time.Second))
+	for _, invalidVal := range []string{"0", "true", "invalid"} {
+		st, _, errBody := f.request(t, http.MethodGet, "/api/v1/session", token, nil, map[string]string{"Haeryong-Passive-Read": invalidVal})
+		Expect(st).To(Equal(http.StatusBadRequest), invalidVal)
+		Expect(string(errBody)).To(ContainSubstring(`"INVALID_REQUEST"`))
+	}
+	stDel, _, delBody := f.request(t, http.MethodDelete, "/api/v1/session", token, nil, map[string]string{"Haeryong-Passive-Read": "1"})
+	Expect(stDel).To(Equal(http.StatusBadRequest), string(delBody))
+	Expect(string(delBody)).To(ContainSubstring(`"INVALID_REQUEST"`))
+
+	// Confirm session is still active and last_seen_at is still untouched after rejected requests.
+	status, _, sessRaw2 := f.request(t, http.MethodGet, "/api/v1/session", token, nil, map[string]string{"Haeryong-Passive-Read": "1"})
+	Expect(status).To(Equal(http.StatusOK))
+	Expect(dataAs[domain.Session](t, sessRaw2).LastSeenAt).To(Equal(initial.LastSeenAt))
+
+	// Interactive read without Haeryong-Passive-Read on a touching route advances last_seen_at.
+	status, _, _ = f.request(t, http.MethodGet, "/api/v1/status", token, nil, nil)
+	Expect(status).To(Equal(http.StatusOK))
+	status, _, sessInteractiveRaw := f.request(t, http.MethodGet, "/api/v1/session", token, nil, nil)
+	Expect(status).To(Equal(http.StatusOK))
+	sessInteractive := dataAs[domain.Session](t, sessInteractiveRaw)
+	Expect(sessInteractive.LastSeenAt).NotTo(Equal(initial.LastSeenAt))
+})

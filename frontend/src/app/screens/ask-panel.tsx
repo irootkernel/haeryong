@@ -1,13 +1,13 @@
 import {useEffect,useRef,useState} from "react";
 import type {ShellController} from "../../client/controller.ts";
 import type {AnswerView,GenerationSourceSelection,JobView,ProjectSourceView,QuestionRequest,QuestionView,RetainedSourceRead,VersionView} from "../../client/types.ts";
-import {ApiError,DispatchBlockedError} from "../../client/types.ts";
+import {ApiError,DispatchBlockedError,StaleResponseError} from "../../client/types.ts";
 import {BrowserQuestionJournal,QuestionSubmission,questionStreamText,questionUnresolved} from "../../client/questions.ts";
 import type {QuestionRecord} from "../../client/questions.ts";
 import {acknowledgeGenerationResume,dispatchGenerationResume,recoverGenerationResume,resumeRefusalText} from "../../client/generation.ts";
 import {useReviewInvalidation} from "./review-refresh.ts";
 import {SafeMarkdown} from "./safe-markdown.tsx";
-import {QuestionHistory} from "./question-history.ts";
+import {QuestionHistory,revalidateInspectedQuestion} from "./question-history.ts";
 import {pinnedReaderURL} from "../routes.ts";
 
 interface Anchor {version_id:string;page_path:string|null;region_id:string|null;page_query:string;page_fragment:string}
@@ -36,29 +36,80 @@ export function AskPanel({controller,documentId,projectId,sourceIntent,sourceRea
  const [citationText,setCitationText]=useState<Record<string,string>>({});
  const [answerText,setAnswerText]=useState<Record<string,string>>({}),[savedQuestionText,setSavedQuestionText]=useState(""),[contextText,setContextText]=useState<string|null>(null);
  const [busy,setBusy]=useState(false),[issue,setIssue]=useState(""),[notice,setNotice]=useState(""),[refresh,setRefresh]=useState(0);
+ const reads=useRef({configuration:0,versions:0,job:0});
  const live=useRef(true),control=useRef<Control|null>(null),busyRef=useRef(false),selectionEra=useRef(0),savedId=useRef<string|null>(null);savedId.current=saved?.question_id??null;
  useEffect(()=>{live.current=true;try{setRecords(journal.read());}catch(e){setIssue(message(e));}return()=>{live.current=false;if(control.current)control.current.stopped=true;selectionEra.current++;};},[journal]);
  useEffect(()=>{let live=true;setConfigured(false);setSources([]);setMode(null);setProvider("");if(!enabled||!projectId)return;
-  const authority=controller.captureDispatchAuthority();
+  const authority=controller.captureDispatchAuthority(),read=++reads.current.configuration,gen=controller.readGeneration;
   void Promise.allSettled([client.configurationView(),(async()=>{const rows:ProjectSourceView[]=[];let cursor:string|undefined;do{const page=await client.projectSources(projectId,cursor);rows.push(...page.items);cursor=page.next_cursor??undefined;}while(cursor);return rows;})()]).then(([configuration,mappings])=>{
-   if(!live)return;try{controller.requireVerifiedDispatch(authority);}catch{return;}
+   if(!live||read!==reads.current.configuration||!controller.isCurrentReadAuthority(authority,gen))return;try{controller.requireVerifiedDispatch(authority);}catch{return;}
    if(configuration.status==="fulfilled"){const settings=configuration.value.configuration.projects[projectId];setProvider(settings?.provider_id??"");setMode(sourceIntent==="historical"?"pinned":settings?.source_mode_default??"pinned");setConfigured(true);}else setIssue(message(configuration.reason));
    if(mappings.status==="fulfilled")setSources(mappings.value);else setIssue(message(mappings.reason));
   });return()=>{live=false;};
  },[client,controller,enabled,projectId,sourceIntent,refresh]);
- useEffect(()=>{let live=true;const authority=controller.captureDispatchAuthority();if(enabled)void client.documentVersions(documentId).then(page=>{if(!live)return;controller.requireVerifiedDispatch(authority);setVersions(page.items);setVersionCursor(page.next_cursor);}).catch(e=>{if(live)setIssue(message(e));});return()=>{live=false;};},[client,controller,enabled,documentId]);
+ useEffect(()=>{let live=true;const authority=controller.captureDispatchAuthority(),read=++reads.current.versions,gen=controller.readGeneration;if(enabled)void client.documentVersions(documentId).then(page=>{if(!live||read!==reads.current.versions||!controller.isCurrentReadAuthority(authority,gen))return;controller.requireVerifiedDispatch(authority);setVersions(page.items);setVersionCursor(page.next_cursor);}).catch(e=>{if(live&&read===reads.current.versions&&controller.isCurrentReadAuthority(authority,gen))setIssue(message(e));});return()=>{live=false;};},[client,controller,enabled,documentId]);
  useEffect(()=>historyQuery.subscribe(()=>setHistoryState(historyQuery.state)),[historyQuery]);
  useEffect(()=>{setSaved(null);setSavedQuestionText("");setAnswerText({});setCitationText({});setContextText(null);selectionEra.current++;const authority=controller.captureDispatchAuthority();if(enabled)void historyQuery.load(historyVersion,()=>controller.requireVerifiedDispatch(authority));else historyQuery.invalidate();return()=>historyQuery.invalidate();},[historyQuery,controller,enabled,historyVersion,refresh]);
  // Stream invalidation retires only server-derived reads, never saved consent
  // or an uncertain request. A subsequent explicit read obtains current citation
  // availability; permission/epoch loss immediately removes protected material.
  const clearSaved=()=>{selectionEra.current++;savedId.current=null;setSaved(null);setSavedQuestionText("");setAnswerText({});setCitationText({});setContextText(null);};
- useReviewInvalidation(controller,enabled,()=>{clearSaved();setRefresh(n=>n+1);});
+ useReviewInvalidation(controller,enabled,async(ev)=>{
+  if(!enabled)return;
+  const startReadGen=ev?.readGeneration??controller.readGeneration;
+  const authority=controller.captureDispatchAuthority();
+  const pClient=controller.passiveClient;
+  const isResync=Boolean(ev?.resync);
+  const read={configuration:++reads.current.configuration,versions:++reads.current.versions,job:++reads.current.job};
+  const canApply=(kind?:keyof typeof reads.current)=>{
+   if(!live.current||!controller.isCurrentReadAuthority(authority,startReadGen))return false;
+   if(busyRef.current||(kind&&read[kind]!==reads.current[kind])){if(isResync)throw new StaleResponseError();return false;}
+   return true;
+  };
+  const tasks:Promise<void>[]=[
+   historyQuery.load(historyVersion,()=>{if(!canApply())throw Error("stale");},false,pClient,isResync),
+  ];
+  const inspectedId=savedId.current;
+  if(inspectedId){
+   const inspectedEra=selectionEra.current;
+   tasks.push(revalidateInspectedQuestion(
+    pClient,
+    inspectedId,
+    ()=>{if(!canApply())return false;const selected=savedId.current===inspectedId&&selectionEra.current===inspectedEra;if(!selected&&isResync&&savedId.current!==null)throw new StaleResponseError();return selected;},
+    fresh=>setSaved(fresh),
+    clearSaved,
+    err=>setIssue(message(err)),
+    isResync,
+   ));
+  }
+  if(projectId){
+   tasks.push(Promise.allSettled([pClient.configurationView(),(async()=>{const rows:ProjectSourceView[]=[];let cursor:string|undefined;do{const page=await pClient.projectSources(projectId,cursor);rows.push(...page.items);cursor=page.next_cursor??undefined;}while(cursor);return rows;})()]).then(([configuration,mappings])=>{
+    if(!canApply("configuration"))return;
+    if(configuration.status==="fulfilled"){const settings=configuration.value.configuration.projects[projectId];setProvider(settings?.provider_id??"");setMode(sourceIntent==="historical"?"pinned":settings?.source_mode_default??"pinned");setConfigured(true);}
+    else setIssue(message(configuration.reason));
+    if(mappings.status==="fulfilled")setSources(mappings.value);
+    else setIssue(message(mappings.reason));
+    if(isResync){
+     if(configuration.status==="rejected")throw configuration.reason;
+     if(mappings.status==="rejected")throw mappings.reason;
+    }
+   }));
+  }
+  if(documentId){
+   tasks.push(pClient.documentVersions(documentId).then(page=>{if(!canApply("versions"))return;setVersions(page.items);setVersionCursor(page.next_cursor);}).catch(error=>{if(!canApply())return;setIssue(message(error));if(isResync)throw error;}));
+  }
+  const jobId=current?.accepted?.job_id;
+  if(jobId){
+   tasks.push(pClient.jobGet(jobId).then(value=>{if(!canApply("job"))return;setJob(value);}).catch(error=>{if(!canApply())return;if(error instanceof ApiError&&[401,403,404].includes(error.status)){setJob(null);clearSaved();return;}setIssue(message(error));if(isResync)throw error;}));
+  }
+  if(isResync)await Promise.all(tasks);
+  else await Promise.allSettled(tasks);
+ },()=>busyRef.current);
  useEffect(()=>{const authority=controller.captureDispatchAuthority();return controller.subscribe(()=>{try{controller.requireVerifiedDispatch(authority);}catch{clearSaved();historyQuery.invalidate();setJob(null);}});},[controller]);
- useEffect(()=>{const id=current?.accepted?.job_id;if(!enabled||!id)return;let live=true;const authority=controller.captureDispatchAuthority();void client.jobGet(id).then(value=>{if(!live)return;controller.requireVerifiedDispatch(authority);setJob(value);}).catch(error=>{if(!live)return;if(error instanceof ApiError&&[401,403,404].includes(error.status)){setJob(null);clearSaved();}setIssue(message(error));});return()=>{live=false;};},[client,controller,enabled,current?.accepted?.job_id,refresh]);
+ useEffect(()=>{const id=current?.accepted?.job_id;if(!enabled||!id)return;let live=true;const authority=controller.captureDispatchAuthority(),read=++reads.current.job,gen=controller.readGeneration;void client.jobGet(id).then(value=>{if(!live||read!==reads.current.job||!controller.isCurrentReadAuthority(authority,gen))return;controller.requireVerifiedDispatch(authority);setJob(value);}).catch(error=>{if(!live||read!==reads.current.job||!controller.isCurrentReadAuthority(authority,gen))return;if(error instanceof ApiError&&[401,403,404].includes(error.status)){setJob(null);clearSaved();}setIssue(message(error));});return()=>{live=false;};},[client,controller,enabled,current?.accepted?.job_id,refresh]);
  const guard=(own:Control,authority:ReturnType<ShellController["captureDispatchAuthority"]>)=>{if(!live.current||own.stopped||control.current!==own)throw Error("중지됨. 원래 질문과 작업 ID는 복구 기록에 유지됩니다.");controller.requireVerifiedDispatch(authority);if(!enabled)throw new DispatchBlockedError();};
  const perform=async(action:(own:Control,authority:ReturnType<ShellController["captureDispatchAuthority"]>)=>Promise<void>)=>{
-  if(busyRef.current)return;const own={stopped:false},authority=controller.captureDispatchAuthority();control.current=own;busyRef.current=true;setBusy(true);setIssue("");
+  if(busyRef.current)return;const own={stopped:false},authority=controller.captureDispatchAuthority();control.current=own;controller.bumpReadGeneration();busyRef.current=true;setBusy(true);setIssue("");
   try{guard(own,authority);await action(own,authority);}catch(e){if(live.current){if(e instanceof ApiError&&[401,403,404].includes(e.status)){clearSaved();historyQuery.invalidate();setJob(null);}setIssue(message(e));}}finally{if(control.current===own){busyRef.current=false;if(live.current){setBusy(false);try{setRecords(journal.read());}catch(e){setIssue(message(e));}}}}
  };
  const newDraft=()=>{try{controller.requireVerifiedDispatch();if(!enabled||!configured||!sourceReady||!mode||!projectId)throw Error("프로젝트 기본값을 먼저 확인하세요.");if(journal.read().some(questionUnresolved))throw Error("결과가 확인되지 않은 원래 질문을 먼저 확인하세요.");

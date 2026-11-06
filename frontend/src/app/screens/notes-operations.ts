@@ -63,6 +63,39 @@ export class NoteJournal {
  }
 }
 export function definitiveNoteRejection(error:unknown):boolean{return error instanceof ApiError&&[400,403,404,409,410,412,428].includes(error.status)&&error.code!=="OPERATION_RECONCILIATION_REQUIRED";}
+export async function resolveRejectedNoteAction(
+ admitted:{current:boolean},
+ setBusy:(busy:boolean)=>void,
+ pending:NoteIntent|null,
+ runtimeGeneration:string,
+ fetchLatest:(targetId:string)=>Promise<AnnotationView>,
+ onDeleted:()=>Promise<void>,
+ submitNext:(nextIntent:NoteIntent)=>Promise<void>,
+ createKey:()=>string=()=>crypto.randomUUID(),
+):Promise<boolean>{
+ if(!pending||!pending.rejected||admitted.current)return false;
+ admitted.current=true;
+ setBusy(true);
+ try{
+  const fresh=await fetchLatest(pending.target);
+  if(fresh.deleted_at){
+   await onDeleted();
+   return true;
+  }
+  const nextIntent:NoteIntent={
+   ...structuredClone(pending),
+   key:createKey(),
+   etag:fresh.etag,
+   generation:runtimeGeneration,
+  };
+  delete nextIntent.rejected;
+  await submitNext(nextIntent);
+  return true;
+ }finally{
+  admitted.current=false;
+  setBusy(false);
+ }
+}
 export async function dispatchNote(client:HaeryongClient,intent:NoteIntent):Promise<AnnotationView>{
  if(intent.kind==="create")return client.annotationCreate(intent.target,intent.body as AnnotationCreate,intent.key);
  if(intent.kind==="delete")return client.annotationDelete(intent.target,intent.etag!,intent.key);

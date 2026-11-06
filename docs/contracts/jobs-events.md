@@ -676,3 +676,34 @@ Hidden, missing or foreign records become content-free library.invalidated at
 the same stream sequence/epoch rather than exposing question/answer IDs. Current
 visible owner events retain their exact original event. Saved views refresh on
 these invalidations without resubmitting drafts or clearing unresolved identity.
+
+## Multi-device event cursor continuity and resync barrier (TASK-007-04)
+
+Browser SSE (`GET /api/v1/events`) parses complete blank-line-terminated frames
+(`id`, `event`, `data`), treats any non-empty domain event type as an authorized
+invalidation hint, and advances the remembered `Last-Event-ID`
+(`stream_epoch:sequence`) cursor only after the full frame is parsed and the
+awaited invalidation or `resync.required` handler succeeds. A disconnect or
+failed handler before completion leaves the prior cursor intact so the event is
+replayed or resynced on reconnect.
+
+Closed native event operations (`subscribeEvents` and `eventsPoll` in
+`desktop/readerfacade`) accept an optional `cursor`. Opening `subscribeEvents`
+without a cursor performs a passive bootstrap against `/api/v1/events`, captures
+the initial `resync.required` (`reason: "bootstrap"`, `stream_epoch`, `head`,
+`resume_cursor`), and returns `resync` and `cursor` alongside `subscription_id`.
+The client native wire adapter holds bootstrap delivery behind a `listenerReady`
+gate until the outer event listener is registered so no commit between initial
+open and first `eventsPoll` can be missed.
+
+On `resync.required` or `stream_epoch` rotation, `ShellController` executes a
+single-flight full-state resync barrier: it performs a passive session/capability
+recheck (`Haeryong-Passive-Read: 1` / `passive: true`), advances
+`readGeneration` to fence pre-barrier in-flight reads without double-triggering
+when the authority epoch already rotated, and awaits all mounted screen resync
+sweeps. Superseded required reads cannot count as successful refreshes. A local
+read-generation change during the sweep requires a new current sweep; loss of
+verified connectivity also prevents acknowledgement. If authority is not yet
+ready or any sweep fails, `#pendingResync`
+remains armed with bounded retry rather than acknowledging the cursor past `H`.
+See [multi-device reconciliation evidence](../testing/multi-device-reconciliation.md).

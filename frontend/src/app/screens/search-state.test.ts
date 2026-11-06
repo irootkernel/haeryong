@@ -66,3 +66,45 @@ test("N2 login return preserves only TAB/LF/CR search whitespace", () => {
     assert.equal(safeReturn("/library?" + new URLSearchParams({q:"검토"+String.fromCharCode(code)})), "/");
   }
 });
+
+test("Task04 G2 LibrarySearchSession.start with rethrow retires in-flight request on resync and propagates failure", async () => {
+  const calls: Array<ReturnType<typeof deferred<SearchPage>>> = [];
+  const session = new LibrarySearchSession(
+    {
+      search: () => {
+        const d = deferred<SearchPage>();
+        calls.push(d);
+        return d.promise;
+      },
+    },
+    () => {},
+  );
+  // Start an initial pre-barrier search that remains in flight:
+  const preBarrier = session.start({ q: "initial" });
+  assert.equal(session.state.loading, true);
+  assert.equal(calls.length, 1);
+
+  // A resync sweep calls start(..., { rethrow: true }) while loading is true:
+  const resyncSweep = session.start({ q: "initial" }, undefined, { rethrow: true });
+  assert.equal(calls.length, 2);
+
+  // Late pre-barrier response resolves with stale data; it must be ignored:
+  calls[0]!.resolve(searchFixture());
+  await preBarrier;
+  assert.equal(session.state.loading, true, "pre-barrier response must not settle post-barrier loading state");
+
+  // Post-barrier request fails with 503; start(..., { rethrow: true }) sets error state AND rethrows:
+  calls[1]!.reject(new ApiError(503, "SERVICE_UNAVAILABLE", true));
+  await assert.rejects(resyncSweep, (err: unknown) => err instanceof ApiError && err.status === 503);
+  assert.equal(session.state.loading, false);
+  assert.match(session.state.error ?? "", /503/);
+});
+
+test("mandatory search superseded by an explicit query rejects without changing its newer result",async()=>{
+ const old=deferred<SearchPage>();let calls=0;
+ const session=new LibrarySearchSession({search:async()=>++calls===1?old.promise:searchFixture(true)},()=>{});
+ const pending=session.start({q:"old"},undefined,{rethrow:true});
+ const rejected=assert.rejects(pending,{name:"StaleResponseError"});
+ await session.start({q:"new"});old.resolve(searchFixture());await rejected;
+ assert.equal(session.state.page?.index.versions_total,"1");assert.equal(session.state.error,null);
+});

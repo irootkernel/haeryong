@@ -153,7 +153,10 @@ existing [private-ingress record](private-ingress.md) and
 there is no dependency on a script outside the repository.
 
 The next owner is TASK-007-03 after this member's actual acceptance, commit,
-native finalization and owned-output settlement. Under the
+native finalization and owned-output settlement; TASK-007-04
+([multi-device reconciliation](multi-device-reconciliation.md)) extends passive
+background read isolation (`Haeryong-Passive-Read: 1`) across touching `GET`/`HEAD`
+routes. Under the
 [web-only owner direction](../decisions.md#owner-amendment-2026-11-05-web-only-epic-007-execution),
 physical second-device/mobile, iOS/Android/Safari/Home Screen and Wails UI proof
 remain excluded and unverified. The original full Stage A/device assertions are

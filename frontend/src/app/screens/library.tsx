@@ -6,12 +6,13 @@
 // exact-version results only when the service explicitly advertises it.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ShellController } from "../../client/controller.ts";
-import { ApiError } from "../../client/types.ts";
+import { ApiError, StaleResponseError } from "../../client/types.ts";
 import type { DocumentView, FileEntryView, ListPage, ProjectView } from "../../client/types.ts";
 import { navigate, useShellRoute } from "../router.tsx";
-import { accumulateDocuments, countLabel, featureEnabled, filterFromSearch, filterToSearch } from "./library-data.ts";
+import { accumulateDocuments, countLabel, featureEnabled, filterFromSearch, filterToSearch, refreshLoadedDocumentPages } from "./library-data.ts";
 import type { DocumentAccumulation, LibraryFilter } from "./library-data.ts";
 import { LibrarySearch, LibrarySearchForm } from "./library-search.tsx";
+import { useReviewInvalidation } from "./review-refresh.ts";
 import { searchFromURL, searchURL } from "./search-state.ts";
 import { DownloadPanel } from "./download-panel.tsx";
 import { GenerationControl } from "./generation-control.tsx";
@@ -55,6 +56,10 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
   // Only the newest in-flight filter response is applied; a stale response
   // from a superseded filter or Back navigation never overwrites the list.
   const requestRef = useRef(0);
+  const projectsRead = useRef(0);
+  const loadedPagesRef = useRef(1);
+  const loadingRef = useRef(loading);
+  loadingRef.current = loading;
   const inventoryRequestRef = useRef(0);
   useEffect(() => () => { inventoryRequestRef.current += 1; }, []);
   const filter = useMemo(() => filterFromSearch(url.slice(url.indexOf("?"))), [url]);
@@ -71,12 +76,14 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
     async (nextFilter: LibraryFilter, nextCursor: string | null) => {
       const request = requestRef.current + 1;
       requestRef.current = request;
+      loadingRef.current = true;
       setLoading(true);
       setError(null);
       // A fresh filter/page-1 load clears the previous filter's rows and
       // cursor first, so a denial or failure never leaves the old filter's
       // eligible data on screen under the new filter.
       if (nextCursor === null) {
+        loadedPagesRef.current = 1;
         inventoryRequestRef.current += 1;
         setInventory(null);
         setAccumulation({ documents: [], exhausted: false });
@@ -89,13 +96,19 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
           cursor: nextCursor ?? undefined,
         });
         if (requestRef.current !== request) return;
+        if (nextCursor !== null) {
+          loadedPagesRef.current += 1;
+        }
         setAccumulation((previous) => accumulateDocuments(nextCursor === null ? { documents: [], exhausted: false } : previous, page));
         setCursor(page.next_cursor);
       } catch (cause) {
         if (requestRef.current !== request) return;
         setError(cause instanceof ApiError ? `오류 ${cause.status} ${cause.code}` : cause instanceof Error ? cause.message : String(cause));
       } finally {
-        if (requestRef.current === request) setLoading(false);
+        if (requestRef.current === request) {
+          loadingRef.current = false;
+          setLoading(false);
+        }
       }
     },
     [client],
@@ -104,6 +117,8 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
   // Every project stays selectable: the selector paginates the whole set
   // instead of stopping at the first cursor page.
   useEffect(() => {
+    const projectRun=++projectsRead.current;
+    let live=true;
     const collected: ProjectView[] = [];
     const drain = async (cursor?: string): Promise<void> => {
       const page: ListPage<ProjectView> = await client.listProjects(cursor);
@@ -111,8 +126,9 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
       if (page.next_cursor !== null) await drain(page.next_cursor);
     };
     void drain()
-      .then(() => setProjects(collected))
-      .catch(() => setProjects([]));
+      .then(() => {if(live&&projectRun===projectsRead.current)setProjects(collected);})
+      .catch(() => {if(live&&projectRun===projectsRead.current)setProjects([]);});
+    return()=>{live=false;};
   }, [client]);
 
   // Re-run on every actual location/search change (navigate, filter, Back)
@@ -120,6 +136,69 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
   useEffect(() => {
     void loadPage(filter, null);
   }, [filter, loadPage]);
+
+  useReviewInvalidation(
+    controller,
+    true,
+    async (ev) => {
+      const captured = controller.captureDispatchAuthority();
+      const readGen = ev?.readGeneration ?? controller.readGeneration;
+      const passive = controller.passiveClient;
+      const projectRun=++projectsRead.current;
+      const currentProjects=()=>{
+        if(!controller.isCurrentReadAuthority(captured,readGen))return false;
+        if(projectRun!==projectsRead.current){if(ev?.resync)throw new StaleResponseError();return false;}
+        return true;
+      };
+      const collected: ProjectView[] = [];
+      const drainProjects = async (cur?: string): Promise<void> => {
+        const page = await passive.listProjects(cur);
+        collected.push(...page.items);
+        if (page.next_cursor !== null) await drainProjects(page.next_cursor);
+      };
+      if (searchRequest) {
+        try {
+          await drainProjects();
+          if (!currentProjects()) return;
+          setProjects(collected);
+        } catch (cause) {
+          if (!currentProjects()) return;
+          if (ev?.resync) throw cause;
+        }
+        return;
+      }
+      const currentFilter = filterFromSearch(location.search);
+      const req = requestRef.current + 1;
+      requestRef.current = req;
+      const targetPages = loadedPagesRef.current;
+      loadingRef.current=true;setLoading(true);
+      const isStale = () => requestRef.current !== req || !controller.isCurrentReadAuthority(captured, readGen);
+      try {
+        const [refreshed] = await Promise.all([
+          refreshLoadedDocumentPages(passive, currentFilter, targetPages, isStale),
+          drainProjects(),
+        ]);
+        if(!controller.isCurrentReadAuthority(captured,readGen))return;
+        if(!refreshed||requestRef.current!==req){if(ev?.resync)throw new StaleResponseError();return;}
+        if(!currentProjects())return;
+        loadedPagesRef.current = refreshed.loadedPages;
+        setProjects(collected);
+        setAccumulation(refreshed.accumulation);
+        setCursor(refreshed.cursor);
+        setError(null);
+      } catch (cause) {
+        if (isStale()) {if(ev?.resync)throw cause;return;}
+        setError(cause instanceof ApiError ? `오류 ${cause.status} ${cause.code}` : cause instanceof Error ? cause.message : String(cause));
+        if (ev?.resync) throw cause;
+      } finally {
+        if (requestRef.current === req) {
+          loadingRef.current = false;
+          setLoading(false);
+        }
+      }
+    },
+    () => !searchRequest && loadingRef.current,
+  );
 
   // A confirmed authority epoch change resets the loaded protected state and
   // invalidates pending responses; a routine same-authority recheck does not.
@@ -243,7 +322,7 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
             서비스 계약이 호환되지 않아 보호된 문서 목록을 표시하지 않습니다.
           </p>
         ) : searchRequest && featureEnabled(features, "search") ? (
-          <LibrarySearch key={url + "|" + epoch + "|" + searchRun} client={client} request={searchRequest} />
+          <LibrarySearch key={url + "|" + epoch + "|" + searchRun} client={client} request={searchRequest} controller={controller} />
         ) : (
           <>
             <p className="hint" data-testid="library-count">

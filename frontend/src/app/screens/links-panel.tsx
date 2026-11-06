@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ShellController } from "../../client/controller.ts";
 import type { BacklinkPage, ReferencePage, ReferenceView } from "../../client/types.ts";
-import { ApiError } from "../../client/types.ts";
+import { ApiError, StaleResponseError } from "../../client/types.ts";
 import { featureEnabled } from "./library-data.ts";
 import { backlinkScope, referenceStateLabel } from "./links-state.ts";
+import { useReviewInvalidation } from "./review-refresh.ts";
 
 type Props = { controller: ShellController; versionId: string; pagePath: string | null; regionId: string | null; onNavigate(url: string, active: () => boolean): Promise<void> };
 export function LinksPanel({ controller, versionId, pagePath, regionId, onNavigate }: Props) {
@@ -44,6 +45,48 @@ export function LinksPanel({ controller, versionId, pagePath, regionId, onNaviga
   }
   useEffect(() => { void loadReferences(); return () => { refGeneration.current++; activation.current++; }; }, [controller, versionId, canReferences]);
   useEffect(() => { setBacklinks(null); void loadBacklinks(); return () => { backGeneration.current++; activation.current++; }; }, [controller, versionId, pagePath, regionId, scope, canBacklinks]);
+  const refreshPassive = useCallback(async (ev?: { resync?: boolean }) => {
+    const startReadGen = controller.readGeneration;
+    const authority = controller.captureDispatchAuthority();
+    const pClient = controller.passiveClient;
+    const tasks: Promise<void>[] = [];
+    if (canReferences && !referenceBusy) {
+      const ownRef = ++refGeneration.current;
+      tasks.push(pClient.versionReferences({ versionId, limit: 50 }).then(page => {
+        if(controller.readGeneration!==startReadGen)return;
+        if(ownRef!==refGeneration.current){if(ev?.resync)throw new StaleResponseError();return;}
+        try { controller.requireVerifiedDispatch(authority); } catch { return; }
+        setReferences(page);
+        setReferenceIssue(null);
+      }).catch(err => {
+        if (ownRef === refGeneration.current && controller.isCurrentReadAuthority(authority, startReadGen)) {
+          setReferenceIssue(err instanceof Error ? err.message : "참조를 새로고침하지 못했습니다.");
+        }
+        if (ev?.resync) throw err;
+      }));
+    }
+    if (canBacklinks && !backlinkBusy) {
+      const ownBack = ++backGeneration.current;
+      tasks.push(pClient.versionBacklinks({ versionId, ...backlinkScope(scope, pagePath, regionId), limit: 50 }).then(page => {
+        if(controller.readGeneration!==startReadGen)return;
+        if(ownBack!==backGeneration.current){if(ev?.resync)throw new StaleResponseError();return;}
+        try { controller.requireVerifiedDispatch(authority); } catch { return; }
+        setBacklinks(page);
+        setBacklinkIssue(null);
+      }).catch(err => {
+        if (ownBack === backGeneration.current && controller.isCurrentReadAuthority(authority, startReadGen)) {
+          setBacklinkIssue(err instanceof Error ? err.message : "백링크를 새로고침하지 못했습니다.");
+        }
+        if (ev?.resync) throw err;
+      }));
+    }
+    if (ev?.resync) {
+      await Promise.all(tasks);
+    } else {
+      await Promise.allSettled(tasks);
+    }
+  }, [controller, versionId, pagePath, regionId, scope, canReferences, canBacklinks, referenceBusy, backlinkBusy]);
+  useReviewInvalidation(controller, canReferences || canBacklinks, refreshPassive, () => referenceBusy || backlinkBusy);
   async function openReference(row: ReferenceView) {
     const own = ++activation.current, authority = controller.captureDispatchAuthority();
     setNotice(null);

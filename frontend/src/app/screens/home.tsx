@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from "react";
 import type {ShellController} from "../../client/controller.ts";
+import {StaleResponseError} from "../../client/types.ts";
 import type {DocumentView,ReviewFilter} from "../../client/types.ts";
 import {accumulateDocuments,homeSectionsUnavailable} from "./library-data.ts";
 import {reviewTarget} from "./review-summary.ts";
@@ -15,6 +16,7 @@ function HomeSection({controller,kind,title}:{controller:ShellController;kind:Ho
   const [busy,setBusy]=useState(false);
   const [issue,setIssue]=useState("");
   const [refresh,reload]=useState(0);
+  const [passiveRefresh,reloadPassive]=useState(0);
   const generation=useRef(0),flight=useRef(false);
   const enabled=controller.state.capabilities?.features[kind==="revisit"?"revisit":"review"]===true;
   const filter=()=>kind==="revisit"?{revisit:"true" as const}:{review:kind};
@@ -23,34 +25,70 @@ function HomeSection({controller,kind,title}:{controller:ShellController;kind:Ho
     const run=++generation.current;
     setRows([]);setCursor(null);setIssue("");setBusy(enabled);flight.current=false;
     if(enabled){
-      const authority=controller.captureDispatchAuthority();
+      const authority=controller.captureDispatchAuthority(),readGen=controller.readGeneration;
       void controller.client.listDocuments(filter()).then(page=>{
-        controller.requireVerifiedDispatch(authority);
-        if(generation.current===run){setRows(page.items);setCursor(page.next_cursor);}
-      }).catch(error=>{if(generation.current===run)setIssue(String(error));})
+        if(generation.current===run&&controller.isCurrentReadAuthority(authority,readGen)){setRows(page.items);setCursor(page.next_cursor);}
+      }).catch(error=>{if(generation.current===run&&controller.isCurrentReadAuthority(authority,readGen))setIssue(String(error));})
         .finally(()=>{if(generation.current===run)setBusy(false);});
     }
     return()=>{generation.current++;};
-  },[controller,kind,enabled,refresh,controller.state.phase]);
+  },[controller,kind,enabled,refresh]);
 
   useEffect(()=>{
-    const update=()=>reload(n=>n+1);
+    if(passiveRefresh===0)return;
+    if(!enabled||flight.current)return;
+    const run=++generation.current;
+    const authority=controller.captureDispatchAuthority(),readGen=controller.readGeneration;
+    void controller.passiveClient.listDocuments(filter()).then(page=>{
+      if(generation.current===run&&controller.isCurrentReadAuthority(authority,readGen)){setRows(page.items);setCursor(page.next_cursor);setIssue("");}
+    }).catch(error=>{if(generation.current===run&&controller.isCurrentReadAuthority(authority,readGen))setIssue(String(error));})
+      .finally(()=>{if(generation.current===run)setBusy(false);});
+  },[controller,kind,enabled,passiveRefresh]);
+
+  useEffect(()=>{
+    const update=()=>reloadPassive(n=>n+1);
     for(const event of ["focus","haeryong-review-changed","haeryong-revisit-changed"])window.addEventListener(event,update);
     return()=>{for(const event of ["focus","haeryong-review-changed","haeryong-revisit-changed"])window.removeEventListener(event,update);};
   },[]);
 
+  useReviewInvalidation(
+    controller,
+    enabled,
+    async (ev) => {
+      const authority=controller.captureDispatchAuthority();
+      const readGen=ev?.readGeneration??controller.readGeneration;
+      const run=++generation.current;
+      flight.current=true;setBusy(true);
+      try {
+        const page=await controller.passiveClient.listDocuments(filter());
+        if(!controller.isCurrentReadAuthority(authority,readGen))return;
+        if(generation.current!==run){if(ev?.resync)throw new StaleResponseError();return;}
+        setRows(page.items);
+        setCursor(page.next_cursor);
+        setIssue("");
+      } catch(error) {
+        if(generation.current===run&&controller.isCurrentReadAuthority(authority,readGen)){
+          setIssue(String(error));
+        }
+        if(ev?.resync)throw error;
+      } finally {
+        if(generation.current===run){flight.current=false;setBusy(false);}
+      }
+    },
+    () => flight.current,
+  );
+
   const more=async()=>{
     if(busy||flight.current||!cursor)return;
-    const authority=controller.captureDispatchAuthority(),run=generation.current;
+    const authority=controller.captureDispatchAuthority(),readGen=controller.readGeneration,run=generation.current;
     flight.current=true;setBusy(true);
     try{
       controller.requireVerifiedDispatch(authority);
       const page=await controller.client.listDocuments({...filter(),cursor});
-      controller.requireVerifiedDispatch(authority);
-      if(generation.current!==run)return;
+      if(generation.current!==run||!controller.isCurrentReadAuthority(authority,readGen))return;
       setRows(old=>accumulateDocuments({documents:old,exhausted:false},page).documents);
       setCursor(page.next_cursor);
-    }catch(error){if(generation.current===run)setIssue(String(error));}
+    }catch(error){if(generation.current===run&&controller.isCurrentReadAuthority(authority,readGen))setIssue(String(error));}
     finally{if(generation.current===run){flight.current=false;setBusy(false);}}
   };
 
@@ -74,7 +112,6 @@ function HomeSection({controller,kind,title}:{controller:ShellController;kind:Ho
 
 export function HomeScreen({controller}:{controller:ShellController}){
   const state=controller.state;
-  useReviewInvalidation(controller,state.capabilities?.features.review===true||state.capabilities?.features.revisit===true,()=>window.dispatchEvent(new Event("haeryong-review-changed")));
   return <section className="panel">
     <h1>홈</h1>
     <p className="hint" data-testid="home-session">{state.session?`${state.session.device_label}로 연결됨 · 라이브러리 ${state.capabilities?.library_id??""}`:"연결 정보를 확인하는 중입니다."}</p>

@@ -308,3 +308,36 @@ record preserves input, capability and cleanup qualifications. Independent
 result composition and delegated bounded member acceptance are complete; the
 normal completion commit/native handoff precedes Task04. Physical mobile, Wails GUI and whole Stage A remain
 unqualified under the current web-only owner direction.
+
+## Multi-device reconciliation and conflict UI (TASK-007-04)
+
+TASK-007-04 adds `Haeryong-Passive-Read: 1` and native `passive: true` background
+read isolation across touching `GET`/`HEAD` routes, blank-line-framed SSE/native
+cursor continuity (`Last-Event-ID` and native `subscribeEvents`/`eventsPoll`
+cursor + no-cursor bootstrap `resync`), the single-flight `resync.required`
+barrier with `readGeneration` fencing, receipt-first recovery (`GET /api/v1/operations/{id}`
+followed by a fresh resource `GET` and queued-edit conflict preservation),
+independent `reader-preference`/`reading-position`/`page-position` validators,
+and local-vs-server conflict comparison UI across Review, Revisit, Notes
+(create/edit/reattach/delete) and personal reader state.
+[Multi-device reconciliation evidence](docs/testing/multi-device-reconciliation.md)
+records the passing focused Go persistence, desktop `readerfacade` + `cmd/companion`,
+focused Python E2E and frontend default checks, retained authoring/diagnostic
+failures, the original frozen-candidate common pass, current frontend/assets/build
+checks and selected actual Tailscale private HTTPS stages. The original four
+independent result assessments requested rework; current corrections retain their
+negative history. A subsequent affected correction restores initial Provider
+bootstrap/direct-entry behavior, scopes page recovery to confirmed HTML positions,
+keeps skipped mandatory personal refresh unconfirmed, and supplies passive
+successors for locally retired reads. Current focused checks and selected Provider
+direct-entry/Reader recovery web proof passed. The finite Reader pending-state
+presentation correction also passed actual private proof. The corrected frozen
+common passed 1,378 unique Go It specs plus six suite setup/cleanup entries and
+253 Python tests, all 15 native commands zero. The same original roles confirmed
+current bounded criteria and the strict current composition is ready. Coordinator
+delegated member acceptance is complete; factual/lifecycle and AST-identical EOF
+formatting have separate affected verification. Normal local commit/native
+finalization and the retained-output handoff precede TASK-007-05; no Master
+overall Epic acceptance is claimed.
+Physical mobile, second-device and Wails GUI qualification remain excluded for
+this owner-amended web run.

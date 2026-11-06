@@ -1,8 +1,8 @@
 // Mutable personal resources use immutable, journalled requests. A later
 // observation is queued separately from the request already sent to the server.
-import type { HaeryongClient, PersonalKind, PersonalView } from "../../client/types.ts";
-import { ApiError } from "../../client/types.ts";
-import { reconcilePersonal412 } from "./personal-cas.ts";
+import type { HaeryongClient, OperationView, PersonalKind, PersonalView } from "../../client/types.ts";
+import { ApiError, StaleResponseError } from "../../client/types.ts";
+import { clientIntent, reconcilePersonal412, structuralEqual } from "./personal-cas.ts";
 
 export interface PersonalTarget { version: string; kind: PersonalKind; page: string | null }
 type Conditions = { ifMatch: string } | { create: true };
@@ -13,6 +13,8 @@ interface Operation {
   base: PersonalView;
   conditions: Conditions;
   phase: "write" | "reconcile";
+  generation?: string;
+  dispatched?: boolean;
 }
 export interface PersonalEntry {
   target: PersonalTarget;
@@ -21,6 +23,11 @@ export interface PersonalEntry {
   queued?: { intent: unknown };
   conflict?: { operation: Operation; server: PersonalView };
   issue?: string;
+}
+export interface PersonalOperationsOptions {
+  generation?: () => string;
+  readGeneration?: () => number;
+  passiveClient?: Pick<HaeryongClient, "personalGet">;
 }
 interface Journal { read(): PersonalEntry[]; write(entries: PersonalEntry[]): void | Promise<void> }
 const copy = <T,>(value: T): T => structuredClone(value);
@@ -132,13 +139,26 @@ export class PersonalOperations {
   #active = true;
   #revision = 0;
 
-  readonly #client: Pick<HaeryongClient, "personalGet" | "personalPut">;
+  readonly #client: Pick<HaeryongClient, "personalGet" | "personalPut"> & Partial<Pick<HaeryongClient, "operation">>;
   readonly #journal: Journal;
   readonly #guard: () => void;
-  constructor(client: Pick<HaeryongClient, "personalGet" | "personalPut">, journal: Journal, guard: () => void) {
+  readonly #generation: (() => string) | undefined;
+  readonly #readGeneration: (() => number) | undefined;
+  readonly #passiveClient: Pick<HaeryongClient, "personalGet">;
+  #lastWriteRevision = new Map<string, number>();
+  constructor(
+    client: Pick<HaeryongClient, "personalGet" | "personalPut"> & Partial<Pick<HaeryongClient, "operation">>,
+    journal: Journal,
+    guard: () => void,
+    options?: PersonalOperationsOptions,
+  ) {
     this.#client = client; this.#journal = journal; this.#guard = guard;
+    this.#generation = options?.generation;
+    this.#readGeneration = options?.readGeneration;
+    this.#passiveClient = options?.passiveClient ?? client;
     for (const entry of journal.read()) {
       const key = personalKey(entry.target);
+      if (entry.pending) entry.pending = { ...entry.pending, dispatched: true };
       this.#entries.set(key, entry);
       if (entry.pending || entry.queued) this.#recovered.add(key);
     }
@@ -177,13 +197,86 @@ export class PersonalOperations {
   }
 
   async read(target: PersonalTarget): Promise<PersonalView> {
+    const key = personalKey(target);
+    let reader: Pick<HaeryongClient, "personalGet"> = this.#client;
+    for (;;) {
+      this.#check();
+      const generation = this.#readGeneration?.();
+      const revision = this.#lastWriteRevision.get(key) ?? 0;
+      const superseded = () => this.#readGeneration?.() !== generation || (this.#lastWriteRevision.get(key) ?? 0) !== revision;
+      let value: PersonalView;
+      try {
+        value = await reader.personalGet(target.kind, target.version, target.page ?? undefined);
+      } catch (error) {
+        this.#check();
+        if (!superseded()) throw error;
+        reader = this.#passiveClient;
+        continue;
+      }
+      this.#check();
+      if (superseded()) {
+        // Keep initial default-page bootstrap live, but automatic recovery
+        // after a newer read/write/resync must not renew owner activity.
+        reader = this.#passiveClient;
+        continue;
+      }
+      this.#lastWriteRevision.set(key, revision + 1);
+      const entry = this.#get(target);
+      entry.acknowledged = copy(value);
+      this.#changed();
+      return value;
+    }
+  }
+
+  async refreshFromServer(
+    target: PersonalTarget,
+    passiveClient?: Pick<HaeryongClient, "personalGet">,
+    required = false,
+  ): Promise<PersonalView | null> {
     this.#check();
-    const value = await this.#client.personalGet(target.kind, target.version, target.page ?? undefined);
+    const skipped = (): null => { if (required) throw new StaleResponseError(); return null; };
+    const key = personalKey(target);
+    if (this.busy(target) || this.#entries.get(key)?.pending) return skipped();
+    const startReadGen = this.#readGeneration?.();
+    const startWriteRev = this.#lastWriteRevision.get(key) ?? 0;
+    const reader = passiveClient ?? this.#client;
+    let fresh: PersonalView;
+    try {
+      fresh = await reader.personalGet(target.kind, target.version, target.page ?? undefined);
+    } catch (error) {
+      this.#check();
+      if (this.#readGeneration && startReadGen !== undefined && this.#readGeneration() !== startReadGen) {
+        return skipped();
+      }
+      if ((this.#lastWriteRevision.get(key) ?? 0) !== startWriteRev || this.busy(target)) {
+        return skipped();
+      }
+      const entry = this.#get(target);
+      if (!entry.pending) {
+        entry.issue = "읽기 상태를 새로고침하지 못했습니다. 연결을 확인해 주세요.";
+        this.#changed();
+      }
+      throw error;
+    }
     this.#check();
+    if (this.#readGeneration && startReadGen !== undefined && this.#readGeneration() !== startReadGen) {
+      return skipped();
+    }
+    if ((this.#lastWriteRevision.get(key) ?? 0) !== startWriteRev || this.busy(target)) {
+      return skipped();
+    }
     const entry = this.#get(target);
-    entry.acknowledged = copy(value);
+    if (entry.pending) return skipped();
+    delete entry.issue;
+    this.#lastWriteRevision.set(key, startWriteRev + 1);
+    entry.acknowledged = copy(fresh);
+    if (entry.conflict) {
+      entry.conflict = { operation: copy(entry.conflict.operation), server: copy(fresh) };
+      await this.#persistEntry(entry);
+      return fresh;
+    }
     this.#changed();
-    return value;
+    return fresh;
   }
 
   async save(target: PersonalTarget, intent: unknown): Promise<void> {
@@ -221,6 +314,7 @@ export class PersonalOperations {
     try {
       const fresh = await this.#client.personalGet(target.kind, target.version, target.page ?? undefined);
       this.#check();
+      this.#lastWriteRevision.set(key, (this.#lastWriteRevision.get(key) ?? 0) + 1);
       entry.acknowledged = copy(fresh);
       if (choice === "server") {
         delete entry.conflict; delete entry.issue;
@@ -232,6 +326,7 @@ export class PersonalOperations {
         return;
       }
       entry.pending = this.#operation(target, selected, fresh);
+      delete entry.conflict;
       if (entry.queued === chosenQueue) delete entry.queued;
       delete entry.issue;
       if (!(await this.#persistEntry(entry))) return;
@@ -244,7 +339,16 @@ export class PersonalOperations {
   }
 
   #operation(target: PersonalTarget, intent: unknown, base: PersonalView): Operation {
-    return { target: copy(target), key: crypto.randomUUID(), intent: copy(intent), base: copy(base), conditions: base.exists ? { ifMatch: base.etag! } : { create: true }, phase: "write" };
+    const gen = this.#generation?.();
+    return {
+      target: copy(target),
+      key: crypto.randomUUID(),
+      intent: copy(intent),
+      base: copy(base),
+      conditions: base.exists ? { ifMatch: base.etag! } : { create: true },
+      phase: "write",
+      ...(gen ? { generation: gen } : {}),
+    };
   }
 
   #run(entry: PersonalEntry): Promise<void> {
@@ -275,6 +379,7 @@ export class PersonalOperations {
         if (!(await this.#persistEntry(entry))) return;
         this.#check();
         const operation = entry.pending;
+        const targetKey = personalKey(operation.target);
         if (operation.phase === "reconcile") {
           const fresh = await this.#client.personalGet(operation.target.kind, operation.target.version, operation.target.page ?? undefined);
           this.#check();
@@ -286,6 +391,7 @@ export class PersonalOperations {
             return;
           }
           if (decision === "converged") {
+            this.#lastWriteRevision.set(targetKey, (this.#lastWriteRevision.get(targetKey) ?? 0) + 1);
             entry.acknowledged = copy(fresh); delete entry.pending; delete entry.conflict; delete entry.issue;
             if (!(await this.#persistEntry(entry))) return;
             this.#check();
@@ -299,6 +405,84 @@ export class PersonalOperations {
           await new Promise((resolve) => setTimeout(resolve, 25));
           continue;
         }
+        const wasDispatched = operation.dispatched === true;
+        if (wasDispatched && typeof this.#client.operation === "function") {
+          let receipt: OperationView | null = null;
+          let missingReceipt = false;
+          try {
+            receipt = await this.#client.operation(operation.key);
+          } catch (error) {
+            this.#check();
+            if (error instanceof ApiError && error.status === 404) {
+              missingReceipt = true;
+            } else {
+              entry.issue = "이전 저장 요청의 처리 결과를 확인하지 못했습니다. 다시 시도해 주세요.";
+              this.#changed();
+              return;
+            }
+          }
+          this.#check();
+          if (missingReceipt) {
+            const currentGen = this.#generation?.() ?? "";
+            const recordedGen = operation.generation ?? "";
+            if (this.#generation && (!recordedGen || (currentGen !== "" && recordedGen !== currentGen))) {
+              try {
+                const fresh = await this.#client.personalGet(operation.target.kind, operation.target.version, operation.target.page ?? undefined);
+                this.#check();
+                this.#lastWriteRevision.set(targetKey, (this.#lastWriteRevision.get(targetKey) ?? 0) + 1);
+                entry.acknowledged = copy(fresh);
+                entry.conflict = { operation: copy(operation), server: copy(fresh) };
+                delete entry.pending;
+                entry.issue = "서버 실행 세대가 변경되어(복원 또는 초기화) 이전 요청 기록을 자동 재전송하지 않았습니다. 현재 서버 값과 비교해 선택하세요.";
+                await this.#persistEntry(entry);
+              } catch {
+                entry.issue = "서버 실행 세대가 변경되었으나 현재 서버 상태를 확인하지 못했습니다. 다시 시도해 주세요.";
+                this.#changed();
+              }
+              return;
+            }
+          } else if (receipt) {
+            if (receipt.state === "accepted" || receipt.state === "pending" || receipt.state === "reconciling") {
+              entry.issue = "이전 저장 요청이 서버에서 아직 처리 중입니다. 잠시 후 다시 확인하세요.";
+              await this.#persistEntry(entry);
+              return;
+            }
+            if (receipt.state === "completed") {
+              delete entry.pending; delete entry.conflict; delete entry.issue;
+              if (!(await this.#persistEntry(entry))) return;
+              this.#check();
+              const outcome = await this.#reconcileRecoveredCompletion(entry, operation, this.#anchorFromReceipt(operation, receipt), targetKey);
+              if (outcome === "stop") return;
+              continue;
+            }
+            if (receipt.state === "failed") {
+              if (receipt.original_status === 412) {
+                entry.pending = { ...operation, phase: "reconcile" };
+                if (!(await this.#persistEntry(entry))) return;
+                this.#check();
+                continue;
+              }
+              try {
+                const fresh = await this.#client.personalGet(operation.target.kind, operation.target.version, operation.target.page ?? undefined);
+                this.#check();
+                this.#lastWriteRevision.set(targetKey, (this.#lastWriteRevision.get(targetKey) ?? 0) + 1);
+                entry.acknowledged = copy(fresh);
+                entry.conflict = { operation: copy(operation), server: copy(fresh) };
+                delete entry.pending;
+                const receiptMsg = receipt.error?.message
+                  || ((receipt.result_metadata as { error?: { message?: string } } | null)?.error?.message)
+                  || "이전 저장 요청이 서버에서 거부되었습니다.";
+                entry.issue = receiptMsg + " 서버 값 유지 또는 현재 상태 다시 저장을 선택하세요.";
+                await this.#persistEntry(entry);
+              } catch {
+                entry.issue = "거부된 저장 요청의 현재 서버 상태를 불러오지 못했습니다. 다시 확인해 주세요.";
+                this.#changed();
+              }
+              return;
+            }
+          }
+        }
+        operation.dispatched = true;
         let saved: PersonalView;
         try {
           saved = await this.#client.personalPut(operation.target.kind, operation.target.version, operation.target.page, operation.intent, operation.conditions, operation.key);
@@ -317,7 +501,16 @@ export class PersonalOperations {
           return;
         }
         this.#check();
-        entry.acknowledged = copy(saved); delete entry.pending; delete entry.conflict; delete entry.issue;
+        delete entry.pending; delete entry.conflict; delete entry.issue;
+        if (wasDispatched) {
+          if (!(await this.#persistEntry(entry))) return;
+          this.#check();
+          const outcome = await this.#reconcileRecoveredCompletion(entry, operation, copy(saved), targetKey, true);
+          if (outcome === "stop") return;
+          continue;
+        }
+        this.#lastWriteRevision.set(targetKey, (this.#lastWriteRevision.get(targetKey) ?? 0) + 1);
+        entry.acknowledged = copy(saved);
         // The PUT has committed; if the journal cannot record that, the older
         // durable pending record honestly stays for same-K replay.
         if (!(await this.#persistEntry(entry))) return;
@@ -331,6 +524,89 @@ export class PersonalOperations {
         this.#changed();
       }
     }
+  }
+
+  #anchorFromReceipt(operation: Operation, receipt: OperationView): PersonalView {
+    const meta = receipt.result_metadata && typeof receipt.result_metadata === "object"
+      ? (receipt.result_metadata as Partial<PersonalView>)
+      : undefined;
+    const etag = typeof meta?.etag === "string" && meta.etag
+      ? meta.etag
+      : typeof receipt.result_etag === "string" && receipt.result_etag
+        ? receipt.result_etag
+        : null;
+    const hasValue = meta !== undefined && "value" in meta && meta.value !== undefined;
+    return {
+      exists: meta?.exists ?? true,
+      value: copy(hasValue ? meta.value : operation.intent),
+      revision: typeof meta?.revision === "number" ? meta.revision : null,
+      etag,
+      page_position_url: typeof meta?.page_position_url === "string" ? meta.page_position_url : null,
+    };
+  }
+
+  async #reconcileRecoveredCompletion(
+    entry: PersonalEntry,
+    operation: Operation,
+    anchorView: PersonalView,
+    targetKey: string,
+    fromPut = false,
+  ): Promise<"continue" | "stop"> {
+    let fresh: PersonalView;
+    try {
+      fresh = await this.#client.personalGet(operation.target.kind, operation.target.version, operation.target.page ?? undefined);
+      this.#check();
+    } catch {
+      delete entry.acknowledged;
+      entry.issue = "원래 저장 요청은 완료되었으나 현재 서버 상태를 불러오지 못했습니다. 다시 확인해 주세요.";
+      this.#changed();
+      return "stop";
+    }
+    if (
+      fromPut
+      && fresh.exists === operation.base.exists
+      && fresh.etag === operation.base.etag
+      && fresh.etag !== anchorView.etag
+      && structuralEqual(fresh.value, operation.base.value)
+    ) {
+      fresh = copy(anchorView);
+    }
+    this.#lastWriteRevision.set(targetKey, (this.#lastWriteRevision.get(targetKey) ?? 0) + 1);
+    entry.acknowledged = copy(fresh);
+    if (!entry.queued) {
+      this.#changed();
+      return "continue";
+    }
+    const baseView: PersonalView = anchorView.etag !== null
+      && fresh.etag === anchorView.etag
+      && structuralEqual(clientIntent(operation.target.kind, fresh.value), clientIntent(operation.target.kind, anchorView.value))
+      ? copy(fresh)
+      : anchorView;
+    const decision = baseView.etag !== null
+      ? reconcilePersonal412({
+          family: operation.target.kind,
+          base: baseView,
+          intent: entry.queued.intent,
+          fresh,
+        })
+      : structuralEqual(clientIntent(operation.target.kind, fresh.value), clientIntent(operation.target.kind, entry.queued.intent))
+        ? "converged"
+        : "conflict";
+    if (decision === "converged") {
+      delete entry.queued;
+      if (!(await this.#persistEntry(entry))) return "stop";
+      this.#check();
+      return "continue";
+    }
+    if (decision === "conflict") {
+      const queuedOperation = this.#operation(operation.target, entry.queued.intent, baseView);
+      delete entry.queued;
+      entry.conflict = { operation: copy(queuedOperation), server: copy(fresh) };
+      await this.#persistEntry(entry);
+      return "stop";
+    }
+    this.#changed();
+    return "continue";
   }
 
   dispose(): void { this.#active = false; this.#listeners.clear(); }

@@ -13,12 +13,13 @@
 // (FileList) reselect cannot represent empty directories or symlinks.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ShellController } from "../../client/controller.ts";
-import { ApiError } from "../../client/types.ts";
+import { ApiError, StaleResponseError } from "../../client/types.ts";
 import type { DocumentView, ListPage, UploadConfirmedRange, UploadDetail, UploadEntryProgress, UploadPin, UploadSummary } from "../../client/types.ts";
 import { BrowserJournalStore, JournalReadError, JournalWriteError, journalAuthority, journalKey, planFromArchive, planFromFolder, planFromSingleFile, TransferEngine } from "../../client/transfer.ts";
 import type { ImportJournal, PlannedInput } from "../../client/transfer.ts";
 import { DispatchBlockedError } from "../../client/types.ts";
 import { JOURNAL_UNAVAILABLE_NOTICE, runImportPipeline } from "./pipeline.ts";
+import { useReviewInvalidation } from "./review-refresh.ts";
 
 interface StorageScreenProps {
   controller: ShellController;
@@ -61,7 +62,7 @@ export function StorageScreen({ controller }: StorageScreenProps) {
   const client = controller.client;
   const [uploads, setUploads] = useState<UploadSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const reloadRequest = useRef(0);
+  const reloadRequest = useRef(0),summaryRequest=useRef(0);
   const [cursor, setCursor] = useState<string | null>(null);
   const [detail, setDetail] = useState<Record<string, UploadDetail>>({});
   const [expanded, setExpanded] = useState<Record<string, { entries: UploadEntryProgress[]; ranges: UploadConfirmedRange[]; pins: UploadPin[] }>>({});
@@ -114,16 +115,60 @@ export function StorageScreen({ controller }: StorageScreenProps) {
 
   useEffect(() => {
     void reload(null);
+    let live=true;const run=++summaryRequest.current;
     void client
       .serviceStatus()
       .then((status) => {
+        if(!live||run!==summaryRequest.current)return;
         const storage = (status as { storage?: { staging_bytes?: string; pending_upload_count?: number } }).storage;
         if (storage) {
           setStatusSummary(`스테이징 ${formatBytes(storage.staging_bytes ?? "0")} · 대기 업로드 ${storage.pending_upload_count ?? 0}개`);
         }
       })
-      .catch(() => setStatusSummary(null));
+      .catch(() => {if(live&&run===summaryRequest.current)setStatusSummary(null);});
+    return()=>{live=false;};
   }, [client, reload]);
+
+  useReviewInvalidation(
+    controller,
+    true,
+    async (ev) => {
+      const captured = controller.captureDispatchAuthority();
+      const readGen = ev?.readGeneration ?? controller.readGeneration;
+      const req = ++reloadRequest.current,summary=++summaryRequest.current;
+      try {
+        const passive = controller.passiveClient;
+        const [page, status] = await Promise.all([
+          passive.listUploads({}),
+          ev?.resync ? passive.serviceStatus() : passive.serviceStatus().catch(() => null),
+        ]);
+        if(!controller.isCurrentReadAuthority(captured,readGen))return;
+        if(req!==reloadRequest.current||summary!==summaryRequest.current){if(ev?.resync)throw new StaleResponseError();return;}
+        setUploads(page.items);
+        setCursor(page.next_cursor);
+        const store = new BrowserJournalStore();
+        const session = controller.state.session;
+        if (session) {
+          const authority = journalAuthority(controller.state.capabilities?.library_id ?? "", session.principal_id);
+          setJournals(store.load(authority).records);
+        }
+        const storage = status ? (status as { storage?: { staging_bytes?: string; pending_upload_count?: number } }).storage : undefined;
+        if (storage) {
+          setStatusSummary(`스테이징 ${formatBytes(storage.staging_bytes ?? "0")} · 대기 업로드 ${storage.pending_upload_count ?? 0}개`);
+        } else {
+          setStatusSummary(null);
+        }
+      } catch (cause) {
+        if (req === reloadRequest.current && controller.isCurrentReadAuthority(captured, readGen)) {
+          setError(cause instanceof JournalReadError || cause instanceof JournalWriteError ? JOURNAL_UNAVAILABLE_NOTICE : cause instanceof ApiError ? `오류 ${cause.status} ${cause.code}` : cause instanceof Error ? cause.message : String(cause));
+        }
+        if (ev?.resync) throw cause;
+      } finally {
+        if (req === reloadRequest.current) setLoading(false);
+      }
+    },
+    () => resume.kind === "resuming" || newOperation.kind === "publishing",
+  );
 
   useEffect(() => {
     if (epochRef.current === epoch) return;

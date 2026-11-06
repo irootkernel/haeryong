@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { accumulateDocuments, countLabel, featureEnabled, filterFromSearch, filterToSearch } from "./library-data.ts";
+import { accumulateDocuments, countLabel, featureEnabled, filterFromSearch, filterToSearch, refreshLoadedDocumentPages } from "./library-data.ts";
 import type { DocumentView } from "../../client/types.ts";
 
 function document(id: string, updatedAt: string): DocumentView {
@@ -53,4 +53,27 @@ test("absent feature keys stay disabled; only explicit true enables", () => {
   assert.equal(featureEnabled({}, "search"), false);
   assert.equal(featureEnabled({ search: false }, "search"), false);
   assert.equal(featureEnabled({ search: true }, "search"), true);
+});
+
+test("Task04 G8 refreshLoadedDocumentPages refreshes multi-page accumulated window without collapsing to page 1", async () => {
+  const seenCursors: Array<string | undefined> = [];
+  const reader = {
+    async listDocuments(filter?: { projectId?: string; lifecycle?: "active" | "archived"; cursor?: string }) {
+      seenCursors.push(filter?.cursor);
+      if (!filter?.cursor) {
+        return { items: [document("doc-3", "3"), document("doc-2", "2")], next_cursor: "cur-2" };
+      }
+      return { items: [document("doc-1", "1")], next_cursor: null };
+    },
+  };
+  const refreshed = await refreshLoadedDocumentPages(reader, { projectId: "p1", lifecycle: "active" }, 2);
+  assert.ok(refreshed);
+  assert.deepEqual(seenCursors, [undefined, "cur-2"]);
+  assert.equal(refreshed.loadedPages, 2);
+  assert.equal(refreshed.cursor, null);
+  assert.deepEqual(
+    refreshed.accumulation.documents.map((d) => d.document_id),
+    ["doc-3", "doc-2", "doc-1"],
+  );
+  assert.equal(refreshed.accumulation.exhausted, true);
 });

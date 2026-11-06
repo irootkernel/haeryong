@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ShellController } from "../../client/controller.ts";
 import type { ReviewAction, ReviewEvent, ReviewView } from "../../client/types.ts";
+import { StaleResponseError } from "../../client/types.ts";
 import { ReviewOperations, reviewJournal, reviewLabel } from "./review-operations.ts";
 import { useReviewInvalidation } from "./review-refresh.ts";
 
@@ -15,8 +16,41 @@ export function ReviewControl({ controller, versionId, owner, versionLabel }: { 
   const [events, setEvents] = useState<ReviewEvent[]>([]), [historyOpen, setHistoryOpen] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null), [historyBusy, setHistoryBusy] = useState(false);
   const operations = useRef<ReviewOperations | null>(null), lifetime = useRef(0);
+  const viewRead = useRef(0), historyRead = useRef(0);
   const enabled = controller.state.capabilities?.features.review === true;
-  useReviewInvalidation(controller, enabled, () => refresh(n => n + 1), () => operations.current?.busy === true);
+  useReviewInvalidation(
+    controller,
+    enabled,
+    async (ev) => {
+      const captured = controller.captureDispatchAuthority();
+      const readGen = ev?.readGeneration ?? controller.readGeneration;
+      const life = lifetime.current, viewRun = ++viewRead.current;
+      const currentQuery = (current: boolean) => {
+        if (lifetime.current !== life || !controller.isCurrentReadAuthority(captured, readGen)) return false;
+        if (!current && ev?.resync) throw new StaleResponseError();
+        return current;
+      };
+      try {
+        const value = await controller.passiveClient.reviewGet(versionId);
+        if (!currentQuery(viewRead.current === viewRun)) return;
+        if (value.version_id !== versionId) throw Error("Review 응답 버전이 일치하지 않습니다.");
+        setView(value);
+        if (historyOpen) {
+          const historyRun = ++historyRead.current;
+          const page = await controller.passiveClient.reviewHistory(versionId);
+          if (!currentQuery(historyRead.current === historyRun)) return;
+          setEvents(page.items);
+          setCursor(page.next_cursor);
+        }
+      } catch (error) {
+        if (!(error instanceof StaleResponseError) && viewRead.current === viewRun && lifetime.current === life && controller.isCurrentReadAuthority(captured, readGen)) {
+          setIssue(errorText(error));
+        }
+        if (ev?.resync) throw error;
+      }
+    },
+    () => operations.current?.busy === true,
+  );
 
   const guardFor = () => {
     const authority = controller.captureDispatchAuthority(), generation = lifetime.current;
@@ -45,43 +79,89 @@ export function ReviewControl({ controller, versionId, owner, versionLabel }: { 
   // action button, abandon an in-flight request or collapse inspected history.
   useEffect(() => {
     let active = true;
+    const authority = controller.captureDispatchAuthority();
+    const readGen = controller.readGeneration;
+    const life = lifetime.current, viewRun = ++viewRead.current;
     if (enabled) void controller.client.reviewGet(versionId).then(value => {
-      if (!active) return;
+      if (!active || viewRead.current !== viewRun || lifetime.current !== life || !controller.isCurrentReadAuthority(authority, readGen)) return;
       if (value.version_id !== versionId) throw Error("Review 응답 버전이 일치하지 않습니다.");
       setView(value);
-    }).catch(error => { if (active) setIssue(errorText(error)); });
+    }).catch(error => {
+      if (active && viewRead.current === viewRun && lifetime.current === life && controller.isCurrentReadAuthority(authority, readGen)) {
+        setIssue(errorText(error));
+      }
+    });
     return () => { active = false; };
   }, [controller, versionId, owner, enabled, revision]);
   useEffect(() => {
-    const focus = () => refresh(n => n + 1);
+    const focus = () => {
+      if (!enabled || operations.current?.busy === true) return;
+      const authority = controller.captureDispatchAuthority();
+      const readGen = controller.readGeneration;
+      const life = lifetime.current, viewRun = ++viewRead.current;
+      void controller.passiveClient.reviewGet(versionId).then(value => {
+        if (viewRead.current !== viewRun || lifetime.current !== life || !controller.isCurrentReadAuthority(authority, readGen)) return;
+        if (value.version_id !== versionId) throw Error("Review 응답 버전이 일치하지 않습니다.");
+        setView(value);
+      }).catch(error => {
+        if (viewRead.current === viewRun && lifetime.current === life && controller.isCurrentReadAuthority(authority, readGen)) {
+          setIssue(errorText(error));
+        }
+      });
+    };
     window.addEventListener("focus", focus);
     return () => window.removeEventListener("focus", focus);
-  }, []);
+  }, [controller, versionId, enabled]);
 
   const act = async (action?: ReviewAction) => {
     const op = operations.current;
-    if (!op || !view) return;
+    if (!op || (!view && action)) return;
     const guard = guardFor(), generation = lifetime.current;
+    controller.bumpReadGeneration();
     setBusy(true); setIssue("");
     try {
-      const value = action ? await op.submit(action, view, guard) : await op.retry(guard);
-      guard(); setView(value); setEvents([]); setHistoryOpen(false);
+      const value = action ? await op.submit(action, view!, guard) : await op.retry(guard);
+      guard();
+      controller.bumpReadGeneration();
+      setView(value); setEvents([]); setHistoryOpen(false);
       window.dispatchEvent(new Event("haeryong-review-changed"));
     } catch (error) {
       if (lifetime.current === generation) {
         setIssue(errorText(error));
-        try { const current = await controller.client.reviewGet(versionId); guard(); setView(current); }
-        catch { /* Preserve the original failure and pending request. */ }
+        try { const current = await controller.client.reviewGet(versionId); guard(); controller.bumpReadGeneration(); setView(current); }
+        catch { try { guard(); if (!op.pending) setView(null); } catch { /* Previous authority. */ } }
+      }
+    } finally { if (lifetime.current === generation) setBusy(false); }
+  };
+  const applyLocal = async () => {
+    const op = operations.current;
+    if (!op) return;
+    const guard = guardFor(), generation = lifetime.current;
+    controller.bumpReadGeneration();
+    setBusy(true); setIssue("");
+    try {
+      const freshBase = await controller.client.reviewGet(versionId);
+      guard();
+      const value = await op.applyRejected(freshBase, guard);
+      guard();
+      controller.bumpReadGeneration();
+      setView(value); setEvents([]); setHistoryOpen(false);
+      window.dispatchEvent(new Event("haeryong-review-changed"));
+    } catch (error) {
+      if (lifetime.current === generation) {
+        setIssue(errorText(error));
+        try { const current = await controller.client.reviewGet(versionId); guard(); controller.bumpReadGeneration(); setView(current); }
+        catch { try { guard(); if (!op.pending) setView(null); } catch { /* Previous authority. */ } }
       }
     } finally { if (lifetime.current === generation) setBusy(false); }
   };
   const history = async (more = false) => {
-    const guard = guardFor(); setHistoryBusy(true);
+    const guard = guardFor(), readGen = controller.readGeneration, historyRun = ++historyRead.current; setHistoryBusy(true); setHistoryOpen(true);
     try {
       guard();
       const page = await controller.client.reviewHistory(versionId, more ? cursor ?? undefined : undefined);
-      guard(); setEvents(old => more ? [...old, ...page.items] : page.items); setCursor(page.next_cursor); setHistoryOpen(true);
-    } catch (error) { try { guard(); setIssue(errorText(error)); } catch { /* Previous authority. */ } }
+      guard(); if (controller.readGeneration !== readGen || historyRead.current !== historyRun) return; setEvents(old => more ? [...old, ...page.items] : page.items); setCursor(page.next_cursor); setHistoryOpen(true);
+    } catch (error) { try { guard(); if (controller.readGeneration === readGen && historyRead.current === historyRun) setIssue(errorText(error)); } catch { /* Previous authority. */ } }
     finally { try { guard(); setHistoryBusy(false); } catch { /* Previous authority. */ } }
   };
   if (!enabled) return <p>개인 Review: 아직 제공되지 않습니다.</p>;
@@ -97,12 +177,16 @@ export function ReviewControl({ controller, versionId, owner, versionLabel }: { 
       <button disabled={busy} onClick={() => refresh(n => n + 1)}>검토 상태 새로고침</button>
       <button disabled={!current || historyBusy} onClick={() => void history()}>검토 이력</button>
     </div>
-    {pending && <p role="status">{generationChanged ? "서비스 세대가 변경되었습니다. 이전 요청을 자동 재전송하지 않습니다. 현재 상태와 이력을 확인하세요." : pending.rejected ? "요청이 거절되었습니다. 현재 상태를 확인하고 동작을 다시 선택하세요." : "저장 결과가 확인되지 않았습니다. 원래 요청으로 다시 확인하세요."}</p>}
-    {pending && !pending.rejected && !generationChanged && <button disabled={busy} onClick={() => void act()}>원래 Review 요청으로 다시 확인</button>}
-    {(pending?.rejected || generationChanged) && <button disabled={busy} onClick={() => {
-      const guard = guardFor();
-      void operations.current?.discard(guard).then(() => { guard(); refresh(n => n + 1); }).catch(error => setIssue(errorText(error)));
-    }}>{generationChanged ? "현재 상태 확인 후 이전 요청 종료" : "현재 상태로 다시 선택"}</button>}
+    {pending && <p role="status">{pending.rejected ? (generationChanged ? "서비스 세대가 변경되었습니다. 이전 요청을 자동 재전송하지 않습니다. 현재 상태와 이력을 확인하세요." : "요청이 거절되었습니다. 현재 상태를 확인하고 동작을 다시 선택하세요.") : "저장 결과가 확인되지 않았습니다. 원래 요청으로 다시 확인하세요."}</p>}
+    {pending?.rejected && <p className="hint" data-review-conflict="true">내 요청: {STATE_LABELS[pending.body.state]} · 서버 상태: {current ? reviewLabel(current) : "확인 중"}</p>}
+    {pending && !pending.rejected && <button disabled={busy} onClick={() => void act()}>원래 Review 요청으로 다시 확인</button>}
+    {pending?.rejected && <div className="form-row">
+      <button disabled={busy} onClick={() => {
+        const guard = guardFor();
+        void operations.current?.discard(guard).then(() => { guard(); setIssue(""); refresh(n => n + 1); }).catch(error => setIssue(errorText(error)));
+      }}>{generationChanged ? "현재 상태 확인 후 이전 요청 종료" : "서버 상태 유지"}</button>
+      <button disabled={busy || !current} onClick={() => void applyLocal()}>내 검토 상태 다시 적용</button>
+    </div>}
     {issue && <p role="alert">{issue}</p>}
     {historyOpen && <div>
       <ul>{events.map(event => <li key={event.event_id}>{localTime(event.created_at)} · {STATE_LABELS[event.old_state]} → {STATE_LABELS[event.new_state]} · {ACTION_LABELS[event.action]}</li>)}</ul>

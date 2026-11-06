@@ -80,7 +80,7 @@ func TestSearchEventHintsFollowAuthorizedCursorWithoutResourceBodies(t *testing.
 	opened := invokeOK(t, service, "subscribeEvents", "{}").(map[string]any)
 	payload, _ := json.Marshal(map[string]any{"subscription_id": opened["subscription_id"]})
 	got := invokeOK(t, service, "eventsPoll", string(payload)).(map[string]any)
-	if !reflect.DeepEqual(got, map[string]any{"closed": false, "invalidated": true}) {
+	if !reflect.DeepEqual(got, map[string]any{"closed": false, "invalidated": true, "cursor": "epoch:2"}) {
 		t.Fatal("expected only content-free hint", got)
 	}
 }

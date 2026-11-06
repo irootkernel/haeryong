@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { navigate } from "../router.tsx";
 import type { ShellController } from "../../client/controller.ts";
+import { invalidateProviderReadinessOnResync } from "../../client/provider-status.ts";
 import type { ProviderState, ProviderStatus } from "../../client/types.ts";
+import { useReviewInvalidation } from "./review-refresh.ts";
 
 const labels: Record<ProviderState, string> = {
   ready: "연결 확인됨", auth_required: "호스트에서 지원되는 Codex 구독 로그인을 확인하세요",
@@ -33,6 +35,7 @@ export function ProviderScreen({ controller, initialProbeAllowed }: { controller
   const lastRefresh = useRef(0);
   const [status, setStatus] = useState<ProviderStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [staleAfterResync, setStaleAfterResync] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(verified);
   const authority = `${controller.state.capabilities?.library_id}:${controller.state.capabilities?.runtime_generation}:${controller.state.session?.principal_id}`;
@@ -47,6 +50,7 @@ export function ProviderScreen({ controller, initialProbeAllowed }: { controller
       setLoading(false);
       setStatus(null);
       setError(null);
+      setStaleAfterResync(false);
       return;
     }
     const explicitRefresh = refresh !== lastRefresh.current;
@@ -64,6 +68,7 @@ export function ProviderScreen({ controller, initialProbeAllowed }: { controller
     setLoading(true);
     setStatus(null);
     setError(null);
+    setStaleAfterResync(false);
     void controller.client.providerStatus().then(value => { if (active) setStatus(value); })
       .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); })
       .finally(() => { if (active) { busy.current = false; setLoading(false); } });
@@ -72,13 +77,34 @@ export function ProviderScreen({ controller, initialProbeAllowed }: { controller
       busy.current = false;
     };
   }, [controller, authority, refresh, verified]);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+  const refreshPassive = useCallback((ev?: { resync?: boolean; resyncReason?: string }) => {
+    if (!ev?.resync) return;
+    const invalidated = invalidateProviderReadinessOnResync({
+      verified,
+      busy: busy.current,
+      status,
+      error,
+      sawDegraded: sawDegraded.current,
+    }, ev.resyncReason);
+    if (!invalidated || !mountedRef.current) return;
+    sawDegraded.current = invalidated.sawDegraded;
+    setStatus(invalidated.status);
+    setError(invalidated.error);
+    setStaleAfterResync(invalidated.staleAfterResync);
+  }, [verified, status, error]);
+  useReviewInvalidation(controller, verified, refreshPassive, () => busy.current);
   return <section className="screen" data-provider-screen>
     <h1>AI 제공자</h1>
     <p>호스트의 Codex 구독 연결 상태입니다. 서비스 기능 지원과 계정 준비는 별개입니다.</p>
     <p>생성 {genEnabled?"지원됨":"제공되지 않음"} · 질문 {askEnabled?"지원됨":"제공되지 않음"}. 연결 확인은 요청의 완료나 원본 접근을 보장하지 않습니다.</p>
     {controller.state.capabilities && !genEnabled && !askEnabled && <p data-provider-feature-absence>현재 이 서비스에서는 생성과 질문 기능이 모두 제공되지 않습니다. 이는 서비스 기능 설정에 따른 것이며 호스트 Codex 계정 로그인이나 사용량 문제와는 별개입니다.</p>}
     <button type="button" aria-disabled={!verified || loading} onClick={() => { if (!verified || busy.current) return; busy.current = true; setRefresh(value => value + 1); }}>제공자 상태 새로 고침</button>
-    <p role="status" aria-live="polite" aria-atomic="true">{!verified ? "서비스 연결이 확인되지 않아 현재 제공자 준비 상태를 확인할 수 없습니다. 연결 복구 후 새로 고침하세요." : loading ? "제공자 상태 확인 중…" : error ? "제공자 상태 확인 실패" : status ? labels[status.state] : "연결 상태를 확인할 수 없습니다"}</p>
+    <p role="status" aria-live="polite" aria-atomic="true">{!verified ? "서비스 연결이 확인되지 않아 현재 제공자 준비 상태를 확인할 수 없습니다. 연결 복구 후 새로 고침하세요." : loading ? "제공자 상태 확인 중…" : error ? "제공자 상태 확인 실패" : status ? labels[status.state] : staleAfterResync ? "연결 복구 또는 상태 동기화 후 제공자 준비 상태를 다시 확인해야 합니다. 새로 고침하세요." : "연결 상태를 확인할 수 없습니다"}</p>
     {error && <p role="alert">{error}</p>}
     {verified && status && <div data-provider-status>
       <h2>Codex</h2><p data-provider-state>{labels[status.state]}</p>

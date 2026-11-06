@@ -248,7 +248,7 @@ export function App({ controller }: { controller: ShellController }) {
   }, [controller]);
   useEffect(() => {
     const onVisibility = () => {
-      if (!document.hidden) void controller.verify();
+      if (!document.hidden) void controller.recheck(true);
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);

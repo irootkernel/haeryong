@@ -1,3 +1,4 @@
+import {StaleResponseError} from "../../client/types.ts";
 import { useEffect, useRef, useState } from "react";
 import type { ShellController } from "../../client/controller.ts";
 import type { DocumentView, GenerationReference, GenerationRequest, JobView, ProjectSourceView, ProjectView, SearchHit, RetainedSourceRead } from "../../client/types.ts";
@@ -5,8 +6,9 @@ import { BrowserGenerationJournal, GenerationSubmission, recoverGenerationResume
 import { ApiError, DispatchBlockedError } from "../../client/types.ts";
 import type { GenerationRecord } from "../../client/generation.ts";
 import { Sheet } from "../sheet.tsx";
-import { pinGenerationContext, initialGenerationProject, generationSourceMode, savedGenerationScope, savedGenerationJob } from "./generation-context.ts";
+import { pinGenerationContext, initialGenerationProject, generationSourceMode, savedGenerationScope, savedGenerationJob, drainProjectSources, refreshGenerationMountedState } from "./generation-context.ts";
 import { DraftControl } from "./generation-drafts.tsx";
+import { useReviewInvalidation } from "./review-refresh.ts";
 
 const message=(error:unknown)=>error instanceof ApiError&&(error.status===412||error.status===409&&error.code==="INVALID_TRANSITION")?resumeRefusalText(error):error instanceof Error?error.message:String(error);
 const stateName=(job:JobView)=>({queued:"대기",running:"생성 중",paused:"확인 또는 재개 필요",completed:"생성 완료",failed:"생성 실패",cancelled:"취소됨"}[job.state]??job.state);
@@ -31,7 +33,7 @@ export function GenerationControl({controller,projects,initialProjectId,onClose}
  const [project,setProject]=useState(initialProjectId);
  const [explicitProject,setExplicitProject]=useState(false);
  const [documents,setDocuments]=useState<DocumentView[]>([]),[documentCursor,setDocumentCursor]=useState<string|null>(null),[documentId,setDocumentId]=useState("");
- const [sources,setSources]=useState<ProjectSourceView[]>([]),[paths,setPaths]=useState<Record<string,string>>({}),[revisions,setRevisions]=useState<Record<string,string>>({});
+ const [sources,setSources]=useState<ProjectSourceView[]>([]),[paths,setPaths]=useState<Record<string,string>>({}),[revisions,setRevisions]=useState<Record<string,string>>({}),[editedRevisions,setEditedRevisions]=useState<Record<string,boolean>>({});
  const [sourceOverrides,setSourceOverrides]=useState<Record<string,"current"|"pinned">>({});
  const [sourceDefaults,setSourceDefaults]=useState<Record<string,"current"|"pinned">>({});
  const sourceMode=generationSourceMode(project,sourceOverrides,sourceDefaults);
@@ -45,6 +47,7 @@ export function GenerationControl({controller,projects,initialProjectId,onClose}
  const [references,setReferences]=useState<Array<{label:string;reference:GenerationReference}>>([]);
  const [records,setRecords]=useState<GenerationRecord[]>([]),[storedJob,setJob]=useState<JobView|null>(null),[active,setActive]=useState<GenerationRecord|null>(null);
  const job=savedGenerationJob(active,storedJob);
+ const reads=useRef({labels:0,defaults:0,project:0});
  const labelAuthority=controller.captureDispatchAuthority(),labelAuthorityKey=labelAuthority===null?"":JSON.stringify(labelAuthority);
  const labelIds=JSON.stringify([...new Set([...records, ...(active?[active]:[])].map(record=>record.request.document_id).filter((id):id is string=>!!id))].sort());
  const [documentLabels,setDocumentLabels]=useState<{authority:string;items:Record<string,DocumentView|null>}>({authority:"",items:{}});
@@ -52,43 +55,98 @@ export function GenerationControl({controller,projects,initialProjectId,onClose}
  useEffect(()=>{
   let live=true;setDocumentLabels({authority:labelAuthorityKey,items:{}});
   if(labelAuthority===null)return()=>{live=false;};
+  const readGen=controller.readGeneration,read=++reads.current.labels;
   const ids=JSON.parse(labelIds) as string[];
-  void Promise.allSettled(ids.map(id=>client.documentDetail(id))).then(results=>{
-   if(!live)return;
-   try{controller.requireVerifiedDispatch(labelAuthority);}catch{return;}
+  void Promise.allSettled(ids.map(id=>controller.passiveClient.documentDetail(id))).then(results=>{
+   if(!live||read!==reads.current.labels||!controller.isCurrentReadAuthority(labelAuthority,readGen))return;
    const items:Record<string,DocumentView|null>={};
    results.forEach((result,index)=>{items[ids[index]!]=result.status==="fulfilled"?result.value:null;});
    setDocumentLabels({authority:labelAuthorityKey,items});
   });
   return()=>{live=false;};
- },[client,controller,labelIds,labelAuthorityKey]);
+ },[controller,labelIds,labelAuthorityKey]);
  const [busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null),[notice,setNotice]=useState(""),[drafts,setDrafts]=useState(false);
  const searchScope=useRef(searchProject);searchScope.current=searchProject;
- const alive=useRef(true),operation=useRef<{stopped:boolean}|null>(null),searchRun=useRef(0),busyRef=useRef(false);
+ const alive=useRef(true),operation=useRef<{stopped:boolean}|null>(null),searchRun=useRef(0),busyRef=useRef(false),actionSeq=useRef(0);
+ const projectRef=useRef(project);projectRef.current=project;
+ const activeRef=useRef(active);activeRef.current=active;
+ const recordsRef=useRef(records);recordsRef.current=records;
+ const revisionsRef=useRef(revisions);revisionsRef.current=revisions;
+ const editedRevisionsRef=useRef(editedRevisions);editedRevisionsRef.current=editedRevisions;
+ const projectsRef=useRef(projects);projectsRef.current=projects;
  useEffect(()=>{alive.current=true;try{setRecords(journal.read());}catch(e){setError(message(e));}return()=>{alive.current=false;if(operation.current)operation.current.stopped=true;searchRun.current++;};},[journal]);
  useEffect(()=>{setProject(current=>initialGenerationProject(current,explicitProject,initialProjectId,projects));},[explicitProject,initialProjectId,projects]);
  useEffect(()=>{
   let live=true;
+  const auth=controller.captureDispatchAuthority(),readGen=controller.readGeneration,read=++reads.current.defaults;
   void client.configurationView().then(view=>{
-   if(!live)return;
-   setSourceDefaults(Object.fromEntries(projects.map(p=>[p.project_id,view.configuration.projects[p.project_id]?.source_mode_default??"pinned"])));
-   setProviderDefaults(Object.fromEntries(projects.map(p=>[p.project_id,view.configuration.projects[p.project_id]?.provider_id??""])));
-  }).catch(e=>{if(live)setError(message(e));});
+   if(!live||read!==reads.current.defaults||!controller.isCurrentReadAuthority(auth,readGen))return;
+   const ids=new Set<string>([...projects.map(p=>p.project_id),...Object.keys(view.configuration.projects??{})]);
+   setSourceDefaults(Object.fromEntries([...ids].map(id=>[id,view.configuration.projects[id]?.source_mode_default??"pinned"])));
+   setProviderDefaults(Object.fromEntries([...ids].map(id=>[id,view.configuration.projects[id]?.provider_id??""])));
+  }).catch(e=>{if(live&&read===reads.current.defaults&&controller.isCurrentReadAuthority(auth,readGen))setError(message(e));});
   return()=>{live=false;};
- },[client,projects]);
+ },[client,controller,projects]);
  useEffect(()=>{
-  let live=true;setDocuments([]);setSources([]);setDocumentId("");setPaths({});setRevisions({});setDocumentCursor(null);setRetained({});setReadCursor({});setSelectedReads({});
+  let live=true;actionSeq.current+=1;controller.bumpReadGeneration();
+  setDocuments([]);setSources([]);setDocumentId("");setPaths({});setRevisions({});setEditedRevisions({});setDocumentCursor(null);setRetained({});setReadCursor({});setSelectedReads({});
   if(!project)return;
-  void Promise.all([client.listDocuments({projectId:project}),client.projectSources(project)]).then(async([docs,page])=>{
-   const all=[...page.items];let cursor=page.next_cursor;
-   while(cursor){const next=await client.projectSources(project,cursor);all.push(...next.items);cursor=next.next_cursor;}
-   if(live){setDocuments(docs.items);setDocumentCursor(docs.next_cursor);setSources(all);setRevisions(Object.fromEntries(all.map(source=>[source.source_id,source.last_observed_revision??""])));}
-  }).catch(e=>{if(live)setError(message(e));});return()=>{live=false;};
- },[client,project]);
+  const auth=controller.captureDispatchAuthority(),readGen=controller.readGeneration,act=actionSeq.current,read=++reads.current.project;
+  void Promise.all([client.listDocuments({projectId:project}),drainProjectSources(client,project)]).then(([docs,all])=>{
+   if(live&&read===reads.current.project&&actionSeq.current===act&&controller.isCurrentReadAuthority(auth,readGen)){
+    setDocuments(docs.items);setDocumentCursor(docs.next_cursor);setSources(all);
+    setRevisions(Object.fromEntries(all.map(source=>[source.source_id,source.last_observed_revision??""])));
+   }
+  }).catch(e=>{if(live&&read===reads.current.project&&actionSeq.current===act&&controller.isCurrentReadAuthority(auth,readGen))setError(message(e));});return()=>{live=false;};
+ },[client,controller,project]);
+ useReviewInvalidation(
+  controller,
+  true,
+  async(ev)=>{
+   const auth=controller.captureDispatchAuthority();
+   if(auth===null)return;
+   const readGen=ev?.readGeneration??controller.readGeneration,act=actionSeq.current,authKey=JSON.stringify(auth);
+   const read={labels:++reads.current.labels,defaults:++reads.current.defaults,project:++reads.current.project};
+   try{
+    const applied=await refreshGenerationMountedState({
+     passiveClient:controller.passiveClient,
+     projects:projectsRef.current,
+     project:projectRef.current,
+     active:activeRef.current,
+     records:recordsRef.current,
+     revisions:revisionsRef.current,
+     editedRevisions:editedRevisionsRef.current,
+     canApply:()=>alive.current&&!busyRef.current&&actionSeq.current===act&&read.labels===reads.current.labels&&read.defaults===reads.current.defaults&&read.project===reads.current.project&&controller.isCurrentReadAuthority(auth,readGen),
+     isCurrentProject:(pid)=>projectRef.current===pid,
+     isCurrentActive:(opId,jobId)=>(activeRef.current?.operationId??null)===opId&&(activeRef.current?.accepted?.job_id??null)===jobId,
+     applyDefaults:(nextSourceDefaults,nextProviderDefaults)=>{
+      setSourceDefaults(nextSourceDefaults);
+      setProviderDefaults(nextProviderDefaults);
+     },
+     applyProjectData:({documents:nextDocs,documentCursor:nextCursor,sources:nextSources,revisions:nextRevisions})=>{
+      setDocuments(nextDocs);
+      setDocumentCursor(nextCursor);
+      setSources(nextSources);
+      setRevisions(nextRevisions);
+     },
+     applyJob:(nextJob)=>{setJob(nextJob);},
+     applyDocumentLabels:(items)=>{setDocumentLabels({authority:authKey,items});},
+    });
+    if(!applied&&ev?.resync&&alive.current)throw new StaleResponseError();
+   }catch(e){
+    if(alive.current&&!busyRef.current&&actionSeq.current===act&&controller.isCurrentReadAuthority(auth,readGen)){
+     setError(message(e));
+    }
+    if(ev?.resync&&alive.current)throw e;
+   }
+  },
+  ()=>busyRef.current,
+ );
  // The explicit user action owns its cancellation token. Replacing the active
  // token never clears a stopped older upload's token or authorizes its callbacks.
  const perform=async(action:(control:{stopped:boolean})=>Promise<void>)=>{
   if(busyRef.current)return;const control={stopped:false};operation.current=control;
+  actionSeq.current+=1;controller.bumpReadGeneration();
   busyRef.current=true;setBusy(true);setError(null);
   try{await action(control);}catch(e){if(alive.current)setError(message(e));}
   finally{if(operation.current===control){busyRef.current=false;if(alive.current){setBusy(false);try{setRecords(journal.read());}catch(e){setError(message(e));}}}}
@@ -199,7 +257,7 @@ export function GenerationControl({controller,projects,initialProjectId,onClose}
       {retained[source.source_id]?.length===0?<p>이 원본에서 선택할 수 있는 보관 이력이 없습니다. 현재 파일로 자동 대체하지 않습니다.</p>:null}
       <ul>{retained[source.source_id]?.map(read=><li key={read.read_id}><label className="choice"><span>{read.location?.path??"사용할 수 없는 원본"} · <time dateTime={read.captured_at}>{new Date(read.captured_at).toLocaleString()}</time> · {read.bytes_sha256.slice(0,12)} · {read.availability==="available"?"보관됨":read.reason??"사용 불가"}</span><input type="checkbox" checked={selectedReads[source.source_id]?.[read.location?.path??""]===read.read_id} disabled={read.availability!=="available"||read.retention_mode!=="selected_snapshot"||!read.location?.path} onChange={e=>{const checked=e.target.checked,path=read.location!.path;setSelectedReads(old=>{const selected={...(old[source.source_id]??{})};if(checked)selected[path]=read.read_id;else delete selected[path];return {...old,[source.source_id]:selected};});}}/></label></li>)}</ul>
       {readCursor[source.source_id]?<button type="button" onClick={()=>void loadRetained(source.source_id,true)}>보관 원본 더 보기</button>:null}
-     </>:<label className="field"><span>{source.repo_id??source.kind} · 상대 파일 경로, 한 줄에 하나</span><textarea value={paths[source.source_id]??""} onChange={e=>setPaths(old=>({...old,[source.source_id]:e.target.value}))} rows={2}/></label>}{sourceMode==="pinned"&&source.kind==="git"?<label className="field"><span>이력 버전</span><input type="text" value={revisions[source.source_id]??""} onChange={e=>setRevisions(old=>({...old,[source.source_id]:e.target.value}))}/></label>:null}</div>)}
+     </>:<label className="field"><span>{source.repo_id??source.kind} · 상대 파일 경로, 한 줄에 하나</span><textarea value={paths[source.source_id]??""} onChange={e=>setPaths(old=>({...old,[source.source_id]:e.target.value}))} rows={2}/></label>}{sourceMode==="pinned"&&source.kind==="git"?<label className="field"><span>이력 버전</span><input type="text" value={revisions[source.source_id]??""} onChange={e=>{const val=e.target.value;setEditedRevisions(old=>({...old,[source.source_id]:true}));setRevisions(old=>({...old,[source.source_id]:val}));}}/></label>:null}</div>)}
      <p className="hint">원본을 선택하지 않은 설명은 출처 미확인으로 보관됩니다. 기존 설명 선택은 원본 확인을 대신하지 않습니다.</p>
     </fieldset>
     <button type="submit" className="primary" disabled={!canWrite||busy||!project||provider!=="codex"||!prompt.trim()}>생성 요청</button>

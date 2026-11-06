@@ -8,7 +8,7 @@ import { ReviewControl } from "./review-control.tsx";
 // personal state, import controls and file destinations belong to this host.
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ShellController } from "../../client/controller.ts";
-import { ApiError } from "../../client/types.ts";
+import { StaleResponseError, ApiError } from "../../client/types.ts";
 import type { DocumentView, FileEntryView, PagePositionValue, ProjectView, ReadingPositionValue, RenderBootstrapView, VersionView } from "../../client/types.ts";
 import { IsolatedViewer } from "../../viewer/isolated-viewer.tsx";
 import type { ReaderLocation } from "../../viewer/isolated-viewer.tsx";
@@ -65,6 +65,18 @@ function readerURL(document: string, version: string, location: ReaderLocation):
   return `/documents/${document}/versions/${version}?${query}`;
 }
 
+const formatPersonalValue = (kind: PersonalTarget["kind"], value: unknown): string => {
+  if (!value || typeof value !== "object") return "없음";
+  if (kind === "reader-preference") {
+    return (value as { default_page?: string | null }).default_page ?? "지정 안 함";
+  }
+  if (kind === "reading-position") {
+    return (value as { page_path?: string | null }).page_path ?? "전체 디렉터리";
+  }
+  const pos = (value as PagePositionValue).position;
+  return `scroll (${Number(pos?.scroll_x) || 0}, ${Number(pos?.scroll_y) || 0})`;
+};
+
 export function ReaderScreen(props: ReaderProps) {
   const state = props.controller.state, authority = props.controller.captureDispatchAuthority();
   const confirmedNonce = useRef(authority?.nonce);
@@ -83,7 +95,19 @@ function ReaderOwner(props: ReaderProps & { owner: string; epoch: string }) {
   const [result] = useState(() => {
     try {
       const authority = controller.captureDispatchAuthority();
-      return { personal: new PersonalOperations(client, new BrowserPersonalJournal(localStorage, owner), () => controller.requireVerifiedDispatch(authority)), error: null };
+      return {
+        personal: new PersonalOperations(
+          client,
+          new BrowserPersonalJournal(localStorage, owner),
+          () => controller.requireVerifiedDispatch(authority),
+          {
+            generation: () => controller.state.capabilities?.runtime_generation ?? "",
+            readGeneration: () => controller.readGeneration,
+            passiveClient: controller.passiveClient,
+          },
+        ),
+        error: null,
+      };
     } catch (error) { return { personal: null, error: errorText(error) }; }
   });
   if (!result.personal) return <section className="panel" role="alert"><h1>읽기 상태 기록을 열지 못했습니다.</h1><p>{result.error}</p><button onClick={() => location.reload()}>다시 불러오기</button></section>;
@@ -180,10 +204,11 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
   currentRoute.current = { versionId, context };
   const target = (kind: PersonalTarget["kind"], page: string | null = null): PersonalTarget => ({ version: versionId, kind, page });
 
+  const detailReads=useRef(0);
   useEffect(() => {
     if (lifecycleBlocked) return;
     let cancelled = false;
-    const era = visibilityEra.current, valid = () => !cancelled && era === visibilityEra.current;
+    const era = visibilityEra.current,run=++detailReads.current,valid = () => !cancelled && era === visibilityEra.current&&run===detailReads.current;
     setDetailIssue(null);
     void (async () => {
       const version = await client.versionDetail(versionId);
@@ -464,15 +489,63 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
   };
   // A fresh host navigation, never a notification/restore, can open a new delivery.
   useEffect(() => { setLifecycleBlocked(false); }, [versionId, context]);
-  useReviewInvalidation(controller,true,()=>{
-    const auth=controller.captureDispatchAuthority(), era=visibilityEra.current, route={...referenceRoute.current};
-    void client.versionDetail(versionId).then(()=>{controller.requireVerifiedDispatch(auth);}).catch(e=>{
+  useReviewInvalidation(controller,true,async (ev)=>{
+    const auth=controller.captureDispatchAuthority(), readGen=ev?.readGeneration??controller.readGeneration, era=visibilityEra.current, route={...referenceRoute.current};
+    const run=++detailReads.current;
+    try {
+      const [version, document] = await Promise.all([
+        controller.passiveClient.versionDetail(versionId),
+        controller.passiveClient.documentDetail(documentId),
+      ]);
+      const current=referenceRoute.current;
+      if(era!==visibilityEra.current||route.versionId!==current.versionId||route.context!==current.context||route.reload!==current.reload||!controller.isCurrentReadAuthority(auth,readGen))return;
+      if(run!==detailReads.current){if(ev?.resync)throw new StaleResponseError();return;}
+      if(version.document_id===documentId){
+        setVersionDetailState({versionId,version});
+      }
+      let projects=docInfo?.documentId===documentId?docInfo.projects:[];
+      if(!projects.some(project=>project.project_id===document.project_id)){
+        let cursor:string|undefined;projects=[];
+        do{
+          const page=await controller.passiveClient.listProjects(cursor);
+          const now=referenceRoute.current;
+          if(era!==visibilityEra.current||route.versionId!==now.versionId||route.context!==now.context||route.reload!==now.reload||!controller.isCurrentReadAuthority(auth,readGen))return;
+          if(run!==detailReads.current){if(ev?.resync)throw new StaleResponseError();return;}
+          projects.push(...page.items);cursor=page.next_cursor??undefined;
+        }while(cursor&&!projects.some(project=>project.project_id===document.project_id));
+      }
+      setDocInfo({documentId,document,projects});
+      setDetailIssue(null);
+      const wrapPersonal=(p:Promise<unknown>)=>ev?.resync?p:p.catch(()=>null);
+      const personalRefreshes:Promise<unknown>[]=[
+        wrapPersonal(personal.refreshFromServer(target("reader-preference"),controller.passiveClient,Boolean(ev?.resync))),
+        wrapPersonal(personal.refreshFromServer(target("reading-position"),controller.passiveClient,Boolean(ev?.resync))),
+      ];
+      const displayed=frameSelection.current;
+      const channel=channelRef.current;
+      // A requested URL is not proof of an HTML page-position resource.
+      // Missing/non-HTML selections keep their own page recovery UI; only
+      // the resolved current HTML page has a position to refresh.
+      const positionPage=channel?.context===route.context&&channel.versionId===versionId&&channel.reload===route.reload&&channel.pagePath===route.page
+        ?channel.pagePath
+        :displayed?.context===route.context&&displayed.bootstrap.version_id===versionId&&displayed.location?.page===route.page
+          ?displayed.location.page:null;
+      if(positionPage&&html(positionPage)){
+        personalRefreshes.push(wrapPersonal(personal.refreshFromServer(target("page-position",positionPage),controller.passiveClient,Boolean(ev?.resync))));
+      }
+      await Promise.all(personalRefreshes);
+    } catch (e) {
       const current=referenceRoute.current;
       if(era!==visibilityEra.current||route.versionId!==current.versionId||route.context!==current.context||route.reload!==current.reload)return;
       if(e instanceof ApiError&&[401,403,404,410].includes(e.status)){
         closeProtectedReader();
+        return;
       }
-    });
+      if(!(e instanceof StaleResponseError)&&run===detailReads.current&&controller.isCurrentReadAuthority(auth,readGen)){
+        setDetailIssue(errorText(e));
+      }
+      if(ev?.resync)throw e;
+    }
   });
   if(lifecycleBlocked)return <section role="alert"><h1>이 문서를 더 이상 표시할 수 없습니다.</h1><p>문서 상태 또는 접근 권한이 바뀌어 페이지를 닫았습니다.</p><a href="/trash">휴지통 열기</a><a href="/library">서재 열기</a></section>;
   return <div className="reader">
@@ -492,6 +565,7 @@ function ReaderContent(props: ReaderProps & { owner: string; epoch: string; pers
     {notice && <p role="status">{notice}</p>}
     {entries.map((entry) => <div className="banner" data-tone="warning" key={personalKey(entry.target)}>
       <p>{entry.target.version.slice(0, 8)} · {{ "reader-preference": "기본 페이지", "reading-position": "마지막 연 페이지", "page-position": "페이지 위치" }[entry.target.kind]}{entry.target.page ? ` · ${entry.target.page}` : ""}: {entry.issue ?? (personal.recoverable(entry.target) ? "이전 화면의 저장 결과가 확인되지 않았습니다. 원래 요청으로 다시 확인하세요." : entry.conflict ? "다른 기기에서 변경된 상태입니다. 유지할 값을 선택하세요." : "저장 결과를 확인하는 중입니다.")}</p>
+      {entry.conflict && <p className="hint" data-personal-conflict="true">내 값: {formatPersonalValue(entry.target.kind, entry.conflict.operation.intent)} · 서버 값: {entry.conflict.server.exists ? formatPersonalValue(entry.target.kind, entry.conflict.server.value) : "없음"}</p>}
       {entry.conflict && !entry.pending ? <div className="form-row"><button disabled={personal.busy(entry.target)} onClick={() => void personal.resolve(entry.target, "server").catch((error) => setNotice(errorText(error)))}>서버 값 유지</button><button disabled={personal.busy(entry.target)} onClick={() => void personal.resolve(entry.target, "local").catch((error) => setNotice(errorText(error)))}>현재 상태 다시 저장</button></div> : entry.issue || personal.recoverable(entry.target) ? <button disabled={personal.busy(entry.target)} onClick={() => void personal.retry(entry.target).catch((error) => setNotice(errorText(error)))}>원래 요청으로 다시 확인</button> : null}
     </div>)}
     {detailIssue && <div className="banner" data-tone="warning" role="alert"><p>문서 정보를 불러오지 못했습니다: {detailIssue}</p><button onClick={() => setDetailGeneration((value) => value + 1)}>문서 정보 다시 불러오기</button></div>}

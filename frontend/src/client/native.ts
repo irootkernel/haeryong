@@ -64,7 +64,8 @@ import type {
   PersonalView,
 } from "./types.ts";
 import { sourceWrite } from "./source-operations.ts";
-import { StaleResponseError } from "./types.ts";
+import { ApiError, StaleResponseError } from "./types.ts";
+import type { EventStreamResync } from "./types.ts";
 import { encodeBytes } from "./native-wire.ts";
 import { eraGuardedStream } from "./stream.ts";
 import type { ContextBinding } from "./context-types.ts";
@@ -203,7 +204,7 @@ export interface NativePort {
   call(operation: "revokeOwnSession", payload: {}): Promise<void>;
   call(operation: "serviceStatus", payload: {}): Promise<unknown>;
   call(operation: "providerStatus", payload: {}): Promise<ProviderStatus>;
-  call(operation: "subscribeEvents", payload: {}): Promise<EventSubscription>;
+  call(operation: "subscribeEvents", payload: { cursor?: string }): Promise<EventSubscription>;
   call(operation: "versionBacklinks", payload: BacklinksCall): Promise<BacklinkPage>;
   call(operation: "validateVersionIndexes", payload: IndexValidationCall): Promise<IndexValidation>;
   call(operation: "rebuildVersionIndexes", payload: IndexRebuildCall): Promise<DecisionResult>;
@@ -331,16 +332,73 @@ export const NATIVE_OPERATIONS = [
   "personalPut",
 ] as const;
 
+export const NATIVE_PASSIVE_READ_OPERATIONS = new Set<string>([
+  "currentSession", "capabilities", "pendingPairings", "listSessions", "operation",
+  "providerStatus", "serviceStatus", "listProjects", "search", "listDocuments",
+  "documentDetail", "documentVersions", "versionDetail", "versionBacklinks",
+  "validateVersionIndexes", "versionReferences", "resolveReference", "versionFiles",
+  "versionSuppliedMetadata", "configurationView", "retainedSourceReads", "projectSources",
+  "versionEvidence", "evidenceVerifications", "versionAssessments", "assessmentCoverage",
+  "renderBootstrap", "lifecyclePlanGet", "trashList",
+  "annotationList", "annotationGet", "annotationHistory", "annotationBodyStream", "annotationContextStream",
+  "revisitGet", "reviewGet", "reviewHistory", "personalGet",
+  "listUploads", "uploadDetail", "uploadEntries", "uploadRanges", "uploadPins",
+  "jobGet", "verifyContextFresh", "packageStream", "fileStream",
+  "draftList", "draftGet", "draftHistory",
+  "questionList", "questionGet", "questionAnswers", "answerGet",
+  "questionTextStream", "questionContextStream", "answerBodyStream", "answerCitationStream",
+]);
+
+interface NativeClientState {
+  attachment: string | null;
+  pendingDisposal: string | null;
+  publicOrigin: string | null;
+  era: number;
+  eventCursor: string;
+}
+
+function createPassivePort(basePort: NativePort): NativePort {
+  return {
+    call: async (operation: string, payload: unknown) => {
+      if (!NATIVE_PASSIVE_READ_OPERATIONS.has(operation)) {
+        throw new ApiError(400, "NATIVE_PAYLOAD_INVALID", false);
+      }
+      const base = payload && typeof payload === "object" && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>)
+        : {};
+      return (basePort as { call: (op: string, p: unknown) => Promise<unknown> }).call(operation, { ...base, passive: true });
+    },
+  } as unknown as NativePort;
+}
+
 /** HaeryongClient view over an injected NativePort. */
 export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
   readonly #port: NativePort;
-  #attachment: string | null = null;
-  #pendingDisposal: string | null = null;
-  #publicOrigin: string | null = null;
-  #era = 0;
+  readonly #state: NativeClientState;
+  readonly #passive: boolean;
+  #passiveView: NativeHaeryongClient | null = null;
 
-  constructor(port: NativePort) {
+  constructor(port: NativePort, state?: NativeClientState, passive = false) {
     this.#port = port;
+    this.#state = state ?? { attachment: null, pendingDisposal: null, publicOrigin: null, era: 0, eventCursor: "" };
+    this.#passive = passive;
+  }
+
+  get #attachment(): string | null { return this.#state.attachment; }
+  set #attachment(v: string | null) { this.#state.attachment = v; }
+  get #pendingDisposal(): string | null { return this.#state.pendingDisposal; }
+  set #pendingDisposal(v: string | null) { this.#state.pendingDisposal = v; }
+  get #publicOrigin(): string | null { return this.#state.publicOrigin; }
+  set #publicOrigin(v: string | null) { this.#state.publicOrigin = v; }
+  get #era(): number { return this.#state.era; }
+  set #era(v: number) { this.#state.era = v; }
+
+  passive(): HaeryongClient {
+    if (this.#passive) return this;
+    if (!this.#passiveView) {
+      this.#passiveView = new NativeHaeryongClient(createPassivePort(this.#port), this.#state, true);
+    }
+    return this.#passiveView;
   }
 
   get publicOrigin(): string | null { return this.#publicOrigin; }
@@ -355,14 +413,14 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
     const value = await this.#fresh(this.#port.call("attachSession", {}), this.#era);
     const origin = new URL(value.public_origin);
     if (!value.attachment_id || origin.origin !== value.public_origin || !["http:", "https:"].includes(origin.protocol)) throw new Error("Invalid native attachment metadata");
-    if (value.attachment_id !== this.#attachment) { this.#era++; this.#pendingDisposal = null; }
+    if (value.attachment_id !== this.#attachment) { this.#era++; this.#pendingDisposal = null; this.#state.eventCursor = ""; }
     this.#attachment = value.attachment_id; this.#publicOrigin = value.public_origin;
     return value;
   }
 
   async disposeSession(): Promise<void> {
     const attachment = this.#attachment ?? this.#pendingDisposal;
-    this.#attachment = null; this.#publicOrigin = null; this.#era++;
+    this.#attachment = null; this.#publicOrigin = null; this.#era++; this.#state.eventCursor = "";
     if (attachment) {
       this.#pendingDisposal = attachment;
       await this.#port.call("disposeSession", { attachment_id: attachment });
@@ -380,6 +438,7 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
    */
   invalidate(): void {
     this.#era += 1;
+    this.#state.eventCursor = "";
   }
 
   #fresh<T>(promise: Promise<T>, era: number): Promise<T> {
@@ -799,8 +858,12 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
   }
 
   subscribeEvents(): EventSubscription {
-    const listeners = new Set<() => void>();
+    const listeners = new Set<() => unknown>();
+    const resyncListeners = new Set<(resync: EventStreamResync) => unknown>();
+    const cursorListeners = new Set<(cursor: string) => void>();
     let unlisten: (() => void) | undefined;
+    let unlistenResync: (() => void) | undefined;
+    let unlistenCursor: (() => void) | undefined;
     let ended: () => void;
     const closed = new Promise<void>((resolve) => {
       ended = resolve;
@@ -808,8 +871,9 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
     let handle: EventSubscription | null = null;
     let finished = false;
     const era = this.#era;
+    const initialPayload = this.#state.eventCursor ? { cursor: this.#state.eventCursor } : {};
     void this.#port
-      .call("subscribeEvents", {})
+      .call("subscribeEvents", initialPayload)
       .then((subscription) => {
         if (finished) {
           subscription.close();
@@ -823,16 +887,62 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
           return;
         }
         handle = subscription;
-        unlisten = subscription.onInvalidation?.(() => { if (!finished && era === this.#era) for (const listener of listeners) listener(); });
+        unlisten = subscription.onInvalidation?.(async () => {
+          if (!finished && era === this.#era) {
+            for (const listener of [...listeners]) {
+              if (finished || era !== this.#era) return;
+              await Promise.resolve(listener());
+            }
+          }
+        });
+        unlistenResync = subscription.onResync?.(async (resync) => {
+          if (!finished && era === this.#era) {
+            for (const listener of [...resyncListeners]) {
+              if (finished || era !== this.#era) return;
+              await Promise.resolve(listener(resync));
+            }
+          }
+        });
+        unlistenCursor = subscription.onCursor?.((cursor) => {
+          if (!finished && era === this.#era && cursor) {
+            this.#state.eventCursor = cursor;
+            for (const listener of [...cursorListeners]) {
+              if (finished || era !== this.#era) return;
+              listener(cursor);
+            }
+          }
+        });
         void subscription.closed.then(() => ended());
       })
       .catch(() => ended());
     return {
       closed,
-      onInvalidation: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+      onInvalidation: (listener) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+      onResync: (listener) => {
+        resyncListeners.add(listener);
+        return () => {
+          resyncListeners.delete(listener);
+        };
+      },
+      onCursor: (listener) => {
+        cursorListeners.add(listener);
+        return () => {
+          cursorListeners.delete(listener);
+        };
+      },
       close: () => {
         finished = true;
-        unlisten?.(); listeners.clear();
+        unlisten?.();
+        unlistenResync?.();
+        unlistenCursor?.();
+        listeners.clear();
+        resyncListeners.clear();
+        cursorListeners.clear();
         handle?.close();
         ended();
       },

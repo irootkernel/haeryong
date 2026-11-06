@@ -172,7 +172,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, header := range strings.Split(r.Header.Get("Access-Control-Request-Headers"), ",") {
 			switch strings.ToLower(strings.TrimSpace(header)) {
-			case "", "authorization", "content-type", "if-match", "idempotency-key", "last-event-id", "range", "if-range", "if-none-match", "haeryong-upload-offset", "haeryong-upload-chunk-sha256", "haeryong-upload-length", "haeryong-upload-final", "haeryong-context-binding":
+			case "", "authorization", "content-type", "if-match", "idempotency-key", "last-event-id", "range", "if-range", "if-none-match", "haeryong-upload-offset", "haeryong-upload-chunk-sha256", "haeryong-upload-length", "haeryong-upload-final", "haeryong-context-binding", "haeryong-passive-read":
 			default:
 				fail(w, r, session.ErrOrigin)
 				return
@@ -185,7 +185,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, PATCH, DELETE")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, If-Match, Idempotency-Key, Last-Event-ID, Range, If-Range, If-None-Match, Haeryong-Upload-Offset, Haeryong-Upload-Chunk-SHA256, Haeryong-Upload-Length, Haeryong-Upload-Final, Haeryong-Context-Binding")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, If-Match, Idempotency-Key, Last-Event-ID, Range, If-Range, If-None-Match, Haeryong-Upload-Offset, Haeryong-Upload-Chunk-SHA256, Haeryong-Upload-Length, Haeryong-Upload-Final, Haeryong-Context-Binding, Haeryong-Passive-Read")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -239,6 +239,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/")
 	parts := strings.Split(path, "/")
 	public := r.Method == http.MethodPost && (path == "auth/pairings" || (len(parts) == 4 && parts[0] == "auth" && parts[1] == "pairings" && parts[3] == "poll"))
+	if ctx, err := appauth.ValidatePassiveRead(r.Context(), r.Method, r.Header.Values("Haeryong-Passive-Read")); err != nil {
+		fail(w, r, err)
+		return
+	} else {
+		r = r.WithContext(ctx)
+	}
 	token := bearer(r)
 	if public {
 		if origin == "" {
@@ -247,7 +253,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		authenticate := h.core.Authenticate
-		if passiveAuthRoute(r.Method, path) {
+		if passiveAuthRoute(r.Method, path) || appauth.IsPassiveRead(r.Context()) {
 			authenticate = h.core.AuthenticatePassive
 		}
 		identity, err := authenticate(r.Context(), token)

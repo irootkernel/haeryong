@@ -1720,3 +1720,344 @@ test("Lifecycle consumers share the controller event stream and old authority hi
  hint?.();assert.equal(a,1);assert.equal(b,1);assert.equal(streams,1);
  offA();hint?.();assert.equal(a,1);assert.equal(b,2);offB();controller.stop();hint?.();assert.equal(b,2);
 });
+
+test("Task04 controller resync barrier clears #resyncInFlight across sequential resyncs, retains pending resync on failure, and blocks premature cursor advance", async () => {
+  const client = new FakeClient();
+  let triggerResync: ((r: import("./types.ts").EventStreamResync) => unknown) | undefined;
+  let triggerInvalidation: (() => unknown) | undefined;
+  client.eventsHandler = () => ({
+    closed: new Promise<void>(() => {}),
+    onInvalidation(listener) {
+      triggerInvalidation = listener;
+      return () => {};
+    },
+    onResync(listener) {
+      triggerResync = listener;
+      return () => {};
+    },
+    close() {},
+  });
+  const store = new MemoryCredentialStore();
+  store.write("token");
+  const controller = new ShellController(client, store);
+  await controller.verify();
+
+  const eventsSeen: Array<{ resync: boolean; readGen: number; head: string | null; reason?: string }> = [];
+  let shouldFail = false;
+  const off = controller.subscribeInvalidation(async (ev) => {
+    eventsSeen.push({
+      resync: Boolean(ev?.resync),
+      readGen: ev?.readGeneration ?? 0,
+      head: ev?.head ?? null,
+      reason: ev?.resyncReason,
+    });
+    if (shouldFail) throw new Error("mounted screen refresh failed");
+  });
+
+  // First resync succeeds and clears #resyncInFlight:
+  await triggerResync?.({ reason: "bootstrap", stream_epoch: "ep1", head: "10", resume_cursor: "ep1:10" });
+  assert.equal(eventsSeen.length, 1);
+  assert.equal(eventsSeen[0]!.resync, true);
+  assert.equal(eventsSeen[0]!.head, "10");
+  assert.equal(eventsSeen[0]!.reason, "bootstrap");
+
+  // Second sequential resync also runs (proving #resyncInFlight cleared):
+  await triggerResync?.({ reason: "gap", stream_epoch: "ep1", head: "20", resume_cursor: "ep1:20" });
+  assert.equal(eventsSeen.length, 2);
+  assert.equal(eventsSeen[1]!.resync, true);
+  assert.equal(eventsSeen[1]!.head, "20");
+  assert.equal(eventsSeen[1]!.reason, "gap");
+  assert.ok(eventsSeen[1]!.readGen > eventsSeen[0]!.readGen);
+
+  // Ordinary invalidation after completed resyncs runs with resync=false:
+  await triggerInvalidation?.();
+  assert.equal(eventsSeen.length, 3);
+  assert.equal(eventsSeen[2]!.resync, false);
+
+  // Failing mandatory resync rejects and retains #pendingResync; subsequent onInvalidation also rejects while still failing:
+  shouldFail = true;
+  await assert.rejects(
+    async () => {
+      await triggerResync?.({ reason: "gap", stream_epoch: "ep1", head: "30", resume_cursor: "ep1:30" });
+    },
+    /Mandatory full-state resync incomplete/,
+  );
+  await assert.rejects(
+    async () => {
+      await triggerInvalidation?.();
+    },
+    /Mandatory full-state resync incomplete/,
+  );
+
+  // Once the mounted screen refresher recovers, onInvalidation drains the retained pending resync (head="30"):
+  shouldFail = false;
+  await triggerInvalidation?.();
+  assert.equal(eventsSeen.at(-1)!.resync, true);
+  assert.equal(eventsSeen.at(-1)!.head, "30");
+
+  off();
+  controller.stop();
+});
+
+test("Task04 createNativePort -> NativeHaeryongClient -> ShellController delivers async bootstrap resync to mounted listeners", async () => {
+  const { createNativePort } = await import("./native-wire.ts");
+  const { NativeHaeryongClient } = await import("./native.ts");
+  let pollResolve!: (v: unknown) => void;
+  const wire = createNativePort({
+    invoke: async (name) => {
+      if (name === "attachSession") {
+        return {
+          ok: true,
+          value: {
+            attachment_id: "att-native-1",
+            public_origin: "http://127.0.0.1:9270",
+            session: sessionInfo(),
+          },
+        };
+      }
+      if (name === "currentSession") {
+        return { ok: true, value: sessionInfo() };
+      }
+      if (name === "capabilities") {
+        return { ok: true, value: capabilities({ stream_epoch: "ep-native" }) };
+      }
+      if (name === "subscribeEvents") {
+        return {
+          ok: true,
+          value: {
+            subscription_id: "sub-native-1",
+            cursor: "ep-native:7",
+            resync: {
+              reason: "bootstrap",
+              stream_epoch: "ep-native",
+              head: "7",
+              resume_cursor: "ep-native:7",
+            },
+          },
+        };
+      }
+      if (name === "eventsPoll") {
+        return new Promise((r) => {
+          pollResolve = r;
+        });
+      }
+      return { ok: true, value: null };
+    },
+  });
+  const nativeClient = new NativeHaeryongClient(wire);
+  const store = new MemoryCredentialStore();
+  const controller = new ShellController(nativeClient, store);
+  const observed: Array<{ resync: boolean; head: string | null }> = [];
+  const off = controller.subscribeInvalidation(async (ev) => {
+    observed.push({ resync: Boolean(ev?.resync), head: ev?.head ?? null });
+  });
+  await controller.verify();
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(observed.length, 1);
+  assert.deepEqual(observed[0], { resync: true, head: "7" });
+  off();
+  controller.stop();
+  pollResolve?.({ ok: true, value: { closed: true } });
+});
+
+test("Task04 resync lifetime: authority replacement during blocked old resync runs new-authority full sweep before acknowledging new H", async () => {
+  const client = new FakeClient();
+  const resyncCallbacks: Array<(r: import("./types.ts").EventStreamResync) => unknown> = [];
+  client.eventsHandler = () => ({
+    closed: new Promise<void>(() => {}),
+    onInvalidation() {
+      return () => {};
+    },
+    onResync(listener) {
+      resyncCallbacks.push(listener);
+      return () => {};
+    },
+    close() {},
+  });
+  const store = new MemoryCredentialStore();
+  store.write("token-1");
+  const controller = new ShellController(client, store);
+  await controller.verify();
+  assert.equal(resyncCallbacks.length, 1);
+
+  let releaseOldSweep!: () => void;
+  let releaseNewSweep!: () => void;
+  const sweepsByHead: string[] = [];
+  const off = controller.subscribeInvalidation(async (ev) => {
+    if (!ev?.resync) return;
+    sweepsByHead.push(ev.head ?? "");
+    if (ev.head === "100") {
+      await new Promise<void>((r) => {
+        releaseOldSweep = r;
+      });
+      return;
+    }
+    if (ev.head === "200") {
+      await new Promise<void>((r) => {
+        releaseNewSweep = r;
+      });
+    }
+  });
+
+  // Start old authority resync (head="100"), which blocks inside the mounted listener after recheck(true):
+  const oldPromise = Promise.resolve(
+    resyncCallbacks[0]!({ reason: "bootstrap", stream_epoch: "ep-1", head: "100", resume_cursor: "ep-1:100" }),
+  );
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(sweepsByHead, ["100"]);
+
+  // Replace credential with token-2 while old sweep is still blocked:
+  await controller.acceptPairing("token-2", true);
+  assert.equal(resyncCallbacks.length, 2);
+
+  // Trigger new authority bootstrap resync (head="200"):
+  let newSettled = false;
+  const newPromise = Promise.resolve(
+    resyncCallbacks[1]!({ reason: "bootstrap", stream_epoch: "ep-2", head: "200", resume_cursor: "ep-2:200" }),
+  ).then(() => {
+    newSettled = true;
+  });
+  await new Promise((r) => setTimeout(r, 20));
+  // New authority must run its own sweep (head="200") and not join the stale old run:
+  assert.deepEqual(sweepsByHead, ["100", "200"]);
+  assert.equal(newSettled, false);
+
+  // Release the old sweep first: it must NOT resolve the new bootstrap or clear new pending state, and old run must reject:
+  releaseOldSweep();
+  await assert.rejects(oldPromise, /Mandatory full-state resync retired/);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(newSettled, false);
+
+  // Release the new sweep: now newPromise resolves cleanly:
+  releaseNewSweep();
+  await newPromise;
+  assert.equal(newSettled, true);
+
+  off();
+  controller.stop();
+});
+
+test("Task04 resync lifetime: controller.stop() retires in-flight resync so a late failed sweep schedules no retry and never reopens events", async () => {
+  const client = new FakeClient();
+  let triggerResync: ((r: import("./types.ts").EventStreamResync) => unknown) | undefined;
+  let streamsOpened = 0;
+  client.eventsHandler = () => {
+    streamsOpened += 1;
+    return {
+      closed: new Promise<void>(() => {}),
+      onInvalidation() {
+        return () => {};
+      },
+      onResync(listener) {
+        triggerResync = listener;
+        return () => {};
+      },
+      close() {},
+    };
+  };
+  const store = new MemoryCredentialStore();
+  store.write("token-stop");
+  const controller = new ShellController(client, store);
+  await controller.verify();
+  assert.equal(streamsOpened, 1);
+
+  let rejectSweep!: (err: Error) => void;
+  const off = controller.subscribeInvalidation(async (ev) => {
+    if (!ev?.resync) return;
+    await new Promise<void>((_resolve, reject) => {
+      rejectSweep = reject;
+    });
+  });
+
+  const barrierPromise = Promise.resolve(
+    triggerResync?.({ reason: "bootstrap", stream_epoch: "ep-stop", head: "50", resume_cursor: "ep-stop:50" }),
+  );
+  await new Promise((r) => setTimeout(r, 20));
+
+  // Stop controller while the resync sweep is in flight:
+  controller.stop();
+
+  // Late sweep rejection after stop():
+  rejectSweep(new Error("late failure after stop"));
+  await assert.rejects(barrierPromise, /Mandatory full-state resync retired/);
+
+  // Wait past the 200ms retry delay: no retry or recheck may reopen events after stop():
+  await new Promise((r) => setTimeout(r, 260));
+  assert.equal(streamsOpened, 1);
+
+  off();
+});
+
+test("Task04 G2 resync barrier re-sweeps when readGeneration advances mid-sweep before acknowledging H", async () => {
+  const client = new FakeClient();
+  let triggerResync: ((r: import("./types.ts").EventStreamResync) => unknown) | undefined;
+  client.eventsHandler = () => ({
+    closed: new Promise<void>(() => {}),
+    onInvalidation() {
+      return () => {};
+    },
+    onResync(listener) {
+      triggerResync = listener;
+      return () => {};
+    },
+    close() {},
+  });
+  const store = new MemoryCredentialStore();
+  store.write("token-resweep");
+  const controller = new ShellController(client, store);
+  await controller.verify();
+
+  const seenGenerations: number[] = [];
+  let appliedUnderCurrentGen = false;
+  const off = controller.subscribeInvalidation(async (ev) => {
+    const gen = ev?.readGeneration ?? controller.readGeneration;
+    seenGenerations.push(gen);
+    if (seenGenerations.length === 1) {
+      // Simulate a local write or selection bumping readGeneration while the first sweep is in flight:
+      controller.bumpReadGeneration();
+    }
+    if (controller.isCurrentReadAuthority(controller.captureDispatchAuthority(), gen)) {
+      appliedUnderCurrentGen = true;
+    }
+  });
+
+  await triggerResync?.({ reason: "gap", stream_epoch: "ep-1", head: "77", resume_cursor: "ep-1:77" });
+  assert.equal(seenGenerations.length, 2, "must re-sweep after mid-sweep readGeneration bump");
+  assert.equal(appliedUnderCurrentGen, true, "second sweep must apply under current readGeneration");
+
+  off();
+  controller.stop();
+});
+
+test("mandatory resync does not acknowledge a fulfilled sweep that lost verified connectivity",async()=>{
+ const client=new FakeClient();let trigger:((r:import("./types.ts").EventStreamResync)=>unknown)|undefined;
+ client.eventsHandler=()=>({closed:new Promise<void>(()=>{}),onResync(listener){trigger=listener;return()=>{};},close(){}});
+ const store=new MemoryCredentialStore();store.write("token");const controller=new ShellController(client,store);
+ try{
+  await controller.verify();let degrade=true;
+  const off=controller.subscribeInvalidation(async()=>{
+   if(!degrade)return;client.sessionHandler=async()=>{throw new NetworkError();};await controller.recheck(true);
+  });
+  await assert.rejects(Promise.resolve(trigger!({reason:"gap",stream_epoch:"e1",head:"55",resume_cursor:"e1:55"})),/resync incomplete/);
+  assert.equal(controller.state.phase,"degraded");
+  degrade=false;client.sessionHandler=async()=>sessionInfo();
+  await controller.recheck(true);
+  await trigger!({reason:"gap",stream_epoch:"e1",head:"55",resume_cursor:"e1:55"});
+  assert.equal(controller.state.phase,"verified");off();
+ }finally{controller.stop();}
+});
+
+test("a local generation bump with no server event gives a retired sibling read a passive successor",async()=>{
+ const client=new FakeClient(),store=new MemoryCredentialStore();store.write("token");const controller=new ShellController(client,store);
+ try{
+  await controller.verify();const auth=controller.captureDispatchAuthority(),oldGen=controller.readGeneration;
+  let release!:(value:string)=>void,shown="loading",successors=0;
+  const old=new Promise<string>(resolve=>{release=resolve;}).then(value=>{if(controller.isCurrentReadAuthority(auth,oldGen))shown=value;});
+  const off=controller.subscribeInvalidation(async ev=>{
+   assert.equal(ev?.passive,true);assert.equal(ev?.resync,false);successors++;
+   await Promise.resolve();if(controller.isCurrentReadAuthority(auth,ev?.readGeneration))shown="current server notes";
+  });
+  controller.bumpReadGeneration();await new Promise(resolve=>setImmediate(resolve));release("old server notes");await old;
+  assert.equal(successors,1);assert.equal(shown,"current server notes");off();
+ }finally{controller.stop();}
+});

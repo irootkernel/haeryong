@@ -43,10 +43,108 @@ export class ReviewOperations {
     try { await this.journal.change(null,intent); this.pending=intent; return await this.dispatch(guard); }
     finally { this.busy=false; }
   }
-  get generationChanged():boolean {return !!this.pending && this.pending.generation!==this.generation;}
+  get generationChanged():boolean {return !!this.pending && (this.pending.generation==="" ? this.generation!=="" : this.pending.generation!==this.generation);}
   async retry(guard: () => void): Promise<ReviewView> {
-    if (this.busy || !this.pending || this.pending.rejected || this.generationChanged) throw Error("Review의 현재 상태를 확인하고 동작을 다시 선택하세요.");
-    this.busy=true; try {return await this.dispatch(guard);} finally {this.busy=false;}
+    if (this.busy || !this.pending || this.pending.rejected) throw Error("Review의 현재 상태를 확인하고 동작을 다시 선택하세요.");
+    this.busy=true;
+    try {
+      guard(); if (this.disposed) throw Error("이전 Review 화면입니다.");
+      const intent = this.pending;
+      let missing = false;
+      if (typeof this.client.operation === "function") {
+        let receipt = null;
+        try {
+          receipt = await this.client.operation(intent.key);
+        } catch (error) {
+          guard();
+          if (error instanceof ApiError && error.status === 404) {
+            missing = true;
+          } else {
+            throw error;
+          }
+        }
+        guard();
+        if (!missing && receipt) {
+          if (receipt.state === "accepted" || receipt.state === "pending" || receipt.state === "reconciling") {
+            throw Error("이전 Review 요청이 서버에서 아직 처리 중입니다. 잠시 후 다시 확인하세요.");
+          }
+          if (receipt.state === "completed") {
+            await this.journal.change(intent, null);
+            this.pending = null;
+            guard();
+            try {
+              const fresh = await this.client.reviewGet(this.version);
+              if (fresh.version_id !== this.version) throw Error("Review 응답 버전이 일치하지 않습니다.");
+              guard();
+              return fresh;
+            } catch {
+              throw Error("원래 Review 요청은 완료되었으나 현재 서버 상태를 불러오지 못했습니다. 다시 확인해 주세요.");
+            }
+          }
+          if (receipt.state === "failed") {
+            const rejected = { ...intent, rejected: true };
+            await this.journal.change(intent, rejected);
+            this.pending = rejected;
+            throw Error(receipt.error?.message || "이전 Review 요청이 서버에서 거절되었습니다. 현재 상태를 확인하고 선택하세요.");
+          }
+        }
+      }
+      if (this.generationChanged) {
+        const rejected = { ...intent, rejected: true };
+        await this.journal.change(intent, rejected);
+        this.pending = rejected;
+        throw Error("서비스 세대가 변경되어 이전 Review 요청을 자동 재전송하지 않습니다. 현재 상태를 확인하고 동작을 다시 선택하세요.");
+      }
+      if (missing && typeof this.client.reviewGet === "function") {
+        const current = await this.client.reviewGet(this.version);
+        guard();
+        if (current.version_id !== this.version) throw Error("Review 응답 버전이 일치하지 않습니다.");
+        const conditionMatched = "create" in intent.condition
+          ? !current.exists
+          : current.exists && current.etag === intent.condition.ifMatch;
+        if (!conditionMatched) {
+          const rejected = { ...intent, rejected: true };
+          await this.journal.change(intent, rejected);
+          this.pending = rejected;
+          throw Error("이전 Review 요청이 반영되기 전에 서버 상태가 변경되었습니다. 현재 상태를 확인하고 동작을 다시 선택하세요.");
+        }
+      }
+      return await this.dispatch(guard);
+    } finally { this.busy=false; }
+  }
+  async applyRejected(base: ReviewView, guard: () => void): Promise<ReviewView> {
+    if (this.busy || !this.pending || !this.pending.rejected) {
+      throw Error("확인되지 않은 요청은 원래 요청으로 다시 확인하세요.");
+    }
+    guard();
+    const oldIntent = this.pending;
+    if (base.value.state === oldIntent.body.state) {
+      await this.journal.change(oldIntent, null);
+      this.pending = null;
+      return base;
+    }
+    const targetState = oldIntent.body.state;
+    const action: ReviewAction =
+      targetState === "reviewed"
+        ? "complete"
+        : targetState === "reviewing"
+          ? (base.value.state === "reviewed" ? "reopen" : "start")
+          : "clear";
+    const nextIntent: ReviewIntent = {
+      generation: this.generation,
+      version: this.version,
+      key: crypto.randomUUID(),
+      body: reviewRequest(action),
+      condition: base.exists ? { ifMatch: base.etag! } : { create: true },
+    };
+    this.busy = true;
+    try {
+      await this.journal.change(oldIntent, nextIntent);
+      this.pending = nextIntent;
+      return await this.dispatch(guard);
+    } finally {
+      this.busy = false;
+    }
   }
   async dispatch(guard: () => void): Promise<ReviewView> {
     guard(); if (this.disposed) throw Error("이전 Review 화면입니다.");
@@ -55,7 +153,18 @@ export class ReviewOperations {
       const view=await this.client.reviewPut(intent.version,intent.body,intent.condition,intent.key);
       // A response for an old route may acknowledge its journal, but never supplies another route's UI.
       if (view.version_id !== this.version) throw Error("Review 응답 버전이 일치하지 않습니다.");
-      await this.journal.change(intent,null); this.pending=null; guard(); return view;
+      await this.journal.change(intent,null); this.pending=null; guard();
+      // The transport may have recovered a lost first response internally via
+      // sourceWrite. Its successful DTO can therefore be historical even when
+      // this controller has not entered its explicit retry path.
+      try {
+        const fresh = await this.client.reviewGet(this.version);
+        if (fresh.version_id !== this.version) throw Error("Review 응답 버전이 일치하지 않습니다.");
+        guard();
+        return fresh;
+      } catch {
+        throw Error("원래 Review 요청은 완료되었으나 현재 서버 상태를 불러오지 못했습니다. 다시 확인해 주세요.");
+      }
     } catch(error) {
       if (error instanceof ApiError && [400,403,404,409,412,428].includes(error.status) && error.code!=="OPERATION_RECONCILIATION_REQUIRED") {
         const rejected={...intent,rejected:true}; await this.journal.change(intent,rejected); this.pending=rejected;
@@ -64,7 +173,7 @@ export class ReviewOperations {
     }
   }
   async discard(guard: () => void): Promise<void> {
-    guard(); if (this.busy || !this.pending || !(this.pending.rejected || this.generationChanged)) throw Error("확인되지 않은 요청은 원래 요청으로 다시 확인하세요.");
+    guard(); if (this.busy || !this.pending || !this.pending.rejected) throw Error("확인되지 않은 요청은 원래 요청으로 다시 확인하세요.");
     await this.journal.change(this.pending,null); this.pending=null;
   }
 }

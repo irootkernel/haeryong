@@ -292,3 +292,55 @@ Chrome/Tailscale transfers and controls, HTTP presentation peers, focused checks
 failed collections, the separately approved completed one-call partial Ask and
 unmeasured physical/native routes. Input, inherited-capability and cleanup
 qualifications remain explicit; member closeout is still pending.
+
+## TASK-007-04 multi-device reconciliation and conflict UI
+
+Background invalidation, `resync.required` barrier sweeps, `visibilitychange`
+rechecks and background status polls use `controller.passiveClient`
+(`client.passive()`), sending `Haeryong-Passive-Read: 1` on `GET`/`HEAD` or
+`passive: true` on closed read-only native operations so background activity
+never resets server `last_seen_at`. Browser SSE (`client/search-events.ts`)
+parses complete blank-line-terminated frames, treats any non-empty domain event
+type as an invalidation hint, and advances `Last-Event-ID` only after the full
+frame and awaited callback succeed. Native `subscribeEvents` and `eventsPoll`
+(`client/native-wire.ts`) propagate optional `cursor` and hold no-cursor
+bootstrap `resync` delivery behind `listenerReady` until the outer listener is
+registered. `ShellController` (`client/controller.ts`) runs a single-flight
+`#runResyncBarrier` bound to `#resyncLifetime` (retired on authority/credential
+replacement or `stop()`) with `readGeneration` fencing and bounded retry when
+authority or any screen sweep is incomplete. Mounted `GenerationControl` and
+`DraftControl` (`app/screens/generation-control.tsx`,
+`app/screens/generation-drafts.tsx`, `app/screens/generation-context.ts`)
+participate in the passive invalidation/resync sweep while preserving local
+prompts, overrides, selected replacement inputs/handles and journaled
+recovery records.
+
+`PersonalOperations` (`app/screens/personal-operations.ts`),
+`ReviewOperations` (`app/screens/review-operations.ts`) and
+`NotesPanel` (`app/screens/notes-panel.tsx`) query `GET /api/v1/operations/{id}`
+first after an uncertain mutation and follow a `completed` receipt with a fresh
+authorized resource `GET`, preserving any queued local edit as an explicit conflict
+if a peer modified the resource after the recovered operation. `reader-preference`,
+`reading-position` and per-page `page-position` maintain independent validators,
+and stale `412`/`409` mutations present local-vs-server conflict comparison with
+explicit server reload or overwrite actions. The private browser driver adds
+`--task04-only` and `--task04-stages` (`personal-and-conflicts`,
+`receipt-and-lost-ack`, `durable-job-browser-close`, `resync-and-passive-idle`,
+`reader-page-recovery`, `reader-pending-resync`).
+Mandatory refresh failures and locally superseded reads keep the full-state
+barrier pending. A global read-generation change causes another sweep; verified
+connectivity is checked after the sweep too. Initial/explicit and passive reads
+share resource ordering. Ordinary Library hints coalesce while refreshing the
+loaded page window. With no committed HTTP event cursor the initial subscription
+uses server bootstrap. Healthy initial Provider bootstrap preserves its entry
+read; gap/degraded recovery clears readiness and requires explicit refresh
+without a passive probe. A local generation bump schedules passive successors
+for retired sibling reads; required personal skips stay unconfirmed. Reader
+refreshes position only for the current confirmed HTML page, leaving invalid
+page/file recovery separate from document access. A required personal skip keeps
+its existing pending banner without falsely reporting a document-read failure.
+Inspected Ask remains selected
+while current server data is revalidated. Known unfinished lifecycle receipts
+remain unresolved without masquerading as failed reads.
+
+See [multi-device reconciliation evidence](../docs/testing/multi-device-reconciliation.md).

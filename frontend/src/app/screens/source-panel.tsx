@@ -8,7 +8,7 @@
 // is guarded by the verified authority and source_verification capability. No display upgrades the
 // author's capture_status or claims observed provider input, author-byte
 // agreement or correctness.
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ShellController } from "../../client/controller.ts";
 import { featureEnabled } from "./library-data.ts";
 import { evidenceAvailability, evidenceExcerpt, coverageReason } from "./source-presentation.ts";
@@ -16,6 +16,7 @@ import type { VerificationAction } from "./source-queries.ts";
 import type { VersionView } from "../../client/types.ts";
 import { bindRegionEvidence, compareWithOverlay, deriveCoverageSummary, regionsOfPage, toggledOpen, type MetadataState, type SuppliedEvidenceRecord, type SuppliedMetadata, type SuppliedSourceRecord } from "./evidence-view.ts";
 import { SourceQueries, type SourceQuerySnapshot } from "./source-queries.ts";
+import { useReviewInvalidation } from "./review-refresh.ts";
 
 interface SourcePanelProps {
   controller: ShellController;
@@ -112,6 +113,12 @@ function SourcePanelSelection(props: SourcePanelProps) {
       void queries.loadAssessments();
     }
   }, [versionId, pagePath, regionId, contextKey, queries, snap.assessments.phase]);
+
+  const refreshPassive = useCallback(async (ev?: { resync?: boolean; readGeneration?: number }) => {
+    const startReadGen = ev?.readGeneration ?? controller.readGeneration;
+    await queries.refreshPassive(controller.passiveClient, () => controller.readGeneration !== startReadGen, Boolean(ev?.resync));
+  }, [controller, queries]);
+  useReviewInvalidation(controller, true, refreshPassive);
 
   const toggleItem = (evidenceId: string) => {
     setExpanded((old) => ({ ...old, [evidenceId]: toggledOpen(old, evidenceId) }));

@@ -571,3 +571,170 @@ test("T5QCITHTTP01 citation source uses only its exact answer/index with integri
  const calls:string[]=[];const hash="a".repeat(64);const restore=stubFetch(async(input,init)=>{calls.push(String(input));assert.equal(init?.method,undefined);return new Response("exact captured B",{headers:{"ETag":`"sha256-${hash}"`,"Content-Length":"16","Content-Type":"application/octet-stream"}});});
  try{const client=new HttpHaeryongClient();const stream=await client.answerCitationStream("answer/+",2);assert.deepEqual(calls,["/api/v1/answers/answer%2F%2B/citations/2/source"]);assert.equal(stream.bytes_sha256,hash);assert.equal(stream.byte_size,"16");stream.cancel();assert.throws(()=>client.answerCitationStream("answer",-1));}finally{restore();}
 });
+
+test("Task04 HTTP passive() attaches Haeryong-Passive-Read: 1 on reads and refuses writes", async () => {
+  const seen: Array<{ path: string; method: string; passive: string | null }> = [];
+  const restore = stubFetch(async (input, init) => {
+    const headers = new Headers(init?.headers);
+    seen.push({
+      path: String(input),
+      method: init?.method ?? "GET",
+      passive: headers.get("Haeryong-Passive-Read"),
+    });
+    return new Response(
+      JSON.stringify({
+        data: {
+          version_id: "v1",
+          exists: false,
+          value: { state: "unreviewed", reviewed_at: null },
+          revision: null,
+          etag: null,
+          page_position_url: null,
+        },
+      }),
+      { status: 200 },
+    );
+  });
+  try {
+    const client = new HttpHaeryongClient();
+    client.setCredential("tok");
+    const passive = client.passive();
+    await passive.reviewGet("v1");
+    await client.reviewGet("v1");
+    assert.equal(seen[0]!.passive, "1");
+    assert.equal(seen[1]!.passive, null);
+    await assert.rejects(
+      passive.reviewPut("v1", { action: "start", state: "reviewing" }, { create: true }, "11111111-1111-4111-8111-111111111111"),
+      (err: unknown) => err instanceof ApiError && err.status === 400 && err.code === "INVALID_REQUEST",
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("Task04 HTTP subscribeEvents tracks Last-Event-ID only after frame/resync completion", async () => {
+  const seenLastIds: Array<string | null> = [];
+  const streams: ReadableStreamDefaultController<Uint8Array>[] = [];
+  const restore = stubFetch(async (_input, init) => {
+    seenLastIds.push(new Headers(init?.headers).get("Last-Event-ID"));
+    return new Response(
+      new ReadableStream({
+        start(c) {
+          streams.push(c);
+        },
+      }),
+    );
+  });
+  try {
+    const client = new HttpHaeryongClient();
+    const sub1 = client.subscribeEvents();
+    let resyncCount = 0;
+    sub1.onResync?.(async () => {
+      resyncCount++;
+      if (resyncCount === 2) throw new Error("resync failed");
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(seenLastIds[0], null, "no committed cursor uses actual server bootstrap");
+    streams[0]!.enqueue(
+      new TextEncoder().encode(
+        'id: ep1:10\nevent: resync.required\ndata: {"reason":"bootstrap","stream_epoch":"ep1","head":"10","resume_cursor":"ep1:10"}\n\n',
+      ),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    // Now trigger a failing resync at ep1:20; cursor must remain ep1:10:
+    streams[0]!.enqueue(
+      new TextEncoder().encode(
+        'id: ep1:20\nevent: resync.required\ndata: {"reason":"gap","stream_epoch":"ep1","head":"20","resume_cursor":"ep1:20"}\n\n',
+      ),
+    );
+    await sub1.closed;
+    const sub2 = client.subscribeEvents();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(seenLastIds[1], "ep1:10");
+    sub2.close();
+  } finally {
+    restore();
+  }
+});
+
+test("Task04 G3+G6 invalidateProviderReadinessOnResync retires readiness without probing and subscribeEvents aborts/cancels stream before closed resolves", async () => {
+  const { invalidateProviderReadinessOnResync } = await import("./provider-status.ts");
+  const current: Parameters<typeof invalidateProviderReadinessOnResync>[0] = {
+    verified: true,
+    busy: false,
+    status: {
+      provider_id: "codex",
+      state: "ready",
+      authentication_mode: "chatgpt",
+      ordinary_usage_allowed: true,
+      read_only: true,
+      model: "gpt-5",
+      effort: "high",
+      input_formats: null,
+      output_format: "json",
+      native_input_telemetry: false,
+      lookup_supported: false,
+      cancellation_supported: true,
+      models: [],
+      catalog_proves_access: false,
+    },
+    error: null,
+    sawDegraded: false,
+  };
+  const invalidated = invalidateProviderReadinessOnResync(current);
+  assert.equal(invalidateProviderReadinessOnResync(current, "bootstrap"), null, "healthy initial entry keeps its own probe");
+  assert.equal(invalidateProviderReadinessOnResync({ ...current, sawDegraded: true }, "bootstrap")?.staleAfterResync, true);
+  assert.equal(invalidateProviderReadinessOnResync(current, "trimmed_cursor")?.staleAfterResync, true);
+  assert.deepEqual(invalidated, {
+    status: null,
+    error: null,
+    staleAfterResync: true,
+    sawDegraded: true,
+  });
+  assert.equal(
+    invalidateProviderReadinessOnResync({
+      verified: true,
+      busy: false,
+      status: null,
+      error: null,
+      sawDegraded: true,
+    }),
+    null,
+  );
+
+  // G6: when onResync rejects, subscribeEvents aborts the fetch signal and cancels the reader BEFORE closed resolves:
+  let fetchSignal: AbortSignal | null = null;
+  let readerCancelled = false;
+  let streamCtrl!: ReadableStreamDefaultController<Uint8Array>;
+  const restore = stubFetch(async (_input, init) => {
+    fetchSignal = init?.signal ?? null;
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(c) {
+          streamCtrl = c;
+        },
+        cancel() {
+          readerCancelled = true;
+        },
+      }),
+    );
+  });
+  try {
+    const client = new HttpHaeryongClient();
+    const sub = client.subscribeEvents();
+    sub.onResync?.(async () => {
+      throw new Error("mandatory resync failed");
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    streamCtrl.enqueue(
+      new TextEncoder().encode(
+        'id: ep1:1\nevent: resync.required\ndata: {"reason":"bootstrap","stream_epoch":"ep1","head":"1","resume_cursor":"ep1:1"}\n\n',
+      ),
+    );
+    await sub.closed;
+    assert.equal((fetchSignal as AbortSignal | null)?.aborted, true, "fetch AbortSignal must be aborted before closed resolves");
+    assert.equal(readerCancelled, true, "ReadableStream reader must be cancelled before closed resolves");
+  } finally {
+    restore();
+  }
+});

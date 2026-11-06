@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { ShellController } from "../../client/controller.ts";
 import type { HaeryongClient, SearchRequest } from "../../client/types.ts";
 import { navigate } from "../router.tsx";
 import { indexReasonText, LibrarySearchSession, matchingPageURL, searchStatus, searchURL } from "./search-state.ts";
@@ -23,7 +24,7 @@ export function LibrarySearchForm({ request, projectId, lifecycle, onSearch }: {
   </form>;
 }
 
-export function LibrarySearch({ client, request }: { client: HaeryongClient; request: SearchRequest }) {
+export function LibrarySearch({ client, request, controller }: { client: HaeryongClient; request: SearchRequest; controller?: ShellController }) {
   const [state, setState] = useState<SearchViewState>({ loading: true, page: null, error: null, reset: false, accessLost: false });
   const session = useRef<LibrarySearchSession | null>(null);
   useEffect(() => {
@@ -37,15 +38,42 @@ export function LibrarySearch({ client, request }: { client: HaeryongClient; req
     const active = session.current;
     const partial = state.page && ["pending", "partial"].includes(state.page.index.state);
     if (!active || !partial || state.loading || state.error || state.page?.next_cursor) return;
-    const timer = window.setTimeout(() => { void active.start(request); }, 5000);
+    const passive = controller?.passiveClient ?? client.passive?.() ?? client;
+    const timer = window.setTimeout(() => { void active.start(request, passive); }, 5000);
     return () => window.clearTimeout(timer);
-  }, [state, request]);
+  }, [state, request, controller, client]);
   useEffect(() => {
-    const refresh = () => { if (!session.current?.state.loading && !session.current?.state.accessLost) void session.current?.start(request); };
+    const passive = controller?.passiveClient ?? client.passive?.() ?? client;
+    const refresh = () => { if (!session.current?.state.loading && !session.current?.state.accessLost) void session.current?.start(request, passive); };
     window.addEventListener("focus", refresh);
     return () => window.removeEventListener("focus", refresh);
-  }, [request]);
+  }, [request, controller, client]);
   useEffect(() => {
+    const passive = controller?.passiveClient ?? client.passive?.() ?? client;
+    if (controller) {
+      let timer: number | undefined;
+      let stopped = false;
+      const run = (): Promise<void> | void => {
+        timer = undefined;
+        if (stopped || session.current?.state.accessLost) return;
+        if (session.current?.state.loading) {
+          timer = window.setTimeout(() => { void run(); }, 250);
+          return;
+        }
+        return session.current?.start(request, passive);
+      };
+      const off = controller.subscribeInvalidation((ev) => {
+        if (stopped) return;
+        if (ev?.resync) {
+          window.clearTimeout(timer);
+          timer = undefined;
+          if (session.current?.state.accessLost) return;
+          return session.current?.start(request, passive, { rethrow: true });
+        }
+        if (timer === undefined) timer = window.setTimeout(() => { void run(); }, 250);
+      });
+      return () => { stopped = true; window.clearTimeout(timer); off(); };
+    }
     const events = client.subscribeEvents();
     let timer: number | undefined;
     let pending = false;
@@ -57,11 +85,11 @@ export function LibrarySearch({ client, request }: { client: HaeryongClient; req
       pending = false;
       // Every content-free hint revalidates authority, including accumulated
       // pages. Starting a fresh GET clears protected rows and their cursor.
-      void session.current?.start(request);
+      void session.current?.start(request, passive);
     };
     const unsubscribe = events.onInvalidation?.(() => { pending = true; if (timer === undefined) timer = window.setTimeout(refresh, 1000); });
     return () => { stopped = true; window.clearTimeout(timer); unsubscribe?.(); events.close(); };
-  }, [client, request]);
+  }, [client, request, controller]);
   const page = state.page;
   return <section aria-label="검색 결과" aria-busy={state.loading} className="library-search-results">
     {state.loading ? <p role="status">검색 중…</p> : null}

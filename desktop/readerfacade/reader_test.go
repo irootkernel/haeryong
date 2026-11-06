@@ -1992,3 +1992,107 @@ func TestReaderRemoteEndpointRefusesNativeRendererAndPreservesClose(t *testing.T
 		t.Fatalf("expected renderSessionClose to reach daemon; saw %v", seen)
 	}
 }
+
+func TestReaderTask04PassiveHeaderAndEventResyncContinuity(t *testing.T) {
+	var passiveHeaders []string
+	var lastEventIDs []string
+	pollStep := 0
+	service, _, _ := newReaderFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/api/v1/versions/v1/review" && r.Method == "GET" {
+			passiveHeaders = append(passiveHeaders, r.Header.Get("Haeryong-Passive-Read"))
+			dataReply(w, 200, map[string]any{
+				"version_id":        "v1",
+				"exists":            false,
+				"value":             map[string]any{"state": "unreviewed", "reviewed_at": nil},
+				"revision":          nil,
+				"etag":              nil,
+				"page_position_url": nil,
+			})
+			return true
+		}
+		if r.Method == "GET" && r.URL.Path == "/api/v1/events" && r.URL.Query().Get("transport") == "poll" {
+			pollStep++
+			epochQ := r.URL.Query().Get("stream_epoch")
+			afterQ := r.URL.Query().Get("after")
+			if epochQ != "" || afterQ != "" {
+				lastEventIDs = append(lastEventIDs, epochQ+":"+afterQ)
+			} else {
+				lastEventIDs = append(lastEventIDs, "")
+			}
+			switch pollStep {
+			case 1:
+				// Initial no-cursor subscribeEvents bootstrap
+				dataReply(w, 200, map[string]any{
+					"items":        []any{},
+					"stream_epoch": "ep1",
+					"head":         "5",
+					"next_cursor":  "ep1:5",
+					"resync":       nil,
+				})
+			case 2:
+				// Poll delivering an owner-record *.changed event
+				dataReply(w, 200, map[string]any{
+					"items": []any{
+						map[string]any{"type": "review.changed", "sequence": "6", "stream_epoch": "ep1"},
+					},
+					"stream_epoch": "ep1",
+					"head":         "6",
+					"next_cursor":  "ep1:6",
+					"resync":       nil,
+				})
+			default:
+				// Poll delivering a server resync directive
+				dataReply(w, 200, map[string]any{
+					"items":        []any{},
+					"stream_epoch": "ep2",
+					"head":         "12",
+					"next_cursor":  "ep2:12",
+					"resync": map[string]any{
+						"reason":        "epoch_changed",
+						"stream_epoch":  "ep2",
+						"head":          "12",
+						"resume_cursor": "ep2:12",
+					},
+				})
+			}
+			return true
+		}
+		return false
+	})
+
+	invokeOK(t, service, "reviewGet", `{"version_id":"v1","passive":true}`)
+	invokeOK(t, service, "reviewGet", `{"version_id":"v1"}`)
+	if len(passiveHeaders) != 2 || passiveHeaders[0] != "1" || passiveHeaders[1] != "" {
+		t.Fatalf("expected Haeryong-Passive-Read header '1' then ''; got %#v", passiveHeaders)
+	}
+	if werr := invokeFail(t, service, "reviewGet", `{"version_id":"v1","passive":"invalid"}`); werr.Code != "NATIVE_PAYLOAD_INVALID" {
+		t.Fatalf("invalid passive boolean must fail NATIVE_PAYLOAD_INVALID; got %#v", werr)
+	}
+
+	sub := invokeOK(t, service, "subscribeEvents", "{}").((map[string]any))
+	subID := sub["subscription_id"].(string)
+	if sub["cursor"] != "ep1:5" {
+		t.Fatalf("expected bootstrap cursor ep1:5; got %#v", sub)
+	}
+	bootResync, ok := sub["resync"].(map[string]any)
+	if !ok || bootResync["reason"] != "bootstrap" || bootResync["head"] != "5" || bootResync["resume_cursor"] != "ep1:5" {
+		t.Fatalf("expected bootstrap resync envelope; got %#v", sub["resync"])
+	}
+
+	p1 := invokeOK(t, service, "eventsPoll", fmt.Sprintf(`{"subscription_id":%q}`, subID)).(map[string]any)
+	if p1["invalidated"] != true || p1["cursor"] != "ep1:6" || p1["resync"] != nil {
+		t.Fatalf("expected review.changed poll to report invalidated=true and cursor=ep1:6; got %#v", p1)
+	}
+
+	p2 := invokeOK(t, service, "eventsPoll", fmt.Sprintf(`{"subscription_id":%q}`, subID)).(map[string]any)
+	if p2["invalidated"] != true || p2["cursor"] != "ep2:12" {
+		t.Fatalf("expected resync poll to report invalidated=true and cursor=ep2:12; got %#v", p2)
+	}
+	pollResync, ok := p2["resync"].(map[string]any)
+	if !ok || pollResync["reason"] != "epoch_changed" || pollResync["resume_cursor"] != "ep2:12" {
+		t.Fatalf("expected poll resync metadata; got %#v", p2["resync"])
+	}
+	if len(lastEventIDs) != 3 || lastEventIDs[0] != "" || lastEventIDs[1] != "ep1:5" || lastEventIDs[2] != "ep1:6" {
+		t.Fatalf("unexpected Last-Event-ID progression: %#v", lastEventIDs)
+	}
+}

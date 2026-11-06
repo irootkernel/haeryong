@@ -1,4 +1,5 @@
 import {useReviewInvalidation} from "./review-refresh.ts";
+import {StaleResponseError} from "../../client/types.ts";
 import type { ReviewView } from "../../client/types.ts";
 import { exactReview } from "./review-summary.ts";
 import { reviewLabel } from "./review-operations.ts";
@@ -26,9 +27,74 @@ export function VersionsScreen({ controller, documentId }: { controller: ShellCo
   const [pair, setPair] = useState<[string, string] | null>(null);
   const [sourceStatus, setSourceStatus] = useState("관측 기록 확인 중…");
   const client = controller.client;
-  useReviewInvalidation(controller,reviewEnabled,()=>setRefresh(n=>n+1));
-  const lifetime = useRef(0);
+  const lifetime = useRef(0),viewRead=useRef(0),statusRead=useRef(0);
   useEffect(() => { lifetime.current++; return () => { lifetime.current++; }; }, []);
+  const adoptVersions=(detail:DocumentView,all:VersionView[])=>{
+    setDoc(detail);setVersions([...all]);
+    const query=new URLSearchParams(location.search);
+    const selected=defaultPair(all,query.get("from_version"),query.get("to_version"),detail.latest_version_id,reviewEnabled?detail.last_reviewed_version_id??null:null);
+    if(selected&&(!query.has("from_version")||!query.has("to_version"))){
+      query.set("from_version",selected[0]);query.set("to_version",selected[1]);
+      history.replaceState(history.state,"",`/documents/${documentId}/versions?${query}`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }
+    setPair(current=>current??selected);setLoaded(true);
+  };
+  useReviewInvalidation(
+    controller,
+    true,
+    async (ev) => {
+      const captured = controller.captureDispatchAuthority();
+      const readGen = ev?.readGeneration ?? controller.readGeneration;
+      const gen = lifetime.current,run=++viewRead.current,statusRun=++statusRead.current;
+      const current=()=>{
+        if(gen!==lifetime.current||!controller.isCurrentReadAuthority(captured,readGen))return false;
+        if(run!==viewRead.current){if(ev?.resync)throw new StaleResponseError();return false;}
+        return true;
+      };
+      const passive = controller.passiveClient;
+      try {
+        const detail = await passive.documentDetail(documentId);
+        if(!current())return;
+        let cursor: string | undefined;
+        const all: VersionView[] = [];
+        do {
+          const page = await passive.documentVersions(documentId, cursor);
+          if(!current())return;
+          if (page.items.some(v => v.document_id !== documentId)) throw Error("문서와 버전이 일치하지 않습니다.");
+          all.push(...page.items);
+          cursor = page.next_cursor ?? undefined;
+        } while (cursor);
+        adoptVersions(detail,all);
+        if (reviewEnabled) {
+          const nextReviews: Record<string, ReviewView> = {};
+          for (const v of all) {
+            const r = await passive.reviewGet(v.version_id);
+            if(!current())return;
+            if (r.version_id !== v.version_id) throw Error("검토 버전이 일치하지 않습니다.");
+            nextReviews[v.version_id] = r;
+          }
+          setReviews(old => ({ ...old, ...nextReviews }));
+        }
+        try{
+          const value=await passive.serviceStatus();
+          if(!current())return;
+          if(statusRun!==statusRead.current){if(ev?.resync)throw new StaleResponseError();return;}
+          const source=(value as {source?:{available?:boolean;reason?:string|null;last_observed_at?:string|null}}).source;
+          setSourceStatus(sourceObservationLabel(source));
+        }catch(error){
+          if(gen===lifetime.current&&run===viewRead.current&&statusRun===statusRead.current)setSourceStatus("관측 기록을 사용할 수 없습니다.");
+          if(ev?.resync)throw error;
+        }
+        setIssue(null);
+      } catch (error) {
+        if (gen === lifetime.current && run===viewRead.current&&controller.isCurrentReadAuthority(captured, readGen)) {
+          setIssue(message(error));
+        }
+        if (ev?.resync) throw error;
+      }
+    },
+  );
   const action = (work: (guard: () => void) => void | Promise<void>) => {
     const authority = controller.captureDispatchAuthority(), route = location.href, entry = history.state?.haeryongReaderContext, generation = lifetime.current;
     const current = () => lifetime.current === generation && location.href === route && history.state?.haeryongReaderContext === entry;
@@ -41,43 +107,34 @@ export function VersionsScreen({ controller, documentId }: { controller: ShellCo
   };
   const owner = JSON.stringify([controller.state.capabilities?.library_id, controller.state.session?.principal_id, controller.state.capabilities?.runtime_generation]);
   useEffect(() => {
-    let active = true;
+    let active = true;const run=++viewRead.current;
+    const current=()=>active&&run===viewRead.current;
     setIssue(null); setLoaded(false);
     void (async () => {
       const detail = await client.documentDetail(documentId);
-      if (!active) return; setDoc(detail);
+      if (!current()) return; setDoc(detail);
       let cursor: string | undefined; const all: VersionView[] = [];
       do {
         const page = await client.documentVersions(documentId, cursor);
-        if (!active) return;
+        if (!current()) return;
         if (page.items.some(v => v.document_id !== documentId)) throw Error("문서와 버전이 일치하지 않습니다.");
         all.push(...page.items); setVersions([...all]); cursor = page.next_cursor ?? undefined;
       } while (cursor);
-      const query = new URLSearchParams(location.search);
-      const selected = defaultPair(all, query.get("from_version"), query.get("to_version"), detail.latest_version_id, reviewEnabled ? detail.last_reviewed_version_id ?? null : null);
-      if (!active) return;
-      if (selected && (!query.has("from_version") || !query.has("to_version"))) {
-        query.set("from_version", selected[0]); query.set("to_version", selected[1]);
-        // Pin the resolved defaults in this history entry without changing its
-        // context or remounting the active import/comparison on phase changes.
-        history.replaceState(history.state, "", `/documents/${documentId}/versions?${query}`);
-        window.dispatchEvent(new PopStateEvent("popstate"));
-      }
-      setPair(current => current ?? selected); setLoaded(true);
+      if(!current())return;adoptVersions(detail,all);
       if(reviewEnabled) for(const v of all){
-        const review=await client.reviewGet(v.version_id);if(!active)return;
+        const review=await client.reviewGet(v.version_id);if(!current())return;
         if(review.version_id!==v.version_id)throw Error("검토 버전이 일치하지 않습니다.");
         setReviews(old=>({...old,[v.version_id]:review}));
       }
-    })().catch(error => { if (active) setIssue(message(error)); });
+    })().catch(error => { if (current()) setIssue(message(error)); });
     return () => { active = false; };
   }, [client, documentId, refresh, reviewEnabled]);
   useEffect(() => {
-    let active = true;
+    let active = true;const run=++statusRead.current;
     void client.serviceStatus().then(value => {
       const source = (value as { source?: { available?: boolean; reason?: string | null; last_observed_at?: string | null } }).source;
-      if (active) setSourceStatus(sourceObservationLabel(source));
-    }).catch(() => { if (active) setSourceStatus("관측 기록을 사용할 수 없습니다."); });
+      if (active&&run===statusRead.current) setSourceStatus(sourceObservationLabel(source));
+    }).catch(() => { if (active&&run===statusRead.current) setSourceStatus("관측 기록을 사용할 수 없습니다."); });
     return () => { active = false; };
   }, [client, refresh]);
   const change = (which: number, value: string) => {

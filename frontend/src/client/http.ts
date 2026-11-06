@@ -15,6 +15,7 @@ import type { ProviderStatus, LifecyclePlanRequest,LifecycleCommitRequest,Lifecy
   DecisionResult,
   DeviceSession,
   EntryChunk,
+  EventStreamResync,
   EventSubscription,
   EvidenceItemView,
   HaeryongClient,
@@ -67,6 +68,12 @@ function encodeContextBinding(binding: ContextBinding): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+interface HttpClientState {
+  credential: string;
+  era: number;
+  eventCursor: string | null;
+}
+
 // Browser transport on the trusted origin. Header bearer only; cookies are
 // omitted, redirects are errors and only same-origin /api/v1 paths are called.
 // Every request captures the current era; responses from an earlier
@@ -74,15 +81,36 @@ function encodeContextBinding(binding: ContextBinding): string {
 export class HttpHaeryongClient implements HaeryongClient {
   get publicOrigin(): string { return location.origin; }
 
-  #credential = "";
-  #era = 0;
+  readonly #state: HttpClientState;
+  readonly #passive: boolean;
+  #passiveView: HttpHaeryongClient | null = null;
+
+  constructor(state?: HttpClientState, passive = false) {
+    this.#state = state ?? { credential: "", era: 0, eventCursor: null };
+    this.#passive = passive;
+  }
+
+  get #credential(): string { return this.#state.credential; }
+  get #era(): number { return this.#state.era; }
+
+  passive(): HaeryongClient {
+    if (this.#passive) return this;
+    if (!this.#passiveView) {
+      this.#passiveView = new HttpHaeryongClient(this.#state, true);
+    }
+    return this.#passiveView;
+  }
 
   setCredential(token: string): void {
-    this.#credential = token;
+    if (this.#state.credential !== token) {
+      this.#state.eventCursor = null;
+    }
+    this.#state.credential = token;
   }
 
   invalidate(): void {
-    this.#era += 1;
+    this.#state.era += 1;
+    this.#state.eventCursor = null;
   }
 
   async #apiError(response: Response, era: number, fallbackRetryable: boolean): Promise<ApiError> {
@@ -104,9 +132,13 @@ export class HttpHaeryongClient implements HaeryongClient {
     if (!path.startsWith("/api/v1/") || path.startsWith("//")) {
       throw new Error("Invalid API route");
     }
+    if (this.#passive && method !== "GET" && method !== "HEAD") {
+      throw new ApiError(400, "INVALID_REQUEST", false);
+    }
     const era = this.#era;
     const allHeaders = new Headers(headers);
     if (this.#credential) allHeaders.set("Authorization", "Bearer " + this.#credential);
+    if (this.#passive) allHeaders.set("Haeryong-Passive-Read", "1");
     const init: RequestInit = { method, credentials: "omit", redirect: "error", headers: allHeaders };
     if (body !== undefined) {
       allHeaders.set("Content-Type", "application/json");
@@ -143,6 +175,9 @@ export class HttpHaeryongClient implements HaeryongClient {
   async #rawExchange(method: string, path: string, bytes: Uint8Array, headers: Record<string, string>): Promise<{ status: number; data: unknown }> {
     if (!path.startsWith("/api/v1/") || path.startsWith("//")) {
       throw new Error("Invalid API route");
+    }
+    if (this.#passive) {
+      throw new ApiError(400, "INVALID_REQUEST", false);
     }
     const era = this.#era;
     const allHeaders = new Headers(headers);
@@ -290,6 +325,7 @@ export class HttpHaeryongClient implements HaeryongClient {
     const era = this.#era;
     const headers = new Headers();
     if (this.#credential) headers.set("Authorization", "Bearer " + this.#credential);
+    if (this.#passive) headers.set("Haeryong-Passive-Read", "1");
     const response = await fetch(`/api/v1/versions/${encodeURIComponent(versionId)}/metadata?kind=supplied`, { credentials: "omit", redirect: "error", headers, signal: controller.signal });
     if (era !== this.#era) {
       response.body?.cancel().catch(() => undefined);
@@ -371,6 +407,7 @@ export class HttpHaeryongClient implements HaeryongClient {
   async #savedTextStream(path:string):Promise<AnnotationStream>{
     const controller=new AbortController(),era=this.#era;
     const headers=new Headers();if(this.#credential)headers.set("Authorization","Bearer "+this.#credential);
+    if(this.#passive)headers.set("Haeryong-Passive-Read","1");
     const r=await fetch(path,{headers,credentials:"omit",redirect:"error",signal:controller.signal});
     if(era!==this.#era){void r.body?.cancel();throw new StaleResponseError();}
     if(!r.ok||!r.body)throw await this.#apiError(r,era,false);
@@ -448,6 +485,7 @@ export class HttpHaeryongClient implements HaeryongClient {
     const era = this.#era;
     const headers = new Headers({ "Haeryong-Context-Binding": encodeContextBinding(binding), "If-None-Match": etag });
     if (this.#credential) headers.set("Authorization", "Bearer " + this.#credential);
+    if (this.#passive) headers.set("Haeryong-Passive-Read", "1");
     let response: Response;
     try {
       response = await fetch(path, { method: "GET", credentials: "omit", redirect: "error", headers });
@@ -538,6 +576,7 @@ export class HttpHaeryongClient implements HaeryongClient {
     const era = this.#era;
     const headers = new Headers();
     if (this.#credential) headers.set("Authorization", "Bearer " + this.#credential);
+    if (this.#passive) headers.set("Haeryong-Passive-Read", "1");
     const response = await fetch(path, { credentials: "omit", redirect: "error", headers, signal: controller.signal });
     if (era !== this.#era) {
       response.body?.cancel().catch(() => undefined);
@@ -624,13 +663,49 @@ export class HttpHaeryongClient implements HaeryongClient {
   }
 
   subscribeEvents(): EventSubscription {
-    const listeners = new Set<() => void>();
+    const listeners = new Set<() => unknown>();
+    const resyncListeners = new Set<(resync: EventStreamResync) => unknown>();
     const decode = new TextDecoder();
-    const lines = searchEventLines(() => { if (era === this.#era && !controller.signal.aborted) for (const listener of listeners) listener(); });
     const controller = new AbortController();
     const era = this.#era;
+    const lines = searchEventLines(
+      async () => {
+        if (era === this.#era && !controller.signal.aborted) {
+          const active = [...listeners];
+          await Promise.all(active.map((listener) => {
+            try { return Promise.resolve(listener()); } catch (err) { return Promise.reject(err); }
+          }));
+        }
+      },
+      {
+        onCursor: (cursor) => {
+          if (era === this.#era && !controller.signal.aborted) {
+            this.#state.eventCursor = cursor;
+          }
+        },
+        onResync: async (resync) => {
+          if (era === this.#era && !controller.signal.aborted) {
+            if (resyncListeners.size > 0) {
+              const active = [...resyncListeners];
+              await Promise.all(active.map((listener) => {
+                try { return Promise.resolve(listener(resync)); } catch (err) { return Promise.reject(err); }
+              }));
+            } else {
+              const active = [...listeners];
+              await Promise.all(active.map((listener) => {
+                try { return Promise.resolve(listener()); } catch (err) { return Promise.reject(err); }
+              }));
+            }
+          }
+        },
+      },
+    );
     const headers = new Headers();
     if (this.#credential) headers.set("Authorization", "Bearer " + this.#credential);
+    // No committed cursor means the existing no-cursor bootstrap contract.
+    // A fabricated zero epoch incorrectly classifies first entry as an
+    // epoch-change recovery and retires its fresh Provider readiness.
+    if (this.#state.eventCursor) headers.set("Last-Event-ID", this.#state.eventCursor);
     let ended: () => void;
     const closed = new Promise<void>((resolve) => {
       ended = resolve;
@@ -639,16 +714,44 @@ export class HttpHaeryongClient implements HaeryongClient {
       .then(async (response) => {
         if (!response.body) return;
         const reader = response.body.getReader();
-        for (;;) {
-          const part = await reader.read();
-          if (era !== this.#era || controller.signal.aborted) { await reader.cancel(); break; }
-          if (part.done) break;
-          // Only event names become hints, never resource IDs or event bodies.
-          lines(decode.decode(part.value, { stream: true }));
+        try {
+          for (;;) {
+            const part = await reader.read();
+            if (era !== this.#era || controller.signal.aborted) break;
+            if (part.done) break;
+            // Only event names and bounded resync metadata become hints, never resource IDs or event bodies.
+            await lines(decode.decode(part.value, { stream: true }));
+            if (era !== this.#era || controller.signal.aborted) break;
+          }
+        } finally {
+          controller.abort();
+          await reader.cancel().catch(() => undefined);
         }
       })
       .catch(() => undefined)
-      .finally(() => ended());
-    return { closed, onInvalidation: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }, close: () => { listeners.clear(); controller.abort(); } };
+      .finally(() => {
+        controller.abort();
+        ended();
+      });
+    return {
+      closed,
+      onInvalidation: (listener) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+      onResync: (listener) => {
+        resyncListeners.add(listener);
+        return () => {
+          resyncListeners.delete(listener);
+        };
+      },
+      close: () => {
+        listeners.clear();
+        resyncListeners.clear();
+        controller.abort();
+      },
+    };
   }
 }

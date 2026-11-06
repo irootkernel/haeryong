@@ -85,3 +85,34 @@ export function homeSectionsUnavailable(): { available: false; reason: string } 
 export function featureEnabled(features: Record<string, boolean> | undefined, key: string): boolean {
   return features?.[key] === true;
 }
+
+export async function refreshLoadedDocumentPages(
+  reader: {
+    listDocuments(filter: {
+      projectId?: string;
+      lifecycle?: "active" | "archived";
+      cursor?: string;
+    }): Promise<{ items: DocumentView[]; next_cursor: string | null }>;
+  },
+  filter: LibraryFilter,
+  pageCount: number,
+  isStale?: () => boolean,
+): Promise<{ accumulation: DocumentAccumulation; cursor: string | null; loadedPages: number } | null> {
+  const targetPages = Math.max(1, pageCount);
+  let accumulation: DocumentAccumulation = { documents: [], exhausted: false };
+  let cursor: string | null = null;
+  let loadedPages = 0;
+  for (let i = 0; i < targetPages; i++) {
+    const page = await reader.listDocuments({
+      projectId: filter.projectId || undefined,
+      lifecycle: filter.lifecycle === "all" ? undefined : filter.lifecycle,
+      cursor: cursor ?? undefined,
+    });
+    if (isStale?.()) return null;
+    accumulation = accumulateDocuments(accumulation, page);
+    cursor = page.next_cursor;
+    loadedPages += 1;
+    if (cursor === null) break;
+  }
+  return { accumulation, cursor, loadedPages };
+}

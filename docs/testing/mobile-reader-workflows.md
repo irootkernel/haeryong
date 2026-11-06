@@ -233,6 +233,8 @@ documentation integrity and the selected additional web check passed.
 The strict current composition has no mandatory unmet/unverified or pending
 obligation and creates no new evaluator verdict. Coordinator product review and
 exact delegated acceptance establish this bounded delivery; the separate member
-commit and native finalization remain their own effects. Original physical-device
+commit and native finalization remain their own effects. TASK-007-04
+([multi-device reconciliation](multi-device-reconciliation.md)) follows as the
+next ordered EPIC-007 member. Original physical-device
 assertions, Wails GUI, later reconciliation/host/assembled gates and Master
 overall Epic acceptance retain their owners and qualifications.

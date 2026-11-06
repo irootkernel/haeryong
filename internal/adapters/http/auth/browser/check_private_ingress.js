@@ -1218,7 +1218,7 @@ async page => {
       let calls=0,degraded=false;const provider=async r=>{calls++;await r.fulfill({json:{data:{state:'ready',ordinary_usage_allowed:true,authentication_mode:'chatgpt',read_only:true,model:'controlled-browser-peer',effort:'high',reason:null}}});};
       const session=async r=>degraded?r.fulfill({status:503,json:{error:{code:'SERVICE_UNAVAILABLE',retryable:true,details:{}}}}):r.continue();
       await target.route('**/api/v1/providers',provider);await target.route('**/api/v1/session',session);
-      await target.goto(input.base+'/settings/ai');await target.locator('[data-provider-state]').filter({hasText:'연결 확인됨'}).waitFor();const before=calls;
+      await target.goto(input.base+'/settings/ai');await target.locator('[data-provider-state]').filter({hasText:'연결 확인됨'}).waitFor();const initialCalls=calls;assert(initialCalls===1,'healthy direct entry did not retain its one initial status read');await target.reload();await target.locator('[data-provider-state]').filter({hasText:'연결 확인됨'}).waitFor();assert(calls===initialCalls+1,'healthy reload lost its initial status read');const before=calls;
       degraded=true;await target.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await target.locator('.service-state[data-state="degraded"]').waitFor();assert(await target.locator('[data-provider-status]').count()===0,'stale ready state remained');
       await target.getByRole('link',{name:'정비',exact:true}).click();await target.locator('[data-maintenance-scan-disabled]').waitFor();assert((await target.locator('.placeholder-note').innerText()).includes('연결이 확인되지'),'Maintenance outage copy missing');
       await target.goto(input.base+'/settings/ai');await target.locator('.service-state[data-state="degraded"]').waitFor();assert(calls===before,'provider called while disconnected');
@@ -1228,7 +1228,7 @@ async page => {
       await target.locator('[data-provider-state]').waitFor();assert(unavailable.state!=='ready'&&await target.locator('.service-state[data-state=verified]').count()===1,'provider refusal conflated with daemon outage');
       const disabledFeatures=async r=>{const response=await r.fetch(),body=await response.json();body.data.features={...body.data.features,generation:false,questions:false};await r.fulfill({response,json:body});};
       await target.route('**/api/v1/capabilities',disabledFeatures);await target.reload();await target.locator('[data-provider-feature-absence]').waitFor();await target.unroute('**/api/v1/capabilities',disabledFeatures);
-      observed.provider={peerReady:true,outageClearsReady:true,entryDisconnectedNoProbe:true,explicitReconnectRefresh:true,actualUnavailableState:unavailable.state,actualUnavailableReason:unavailable.reason,featureAbsencePresentation:'controlled capability peer',nativeClientCalls:0};
+      observed.provider={peerReady:true,healthyDirectEntryAndReload:true,oneInitialReadEach:true,outageClearsReady:true,entryDisconnectedNoProbe:true,explicitReconnectRefresh:true,actualUnavailableState:unavailable.state,actualUnavailableReason:unavailable.reason,featureAbsencePresentation:'controlled capability peer',nativeClientCalls:0};
     });
     await stage('transfer',async()=>{
       const importOne=async(label,path)=>{await target.goto(input.base+'/library');await target.getByRole('button',{name:'가져오기',exact:true}).click();const reset=target.getByRole('button',{name:'새 가져오기 시작',exact:true});if(await reset.count())await reset.click();await target.getByLabel(label,{exact:true}).setInputFiles(path);await target.getByRole('button',{name:'가져오기 시작',exact:true}).click();await target.getByTestId('import-stage').filter({hasText:'발행 완료'}).waitFor({timeout:60000});};
@@ -1302,6 +1302,749 @@ async page => {
     });
     return {...observed,complete:!observed.failedStages?.length,error:observed.failedStages?.map(x=>x.stage+': '+x.error).join('; ')};
     } catch(error) {return {...observed,complete:false,error:error.message,diagnostic:{alerts:await target.locator('[role=alert]').allTextContents(),searchStatus:await target.getByTestId('search-status').allTextContents()}};}
+  }
+  if (input.phase === 'task04-cohort') {
+    const v = input.fixture[0], witness = page, browser = page.context().browser();
+    let target, ownerClient;
+    const observed = {
+      mode: input.modeLabel,
+      controlledAsk: 'browser-peer-ui-only',
+      physicalSecondDevice: 'not_run',
+      physicalMobile: 'not_run',
+      nativeWailsUI: 'not_run',
+      providerCalls: 0,
+    };
+    const verify = async (p = target) => p.waitForFunction(() => document.querySelector('.service-state')?.getAttribute('data-state') === 'verified');
+    const api = async (p, method, path, body, headers = {}) => p.evaluate(async a => {
+      const tok = a.token || localStorage.getItem('haeryong.owner-session.v1');
+      const r = await fetch('/api/v1' + a.path, {
+        method: a.method,
+        headers: {
+          Authorization: 'Bearer ' + tok,
+          ...(a.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+          ...a.headers,
+        },
+        body: a.body === undefined ? undefined : JSON.stringify(a.body),
+      });
+      const json = await r.json().catch(() => ({}));
+      return { status: r.status, data: json.data, error: json.error };
+    }, { method, path, body, headers });
+    const openContext = async (p, tab) => {
+      if (await p.locator('#reader-context-toggle').getAttribute('aria-expanded') !== 'true') {
+        await p.locator('#reader-context-toggle').click();
+      }
+      await p.getByRole('tab', { name: tab, exact: true }).click();
+    };
+    const closeContext = async p => {
+      const panel = p.locator('#reader-context-panel');
+      if (await panel.count() && await panel.evaluate(e => e.matches(':modal'))) {
+        await p.keyboard.press('Escape');
+      }
+    };
+    const createdContexts = [];
+    const openPeerPage = async tok => {
+      const ctx = await browser.newContext({ ignoreHTTPSErrors: false, viewport: { width: 1280, height: 900 } });
+      createdContexts.push(ctx);
+      const p = await ctx.newPage();
+      await p.goto(input.base);
+      await p.evaluate(t => localStorage.setItem('haeryong.owner-session.v1', t), tok);
+      await p.reload();
+      await verify(p);
+      return { ctx, page: p };
+    };
+    const hostRead = async path => {
+      const response = await witness.request.get(input.base + '/api/v1' + path, {
+        headers: { Authorization: 'Bearer ' + input.peerToken, 'Haeryong-Passive-Read': '1' },
+      });
+      assert(response.status() === 200, 'host observer read failed: ' + response.status());
+      return (await response.json()).data;
+    };
+    const closeClient = async client => {
+      await client.ctx.close();
+      const index = createdContexts.indexOf(client.ctx);
+      if (index >= 0) createdContexts.splice(index, 1);
+    };
+    const stage = async (name, fn) => {
+      if (input.selectedStages && !input.selectedStages.includes(name)) return;
+      try {
+        await fn();
+        (observed.completedStages ??= []).push(name);
+      } catch (e) {
+        (observed.failedStages ??= []).push({ stage: name, error: e.message, routeInjectionFailures: observed.routeInjectionFailures });
+      }
+    };
+    try {
+      const ownerToken = await witness.evaluate(() => localStorage.getItem('haeryong.owner-session.v1'));
+      assert(ownerToken, 'paired owner credential missing');
+      await witness.goto('about:blank');
+      ownerClient = await openPeerPage(ownerToken);
+      target = ownerClient.page;
+      state.track(target);
+      await target.setViewportSize({ width: 1280, height: 900 });
+      await target.goto(route(v));
+      await verify(target);
+      await target.frameLocator('iframe').locator('#heading').waitFor();
+
+      let peer = await openPeerPage(input.peerToken);
+      let peerPage = peer.page;
+
+      // Stage 1: T-007-04-01 Multi-device personal independence and visible conflict UI for Personal, Review, Revisit, and Notes (edit, reattach, delete).
+      await stage('personal-and-conflicts', async () => {
+        await peerPage.goto(route(v));
+        await verify(peerPage);
+        await peerPage.frameLocator('iframe').locator('#heading').waitFor();
+
+        // 1a. Independent personal resources via API + UI conflict on reader-preference:
+        const curPosA = (await api(target, 'GET', '/versions/' + v.version + '/page-position?page=first.html')).data;
+        const posA = await api(target, 'PUT', '/versions/' + v.version + '/page-position?page=first.html', { page_query: '', page_fragment: '', position: { scroll_x: 0, scroll_y: 120 } }, { 'Idempotency-Key': crypto.randomUUID(), ...(curPosA.exists ? { 'If-Match': curPosA.etag } : { 'If-None-Match': '*' }) });
+        const curPosB = (await api(peerPage, 'GET', '/versions/' + v.version + '/page-position?page=nested%2Fsecond.html')).data;
+        const posB = await api(peerPage, 'PUT', '/versions/' + v.version + '/page-position?page=nested%2Fsecond.html', { page_query: '', page_fragment: '', position: { scroll_x: 0, scroll_y: 240 } }, { 'Idempotency-Key': crypto.randomUUID(), ...(curPosB.exists ? { 'If-Match': curPosB.etag } : { 'If-None-Match': '*' }) });
+        assert(posA.status === 200 && posB.status === 200 && posA.data.exists && posB.data.exists, 'independent page-position writes failed');
+
+        // Set default page on target ('기본 페이지로 지정'):
+        await target.getByRole('button', { name: '기본 페이지로 지정', exact: true }).click();
+        await target.getByRole('status').filter({ hasText: '기본 페이지를 저장했습니다.' }).waitFor();
+        const pointerBeforeScroll = (await api(target, 'GET', '/versions/' + v.version + '/reading-position')).data;
+        const preferenceBeforeScroll = (await api(target, 'GET', '/versions/' + v.version + '/reader-preference')).data;
+        const otherPageBeforeScroll = (await api(target, 'GET', '/versions/' + v.version + '/page-position?page=nested%2Fsecond.html')).data;
+        const frame = target.frames().find(f => f !== target.mainFrame() && f.url().includes('first.html'));
+        assert(frame, 'scrolling Reader frame missing');
+        await frame.evaluate(() => window.scrollTo(0, 400));
+        const scrollDeadline = Date.now() + 30000;
+        for (;;) {
+          const current = (await api(target, 'GET', '/versions/' + v.version + '/page-position?page=first.html', undefined, { 'Haeryong-Passive-Read': '1' })).data;
+          if (current.value?.position?.scroll_y === 400) break;
+          assert(Date.now() < scrollDeadline, 'actual frame scroll was not persisted');
+          await witness.waitForTimeout(100);
+        }
+        assert((await api(target, 'GET', '/versions/' + v.version + '/reading-position')).data.etag === pointerBeforeScroll.etag, 'scroll changed version pointer validator');
+        assert((await api(target, 'GET', '/versions/' + v.version + '/reader-preference')).data.etag === preferenceBeforeScroll.etag, 'scroll changed preference validator');
+        assert((await api(target, 'GET', '/versions/' + v.version + '/page-position?page=nested%2Fsecond.html')).data.etag === otherPageBeforeScroll.etag, 'scroll changed another page validator');
+
+        // Commit the peer write after the owner has captured its immutable
+        // precondition, immediately before forwarding that real owner request.
+        // This does not rely on aborting an already-open SSE connection.
+        const staleRoutes = [];
+        const staleNext = async (pattern, method, mutatePeer) => {
+          let injected = false;
+          const handler = async r => {
+            if (!injected && r.request().method() === method) {
+              injected = true;
+              try { await mutatePeer(); }
+              catch (error) {
+                (observed.routeInjectionFailures ??= []).push(error.message);
+                await r.abort(); return;
+              }
+            }
+            await r.continue();
+          };
+          await target.route(pattern, handler);
+          staleRoutes.push([pattern, handler]);
+        };
+        try {
+          await staleNext('**/api/v1/versions/' + v.version + '/reader-preference', 'PUT', async () => {
+            const curPref = (await api(peerPage, 'GET', '/versions/' + v.version + '/reader-preference')).data;
+            const nextPref = await api(peerPage, 'PUT', '/versions/' + v.version + '/reader-preference', { default_page: 'nested/second.html' }, { 'Idempotency-Key': crypto.randomUUID(), 'If-Match': curPref.etag });
+            assert(nextPref.status === 200, 'peer reader-preference update failed');
+          });
+
+          // Target clicks '기본 페이지 설정 해제' with its older cached ETag -> 412 conflict banner:
+          await target.getByRole('button', { name: '기본 페이지 설정 해제', exact: true }).click();
+          await target.locator('[data-personal-conflict="true"]').waitFor();
+          await target.getByRole('button', { name: '현재 상태 다시 저장', exact: true }).click();
+          await target.waitForFunction(() => !document.querySelector('[data-personal-conflict="true"]'));
+
+          // 1b. Review 412 conflict comparison:
+          // Target starts review ('검토 시작' -> reviewing):
+          if (await target.locator('#review-start').count()) {
+            await target.locator('#review-start').click();
+            await target.locator('#review-state').filter({ hasText: '검토 중' }).waitFor();
+          }
+          // Peer completes review via API while target's SSE is held:
+          await staleNext('**/api/v1/versions/' + v.version + '/review', 'PUT', async () => {
+            const curRev = (await api(peerPage, 'GET', '/versions/' + v.version + '/review')).data;
+            const peerRev = await api(peerPage, 'PUT', '/versions/' + v.version + '/review', { action: 'complete', state: 'reviewed' }, { 'Idempotency-Key': crypto.randomUUID(), 'If-Match': curRev.etag });
+            assert(peerRev.status === 200, 'peer review complete failed');
+          });
+
+          // Target clicks '#review-clear' ('미검토로 되돌리기') with stale ETag -> 412 review conflict comparison:
+          await target.locator('#review-clear').click();
+          await target.locator('[data-review-conflict="true"]').waitFor();
+          await target.getByRole('button', { name: '내 검토 상태 다시 적용', exact: true }).click();
+          await target.locator('#review-state').filter({ hasText: '미검토' }).waitFor();
+
+          // 1c. Revisit 412 conflict comparison:
+          await target.locator('#reader-revisit').click();
+          await target.waitForFunction(() => document.querySelector('#reader-revisit')?.getAttribute('aria-pressed') === 'true');
+          await staleNext('**/api/v1/documents/' + v.document + '/revisit', 'PUT', async () => {
+            const curRevisit = (await api(peerPage, 'GET', '/documents/' + v.document + '/revisit')).data;
+            const peerRevisit = await api(peerPage, 'PUT', '/documents/' + v.document + '/revisit', { flag: false }, { 'Idempotency-Key': crypto.randomUUID(), 'If-Match': curRevisit.etag });
+            assert(peerRevisit.status === 200, 'peer revisit update failed');
+            const next = await api(peerPage, 'PUT', '/documents/' + v.document + '/revisit', { flag: true }, { 'Idempotency-Key': crypto.randomUUID(), 'If-Match': peerRevisit.data.etag });
+            assert(next.status === 200, 'peer revisit second update failed');
+          });
+          await target.locator('#reader-revisit').click();
+          await target.locator('[data-revisit-conflict="true"]').waitFor();
+          await target.getByRole('button', { name: '내 값 다시 저장', exact: true }).click();
+          await target.waitForFunction(() => !document.querySelector('[data-revisit-conflict="true"]') && document.querySelector('#reader-revisit')?.getAttribute('aria-pressed') === 'false');
+
+          // 1d. Notes 412 conflict comparison for edit, reattach, and delete:
+          await openContext(target, 'Notes');
+          await target.locator('#note-new').click();
+          await target.locator('#note-body').fill('Task04 base note body');
+          await target.locator('#note-save').click();
+          await target.waitForFunction(() => !document.querySelector('#note-body'));
+          const notesList = (await api(peerPage, 'GET', '/versions/' + v.version + '/annotations')).data.items;
+          const createdNote = notesList.find(n => n.body === 'Task04 base note body');
+          assert(Boolean(createdNote), 'created note missing');
+
+          // Target opens editor on createdNote, then peer edits createdNote so target's ETag is stale:
+          const noteArticle = target.locator('.note-entry').filter({ hasText: 'Task04 base note body' });
+          await noteArticle.getByRole('button', { name: '편집', exact: true }).click();
+          await target.locator('#note-body').fill('Task04 local unsaved edit text');
+          await staleNext('**/api/v1/annotations/' + createdNote.annotation_id, 'PATCH', async () => {
+            const current = (await api(peerPage, 'GET', '/annotations/' + createdNote.annotation_id)).data;
+            const changed = await api(peerPage, 'PATCH', '/annotations/' + createdNote.annotation_id, { action: 'edit', body: 'Task04 peer committed edit', body_ref: null, selected_text: null, context: null, context_ref: null }, { 'Idempotency-Key': crypto.randomUUID(), 'If-Match': current.etag });
+            assert(changed.status === 200, 'peer note edit failed');
+          });
+
+          await target.locator('#note-save').click();
+          const conflictBox = target.locator('div[aria-label="노트 충돌 비교"]');
+          await conflictBox.waitFor();
+          // Verify unsaved local text is preserved in #note-body while server comparison is shown:
+          assert(await target.locator('#note-body').inputValue() === 'Task04 local unsaved edit text', 'unsaved note draft lost on 412');
+          await conflictBox.getByRole('button', { name: '현재 개정과 합친 초안으로 저장 준비', exact: true }).click();
+          await target.locator('#note-save').click();
+          await target.waitForFunction(() => !document.querySelector('#note-body'));
+
+          // Now test stale Note reattach 412 -> '최신 개정 이 위치로 재연결':
+          await staleNext('**/api/v1/annotations/' + createdNote.annotation_id, 'PATCH', async () => {
+            const current = (await api(peerPage, 'GET', '/annotations/' + createdNote.annotation_id)).data;
+            const changed = await api(peerPage, 'PATCH', '/annotations/' + createdNote.annotation_id, { action: 'edit', body: 'Task04 peer edit before reattach', body_ref: null, selected_text: null, context: null, context_ref: null }, { 'Idempotency-Key': crypto.randomUUID(), 'If-Match': current.etag });
+            assert(changed.status === 200, 'peer note edit before reattach failed');
+          });
+          const mergedArticle = target.locator('.note-entry').filter({ hasText: 'Task04 local unsaved edit text' });
+          await mergedArticle.getByRole('button', { name: '현재 읽는 위치로 재연결', exact: true }).click();
+          await target.locator('[data-note-confirm]').click();
+          await conflictBox.waitFor();
+          await conflictBox.getByRole('button', { name: '최신 개정 이 위치로 재연결', exact: true }).click();
+          await target.waitForFunction(() => !document.querySelector('div[aria-label="노트 충돌 비교"]'));
+
+          // Now test stale Note delete 412 -> '최신 개정 삭제 계속 진행':
+          await staleNext('**/api/v1/annotations/' + createdNote.annotation_id, 'DELETE', async () => {
+            const current = (await api(peerPage, 'GET', '/annotations/' + createdNote.annotation_id)).data;
+            const changed = await api(peerPage, 'PATCH', '/annotations/' + createdNote.annotation_id, { action: 'edit', body: 'Task04 peer edit before delete', body_ref: null, selected_text: null, context: null, context_ref: null }, { 'Idempotency-Key': crypto.randomUUID(), 'If-Match': current.etag });
+            assert(changed.status === 200, 'peer note edit before delete failed');
+          });
+          const reattachedArticle = target.locator('.note-entry').first();
+          await reattachedArticle.getByRole('button', { name: '노트 삭제', exact: true }).click();
+          await target.locator('[data-note-confirm]').click();
+          await conflictBox.waitFor();
+          await conflictBox.getByRole('button', { name: '최신 개정 삭제 계속 진행', exact: true }).click();
+          await target.waitForFunction(() => !document.querySelector('div[aria-label="노트 충돌 비교"]'));
+          await closeContext(target);
+        } finally {
+          for (const [pattern, handler] of staleRoutes) await target.unroute(pattern, handler);
+        }
+        observed.personalAndConflicts = {
+          independentPagePositions: true,
+          personalConflictResolved: true,
+          reviewConflictResolved: true,
+          revisitConflictResolved: true,
+          noteEditReattachDeleteConflictsResolved: true,
+          unsavedTextPreserved: true,
+          actualScrollPreservedIndependentValidators: true,
+        };
+      });
+
+      // Stage 2: T-007-04-03 Lost K mutation response after backend commit + completed receipt vs newer peer resource separation + changed-generation 404 guard.
+      await stage('receipt-and-lost-ack', async () => {
+        let droppedPut = false;
+        let putCount = 0;
+        let opReads = 0;
+        let allowReceipt = false;
+        let peerAdvancedDuringLoss = false;
+        const reviewPattern = '**/api/v1/versions/' + v.version + '/review';
+        const opPattern = '**/api/v1/operations/*';
+        const onReviewRoute = async r => {
+          if (r.request().method() === 'PUT') {
+            putCount++;
+            if (!droppedPut) {
+              droppedPut = true;
+              // Commit on the backend, then peer advances the resource to 'reviewed', then abort the response to target!
+              const committed = await r.fetch();
+              const committedBody = await committed.json();
+              const committedEtag = committedBody.data.etag;
+              const peerComplete = await api(peerPage, 'PUT', '/versions/' + v.version + '/review', { action: 'complete', state: 'reviewed' }, { 'Idempotency-Key': crypto.randomUUID(), 'If-Match': committedEtag });
+              peerAdvancedDuringLoss = peerComplete.status === 200;
+              await r.abort();
+              return;
+            }
+          }
+          await r.continue();
+        };
+        const onOpRoute = async r => {
+          if (r.request().method() === 'GET') {
+            opReads++;
+            if (!allowReceipt) { await r.abort(); return; }
+          }
+          await r.continue();
+        };
+        const beforeReview = (await api(peerPage, 'GET', '/versions/' + v.version + '/review')).data;
+        if (beforeReview.value.state !== 'unreviewed') {
+          const reset = await api(peerPage, 'PUT', '/versions/' + v.version + '/review', { action: 'clear', state: 'unreviewed' }, {
+            'Idempotency-Key': crypto.randomUUID(), 'If-Match': beforeReview.etag,
+          });
+          assert(reset.status === 200, 'Review setup reset failed');
+        }
+        await target.locator('#review-state').filter({ hasText: '미검토' }).waitFor();
+        await target.route(reviewPattern, onReviewRoute);
+        await target.route(opPattern, onOpRoute);
+        try {
+          await target.locator('#review-start').click();
+          const retryBtn = target.getByRole('button', { name: '원래 Review 요청으로 다시 확인', exact: true });
+          await retryBtn.waitFor();
+          // Before clicking retry, verify it has NOT falsely claimed '검토 중' (Saved):
+          assert(!(await target.locator('#review-state').innerText()).includes('검토 중'), 'lost ACK falsely displayed Saved state before receipt recovery');
+          allowReceipt = true;
+          await retryBtn.click();
+          await retryBtn.waitFor({ state: 'detached' });
+          // Because the original receipt completed ('reviewing'), recovery acknowledges K without a second PUT (putCount === 1) AND fetches fresh ReviewGet ('검토 완료' from peer):
+          await target.locator('#review-state').filter({ hasText: '검토 완료' }).waitFor();
+          assert(droppedPut && peerAdvancedDuringLoss && putCount === 1 && opReads >= 1, `unexpected lost-ACK recovery counts: putCount=${putCount}, opReads=${opReads}`);
+        } finally {
+          await target.unroute(reviewPattern, onReviewRoute);
+          await target.unroute(opPattern, onOpRoute);
+        }
+
+        // Also cover transport-internal recovery of the FIRST response: no
+        // explicit retry path may be assumed to reveal a historical receipt.
+        const revisitPath = '/documents/' + v.document + '/revisit';
+        const beforeRevisit = (await api(peerPage, 'GET', revisitPath)).data;
+        if (beforeRevisit.value.flag) {
+          assert((await api(peerPage, 'PUT', revisitPath, { flag: false }, {
+            'Idempotency-Key': crypto.randomUUID(), 'If-Match': beforeRevisit.etag,
+          })).status === 200, 'Revisit setup reset failed');
+        }
+        await target.waitForFunction(() => document.querySelector('#reader-revisit')?.getAttribute('aria-pressed') === 'false');
+        let revisitPuts = 0, revisitReceipts = 0, peerRevisitAdvanced = false;
+        const revisitPattern = '**/api/v1' + revisitPath;
+        const lostRevisit = async r => {
+          if (r.request().method() === 'PUT') {
+            revisitPuts++;
+            if (revisitPuts === 1) {
+              const acknowledged = (await (await r.fetch()).json()).data;
+              const later = await api(peerPage, 'PUT', revisitPath, { flag: false }, {
+                'Idempotency-Key': crypto.randomUUID(), 'If-Match': acknowledged.etag,
+              });
+              peerRevisitAdvanced = later.status === 200;
+              await r.abort(); return;
+            }
+          }
+          await r.continue();
+        };
+        const countRevisitReceipt = async r => {
+          if (r.request().method() === 'GET') revisitReceipts++;
+          await r.continue();
+        };
+        await target.route(revisitPattern, lostRevisit);
+        await target.route(opPattern, countRevisitReceipt);
+        try {
+          const currentRead = target.waitForResponse(r => r.request().method() === 'GET' &&
+            new URL(r.url()).pathname === '/api/v1' + revisitPath &&
+            r.request().headers()['haeryong-passive-read'] !== '1').catch(error => ({ error: error.message }));
+          await target.locator('#reader-revisit').click();
+          const refreshed = await currentRead;
+          assert(!refreshed.error && refreshed.status() === 200, 'first-call recovery did not read current Revisit: ' + (refreshed.error || refreshed.status()));
+          await target.waitForFunction(() => {
+            const button = document.querySelector('#reader-revisit');
+            return button && !button.disabled && button.getAttribute('aria-pressed') === 'false';
+          });
+          assert(peerRevisitAdvanced && revisitPuts === 1 && revisitReceipts >= 1, 'first-call receipt recovery repeated Revisit or lost peer state');
+          assert(await target.getByRole('button', { name: '원래 Revisit 요청 확인', exact: true }).count() === 0, 'internally acknowledged Revisit remained unknown');
+        } finally {
+          await target.unroute(revisitPattern, lostRevisit);
+          await target.unroute(opPattern, countRevisitReceipt);
+        }
+
+        observed.receiptAndLostAck = {
+          lostAckCommittedOnBackend: true,
+          noFalseSavedBeforeRecovery: true,
+          reconciledViaOriginalReceiptWithZeroDuplicatePut: putCount === 1,
+          adoptedFreshPeerResourceOverHistoricalReceipt: true,
+          firstCallRevisitReceiptThenFreshPeerState: true,
+          revisitPutCount: revisitPuts,
+          revisitReceiptReads: revisitReceipts,
+        };
+      });
+
+      // Stage 3: T-007-04-02 Real non-provider durable import job observed queued/running before both browser contexts close, completing while absent.
+      await stage('durable-job-browser-close', async () => {
+        await target.goto(input.base + '/library');
+        await verify(target);
+        await target.getByRole('button', { name: '가져오기', exact: true }).click();
+        const resetBtn = target.getByRole('button', { name: '새 가져오기 시작', exact: true });
+        if (await resetBtn.count()) await resetBtn.click();
+        await target.getByLabel('ZIP 선택', { exact: true }).setInputFiles(input.durableArchivePath);
+        const completeRespPromise = target.waitForResponse(
+          r => r.request().method() === 'POST' && /\/api\/v1\/uploads\/[^/]+\/complete$/.test(new URL(r.url()).pathname),
+        ).catch(error => ({ error: error.message }));
+        await target.getByRole('button', { name: '가져오기 시작', exact: true }).click();
+        const completeResp = await completeRespPromise;
+        assert(!completeResp.error, 'upload complete response unavailable: ' + completeResp.error);
+        const completeData = (await completeResp.json()).data;
+        const sealJobId = completeData.job_id;
+        assert(Boolean(sealJobId), 'seal job_id missing from upload complete response');
+
+        // Observe the job via GET /api/v1/jobs/{sealJobId} immediately before closing both browser contexts:
+        const initialJob = (await api(target, 'GET', '/jobs/' + sealJobId)).data;
+        const initialState = initialJob.state;
+        assert(['queued', 'running'].includes(initialState),
+          'job finished before both app contexts closed; absence window unobserved: ' + initialState);
+
+        // Both actual app contexts close. The blank CLI witness runs only a
+        // host HTTP observer; no Haeryong UI is reopened until completion.
+        let finalJob;
+        const uploadId = new URL(completeResp.url()).pathname.split('/')[4];
+        try {
+          await closeClient(peer);
+          await closeClient(ownerClient);
+          finalJob = initialJob;
+          const deadline = Date.now() + 30000;
+          while (finalJob.state === 'queued' || finalJob.state === 'running') {
+            assert(Date.now() < deadline, 'durable job did not complete within 30s');
+            await witness.waitForTimeout(100);
+            finalJob = await hostRead('/jobs/' + sealJobId);
+          }
+          assert(finalJob.state === 'completed', 'expected durable seal job completed while apps absent, got ' + finalJob.state);
+          const sealed = await hostRead('/uploads/' + uploadId);
+          assert(sealed.state === 'sealed' && sealed.reusable, 'completed job did not retain its sealed upload');
+        } finally {
+          if (target.isClosed()) {
+            ownerClient = await openPeerPage(ownerToken);
+            target = ownerClient.page;
+            state.track(target);
+          }
+          if (peerPage.isClosed()) {
+            peer = await openPeerPage(input.peerToken);
+            peerPage = peer.page;
+          }
+        }
+        const reopenedJob = (await api(target, 'GET', '/jobs/' + sealJobId)).data;
+        assert(reopenedJob.job_id === finalJob.job_id && reopenedJob.state === 'completed', 'reopened job identity changed');
+        await target.goto(input.base + '/library');
+        await verify(target);
+        observed.durableJobBrowserClose = {
+          jobId: sealJobId,
+          observedStateBeforeClose: initialState,
+          observedQueuedOrRunningBeforeClose: true,
+          appContextsClosedBeforeTerminalObservation: 2,
+          completedBeforeReopeningApps: true,
+          sealedUploadRetained: true,
+          finalStateAfterReopen: finalJob.state,
+        };
+      });
+
+      await stage('reader-page-recovery', async () => {
+        const results = [];
+        for (const pagePath of ['missing-task04-page.html', 'note.md']) {
+          let invalidPositionReads = 0;
+          const onRequest = req => {
+            const u = new URL(req.url());
+            if (u.pathname === '/api/v1/versions/' + v.version + '/page-position' && u.searchParams.get('page') === pagePath) invalidPositionReads++;
+          };
+          target.on('request', onRequest);
+          try {
+            const bootstrap = target.waitForResponse(r => {
+              const u = new URL(r.url());
+              return u.pathname === '/api/v1/versions/' + v.version + '/render-bootstrap' && u.searchParams.get('page_path') === pagePath;
+            });
+            const personalSweep = target.waitForResponse(r => new URL(r.url()).pathname === '/api/v1/versions/' + v.version + '/reading-position' && r.request().headers()['haeryong-passive-read'] === '1');
+            await target.goto(input.base + '/documents/' + v.document + '/versions/' + v.version + '?' + new URLSearchParams({page:pagePath}));
+            await verify(target);
+            const bootReply = await bootstrap;
+            assert(bootReply.status() === (pagePath.endsWith('.md') ? 200 : 404), 'unexpected real bad-page bootstrap response');
+            assert((await personalSweep).status() === 200, 'version pointer sweep failed for readable document');
+            await target.getByRole('button', {name:'note.md', exact:true}).waitFor();
+            await target.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+            assert(await target.locator('.reader').count() === 1, 'bad page incorrectly closed the readable document');
+            assert(await target.getByText('이 문서를 더 이상 표시할 수 없습니다.', {exact:true}).count() === 0, 'bad page was reported as document authority loss');
+            const nextRefresh = target.waitForResponse(r => new URL(r.url()).pathname === '/api/v1/versions/' + v.version && r.request().headers()['haeryong-passive-read'] === '1');
+            const created = await api(peerPage, 'POST', '/projects', {name:'Reader page recovery ' + crypto.randomUUID()}, {'Idempotency-Key':crypto.randomUUID()});
+            assert(created.status === 201, 'owned peer event setup failed');
+            assert((await nextRefresh).status() === 200, 'Reader did not continue to revalidate after page fallback');
+            assert(invalidPositionReads === 0, 'nonexistent page-position was dispatched for a missing/non-HTML selection');
+            results.push({pagePath,bootstrapStatus:bootReply.status(),readableDocumentRetained:true,realPassiveSweep:true,invalidPositionReads});
+          } finally { target.off('request', onRequest); }
+        }
+        await target.goto(route(v));await target.frameLocator('iframe').locator('#heading').waitFor();
+        await target.frameLocator('iframe').locator('#next').click();await target.frameLocator('iframe').locator('#second').waitFor();
+        const currentPosition = target.waitForResponse(r => {
+          const u = new URL(r.url());
+          return u.pathname === '/api/v1/versions/' + v.version + '/page-position' && u.searchParams.get('page') === 'nested/second.html' && r.request().headers()['haeryong-passive-read'] === '1';
+        });
+        const peerEvent = await api(peerPage, 'POST', '/projects', {name:'Reader current page ' + crypto.randomUUID()}, {'Idempotency-Key':crypto.randomUUID()});
+        assert(peerEvent.status === 201 && (await currentPosition).status() === 200, 'same-context child navigation did not refresh its current page position');
+        observed.readerPageRecovery = {invalidSelections:results,sameContextCurrentPagePosition:true};
+      });
+
+      await stage('reader-pending-resync', async () => {
+        let releaseWrite, releaseStream, writes = 0, held = false, resumed = false;
+        let detailReads = 0;
+        const onResponse = r => {
+          if (new URL(r.url()).pathname === '/api/v1/versions/' + v.version && r.request().headers()['haeryong-passive-read'] === '1') detailReads++;
+        };
+        const writeGate = new Promise(resolve => { releaseWrite = resolve; });
+        const streamGate = new Promise(resolve => { releaseStream = resolve; });
+        const preference = '**/api/v1/versions/' + v.version + '/reader-preference';
+        const holdWrite = async r => {
+          if (r.request().method() === 'PUT') { writes++; held = true; await writeGate; }
+          await r.continue();
+        };
+        const gapStream = async r => {
+          if (resumed) { await r.continue(); return; }
+          resumed = true;
+          await streamGate;
+          // The real server supplies epoch_changed; no synthetic SSE frame.
+          await r.continue({headers:{...r.request().headers(),'last-event-id':'00000000-0000-0000-0000-000000000000:0'}});
+        };
+        await target.route(preference, holdWrite);
+        await target.route('**/api/v1/events', gapStream);
+        target.on('response', onResponse);
+        try {
+          await target.goto(route(v));
+          await verify(target);
+          await target.frameLocator('iframe').locator('#heading').waitFor();
+          await target.getByRole('button', {name:'기본 페이지로 지정', exact:true}).click();
+          const deadline = Date.now() + 10000;
+          while (!held) { assert(Date.now() < deadline, 'Reader personal write was not held'); await witness.waitForTimeout(50); }
+          detailReads = 0;
+          releaseStream();
+          // Cover a repeated barrier attempt while the original write remains held.
+          const sweepDeadline = Date.now() + 15000;
+          while (detailReads < 2) { assert(Date.now() < sweepDeadline, 'held personal write did not retain a repeated Reader sweep'); await witness.waitForTimeout(50); }
+          await target.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+          assert(await target.locator('.reader').count() === 1, 'held write closed Reader');
+          assert(await target.getByText('저장 결과를 확인하는 중입니다.', {exact:false}).count() >= 1, 'pending personal state was hidden');
+          assert((await target.locator('[role=alert]').allTextContents()).every(t => !t.includes('문서 정보를 불러오지 못했습니다')), 'personal skip was reported as a document read failure');
+          assert(writes === 1, 'resync replayed the held personal write');
+          releaseWrite();
+          await target.getByRole('status').filter({hasText:'기본 페이지를 저장했습니다.'}).waitFor();
+          await verify(target);
+          assert(writes === 1, 'write settlement repeated the original intent');
+          observed.readerPendingResync = {forcedEpochCursor:true,repeatedPassiveDetailReads:detailReads,personalPendingVisible:true,falseDetailAlert:false,writeCount:writes,ownerWriteCommitted:true};
+        } finally {
+          releaseWrite(); releaseStream();
+          target.off('response', onResponse);
+          await target.unroute(preference, holdWrite);
+          await target.unroute('**/api/v1/events', gapStream);
+        }
+      });
+
+      // Stage 4: TE-A02 Full-state resync on Library (expired cursor / resync.required) + passive-read header preserving sliding idle expiry.
+      await stage('resync-and-passive-idle', async () => {
+        const peer2 = await openPeerPage(input.peerToken);
+        const newProjName = input.resyncProjectName;
+        assert(input.resumeCursor && newProjName, 'owned retained-history fault inputs missing');
+        let resumedControl = null;
+        let forcedResumeRequests = 0;
+        let faultReady = false;
+        const resumeRoute = async r => {
+          if (!faultReady) { await r.abort(); return; }
+          forcedResumeRequests++;
+          await r.continue({ headers: { ...r.request().headers(), 'last-event-id': input.resumeCursor } });
+        };
+        const resyncResponse = target.waitForResponse(r =>
+          new URL(r.url()).pathname === '/api/v1/events' &&
+          !new URL(r.url()).search,
+          { timeout: 90000 },
+        ).catch(error => ({ error: error.message }));
+        // Install before navigation: setOffline does not reliably interrupt an
+        // already-established streaming fetch. This owned app starts with its
+        // subscription held, then resumes the real server stream after trim.
+        await target.addInitScript(() => {
+          const fetchOriginal = window.fetch;
+          window.fetch = async function (...args) {
+            const response = await fetchOriginal.apply(this, args);
+            const url = new URL(response.url, location.href);
+            if (url.pathname === '/api/v1/events' && !url.search && response.body) {
+              const reader = response.clone().body.getReader();
+              void (async () => {
+                let text = '';
+                const decoder = new TextDecoder();
+                try {
+                  for (;;) {
+                    const part = await reader.read();
+                    if (part.done) break;
+                    text += decoder.decode(part.value, { stream: true });
+                    const boundary = /\r?\n\r?\n/.exec(text);
+                    if (!boundary) continue;
+                    const frame = text.slice(0, boundary.index);
+                    if (frame.split(/\r?\n/).includes('event: resync.required')) {
+                      const data = frame.split(/\r?\n/).find(line => line.startsWith('data:'));
+                      window.__task04ResyncControl = JSON.parse(data.slice(5));
+                    }
+                    break;
+                  }
+                } catch (error) { window.__task04ResyncReadError = error.message; }
+                finally { void reader.cancel().catch(() => {}); }
+              })();
+            }
+            return response;
+          };
+        });
+        await target.route('**/api/v1/events', resumeRoute);
+        await target.goto(input.base + '/library');
+        await verify(target);
+        await target.getByTestId('library-document').first().waitFor();
+
+        // Preserve an unsent search/filter input on Library while peer creates a new project & document and SSE delivers resync.required:
+        const searchField = target.getByRole('search').getByLabel('검색어', { exact: true });
+        await searchField.fill('unsent-local-search-draft');
+
+        const passiveHeadersSeen = [];
+        const onTargetReq = req => {
+          if (req.url().includes('/api/v1/') && req.headers()['haeryong-passive-read'] === '1') {
+            passiveHeadersSeen.push(new URL(req.url()).pathname);
+          }
+        };
+        target.on('request', onTargetReq);
+        try {
+          await target.context().setOffline(true);
+          await target.waitForFunction(() => document.querySelector('.service-state')?.getAttribute('data-state') === 'degraded');
+          const createdProj = await api(peer2.page, 'POST', '/projects', { name: newProjName }, { 'Idempotency-Key': crypto.randomUUID() });
+          assert(createdProj.status === 201, 'peer project create failed');
+          // A host observer waits for Python's exact owned-history fault. This
+          // poll is setup only; the real app SSE below must consume the control.
+          const trimDeadline = Date.now() + 30000;
+          for (;;) {
+            const probe = await witness.request.get(input.base + '/api/v1/events?transport=poll', {
+              headers: { Authorization: 'Bearer ' + input.peerToken, 'Last-Event-ID': input.resumeCursor, 'Haeryong-Passive-Read': '1' },
+            });
+            assert(probe.status() === 200, 'history fault observer refused');
+            const control = (await probe.json()).data.resync;
+            if (control?.reason === 'trimmed_cursor') break;
+            assert(Date.now() < trimDeadline, 'owned history trim was not observed');
+            await witness.waitForTimeout(100);
+          }
+          faultReady = true;
+          await target.context().setOffline(false);
+          await target.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+          const stream = await resyncResponse;
+          assert(!stream.error, 'actual resumed subscription unavailable: ' + stream.error);
+          assert(stream.status() === 200, 'actual app subscription did not receive success');
+          // SSE is intentionally long-lived. Observe the actual app fetch's
+          // first complete control frame, without waiting for stream EOF.
+          await target.waitForFunction(() => !!window.__task04ResyncControl, null, { timeout: 30000 });
+          resumedControl = await target.evaluate(() => window.__task04ResyncControl);
+          assert(resumedControl.reason === 'trimmed_cursor' && resumedControl.stream_epoch === input.resumeCursor.split(':')[0], 'actual app did not resync same-epoch retained-history loss');
+          assert(forcedResumeRequests >= 1, 'actual app resume request was not observed');
+          await target.unroute('**/api/v1/events', resumeRoute);
+          await verify(target);
+
+          // Wait for the new project option to appear in Library's project select via passive invalidation/resync while unsent search draft stays intact:
+          await target.waitForFunction(
+            projName => Array.from(document.querySelectorAll('select option')).some(o => o.textContent?.includes(projName)),
+            newProjName,
+            { timeout: 30000 },
+          );
+          assert(await searchField.inputValue() === 'unsent-local-search-draft', 'unsent search draft lost during Library resync');
+
+          // Verify passive reads preserved peer2's last_seen_at when querying with Haeryong-Passive-Read: 1:
+          const sessBefore = (await api(peer2.page, 'GET', '/session', undefined, { 'Haeryong-Passive-Read': '1' })).data;
+          await peer2.page.waitForTimeout(1100);
+          await api(peer2.page, 'GET', '/projects', undefined, { 'Haeryong-Passive-Read': '1' });
+          await api(peer2.page, 'GET', '/versions/' + v.version + '/review', undefined, { 'Haeryong-Passive-Read': '1' });
+          const sessAfterPassive = (await api(peer2.page, 'GET', '/session', undefined, { 'Haeryong-Passive-Read': '1' })).data;
+          assert(sessAfterPassive.last_seen_at === sessBefore.last_seen_at, 'Haeryong-Passive-Read: 1 unexpectedly advanced last_seen_at');
+        } finally {
+          await target.context().setOffline(false);
+          await target.unroute('**/api/v1/events', resumeRoute);
+          target.off('request', onTargetReq);
+        }
+        assert(passiveHeadersSeen.length >= 1, 'expected Haeryong-Passive-Read: 1 on passive background requests');
+        // Keep only the separate fixture administrator active. The actual
+        // owner app must expire while its own automatic reads remain passive.
+        const originalSecurity = (await hostRead('/configuration')).configuration.security;
+        const keepFixtureAdminActive = async () => {
+          // This explicit fixture administration read must touch the
+          // separate administrator before a shorter idle
+          // policy applies, and while the actual app is deliberately idle.
+          const reply = await witness.request.get(input.base + '/api/v1/projects', {
+            headers: { Authorization: 'Bearer ' + input.peerToken },
+          });
+          const body = await reply.json();
+          assert(reply.status() === 200, 'separate fixture administrator unavailable: ' + reply.status() + ' ' + (body.error?.code ?? ''));
+        };
+        const changeSecurity = async security => {
+          await keepFixtureAdminActive();
+          const current = await hostRead('/configuration');
+          const headers = { Authorization: 'Bearer ' + input.peerToken, 'Idempotency-Key': crypto.randomUUID() };
+          const preview = await witness.request.post(input.base + '/api/v1/configuration/plans', {
+            headers,
+            data: { scope: { kind: 'library' }, expected_config_revision: current.config_revision, changes: { security } },
+          });
+          assert(preview.status() === 200, 'fixture policy preview failed');
+          const plan = (await preview.json()).data;
+          await keepFixtureAdminActive();
+          const applied = await witness.request.post(input.base + '/api/v1/configuration/plans/' + plan.plan_id + '/commit', {
+            headers: { ...headers, 'Idempotency-Key': crypto.randomUUID() },
+            data: { expected_config_revision: plan.base_config_revision, confirmed: true },
+          });
+          assert(applied.status() === 200, 'fixture policy commit failed');
+        };
+        try {
+          await changeSecurity({ ...originalSecurity, session_idle_seconds: 6 });
+          const expiryDeadline = Date.now() + 30000;
+          // The actual unauthenticated shell renders ConnectScreen and removes
+          // .service-state. A locator wait for that absent element would pause
+          // the administrator keeper until its own idle window expires.
+          const appExpired = () => target.evaluate(() =>
+            localStorage.getItem('haeryong.owner-session.v1') === null &&
+            document.querySelector('[aria-label="연결 상태"]')?.textContent.includes('연결이 만료되었습니다.'),
+          );
+          while (!await appExpired()) {
+            assert(Date.now() < expiryDeadline, 'actual owner app did not observe idle expiry');
+            await keepFixtureAdminActive();
+            await witness.waitForTimeout(400);
+          }
+          assert(await target.getByTestId('library-document').count() === 0, 'protected Library remained after actual idle expiry');
+          assert(await target.evaluate(() => localStorage.getItem('haeryong.owner-session.v1')) === null, 'expired owner app retained its credential');
+          const expired = await witness.request.get(input.base + '/api/v1/session', {
+            headers: { Authorization: 'Bearer ' + ownerToken, 'Haeryong-Passive-Read': '1' },
+          });
+          assert(expired.status() === 401 && (await expired.json()).error?.code === 'SESSION_EXPIRED', 'owner credential was not actually idle-expired');
+        } finally {
+          await changeSecurity(originalSecurity);
+        }
+        observed.resyncAndPassiveIdle = {
+          newProjectSynchronizedWithoutReload: true,
+          unsentSearchDraftPreserved: true,
+          passiveHeaderObservedPaths: Array.from(new Set(passiveHeadersSeen)),
+          passiveReadsPreservedLastSeenAt: true,
+          actualAppSubscriptionResync: resumedControl,
+          forcedResumeRequests,
+          actualBrowserIdleExpired: true,
+          protectedLibraryCleared: true,
+        };
+      });
+
+      return {
+        ...observed,
+        complete: !observed.failedStages?.length,
+        error: observed.failedStages?.map(x => x.stage + ': ' + x.error).join('; '),
+      };
+    } catch (error) {
+      return {
+        ...observed,
+        complete: false,
+        error: error.message,
+      };
+    } finally {
+      for (const ctx of createdContexts) {
+        try { await ctx.close(); } catch {}
+      }
+    }
   }
   throw Error('unknown private-ingress driver phase');
 }

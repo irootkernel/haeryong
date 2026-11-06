@@ -14,6 +14,7 @@ import re
 import shutil
 import signal
 import socket
+import sqlite3
 import subprocess
 import tempfile
 import threading
@@ -40,10 +41,17 @@ parser.add_argument('--serve-removed-file', type=Path)
 parser.add_argument('--keep-work', action='store_true')
 parser.add_argument('--task03-only', action='store_true', help='Run only TASK-007-03 workflows, excluding the historical Task01/02 cohorts')
 parser.add_argument('--task03-stages', help='Comma-separated affected Task03 stages; omitted runs all')
+parser.add_argument('--task04-only', action='store_true', help='Run only TASK-007-04 multi-device reconciliation, conflict UI, durable job, resync and passive-idle workflows')
+parser.add_argument('--task04-stages', help='Comma-separated affected Task04 stages; omitted runs all')
 args = parser.parse_args()
+assert not (args.task03_only and args.task04_only), 'Select at most one task-scoped mode'
 task03_stages = args.task03_stages.split(',') if args.task03_stages else None
 if task03_stages:
     assert args.task03_only and set(task03_stages) <= {'responsive', 'library-search', 'reader-note-review-links', 'outline', 'controlled-ask', 'provider-maintenance', 'transfer', 'faults', 'transfer-faults', 'import-faults', 'download-faults', 'captures', 'library-cursor'}
+task04_stages = args.task04_stages.split(',') if args.task04_stages else None
+if task04_stages:
+    assert args.task04_only and set(task04_stages) <= {'personal-and-conflicts', 'receipt-and-lost-ack', 'durable-job-browser-close', 'resync-and-passive-idle', 'reader-page-recovery', 'reader-pending-resync'}
+task03_or_04 = args.task03_only or args.task04_only
 live = bool(args.external_base_url)
 if live:
     assert all((args.renderer_origin_1, args.renderer_origin_2, args.ready_file,
@@ -178,7 +186,7 @@ def wait_restart(previous):
 
 
 def configure(changes, label, *, exposure=None, confirm_refusal=False):
-    if args.task03_only:
+    if task03_or_04:
         drain_fixture_indexes()
     current = local('GET', '/api/v1/configuration', client=owner)
     path = work / (label + '.json')
@@ -324,8 +332,8 @@ def occupied_port():
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
-    product.start(configured=True, provider_binary=nonexistent_provider if args.task03_only else None)
-    if args.task03_only:
+    product.start(configured=True, provider_binary=nonexistent_provider if task03_or_04 else None)
+    if task03_or_04:
         assert not nonexistent_provider.exists()
 
 
@@ -364,23 +372,23 @@ try:
     configure({'network': {'listener': {'port': product.address}, 'allowed_origins': [product.endpoint],
                           'renderer_pool': {'base_port': pool, 'count': 2}}}, 'persist-listener-and-initial-renderer-pool')
     product.stop()
-    product.start(configured=True, provider_binary=nonexistent_provider if args.task03_only else None)
-    if args.task03_only:
+    product.start(configured=True, provider_binary=nonexistent_provider if task03_or_04 else None)
+    if task03_or_04:
         assert not nonexistent_provider.exists()
     assert product.cli(['doctor'], client=owner)['data']['endpoint_checks']['ephemeral_override'] is False
-    if not args.task03_only:
+    if not task03_or_04:
         occupied_port()
     task02_source = work / 'task02-source-root'
     task02_source.mkdir(exist_ok=True)
     note_bytes = (b'# Task02 source scope proof\nRetry and overview source verification line.\n'
-                  if args.task03_only else b'# Task02 source scope proof\n')
+                  if task03_or_04 else b'# Task02 source scope proof\n')
     (task02_source / 'note.md').write_bytes(note_bytes)
     note_sha256 = hashlib.sha256(note_bytes).hexdigest()
     fixture = []
     for index in range(1, 4):
         source = work / ('source-' + str(index))
         (source / 'nested').mkdir(parents=True)
-        if args.task03_only:
+        if task03_or_04:
             (source / 'empty-dir').mkdir()
             (source / 'assets').mkdir()
         (source / 'first.html').write_text('''<!doctype html><meta charset=utf-8><title>Private Reader</title>
@@ -391,10 +399,13 @@ try:
 new Worker('./worker.js').onmessage=e=>window.workerValue=e.data;
 fetch('/root-asset.txt').then(r=>r.text()).then(t=>window.rootAsset=t);</script>'''.replace('VERSION', 'Version ' + str(index)))
         (source / 'nested/second.html').write_text('<h1 id=second>Second page</h1><h2 id=part>Exact fragment</h2><a href="../first.html">first</a>')
-        if args.task03_only:
+        if task03_or_04:
             (source / 'first.html').write_text((source / 'first.html').read_text() +
                 '<section id=retry data-haeryong-region=retry>Retry region keyword alpha-search-token</section>' +
                 '<section id=overview data-haeryong-region=overview>Overview region summary</section>')
+            if args.task04_only:
+                (source / 'first.html').write_text((source / 'first.html').read_text() +
+                    '<div style="height:5000px">Task04 ordinary scrolling fixture</div>')
             (source / 'unrequested-sentinel.html').write_text('<!doctype html><title>Unrequested</title><p>unrequested page</p>')
             (source / 'assets/unrequested-sentinel.bin').write_bytes(b'unrequested-binary-asset')
             (source / 'note.md').write_bytes(note_bytes)
@@ -405,7 +416,7 @@ fetch('/root-asset.txt').then(r=>r.text()).then(t=>window.rootAsset=t);</script>
         _, _, published = product.import_tree(owner, source, extra=('--new-document',))
         fixture.append({'version': published['version_id'], 'document': published['document_id'],
                         'project': published.get('project_id'), 'label': 'Version ' + str(index)})
-    if args.task03_only:
+    if task03_or_04:
         v0_doc = local('GET', '/api/v1/documents/' + fixture[0]['document'], client=owner)
         v0_project = v0_doc['project_id']
         fixture[0]['project'] = v0_project
@@ -482,13 +493,18 @@ fetch('/root-asset.txt').then(r=>r.text()).then(t=>window.rootAsset=t);</script>
             zf.writestr('style.css', 'body{margin:0}')
         task03_single = work / 'task03-single.html'
         task03_single.write_text('<!doctype html><meta charset=utf-8><title>Single HTML Import</title><h1 id=heading>Single HTML imported</h1>')
+        task04_durable_zip = work / 'task04-durable.zip'
+        with zipfile.ZipFile(task04_durable_zip, 'w') as zf:
+            zf.writestr('first.html', '<!doctype html><meta charset=utf-8><title>Durable Job</title><h1 id=heading>Durable import completed</h1>')
+            for idx in range(1, 250):
+                zf.writestr(f'pages/p{idx:03d}.html', f'<!doctype html><title>Page {idx}</title><p id="r{idx}">Durable content {idx} ' + ('word ' * 80) + '</p>')
     _, discovered = open_render(fixture[0]['version'])
     upstream1 = discovered['render_origin']
     assert urllib.parse.urlsplit(upstream1).port == pool
     close_render(fixture[0]['version'], discovered)
     upstream2 = 'http://127.0.0.1:' + str(pool + 1)
     browser_attempted = True
-    if args.task03_only:
+    if task03_or_04:
         preferences = work / 'browser/Default/Preferences'
         preferences.parent.mkdir(parents=True, exist_ok=True)
         origin = args.external_base_url or product.endpoint
@@ -497,7 +513,7 @@ fetch('/root-asset.txt').then(r=>r.text()).then(t=>window.rootAsset=t);</script>
         }}}}))
     call(['open', product.endpoint + '/health/live', '--browser', 'chrome', '--profile', str(work / 'browser')])
     proof['browser_version'] = js('async page => page.context().browser().version()')
-    if not args.task03_only:
+    if not task03_or_04:
         _, native_offer = open_render(fixture[0]['version'])
         foreign = form_check(0, native_offer)
         assert foreign['status'] == 403
@@ -509,7 +525,7 @@ fetch('/root-asset.txt').then(r=>r.text()).then(t=>window.rootAsset=t);</script>
     inputs = {'base': product.endpoint, 'fixture': fixture, 'token': owner['token'], 'phase': 'local',
               'expectedOrigins': [upstream1], 'screenshot': None}
     script = Path(__file__).with_suffix('.js').read_text()
-    if not args.task03_only:
+    if not task03_or_04:
         proof['cases'].append({'kind': 'actual local Reader before private configuration',
                                'actual': js(script.replace('INPUT', json.dumps(inputs)))})
 
@@ -647,9 +663,116 @@ fetch('/root-asset.txt').then(r=>r.text()).then(t=>window.rootAsset=t);</script>
                                'actual': cohort_result})
         assert local('GET', '/api/v1/session', client=owner)['session_id'] == owner['session']['session_id']
 
+    def run_task04_cohort(target_base, target_renderer1, target_renderer2, mode_label):
+        assert not nonexistent_provider.exists()
+        if live:
+            call(['goto', target_base + '/connect'])
+            pairing = js('''async page => {
+                await page.getByLabel('장치 이름',{exact:true}).fill('Task04 private browser');
+                const response=page.waitForResponse(r=>r.url().endsWith('/api/v1/auth/pairings')&&r.request().method()==='POST');
+                await page.getByRole('button',{name:'연결 코드 요청',exact:true}).click();
+                const p=(await (await response).json()).data;
+                return {pairing_id:p.pairing_id,code:p.code,origin:p.origin,etag:p.etag};
+            }''')
+            local('POST', '/api/v1/auth/pairings/' + pairing['pairing_id'] + '/approve', client=owner,
+                  body={'code': pairing['code'], 'origin': pairing['origin']},
+                  headers={'If-Match': pairing['etag'], 'Idempotency-Key': h.operation()}, expected=(200,))
+            js('async page => {await page.waitForFunction(()=>localStorage.getItem("haeryong.owner-session.v1"));return true;}')
+            peer_token = owner['token']
+        else:
+            peer_pair = local('POST', '/api/v1/auth/pairings', body={'device_label': 'Task04 peer context (' + mode_label + ')'}, expected=(201,))
+            local('POST', '/api/v1/auth/pairings/' + peer_pair['pairing_id'] + '/approve', client=owner,
+                  body={'code': peer_pair['code'], 'origin': peer_pair['origin']},
+                  headers={'If-Match': peer_pair['etag'], 'Idempotency-Key': h.operation()}, expected=(200,))
+            peer_polled = local('POST', '/api/v1/auth/pairings/' + peer_pair['pairing_id'] + '/poll',
+                                body={'polling_secret': peer_pair['polling_secret']}, expected=(200,))
+            peer_token = peer_polled['session_token']
+            secrets.add(peer_token)
+            js('async page => {await page.goto(' + json.dumps(target_base) + ');await page.evaluate(t=>localStorage.setItem("haeryong.owner-session.v1",t),' + json.dumps(owner['token']) + ');return true;}')
+
+        cohort_inputs = inputs | {
+            'base': target_base,
+            'expectedOrigins': [target_renderer1, target_renderer2],
+            'phase': 'task04-cohort',
+            'modeLabel': mode_label,
+            'peerToken': peer_token,
+            'archivePath': str(task03_zip),
+            'durableArchivePath': str(task04_durable_zip),
+            'singleHtmlPath': str(task03_single),
+            'sourceDirPath': str(work / 'source-2'),
+            'noteSha256': note_sha256,
+            'noteText': note_bytes.decode(),
+            'pageSha256': hashlib.sha256((work / 'source-1/first.html').read_bytes()).hexdigest(),
+            'screenshot': str(args.screenshot.resolve()) if args.screenshot else None,
+            'selectedStages': task04_stages,
+        }
+        # No retention engine is claimed: a single owned fixture history row is
+        # trimmed after a real peer mutation. The browser must consume the real
+        # same-epoch trimmed_cursor control on its own resumed subscription.
+        trim_stop = threading.Event()
+        trim_result = {}
+        trim_thread = None
+        if not task04_stages or 'resync-and-passive-idle' in task04_stages:
+            head = local('GET', '/api/v1/events?transport=poll', client=owner,
+                         headers={'Haeryong-Passive-Read': '1'})
+            trim_epoch, trim_sequence = head['stream_epoch'], int(head['head'])
+            assert trim_sequence > 0
+            database = (product.data_dir / 'storage/library.sqlite').resolve(strict=True)
+            assert database.is_relative_to(work) and not database.is_symlink()
+            library = owner['session']['library_id']
+            project_name = 'Task04 resync ' + session
+            cohort_inputs.update(resumeCursor=f'{trim_epoch}:{trim_sequence}',
+                                 resyncProjectName=project_name)
+
+            def trim_owned_history():
+                try:
+                    while not trim_stop.is_set():
+                        projects = local('GET', '/api/v1/projects', client=owner,
+                                         headers={'Haeryong-Passive-Read': '1'})
+                        if any(p['name'] == project_name for p in projects['items']):
+                            with sqlite3.connect(database.as_uri() + '?mode=rw', uri=True, timeout=5) as db:
+                                db.execute('BEGIN IMMEDIATE')
+                                actual = db.execute('SELECT library_id,stream_epoch FROM libraries WHERE singleton=1').fetchone()
+                                assert actual == (library, trim_epoch), 'owned history identity changed'
+                                later = db.execute('SELECT count(*) FROM events WHERE stream_epoch=? AND sequence>?',
+                                                   (trim_epoch, trim_sequence)).fetchone()[0]
+                                assert later > 0, 'newer committed head required before trimming old cursor'
+                                deleted = db.execute('DELETE FROM events WHERE stream_epoch=? AND sequence=?',
+                                                     (trim_epoch, trim_sequence)).rowcount
+                                assert deleted == 1, 'exact retained cursor row required'
+                            trim_result.update(complete=True, rows_trimmed=deleted, same_epoch=True,
+                                               scope='one test-owned history row; controlled fault, not automatic retention')
+                            return
+                        trim_stop.wait(0.1)
+                except Exception as error:
+                    trim_result.update(complete=False, error=type(error).__name__ + ': ' + str(error))
+
+            trim_thread = threading.Thread(target=trim_owned_history, name='owned-task04-history-fault')
+            trim_thread.start()
+        try:
+            cohort_result = js(script.replace('INPUT', json.dumps(cohort_inputs)), timeout=420)
+        finally:
+            trim_stop.set()
+            if trim_thread:
+                trim_thread.join(timeout=30)
+                assert not trim_thread.is_alive(), 'owned history observer did not settle'
+        if trim_thread:
+            cohort_result['controlledHistoryFault'] = trim_result
+            if not trim_result.get('complete'):
+                cohort_result['complete'] = False
+                cohort_result['error'] = str(cohort_result.get('error', '')) + '; owned history fault: ' + str(trim_result)
+        if not cohort_result.get('complete'):
+            proof['cases'].append({'kind': 'Task04 partial browser execution; not a passed cohort', 'actual': cohort_result})
+            raise AssertionError('Task04 browser stage failed: ' + str(cohort_result.get('error')))
+        proof['cases'].append({'kind': 'TASK-007-04 multi-device reconciliation, conflict UI, durable job, resync and passive-idle (' + mode_label + ')',
+                               'actual': cohort_result})
+        assert not nonexistent_provider.exists()
+
     if not live:
         if args.task03_only:
             run_task03_cohort(product.endpoint, upstream1, upstream2, 'local-deterministic')
+        elif args.task04_only:
+            run_task04_cohort(product.endpoint, upstream1, upstream2, 'local-deterministic')
         else:
             run_task02_cohort(product.endpoint, upstream1, 'local-deterministic')
     external = args.external_base_url or 'https://node.tailnet.ts.net:9271'
@@ -662,7 +785,7 @@ fetch('/root-asset.txt').then(r=>r.text()).then(t=>window.rootAsset=t);</script>
                           'allowed_origins': [product.endpoint, external],
                           'renderer_pool': {'base_port': shifted, 'count': 8}, 'renderer_mappings': mappings}},
               'private-exposure-preview-confirm-and-restart', exposure=True, confirm_refusal=True)
-    if args.task03_only:
+    if task03_or_04:
         assert not nonexistent_provider.exists()
     doctor = product.cli(['doctor'], client=owner)['data']['endpoint_checks']
     assert doctor['remote_enabled'] and all(m['supported'] for m in doctor['renderer_mappings'])
@@ -682,6 +805,8 @@ fetch('/root-asset.txt').then(r=>r.text()).then(t=>window.rootAsset=t);</script>
         proof['cases'].append({'kind': 'private reachability and forged network identity do not authenticate', 'actual': denied})
         if args.task03_only:
             run_task03_cohort(external, renderer1, renderer2, 'private-https')
+        elif args.task04_only:
+            run_task04_cohort(external, renderer1, renderer2, 'private-https')
         else:
             # Real trusted login UI; the separate local owner approves its exact remote-origin request.
             call(['goto', external + '/documents/' + fixture[0]['document'] + '/versions/' + fixture[0]['version'] + '?page=first.html'])
@@ -730,7 +855,7 @@ fetch('/root-asset.txt').then(r=>r.text()).then(t=>window.rootAsset=t);</script>
         except (OSError, urllib.error.URLError):
             unreachable = True
         assert unreachable, 'Removed private proxy still reaches the application'
-    if not args.task03_only:
+    if not task03_or_04:
         recovery = inputs | {'phase': 'local-recovery', 'fixture': [fixture[2]], 'expectedOrigins': None}
         proof['cases'].append({'kind': 'same verified local owner and Reader remain usable without private proxy',
                                'actual': js(script.replace('INPUT', json.dumps(recovery)))})

@@ -1,4 +1,4 @@
-import { ApiError } from "../../client/types.ts";
+import { ApiError, StaleResponseError } from "../../client/types.ts";
 import type { HaeryongClient, IndexReasonCode, IndexReasonView, SearchHit, SearchPage, SearchRequest } from "../../client/types.ts";
 
 export const INDEX_REASON_LABELS: Record<IndexReasonCode, string> = {
@@ -51,28 +51,35 @@ export class LibrarySearchSession {
   constructor(client: Pick<HaeryongClient, "search">, changed: (state: SearchViewState) => void) { this.#client = client; this.#changed = changed; }
   #set(state: SearchViewState) { this.state = state; this.#changed(state); }
   dispose() { this.#disposed = true; this.#request++; }
-  start(filter: SearchRequest) { this.#filter = { ...filter }; return this.#load(null, false); }
+  start(filter: SearchRequest, clientOverride?: Pick<HaeryongClient, "search">, options?: { rethrow?: boolean }) {
+    this.#filter = { ...filter };
+    return this.#load(null, false, clientOverride, Boolean(options?.rethrow));
+  }
   more() {
     if (this.state.loading || !this.state.page?.next_cursor || this.state.accessLost) return Promise.resolve();
     return this.#load(this.state.page.next_cursor, false);
   }
-  async #load(cursor: string | null, reset: boolean): Promise<void> {
+  async #load(cursor: string | null, reset: boolean, clientOverride?: Pick<HaeryongClient, "search">, rethrow = false): Promise<void> {
     if (this.#disposed || !this.#filter) return;
     const request = ++this.#request;
     const previous = cursor === null ? null : this.state.page;
     this.#set({ loading: true, page: previous, error: null, reset, accessLost: false });
+    const activeClient = clientOverride ?? this.#client;
     try {
-      const page = await this.#client.search({ ...this.#filter, cursor: cursor ?? undefined });
-      if (this.#disposed || request !== this.#request) return;
+      const page = await activeClient.search({ ...this.#filter, cursor: cursor ?? undefined });
+      if (this.#disposed) return;
+      if (request !== this.#request) { if (rethrow) throw new StaleResponseError(); return; }
       this.#set({ loading: false, page: { ...page, items: previous ? [...previous.items, ...page.items] : page.items }, error: null, reset, accessLost: false });
     } catch (cause) {
-      if (this.#disposed || request !== this.#request) return;
+      if (this.#disposed) return;
+      if (request !== this.#request) { if (rethrow) throw new StaleResponseError(); return; }
       if (cursor && cause instanceof ApiError && cause.status === 400 && cause.details.reason === "cursor_mismatch") {
-        await this.#load(null, true); return;
+        await this.#load(null, true, clientOverride, rethrow); return;
       }
       const accessLost = cause instanceof ApiError && [401, 403, 404].includes(cause.status);
       const error = cause instanceof ApiError ? `오류 ${cause.status} ${cause.code}` : "서비스에 연결할 수 없습니다. 다시 시도하세요.";
       this.#set({ loading: false, page: accessLost ? null : previous, error, reset, accessLost });
+      if (rethrow) throw cause;
     }
   }
 }

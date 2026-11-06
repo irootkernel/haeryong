@@ -179,3 +179,120 @@ def test_owner_records_actual_interrupted_backup_retains_same_acceptance_and_rec
     assert product.cli(['backup', 'verify', '--input', str(complete)], timeout=1800)['data']['valid']
     fresh, _ = support.recover(product, owner, complete)
     assert support.records(product, fresh, fixture['expected_trees']) == expected
+
+
+def test_owner_records_multi_device_reconciliation_passive_idle_and_receipt_separation(product, owner, tmp_path):
+    root = tmp_path / 'task04-reconcile'
+    root.mkdir()
+    (root / 'a.html').write_text('<p id="r1">Page A</p>')
+    (root / 'b.html').write_text('<p id="r2">Page B</p>')
+    _, _, identity = product.import_tree(owner, root, extra=('--new-document',))
+    vid = identity['version_id']
+    did = identity['document_id']
+
+    # Create a second isolated owner session (peer device).
+    peer = product.owner('peer-device')
+
+    # 1. Independent personal resources (reader-preference, reading-position, page-position a.html vs b.html).
+    pref = product.data(
+        'PUT',
+        f'/api/v1/versions/{vid}/reader-preference',
+        client=owner,
+        headers={'Idempotency-Key': support.key(), 'If-None-Match': '*'},
+        body={'default_page': 'a.html'},
+    )
+    pos = product.data(
+        'PUT',
+        f'/api/v1/versions/{vid}/reading-position',
+        client=owner,
+        headers={'Idempotency-Key': support.key(), 'If-None-Match': '*'},
+        body={'page_path': 'a.html', 'page_query': '', 'page_fragment': '', 'opened': True},
+    )
+    page_a1 = product.data(
+        'PUT',
+        f'/api/v1/versions/{vid}/page-position?page=a.html',
+        client=owner,
+        headers={'Idempotency-Key': support.key(), 'If-None-Match': '*'},
+        body={'page_query': '', 'page_fragment': '', 'position': {'scroll_y': 100}},
+    )
+    page_b1 = product.data(
+        'PUT',
+        f'/api/v1/versions/{vid}/page-position?page=b.html',
+        client=owner,
+        headers={'Idempotency-Key': support.key(), 'If-None-Match': '*'},
+        body={'page_query': '', 'page_fragment': '', 'position': {'scroll_y': 200}},
+    )
+    assert pref['etag'] and pos['etag'] and page_a1['etag'] and page_b1['etag']
+
+    # Peer updates page-position?page=a.html; owner's update to page=b.html still succeeds, while stale update to page=a.html gets 412.
+    page_a2 = product.data(
+        'PUT',
+        f'/api/v1/versions/{vid}/page-position?page=a.html',
+        client=peer,
+        headers={'Idempotency-Key': support.key(), 'If-Match': page_a1['etag']},
+        body={'page_query': '', 'page_fragment': '', 'position': {'scroll_y': 420}},
+    )
+    page_b2 = product.data(
+        'PUT',
+        f'/api/v1/versions/{vid}/page-position?page=b.html',
+        client=owner,
+        headers={'Idempotency-Key': support.key(), 'If-Match': page_b1['etag']},
+        body={'page_query': '', 'page_fragment': '', 'position': {'scroll_y': 320}},
+    )
+    assert page_b2['etag'] != page_b1['etag']
+    st_stale, err_stale, _ = product.request(
+        'PUT',
+        f'/api/v1/versions/{vid}/page-position?page=a.html',
+        client=owner,
+        headers={'Idempotency-Key': support.key(), 'If-Match': page_a1['etag']},
+        body={'page_query': '', 'page_fragment': '', 'position': {'scroll_y': 999}},
+    )
+    assert st_stale == 412 and err_stale['error']['code'] == 'PRECONDITION_FAILED'
+    assert product.data('GET', f'/api/v1/versions/{vid}/page-position?page=a.html', client=owner)['etag'] == page_a2['etag']
+
+    # 2. Historical completed receipt vs newer peer resource state (Review & Revisit).
+    op_rev1 = support.key()
+    rev1 = product.data(
+        'PUT',
+        f'/api/v1/versions/{vid}/review',
+        client=owner,
+        headers={'Idempotency-Key': op_rev1, 'If-None-Match': '*'},
+        body={'action': 'start', 'state': 'reviewing'},
+    )
+    rev2 = product.data(
+        'PUT',
+        f'/api/v1/versions/{vid}/review',
+        client=peer,
+        headers={'Idempotency-Key': support.key(), 'If-Match': rev1['etag']},
+        body={'action': 'complete', 'state': 'reviewed'},
+    )
+    op_view = product.data('GET', f'/api/v1/operations/{op_rev1}', client=owner)
+    assert op_view['state'] == 'completed' and op_view['result_metadata']['etag'] == rev1['etag']
+    cur_rev = product.data('GET', f'/api/v1/versions/{vid}/review', client=owner)
+    assert cur_rev['etag'] == rev2['etag'] and cur_rev['value']['state'] == 'reviewed'
+
+    # 3. Passive read header Haeryong-Passive-Read: 1 preserves last_seen_at and rejects invalid value/method.
+    sess_before = product.data('GET', '/api/v1/session', client=owner)
+    time.sleep(1.1)
+    for route in (
+        '/api/v1/projects',
+        f'/api/v1/versions/{vid}/review',
+        f'/api/v1/documents/{did}/revisit',
+        f'/api/v1/versions/{vid}/annotations',
+        f'/api/v1/operations/{op_rev1}',
+        '/api/v1/status',
+    ):
+        st, wire, _ = product.request('GET', route, client=owner, headers={'Haeryong-Passive-Read': '1'})
+        assert st == 200, (route, st, wire)
+    st_bad, err_bad, _ = product.request('GET', '/api/v1/projects', client=owner, headers={'Haeryong-Passive-Read': '0'})
+    assert st_bad == 400 and err_bad['error']['code'] == 'INVALID_REQUEST'
+    st_post, err_post, _ = product.request(
+        'POST',
+        '/api/v1/projects',
+        client=owner,
+        headers={'Idempotency-Key': support.key(), 'Haeryong-Passive-Read': '1'},
+        body={'name': 'passive-forbidden'},
+    )
+    assert st_post == 400 and err_post['error']['code'] == 'INVALID_REQUEST'
+    sess_after_passive = product.data('GET', '/api/v1/session', client=owner, headers={'Haeryong-Passive-Read': '1'})
+    assert sess_after_passive['last_seen_at'] == sess_before['last_seen_at']

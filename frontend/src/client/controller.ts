@@ -6,7 +6,7 @@
 //   incompatible    - service contract (api_version/library identity) not understood
 // Writes are only offered in `verified`. Responses from an earlier
 // credential/library/generation run are discarded, never applied.
-import type { Capabilities, CredentialAware, DaemonDiscovery, DaemonStartOffer, DeviceSession, HaeryongClient, NativePairingCreated, NativePairingPoll, OperationView, PairingAdoption, PairingCreated, PairingDecisionRequest, PairingPoll, PairingView, SessionInfo } from "./types.ts";
+import type { Capabilities, CredentialAware, DaemonDiscovery, DaemonStartOffer, DeviceSession, EventStreamResync, HaeryongClient, NativePairingCreated, NativePairingPoll, OperationView, PairingAdoption, PairingCreated, PairingDecisionRequest, PairingPoll, PairingView, SessionInfo } from "./types.ts";
 import { ApiError, DispatchBlockedError, NetworkError, StaleResponseError, SUPPORTED_API_VERSION, UncertainResponseError } from "./types.ts";
 import { SourceWriteIntents } from "./source-write-intents.ts";
 import type { CredentialStore } from "./store.ts";
@@ -152,6 +152,15 @@ export interface ShellControllerOptions {
   recheckIntervalMs?: number;
 }
 
+export interface InvalidationEvent {
+  passive: boolean;
+  resync: boolean;
+  readGeneration: number;
+  streamEpoch: string;
+  head: string | null;
+  resyncReason?: string;
+}
+
 export class ShellController {
   readonly #sourceWrites = new Map<string, SourceWriteIntents>();
   readonly #policyRecovery = new Map<string, PendingPolicyRecovery>();
@@ -167,12 +176,21 @@ export class ShellController {
   #nativeAttachment: string | null = null;
   #run = 0;
   #generation = "";
+  #streamEpoch = "";
   #libraryId = "";
   #boundCredential = "";
   #authority = 0;
+  #readGeneration = 0;
+  #resyncLifetime = 0;
+  #resyncInFlight: Promise<void> | null = null;
+  #resyncInFlightLifetime = 0;
+  #pendingResync: EventStreamResync | null = null;
+  #resyncFailures = 0;
+  #resyncRetryTimer: ReturnType<typeof setTimeout> | null = null;
   #events: { close(): void } | null = null;
-  #invalidationListeners = new Set<() => void>();
+  #invalidationListeners = new Set<(event?: InvalidationEvent) => unknown>();
   #eventInvalidationOff: (() => void) | undefined;
+  #eventResyncOff: (() => void) | undefined;
   #eventsRecheckAt = 0;
   #eventsTimer: ReturnType<typeof setTimeout> | null = null;
   #timer: ReturnType<typeof setInterval> | null = null;
@@ -240,6 +258,36 @@ export class ShellController {
   /** Shared transport client for screen data flows (read-only handle). */
   get client(): HaeryongClient & CredentialAware {
     return this.#client;
+  }
+
+  /** Scoped passive background client that suppresses sliding idle renewal on GET/HEAD reads. */
+  get passiveClient(): HaeryongClient {
+    return this.#client.passive?.() ?? this.#client;
+  }
+
+  /** Monotonic read-only refresh generation, distinct from dispatch/credential authority. */
+  get readGeneration(): number {
+    return this.#readGeneration;
+  }
+
+  /** Increments the read-only refresh generation so older in-flight background reads cannot regress a newer write or resync. */
+  bumpReadGeneration(): number {
+    this.#readGeneration += 1;
+    // Retired sibling reads need a current passive successor even when an
+    // explicit action produces no server event. An active barrier already
+    // observes the generation change and repeats its awaited sweep.
+    if (!this.#resyncInFlight) this.#notifyInvalidation({
+      passive: true, resync: false, readGeneration: this.#readGeneration,
+      streamEpoch: this.#streamEpoch, head: null,
+    });
+    return this.#readGeneration;
+  }
+
+  /** True when the captured authority and optional read generation remain current. */
+  isCurrentReadAuthority(captured: DispatchAuthority | null, readGeneration?: number): boolean {
+    if (!this.isCurrentDispatchAuthority(captured)) return false;
+    if (readGeneration !== undefined && readGeneration < this.#readGeneration) return false;
+    return true;
   }
 
   /**
@@ -403,13 +451,141 @@ export class ShellController {
     return () => this.#listeners.delete(listener);
   }
 
-  subscribeInvalidation(listener: () => void): () => void {
+  subscribeInvalidation(listener: (event?: InvalidationEvent) => unknown): () => void {
     this.#invalidationListeners.add(listener);
     return () => this.#invalidationListeners.delete(listener);
   }
 
-  #notifyInvalidation(): void {
-    for (const listener of this.#invalidationListeners) listener();
+  async #notifyInvalidationAsync(event?: InvalidationEvent): Promise<boolean> {
+    const active = [...this.#invalidationListeners];
+    const results = await Promise.allSettled(
+      active.map((listener) => {
+        try {
+          return Promise.resolve(listener(event));
+        } catch (err) {
+          return Promise.reject(err);
+        }
+      }),
+    );
+    return results.every((res) => res.status === "fulfilled");
+  }
+
+  #notifyInvalidation(event?: InvalidationEvent): void {
+    void this.#notifyInvalidationAsync(event);
+  }
+
+  #clearResyncRetry(): void {
+    if (this.#resyncRetryTimer !== null) {
+      clearTimeout(this.#resyncRetryTimer);
+      this.#resyncRetryTimer = null;
+    }
+  }
+
+  #retireResync(): void {
+    this.#resyncLifetime += 1;
+    this.#resyncInFlight = null;
+    this.#resyncInFlightLifetime = 0;
+    this.#pendingResync = null;
+    this.#resyncFailures = 0;
+    this.#clearResyncRetry();
+  }
+
+  #scheduleResyncRetry(authority: number, lifetime: number): void {
+    if (
+      this.#resyncRetryTimer !== null ||
+      authority !== this.#authority ||
+      lifetime !== this.#resyncLifetime
+    ) {
+      return;
+    }
+    const delay = Math.min(200 * 2 ** Math.min(this.#resyncFailures, 4), 2000);
+    this.#resyncRetryTimer = setTimeout(() => {
+      this.#resyncRetryTimer = null;
+      if (
+        authority !== this.#authority ||
+        lifetime !== this.#resyncLifetime ||
+        this.#pendingResync === null
+      ) {
+        return;
+      }
+      void this.#runResyncBarrier(this.#pendingResync).catch(() => undefined);
+    }, delay);
+  }
+
+  async #runResyncBarrier(resync: EventStreamResync): Promise<void> {
+    const authority = this.#authority;
+    const lifetime = this.#resyncLifetime;
+    const isRetired = (): boolean =>
+      authority !== this.#authority ||
+      lifetime !== this.#resyncLifetime ||
+      (this.#state.phase as ShellPhase) === "unauthenticated" ||
+      (this.#state.phase as ShellPhase) === "incompatible";
+
+    if (isRetired()) {
+      throw new Error("Mandatory full-state resync retired");
+    }
+    this.#pendingResync = resync;
+    this.#clearResyncRetry();
+    if (this.#resyncInFlight && this.#resyncInFlightLifetime === lifetime) {
+      return this.#resyncInFlight;
+    }
+    const loop = (async () => {
+      while (true) {
+        if (isRetired()) {
+          throw new Error("Mandatory full-state resync retired");
+        }
+        if (this.#pendingResync === null) {
+          break;
+        }
+        const current = this.#pendingResync;
+        this.#pendingResync = null;
+        await this.recheck(true);
+        if (isRetired()) {
+          throw new Error("Mandatory full-state resync retired");
+        }
+        const phaseAfter = this.#state.phase as ShellPhase;
+        if (phaseAfter !== "verified") {
+          if (this.#pendingResync === null) this.#pendingResync = current;
+          this.#resyncFailures += 1;
+          this.#scheduleResyncRetry(authority, lifetime);
+          throw new Error("Mandatory full-state resync incomplete");
+        }
+        this.#readGeneration += 1;
+        const gen = this.#readGeneration;
+        const sweepOk = await this.#notifyInvalidationAsync({
+          passive: true,
+          resync: true,
+          readGeneration: gen,
+          streamEpoch: current.stream_epoch || this.#streamEpoch,
+          head: current.head || null,
+          resyncReason: current.reason,
+        });
+        if (isRetired()) {
+          throw new Error("Mandatory full-state resync retired");
+        }
+        if (!sweepOk || (this.#state.phase as ShellPhase) !== "verified") {
+          if (this.#pendingResync === null) this.#pendingResync = current;
+          this.#resyncFailures += 1;
+          this.#scheduleResyncRetry(authority, lifetime);
+          throw new Error("Mandatory full-state resync incomplete");
+        }
+        if (this.#readGeneration !== gen) {
+          if (this.#pendingResync === null) this.#pendingResync = current;
+          continue;
+        }
+        this.#resyncFailures = 0;
+      }
+    })();
+    let tracked!: Promise<void>;
+    tracked = loop.finally(() => {
+      if (this.#resyncInFlight === tracked && this.#resyncInFlightLifetime === lifetime) {
+        this.#resyncInFlight = null;
+        this.#resyncInFlightLifetime = 0;
+      }
+    });
+    this.#resyncInFlight = tracked;
+    this.#resyncInFlightLifetime = lifetime;
+    return tracked;
   }
 
   #apply(patch: Partial<ShellState>): void {
@@ -423,9 +599,12 @@ export class ShellController {
     this.#token = "";
     this.#store.clear();
     this.#generation = "";
+    this.#streamEpoch = "";
     this.#libraryId = "";
     this.#boundCredential = "";
     this.#clearedFromAuthority = null;
+    this.#retireResync();
+    this.#readGeneration += 1;
     // Drop the transport binding immediately: responses pending from the
     // cleared authority must be invalidated before anything else rebinds.
     let disposal: Promise<void> | undefined;
@@ -507,6 +686,7 @@ export class ShellController {
           // obligation; the visible state stays the plain unauthenticated
           // truth for the observed outcome.
           this.#run += 1;
+          this.#retireResync();
           this.#closeEvents();
           this.#apply({
             phase: "unauthenticated",
@@ -552,6 +732,7 @@ export class ShellController {
         // transient service problem: Go refused the attachment, so no
         // effective authority exists and no write may proceed. The truthful
         // typed notice reuses the existing native pairing notice map.
+        this.#retireResync();
         this.#closeEvents();
         this.#apply({
           phase: "incompatible",
@@ -583,7 +764,7 @@ export class ShellController {
           this.#token = ""; this.#boundCredential = "";
           this.#clearedFromAuthority = null;
           this.#unauthenticatedPolicyNotice = null;
-          this.#authority++; this.#client.invalidate(); this.#closeEvents();
+          this.#authority++; this.#retireResync(); this.#client.invalidate(); this.#closeEvents();
           this.#apply({ phase: "checking", notice: NOTICE.checking, localCleanupPending: false, cleanupAlerts: [] });
         }
         await this.verify();
@@ -593,7 +774,11 @@ export class ShellController {
     }
   }
 
-  async verify(): Promise<void> {
+  async recheck(passive = true): Promise<void> {
+    await this.verify(passive);
+  }
+
+  async verify(passive = false): Promise<void> {
     // A native transport with no live attachment reattaches first: an
     // explicit retry, the periodic recheck and post-recovery reconnects must
     // all reach the Go-held credential again instead of a dead end. The
@@ -635,6 +820,10 @@ export class ShellController {
       this.#clearedFromAuthority = null;
       this.#unauthenticatedPolicyNotice = null;
       this.#authority += 1;
+      this.#readGeneration += 1;
+      this.#streamEpoch = "";
+      this.#retireResync();
+      this.#closeEvents();
       this.#apply({ cleanupAlerts: [] });
     }
     const run = ++this.#run;
@@ -643,9 +832,10 @@ export class ShellController {
     if (this.#state.phase === "unauthenticated" || rebinding) {
       this.#apply({ phase: "checking", notice: NOTICE.checking });
     }
+    const activeClient = passive ? this.passiveClient : this.#client;
     let session: SessionInfo;
     try {
-      session = await this.#client.currentSession();
+      session = await activeClient.currentSession();
     } catch (error) {
       this.#failure(error, run);
       return;
@@ -653,13 +843,14 @@ export class ShellController {
     if (run !== this.#run) return;
     let capabilities: Capabilities;
     try {
-      capabilities = await this.#client.capabilities();
+      capabilities = await activeClient.capabilities();
     } catch (error) {
       this.#failure(error, run);
       return;
     }
     if (run !== this.#run) return;
     if (capabilities.api_version !== SUPPORTED_API_VERSION || capabilities.library_id !== session.library_id) {
+      this.#retireResync();
       this.#closeEvents();
       this.#apply({
         phase: "incompatible",
@@ -674,14 +865,19 @@ export class ShellController {
     // string, so either boundary invalidates pending transport responses.
     // Routine same-authority rechecks never invalidate in-flight writes.
     const libraryChanged = this.#libraryId !== "" && this.#libraryId !== capabilities.library_id;
+    const epochChanged = this.#streamEpoch !== "" && capabilities.stream_epoch !== "" && capabilities.stream_epoch !== this.#streamEpoch;
     if (generationChanged || libraryChanged) {
       this.#client.invalidate();
+      this.#readGeneration += 1;
+      this.#retireResync();
     }
     if (libraryChanged) {
       this.#authority += 1;
+      this.#closeEvents();
       this.#apply({ cleanupAlerts: [] });
     }
     this.#generation = capabilities.runtime_generation;
+    this.#streamEpoch = capabilities.stream_epoch;
     this.#libraryId = capabilities.library_id;
     this.#unauthenticatedPolicyNotice = null;
     const pendingDecision =
@@ -704,8 +900,23 @@ export class ShellController {
     if (generationChanged) {
       // Drop the previous generation's confirmed data by re-verifying once.
       this.#closeEvents();
-      void this.verify();
+      void this.verify(passive);
       return;
+    }
+    if (epochChanged) {
+      this.#readGeneration += 1;
+      if (this.#resyncInFlight && this.#resyncInFlightLifetime === this.#resyncLifetime) {
+        this.#pendingResync = {
+          reason: "epoch_changed",
+          stream_epoch: capabilities.stream_epoch,
+          head: "",
+          resume_cursor: "",
+        };
+      } else {
+        this.#closeEvents();
+        this.#openEvents();
+        return;
+      }
     }
     if (!this.#events) {
       this.#openEvents();
@@ -713,8 +924,10 @@ export class ShellController {
   }
 
   #clearEventsAndGeneration(): void {
+    this.#retireResync();
     this.#closeEvents();
     this.#generation = "";
+    this.#streamEpoch = "";
     this.#libraryId = "";
   }
 
@@ -726,22 +939,68 @@ export class ShellController {
     // same-authority rechecks keep this subscription current, while a stop,
     // authority replacement or subscription replacement invalidates it.
     const authority = this.#authority;
-    this.#eventInvalidationOff = subscription.onInvalidation?.(() => {
-      if (this.#events === subscription && authority === this.#authority && this.#state.phase === "verified") this.#notifyInvalidation();
+    const resyncLifetime = this.#resyncLifetime;
+    this.#eventResyncOff = subscription.onResync?.((resync) => {
+      if (
+        this.#events === subscription &&
+        authority === this.#authority &&
+        resyncLifetime === this.#resyncLifetime &&
+        this.#state.phase === "verified"
+      ) {
+        return this.#runResyncBarrier(resync);
+      }
+      return Promise.reject(new Error("Mandatory full-state resync retired"));
     });
-    this.#notifyInvalidation();
+    this.#eventInvalidationOff = subscription.onInvalidation?.(() => {
+      if (
+        this.#events === subscription &&
+        authority === this.#authority &&
+        resyncLifetime === this.#resyncLifetime &&
+        this.#state.phase === "verified"
+      ) {
+        if (this.#resyncInFlight && this.#resyncInFlightLifetime === resyncLifetime) {
+          return this.#resyncInFlight;
+        }
+        if (this.#pendingResync !== null) {
+          return this.#runResyncBarrier(this.#pendingResync);
+        }
+        return this.#notifyInvalidationAsync({
+          passive: true,
+          resync: false,
+          readGeneration: this.#readGeneration,
+          streamEpoch: this.#streamEpoch,
+          head: null,
+        }).then(() => undefined);
+      }
+    });
+    if (typeof subscription.onResync !== "function") {
+      this.#notifyInvalidation({
+        passive: true,
+        resync: false,
+        readGeneration: this.#readGeneration,
+        streamEpoch: this.#streamEpoch,
+        head: null,
+      });
+    }
     void subscription.closed.then(() => {
       if (this.#events !== subscription) return;
       this.#events = null;
+      subscription.close();
       if (this.#state.phase !== "verified") return;
       if (authority !== this.#authority) return;
-      this.#notifyInvalidation();
+      this.#notifyInvalidation({
+        passive: true,
+        resync: false,
+        readGeneration: this.#readGeneration,
+        streamEpoch: this.#streamEpoch,
+        head: null,
+      });
       // Liveness only: recheck confirmed state with a bounded backoff so a
       // service that closes streams instantly cannot create a busy loop.
       const wait = 2000 - (Date.now() - this.#eventsRecheckAt);
       if (wait <= 0) {
         this.#eventsRecheckAt = Date.now();
-        void this.verify();
+        void this.recheck(true);
         return;
       }
       if (this.#eventsTimer !== null) return;
@@ -751,15 +1010,17 @@ export class ShellController {
         if (this.#state.phase !== "verified") return;
         if (authority !== this.#authority) return;
         this.#eventsRecheckAt = Date.now();
-        void this.verify();
+        void this.recheck(true);
       }, wait);
     });
   }
 
   #closeEvents(): void {
     this.#eventInvalidationOff?.(); this.#eventInvalidationOff = undefined;
+    this.#eventResyncOff?.(); this.#eventResyncOff = undefined;
     this.#events?.close();
     this.#events = null;
+    this.#clearResyncRetry();
     if (this.#eventsTimer !== null) {
       clearTimeout(this.#eventsTimer);
       this.#eventsTimer = null;
@@ -1050,7 +1311,7 @@ export class ShellController {
     if (this.#timer !== null) return;
     this.#timer = setInterval(() => {
       if (this.#state.phase === "checking" || !this.hasCredential()) return;
-      void this.verify();
+      void this.recheck(true);
     }, this.#recheckIntervalMs);
   }
 
@@ -1059,6 +1320,8 @@ export class ShellController {
       clearInterval(this.#timer);
       this.#timer = null;
     }
+    this.#run += 1;
+    this.#retireResync();
     this.#closeEvents();
   }
 }

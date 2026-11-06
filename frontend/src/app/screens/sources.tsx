@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ShellController } from "../../client/controller.ts";
+import {StaleResponseError} from "../../client/types.ts";
 import type { ProjectSourceView, ProjectView, SourceMapping } from "../../client/types.ts";
 import { navigate } from "../router.tsx";
+import { useReviewInvalidation } from "./review-refresh.ts";
 import { ProjectRegistrationFlow, SourceConfigurationFlow, sourceConfirmation, sourcesForPreview } from "./source-configuration.ts";
 import { coverageReason } from "./source-presentation.ts";
 
@@ -13,6 +15,8 @@ async function collect<T>(read: (cursor?: string) => Promise<{ items: T[]; next_
 }
 
 export function ProjectsScreen({ controller }: { controller: ShellController }) {
+  const reads=useRef(0),mounted=useRef(true);
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;reads.current++;};},[]);
   const [projects, setProjects] = useState<ProjectView[]>([]);
   const [registration] = useState(() => new ProjectRegistrationFlow(controller.client, controller));
   useEffect(() => () => registration.dispose(), [registration]);
@@ -22,14 +26,34 @@ export function ProjectsScreen({ controller }: { controller: ShellController }) 
   const pending = registration.pending;
   const [reload, setReload] = useState(0);
   useEffect(() => {
-    let live = true;
-    void collect((cursor) => controller.client.listProjects(cursor)).then((rows) => { if (live) setProjects(rows); }).catch((e) => { if (live) setError(String(e)); });
+    let live = true;const run=++reads.current,auth=controller.captureDispatchAuthority(),gen=controller.readGeneration;
+    const current=()=>live&&run===reads.current&&controller.isCurrentReadAuthority(auth,gen);
+    void collect((cursor) => controller.client.listProjects(cursor)).then((rows) => { if (current()) setProjects(rows); }).catch((e) => { if (current()) setError(String(e)); });
     return () => { live = false; };
   }, [controller, reload]);
+  useReviewInvalidation(
+    controller,
+    true,
+    async (ev) => {
+      const auth = controller.captureDispatchAuthority(),run=++reads.current;
+      const readGen = ev?.readGeneration ?? controller.readGeneration;
+      try {
+        const rows = await collect((cursor) => controller.passiveClient.listProjects(cursor));
+        if(!mounted.current||!controller.isCurrentReadAuthority(auth,readGen))return;
+        if(run!==reads.current){if(ev?.resync)throw new StaleResponseError();return;}
+        setProjects(rows);
+      } catch (e) {
+        if (mounted.current&&run===reads.current&&controller.isCurrentReadAuthority(auth, readGen)) setError(String(e));
+        if (ev?.resync) throw e;
+      }
+    },
+    () => busy,
+  );
   const register = async () => {
     setBusy(true); setError(null);
     try {
       await registration.run(name);
+      controller.bumpReadGeneration();
       setName(""); setReload((n) => n + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -44,14 +68,39 @@ export function ProjectsScreen({ controller }: { controller: ShellController }) 
 }
 
 export function SourcesScreen({ controller, projectId }: { controller: ShellController; projectId: string }) {
+  const reads=useRef(0),mounted=useRef(true);
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;reads.current++;};},[]);
   const [rows, setRows] = useState<ProjectSourceView[]>([]);
   const [phase, setPhase] = useState("loading");
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    let live = true; setRows([]); setPhase("loading"); setError(null);
-    void collect((cursor) => controller.client.projectSources(projectId, cursor)).then((rows) => { if (live) { setRows(rows); setPhase("ready"); } }).catch((e) => { if (live) { setError(String(e)); setPhase("error"); } });
+    let live = true;const run=++reads.current,auth=controller.captureDispatchAuthority(),gen=controller.readGeneration;
+    const current=()=>live&&run===reads.current&&controller.isCurrentReadAuthority(auth,gen); setRows([]); setPhase("loading"); setError(null);
+    void collect((cursor) => controller.client.projectSources(projectId, cursor)).then((rows) => { if (current()) { setRows(rows); setPhase("ready"); } }).catch((e) => { if (current()) { setError(String(e)); setPhase("error"); } });
     return () => { live = false; };
   }, [controller, projectId]);
+  useReviewInvalidation(
+    controller,
+    true,
+    async (ev) => {
+      const auth = controller.captureDispatchAuthority(),run=++reads.current;
+      const readGen = ev?.readGeneration ?? controller.readGeneration;
+      try {
+        const nextRows = await collect((cursor) => controller.passiveClient.projectSources(projectId, cursor));
+        if(!mounted.current||!controller.isCurrentReadAuthority(auth,readGen))return;
+        if(run!==reads.current){if(ev?.resync)throw new StaleResponseError();return;}
+        setRows(nextRows);
+        setPhase("ready");
+        setError(null);
+      } catch (e) {
+        if (mounted.current&&run===reads.current&&controller.isCurrentReadAuthority(auth, readGen)) {
+          setError(String(e));
+          setPhase("error");
+        }
+        if (ev?.resync) throw e;
+      }
+    },
+  );
   return <section className="panel" aria-label="프로젝트 출처"><h1>원본</h1><p>프로젝트 <span className="muted-code">{projectId}</span></p>
     <p className="muted">기록된 관측만 표시합니다. 이 화면을 열어도 소스를 새로 읽지 않습니다.</p>
     {phase === "loading" && <p role="status">출처를 불러오는 중…</p>}{error && <p role="alert">{error}</p>}

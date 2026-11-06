@@ -512,3 +512,90 @@ test("T4R2RESUME06 the actual native client keeps changed-runtime404 recovery on
 test("T5QCITNATIVE01 citation source forwards a closed exact answer/index operation",async()=>{
  const fake=port(),expected={bytes_sha256:"a".repeat(64),byte_size:"3",media_type:"application/octet-stream"};fake.handlers.set("answerCitationStream",()=>expected);const client=new NativeHaeryongClient(fake as unknown as NativePort);assert.equal(await client.answerCitationStream("answer",3),expected);assert.deepEqual(fake.calls,[["answerCitationStream",{answer_id:"answer",citation_index:3}]]);assert.throws(()=>client.answerCitationStream("answer",-1));assert.equal(fake.calls.length,1);
 });
+
+test("Task04 native passive() attaches passive:true on read operations and refuses writes", async () => {
+  const { createNativePort } = await import("./native-wire.ts");
+  const rawCalls: Array<[string, unknown]> = [];
+  const wire = createNativePort({
+    invoke: async (name, payload) => {
+      rawCalls.push([name, structuredClone(payload)]);
+      return {
+        ok: true,
+        value: {
+          version_id: "v1",
+          exists: false,
+          value: { state: "unreviewed", reviewed_at: null },
+          revision: null,
+          etag: null,
+          page_position_url: null,
+        },
+      };
+    },
+  });
+  const client = new NativeHaeryongClient(wire);
+  const passive = client.passive();
+  await passive.reviewGet("v1");
+  await client.reviewGet("v1");
+  assert.deepEqual(rawCalls[0], ["reviewGet", { version_id: "v1", passive: true }]);
+  assert.deepEqual(rawCalls[1], ["reviewGet", { version_id: "v1" }]);
+  await assert.rejects(
+    passive.reviewPut("v1", { action: "start", state: "reviewing" }, { create: true }, "11111111-1111-4111-8111-111111111111"),
+    (err: unknown) => err instanceof ApiError && err.status === 400 && err.code === "NATIVE_PAYLOAD_INVALID",
+  );
+});
+
+test("Task04 createNativePort -> NativeHaeryongClient delivers initial bootstrap resync after listener registration and commits cursor only after resolution", async () => {
+  const { createNativePort } = await import("./native-wire.ts");
+  const subPayloads: unknown[] = [];
+  let failResync = false;
+  const wire = createNativePort({
+    invoke: async (name, payload) => {
+      if (name === "subscribeEvents") {
+        subPayloads.push(structuredClone(payload));
+        return {
+          ok: true,
+          value: {
+            subscription_id: `sub-${subPayloads.length}`,
+            cursor: `ep:${subPayloads.length * 10}`,
+            resync: {
+              reason: "bootstrap",
+              stream_epoch: "ep",
+              head: String(subPayloads.length * 10),
+              resume_cursor: `ep:${subPayloads.length * 10}`,
+            },
+          },
+        };
+      }
+      if (name === "eventsPoll") {
+        return { ok: true, value: { closed: true } };
+      }
+      return { ok: true, value: null };
+    },
+  });
+  const client = new NativeHaeryongClient(wire);
+  const observedResyncs: unknown[] = [];
+  const sub1 = client.subscribeEvents();
+  sub1.onResync?.(async (r) => {
+    observedResyncs.push(r);
+  });
+  await sub1.closed;
+  assert.equal(observedResyncs.length, 1);
+  assert.deepEqual(subPayloads[0], {});
+
+  // Second subscription passes the committed cursor from sub1 ("ep:10"), and if its onResync fails, cursor stays "ep:10":
+  failResync = true;
+  const sub2 = client.subscribeEvents();
+  sub2.onResync?.(async (r) => {
+    observedResyncs.push(r);
+    if (failResync) throw new Error("sweep failed");
+  });
+  await sub2.closed;
+  assert.deepEqual(subPayloads[1], { cursor: "ep:10" });
+
+  // Third subscription still uses "ep:10" because sub2's resync rejected:
+  failResync = false;
+  const sub3 = client.subscribeEvents();
+  sub3.onResync?.(async () => {});
+  await sub3.closed;
+  assert.deepEqual(subPayloads[2], { cursor: "ep:10" });
+});

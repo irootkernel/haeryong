@@ -258,3 +258,90 @@ var _ = It("OwnerRecords stale edit after real copy capture cannot overwrite and
 	Expect(h.Items[0].Body).To(Equal(note.Body))
 	Expect(h.Items[0].ContextRef).To(Equal(note.ContextRef))
 })
+
+var _ = It("OwnerRecords Task04 multi-device personal independence, stale conflict 412, completed-receipt vs newer-peer separation, and passive-read idle preservation", Label("persistence"), func() {
+	w := setup()
+	p2, e := w.auth.CreatePairing(ctx, "http://127.0.0.1:9270", "second device owner", "test")
+	Expect(e).NotTo(HaveOccurred())
+	_, e = w.auth.BootstrapDecide(ctx, domain.PairingDecision{ID: p2.ID, Code: p2.Code, Origin: p2.Origin, ETag: p2.ETag, OperationID: id(), Action: "approve"})
+	Expect(e).NotTo(HaveOccurred())
+	poll2, e := w.auth.Poll(ctx, p2.ID, p2.PollingSecret, p2.Origin)
+	Expect(e).NotTo(HaveOccurred())
+	peerToken := poll2.Token
+
+	proj := w.project()
+	v1 := w.publish(proj, nil, map[string]string{"a.html": "<p id='r1'>page A</p>", "b.html": "<p id='r2'>page B</p>"})
+
+	// 1. Independent personal resources: preferences, version reading-position, and per-page positions (a.html vs b.html).
+	prefResp, e := w.query.PersonalPut(ctx, w.token, id(), v1.ID, query.ReaderPreference, "", "", true, raw(map[string]any{"default_page": "a.html"}))
+	Expect(e).NotTo(HaveOccurred())
+	Expect(prefResp.Status).To(Equal(200))
+
+	posResp, e := w.query.PersonalPut(ctx, w.token, id(), v1.ID, query.ReadingPosition, "", "", true, raw(map[string]any{"page_path": "a.html", "page_query": "", "page_fragment": "", "opened": true}))
+	Expect(e).NotTo(HaveOccurred())
+	Expect(posResp.Status).To(Equal(200))
+
+	pageAResp, e := w.query.PersonalPut(ctx, w.token, id(), v1.ID, query.PagePosition, "a.html", "", true, raw(map[string]any{"page_query": "", "page_fragment": "", "position": map[string]any{"scroll_y": 100}}))
+	Expect(e).NotTo(HaveOccurred())
+	var pageA1 query.PersonalView
+	Expect(json.Unmarshal(pageAResp.Body, &pageA1)).To(Succeed())
+
+	pageBResp, e := w.query.PersonalPut(ctx, w.token, id(), v1.ID, query.PagePosition, "b.html", "", true, raw(map[string]any{"page_query": "", "page_fragment": "", "position": map[string]any{"scroll_y": 200}}))
+	Expect(e).NotTo(HaveOccurred())
+	var pageB1 query.PersonalView
+	Expect(json.Unmarshal(pageBResp.Body, &pageB1)).To(Succeed())
+
+	// Peer updates page A; page B's ETag remains valid and does not conflict.
+	peerOpA := id()
+	peerPageAResp, e := w.query.PersonalPut(ctx, peerToken, peerOpA, v1.ID, query.PagePosition, "a.html", *pageA1.ETag, false, raw(map[string]any{"page_query": "", "page_fragment": "", "position": map[string]any{"scroll_y": 450}}))
+	Expect(e).NotTo(HaveOccurred())
+	var pageA2 query.PersonalView
+	Expect(json.Unmarshal(peerPageAResp.Body, &pageA2)).To(Succeed())
+	Expect(*pageA2.ETag).NotTo(Equal(*pageA1.ETag))
+
+	// Device 1 updates page B using pageB1.ETag -> succeeds without interference from page A's update.
+	pageB2Resp, e := w.query.PersonalPut(ctx, w.token, id(), v1.ID, query.PagePosition, "b.html", *pageB1.ETag, false, raw(map[string]any{"page_query": "", "page_fragment": "", "position": map[string]any{"scroll_y": 350}}))
+	Expect(e).NotTo(HaveOccurred())
+	Expect(pageB2Resp.Status).To(Equal(200))
+
+	// Device 1 attempts stale write to page A using pageA1.ETag -> fails with ErrPrecondition (412).
+	_, e = w.query.PersonalPut(ctx, w.token, id(), v1.ID, query.PagePosition, "a.html", *pageA1.ETag, false, raw(map[string]any{"page_query": "", "page_fragment": "", "position": map[string]any{"scroll_y": 999}}))
+	Expect(errors.Is(e, domain.ErrPrecondition)).To(BeTrue())
+
+	// 2. Historical completed receipt vs newer peer resource state:
+	// Device 1 writes Review with opRev1 (start -> reviewing), then peer writes Review (complete -> reviewed).
+	opRev1 := id()
+	rev1Resp, e := w.query.ReviewPut(ctx, w.token, opRev1, v1.ID, "", true, raw(map[string]any{"action": "start", "state": "reviewing"}))
+	Expect(e).NotTo(HaveOccurred())
+	var rev1 query.ReviewView
+	Expect(json.Unmarshal(rev1Resp.Body, &rev1)).To(Succeed())
+
+	rev2Resp, e := w.query.ReviewPut(ctx, peerToken, id(), v1.ID, *rev1.ETag, false, raw(map[string]any{"action": "complete", "state": "reviewed"}))
+	Expect(e).NotTo(HaveOccurred())
+	var rev2 query.ReviewView
+	Expect(json.Unmarshal(rev2Resp.Body, &rev2)).To(Succeed())
+
+	// Receipt opRev1 is still completed with rev1's historical ETag, while current ReviewGet returns rev2's ETag and "reviewed".
+	opView, e := w.auth.Operation(ctx, w.token, opRev1)
+	Expect(e).NotTo(HaveOccurred())
+	Expect(opView.State).To(Equal("completed"))
+	Expect(opView.Response).NotTo(BeNil())
+	Expect(opView.Response.Headers["ETag"]).To(Equal(*rev1.ETag))
+	currentRev, e := w.query.ReviewGet(ctx, w.token, v1.ID)
+	Expect(e).NotTo(HaveOccurred())
+	Expect(*currentRev.ETag).To(Equal(*rev2.ETag))
+	Expect(currentRev.Value.State).To(Equal("reviewed"))
+
+	// 3. Passive authentication preserves last_seen_at while active authentication advances it.
+	now := time.Now().UTC().Truncate(time.Second)
+	w.auth.Now = func() time.Time { return now }
+	sessInitial, e := w.auth.Authenticate(ctx, w.token)
+	Expect(e).NotTo(HaveOccurred())
+	now = now.Add(60 * time.Second)
+	sessPassive, e := w.auth.AuthenticatePassive(ctx, w.token)
+	Expect(e).NotTo(HaveOccurred())
+	Expect(sessPassive.LastSeenAt).To(Equal(sessInitial.LastSeenAt))
+	sessActive, e := w.auth.Authenticate(ctx, w.token)
+	Expect(e).NotTo(HaveOccurred())
+	Expect(sessActive.LastSeenAt).NotTo(Equal(sessInitial.LastSeenAt))
+})

@@ -6,3 +6,36 @@ export function providerStatus(value: ProviderStatus): ProviderStatus {
   }
   return value;
 }
+
+export interface ProviderReadinessInvalidation {
+  status: ProviderStatus | null;
+  error: string | null;
+  staleAfterResync: boolean;
+  sawDegraded: boolean;
+}
+
+/**
+ * Passive reconnect/resync never dispatches GET /api/v1/providers (which spawns
+ * a host Codex probe); instead it retires any previously displayed readiness
+ * snapshot into an explicit manual-refresh-required state.
+ */
+export function invalidateProviderReadinessOnResync(current: {
+  verified: boolean;
+  busy: boolean;
+  status: ProviderStatus | null;
+  error: string | null;
+  sawDegraded: boolean;
+}, reason?: string): ProviderReadinessInvalidation | null {
+  if (!current.verified || current.busy) return null;
+  // The first healthy entry owns its explicit status read. Bootstrap only
+  // establishes that initial stream; an actual degraded reconnect still
+  // invalidates readiness even if its replacement stream bootstraps.
+  if (reason === "bootstrap" && !current.sawDegraded) return null;
+  if (current.status === null && current.error === null && current.sawDegraded) return null;
+  return {
+    status: null,
+    error: null,
+    staleAfterResync: true,
+    sawDegraded: true,
+  };
+}

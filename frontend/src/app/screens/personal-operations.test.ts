@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ApiError, NetworkError } from "../../client/types.ts";
+import { ApiError, NetworkError, StaleResponseError } from "../../client/types.ts";
 import type { HaeryongClient, PersonalView } from "../../client/types.ts";
 import { BrowserPersonalJournal, ConcurrentJournalError, JournalLockUnavailableError, PersonalOperations } from "./personal-operations.ts";
 import type { PersonalEntry, PersonalTarget } from "./personal-operations.ts";
@@ -381,4 +381,158 @@ test("this instance's overlapping saves serialize through the lock without a fal
   assert.deepEqual(bodies, [intent("c.html")]);
   assert.equal(store.entry(target)?.pending, undefined);
   assert.equal(rowsOf(bucket()).length, 0);
+});
+
+test("Task04 receipt-first recovery preserves queued intent basis when peer mutates after completed historical K", async () => {
+  const journal = new Journal();
+  let currentServer = value("base.html", 1);
+  let putCalls = 0;
+  let receiptState: "throw" | "completed" | "404" = "throw";
+  let runtimeGen = "gen-1";
+  const completedA = value("a.html", 2);
+
+  const client = {
+    async personalGet() {
+      return structuredClone(currentServer);
+    },
+    async personalPut() {
+      putCalls++;
+      throw new NetworkError();
+    },
+    async operation(id: string) {
+      if (receiptState === "404") throw new ApiError(404, "NOT_FOUND", false);
+      return {
+        operation_id: id,
+        state: "completed",
+        original_status: 200,
+        result_ref: null,
+        job_id: null,
+        result_metadata: structuredClone(completedA),
+        result_etag: completedA.etag,
+      };
+    },
+  };
+
+  const store = new PersonalOperations(client, journal, () => {}, { generation: () => runtimeGen });
+  await store.read(target);
+  // First save ("a.html") loses ACK after dispatch:
+  await store.save(target, intent("a.html"));
+  assert.equal(putCalls, 1);
+  assert.ok(store.entry(target)?.pending);
+
+  // Local user scrolls/updates to "b.html" while K("a.html") is still unconfirmed:
+  await store.save(target, intent("b.html"));
+  assert.deepEqual(store.entry(target)?.queued?.intent, intent("b.html"));
+
+  // Meanwhile on the server, K("a.html") had completed AND another device wrote "c.html" (revision 3):
+  currentServer = value("c.html", 3);
+  receiptState = "completed";
+
+  // Retrying K recovers K via receipt ("completed") and fetches current GET ("c.html").
+  // Because "c.html" !== K's completed state ("a.html") and !== queued "b.html",
+  // "b.html" must NOT be silently rebased onto "c.html"; it surfaces an explicit conflict!
+  await store.retry(target);
+  assert.equal(putCalls, 1, "queued B must not silently PUT over peer C");
+  const conflicted = store.entry(target)!;
+  assert.equal(conflicted.pending, undefined);
+  assert.equal(conflicted.queued, undefined);
+  assert.ok(conflicted.conflict);
+  assert.deepEqual(conflicted.conflict.operation.intent, intent("b.html"));
+  assert.equal(conflicted.conflict.operation.base.etag, '"opaque-2"');
+  assert.equal(conflicted.conflict.server.etag, '"opaque-3"');
+  assert.deepEqual(conflicted.acknowledged?.value, currentServer.value);
+});
+
+test("Task04 receipt 404 across changed runtime generation refuses automatic replay and surfaces conflict", async () => {
+  const journal = new Journal();
+  let runtimeGen = "gen-1";
+  let putCalls = 0;
+  const serverView = value("peer.html", 4);
+  const client = {
+    async personalGet() {
+      return structuredClone(serverView);
+    },
+    async personalPut() {
+      putCalls++;
+      throw new NetworkError();
+    },
+    async operation() {
+      throw new ApiError(404, "NOT_FOUND", false);
+    },
+  };
+  const store = new PersonalOperations(client, journal, () => {}, { generation: () => runtimeGen });
+  await store.read(target);
+  await store.save(target, intent("local.html"));
+  assert.equal(putCalls, 1);
+  // Simulate server restore/re-init changing runtime_generation:
+  runtimeGen = "gen-2";
+  await store.retry(target);
+  assert.equal(putCalls, 1, "must not auto-replay after runtime_generation change on receipt 404");
+  const entry = store.entry(target)!;
+  assert.equal(entry.pending, undefined);
+  assert.ok(entry.conflict);
+  assert.match(entry.issue ?? "", /실행 세대가 변경/);
+});
+
+test("Task04 G2 PersonalOperations.refreshFromServer surfaces entry.issue and rethrows on failure", async () => {
+  const journal = new Journal();
+  let failGet = false;
+  const client = {
+    async personalGet() {
+      if (failGet) throw new NetworkError();
+      return value("index.html", 1);
+    },
+    async personalPut() {
+      return value("index.html", 2);
+    },
+  };
+  const store = new PersonalOperations(client, journal, () => {});
+  await store.read(target);
+  failGet = true;
+  await assert.rejects(store.refreshFromServer(target, client), NetworkError);
+  assert.match(store.entry(target)?.issue ?? "", /새로고침하지 못했습니다/);
+
+  failGet = false;
+  const refreshed = await store.refreshFromServer(target, client);
+  assert.ok(refreshed);
+  assert.equal(store.entry(target)?.issue, undefined);
+});
+
+
+test("Task04 initial personal read cannot overwrite a newer passive snapshot and retries passively", async () => {
+  const late = deferred<PersonalView>();
+  const fresh = value("new.html", 2);
+  let activeReads = 0, passiveReads = 0;
+  const passive = { personalGet: async () => { passiveReads++; return structuredClone(fresh); } };
+  const ops = new PersonalOperations({
+    personalGet: async () => { activeReads++; return late.promise; },
+    personalPut: async () => { throw Error("no mutation"); },
+  }, new Journal(), () => {}, { readGeneration: () => 0, passiveClient: passive });
+  const initial = ops.read(target);
+  await ops.refreshFromServer(target, passive);
+  late.resolve(value("old.html", 1));
+  assert.equal((await initial).etag, fresh.etag);
+  assert.equal(ops.entry(target)?.acknowledged?.etag, fresh.etag);
+  assert.equal(activeReads, 1);
+  assert.equal(passiveReads, 2);
+});
+
+for (const outcome of ["held", "unknown"] as const) test(`mandatory personal refresh cannot acknowledge a skipped ${outcome} write`,async()=>{
+ const started=deferred<void>(),reply=deferred<PersonalView>();let server=value("a.html",1),puts=0,reads=0;
+ const saved=value("b.html",2);
+ const client={
+  async personalGet(){reads++;return structuredClone(server);},
+  async personalPut(){puts++;started.resolve();if(outcome==="unknown")throw new NetworkError();return reply.promise;},
+  async operation(id:string){return {operation_id:id,state:"completed",original_status:200,result_ref:null,job_id:null,result_metadata:saved,result_etag:saved.etag};},
+ };
+ const journal=new Journal(),store=new PersonalOperations(client,journal,()=>{});
+ const write=store.save(target,intent("b.html"));await started.promise;if(outcome==="unknown")await write;
+ const original=structuredClone(store.entry(target)?.pending);assert.ok(original);
+ const beforeReads=reads;server=value("peer.html",3);
+ await assert.rejects(store.refreshFromServer(target,client,true),StaleResponseError);
+ assert.equal(reads,beforeReads);assert.deepEqual(store.entry(target)?.pending,original);
+ assert.equal(await store.refreshFromServer(target,client),null,"ordinary background contract is unchanged");
+ if(outcome==="held"){reply.resolve(saved);await write;}else await store.retry(target);
+ assert.equal((await store.refreshFromServer(target,client,true))?.etag,server.etag);
+ assert.equal(store.entry(target)?.acknowledged?.etag,server.etag);assert.equal(store.entry(target)?.pending,undefined);assert.equal(puts,1);
 });
