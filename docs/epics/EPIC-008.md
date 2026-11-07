@@ -43,3 +43,7 @@ C06, M01, M02, M03, M04, M05, M11, M12, M19. See [traceability](../testing/trace
 ## Handoff
 
 Validated manual pipeline, held-out relationship/freshness evaluation, current-policy application/undo tests and coverage/usage limits ready for scheduling. Use the [Epic gate template](../templates/epic-gate.md) as an index to actual artifacts and identify the exact next task.
+
+## Execution sources
+
+Detailed SOT: [EPIC-008 execution dossier](../todo/TODO-EPIC-008.md). It maps the existing six Tasks to canonical contracts, acceptance, authority and handoffs. Original Task assertions remain normative. At approved last-consumer closeout, promote durable information and replace this link with Canonical Outcomes before removing the dossier.

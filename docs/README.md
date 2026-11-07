@@ -400,3 +400,7 @@ web-only direction. The failed common and earlier failed observations retain
 their original results. Canonical Outcomes own the promoted integration and
 assertion map; the sole-consumer dossier is retired by that exact acceptance.
 No maintenance/schedule/release or untested-platform qualification is claimed.
+
+## Manual maintenance execution context
+
+[EPIC-008](epics/EPIC-008.md) uses its [execution dossier](todo/TODO-EPIC-008.md) as a thin integration map. The roadmap, original Task assertions and linked product contracts retain their authority. This preparation changes no implementation or gate status.

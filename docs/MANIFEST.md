@@ -4,11 +4,11 @@
 
 **Edition prepared:** 2026-10-13
 
-This inventory covers 198 other files: all Markdown documents and Python documentation-check utilities. Paths are relative to docs; sizes and SHA-256 cover exact bytes. MANIFEST.md excludes itself. This is not runtime evidence.
+This inventory covers 199 other files: all Markdown documents and Python documentation-check utilities. Paths are relative to docs; sizes and SHA-256 cover exact bytes. MANIFEST.md excludes itself. This is not runtime evidence.
 
 | File | Bytes | SHA-256 |
 | --- | --- | --- |
-| `README.md` | 41810 | `ce000a3e998f916b9749e17c3e6331b5860b7e6f8d3e44bd3fa4d4656ae57f11` |
+| `README.md` | 42111 | `6bd305f7cc3d32afb29d811790afc949c2bfebafbf11e845da5f6ec766d1e85a` |
 | `REVIEW-GUIDE.md` | 10105 | `8035dd9c431b7e6abc7adde3b2ae7824df2a97df3ef7b3ca7ce020e3cb0094ad` |
 | `adr/ADR-001.md` | 3239 | `02f3818c7843969ca3aa081fb252983d92f886904383d84d331a49eca57f9987` |
 | `adr/ADR-002.md` | 2987 | `2128dae47cc03f55000633c89bc4e4d06419c91a414230a45fd7e45e8bac759b` |
@@ -55,7 +55,7 @@ This inventory covers 198 other files: all Markdown documents and Python documen
 | `epics/EPIC-005.md` | 4172 | `e61abb9d8dfde97d4c72f810d7d631bf2c9260a8ec790cdedde82806e3d952c7` |
 | `epics/EPIC-006.md` | 4541 | `6b48f6b291854700330526587eb375c5048a92b1b9a777738eb096fb4a6450a7` |
 | `epics/EPIC-007.md` | 11214 | `a9d77b555053b8adfa6905a387c76583ba367caf424a879048a31c50a58f1605` |
-| `epics/EPIC-008.md` | 3007 | `00b8004bd4dc3045413cc78af3e6fa68b9aeb5bf9f14989497ab961039ecf462` |
+| `epics/EPIC-008.md` | 3373 | `c869704cb71a0d844ff861142f157f461577af315d6e75a4831999df31cee8b1` |
 | `epics/EPIC-009.md` | 2926 | `4d21ce32efda3c9a05794b1741332d64c9aebbfce5b9991ffa19f5465ca643b3` |
 | `epics/EPIC-010.md` | 3230 | `8b0d9599b8d6aae84e0095f529e949076cab977e0ab4b599c7f970d7fdad56ff` |
 | `epics/README.md` | 3511 | `18eedd3dbda29a655f136591947173f64b4d107e32c87e99e9a78785e5505ec7` |
@@ -70,7 +70,7 @@ This inventory covers 198 other files: all Markdown documents and Python documen
 | `operations/security.md` | 15836 | `7b36ccdc725ea499e2044ef1fa4bbd1c0de7fa9624e23a0770b952b59284710e` |
 | `references.md` | 12625 | `d410369697b93fcf53c70ce4c0b797671c7e783e4f10eb96309e121fb809a705` |
 | `requirements.md` | 18205 | `adfbdd29d0a05fb8e227b4cb04aba2be5675b826fcd6eb8bcb3b2ff7d990af8c` |
-| `roadmap.md` | 15700 | `90d9349f2f49c557aee2272688cdc7127f91ba6e971e68859a8babac2b028e20` |
+| `roadmap.md` | 16025 | `5be3524a5eb5249020a7a8873fd067ea511fb3482658a37def7b685a709da2b6` |
 | `source-map.md` | 9900 | `4448ffb707363c7a221730b1e4dee9b58cf3946f51af38f232d8d39af39480fa` |
 | `sources/haeryong-concept-proposal-v4.md` | 85010 | `8f26fea2833cd3cc3312c1afadea74e042d1d895b079bfa1bdff9cc02cf563e5` |
 | `tasks/EPIC-001/TASK-001-01.md` | 10659 | `1e3d041efe651f83db9c31441fb0316e141ac6da7f6eb03d8bd5e17e22be0647` |
@@ -199,7 +199,8 @@ This inventory covers 198 other files: all Markdown documents and Python documen
 | `testing/validate_docs.py` | 17139 | `9a0fe45af68cb217f58c550694a9113ddf7c59a6e029048de936fd99c90d20a0` |
 | `testing/version-review.md` | 12053 | `5e2a6ae30d5bdfa5aa8597141409c097abfbfbb64886fd0799ddda1853cdf381` |
 | `testing/viewer-spike.md` | 47123 | `6186a96aac963a91b3acbbb93fb4ac5aa5502740afe510a84f964a9ba3c37ef3` |
-| `todo/README.md` | 613 | `dcdd6d72fa779d6d1b001b3098f5456c62acb5a0434ab8f19596233fd661c085` |
+| `todo/README.md` | 844 | `4b8d0252fa341c82bf31da5bf2b2e8860ee20686cb57d193dbb841bb9fe9853d` |
+| `todo/TODO-EPIC-008.md` | 10322 | `f95cb83006c79942f19465a2a8c7c9b22fa78d410b9582b4c3d1aae5d331a285` |
 | `ui/README.md` | 5532 | `d65dbcbe217e46508e5dd31d5656c582595818d52d3841971352a7b09df8d53e` |
 | `ui/design-system.md` | 9411 | `eead55180979178479d626ac469dc4ca9511d94d50e7643c1d199ace608d135d` |
 | `ui/flows.md` | 15958 | `7fcbd39e69f9b649ccb6f66f49937494da7a470a7b014e73259cfedd9132e4a7` |

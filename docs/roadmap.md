@@ -73,3 +73,7 @@ The owner-amended selected-web Epic delivery is terminal only under the recorded
 overall acceptance. Its [Canonical Outcomes](epics/EPIC-007.md#canonical-outcomes)
 own the promoted integration/assertion map; this roadmap and canonical
 frontmatter retain identity, order, dependencies and status.
+
+## Manual maintenance execution sources
+
+Detailed SOT: [EPIC-008 execution dossier](todo/TODO-EPIC-008.md). It links canonical requirements, the six ordered members, integration boundaries and required evidence without changing their owners or lifecycle. Preparation does not start TASK-008-01 or establish Stage B passage.

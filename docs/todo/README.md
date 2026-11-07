@@ -7,7 +7,11 @@ authority. Accepted durable content moves to its canonical owner before a dossie
 
 ## Active dossiers
 
-None. [EPIC-007 Canonical Outcomes](../epics/EPIC-007.md#canonical-outcomes) retain its promoted map.
+| Dossier | Consumer | Role | Disposition |
+| --- | --- | --- | --- |
+| [TODO-EPIC-008](TODO-EPIC-008.md) | [EPIC-008](../epics/EPIC-008.md) | Detailed SOT | Promote durable information; remove only at approved last-consumer closeout |
+
+[EPIC-007 Canonical Outcomes](../epics/EPIC-007.md#canonical-outcomes) retain its promoted map.
 
 ## Candidates
 
