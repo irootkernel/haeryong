@@ -263,7 +263,7 @@ review predates the verified local correction and retains its original result.
 Retained real-provider, semantic, Reader/browser and native observations keep
 their individual qualifications. Current common and affected documentation
 checks do not establish physical private-device use or complete Stage A.
-EPIC-007 remains in progress. TASK-007-01 and TASK-007-02 have completed their
+At the earlier member checkpoint EPIC-007 remained in progress. TASK-007-01 and TASK-007-02 have completed their
 bounded member deliveries and verified commits/native handoffs. TASK-007-03 has completed its bounded web member; TASK-007-04 follows its
 verified normal commit/native handoff. The
 [2026-11-05 owner direction](docs/decisions.md#owner-amendment-2026-11-05-web-only-epic-007-execution)
@@ -385,3 +385,15 @@ assessments and finite corrections now compose ready, with all current member
 duties met and no required findings open. The Coordinator accepts this exact
 bounded web member under delegation. Its normal completion commit/native handoff
 and the separate assembled Epic audit follow; no whole-Epic acceptance is asserted.
+
+## EPIC-007 assembled selected-web delivery
+
+All six bounded members and their verified local commits/native handoffs are
+complete. The [assembled gate record](docs/testing/stage-a-gate.md) retains independent
+whole-Epic conclusions, the current affected-check composition and actual Master
+overall acceptance of this selected-web closeout. Original physical Stage A,
+second-device/mobile, Wails GUI and sleep/wake remain unverified under the owner
+web-only direction. The failed common and earlier failed observations retain
+their original results. Canonical Outcomes own the promoted integration and
+assertion map; the sole-consumer dossier is retired by that exact acceptance.
+No maintenance/schedule/release or untested-platform qualification is claimed.

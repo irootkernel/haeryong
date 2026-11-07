@@ -65,7 +65,11 @@ assessment and bounded evidence. The complete Stage A/private second-device
 gate remains EPIC-007. [TASK-007-01](tasks/EPIC-007/TASK-007-01.md) has completed
 its bounded member delivery under the
 [web-only execution direction](decisions.md#owner-amendment-2026-11-05-web-only-epic-007-execution);
+The following paragraph records the accepted Task06 member checkpoint:
+
 [TASK-007-02](tasks/EPIC-007/TASK-007-02.md) has completed its bounded web member delivery with actual private proof and qualified current check composition. [TASK-007-03](tasks/EPIC-007/TASK-007-03.md) has completed its bounded responsive web member under the same execution scope. [TASK-007-04](tasks/EPIC-007/TASK-007-04.md) has completed its bounded reconciliation member after corrected common, qualified private-web proof and independent confirmation. [TASK-007-05](tasks/EPIC-007/TASK-007-05.md) has completed its bounded headless/source/provider member with qualified actual private-web proof and independent confirmation. [TASK-007-06](tasks/EPIC-007/TASK-007-06.md) has completed its bounded selected-web member with actual integration observations, protected restore/context/failed-seal corrections, current qualified checks and independent confirmation. Its [selected private-web record](testing/stage-a-gate.md) preserves the failed common, passing affected checks and original first/affected judgments. Delegated exact member acceptance is complete; normal commit/native handoff precede the separate assembled Epic audit. Original physical Stage A and Master overall acceptance remain unclaimed.
-Original actual second-device and Stage A evidence remain unverified. Its Detailed
-SOT is the [EPIC-007 execution dossier](todo/TODO-EPIC-007.md); this roadmap and
-canonical frontmatter retain identity, order, dependencies and status.
+Original actual second-device and physical Stage A evidence remain unverified.
+The owner-amended selected-web Epic delivery is terminal only under the recorded
+overall acceptance. Its [Canonical Outcomes](epics/EPIC-007.md#canonical-outcomes)
+own the promoted integration/assertion map; this roadmap and canonical
+frontmatter retain identity, order, dependencies and status.

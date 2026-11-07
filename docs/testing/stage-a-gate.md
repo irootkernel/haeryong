@@ -2,7 +2,7 @@
 
 **Epic:** EPIC-007
 
-**Decision:** pass — bounded selected-web member; original physical Stage A not_run; assembled audit pending
+**Decision:** pass — owner-accepted selected-web delivery; original complete physical Stage A not_run
 
 **Reviewed revision/environment:** modified `5506a0391cadbc87778458a3f1e7e3e93c22498f`; macOS 27.0.1 arm64, Chrome 157.0.8103.38, Go 1.27.1; actual same-host Tailscale HTTPS
 
@@ -308,7 +308,7 @@ available locally. This does not waive a scenario or replace independent review.
 
 The T-* identifiers refer to the unchanged
 [original Task assertions](../tasks/EPIC-007/TASK-007-06.md#observable-completion-and-tests).
-The contribution split follows the approved [dossier assertion map](../todo/TODO-EPIC-007.md#assertion-map):
+The contribution split follows the approved [canonical assertion map](../epics/EPIC-007.md#assertion-coverage-owners):
 T-007-06-01 contributes C01–C09, M15–M19, X03, X04, X11, X12, X13, X15,
 X19 and X20; T-007-06-02 contributes M08, M10, M14, M20, X04, X07, X13
 and X16; T-007-06-03 contributes C03, C04, C08, M19 and X15. The Task's
@@ -388,3 +388,37 @@ Physical mobile/second-device, sleep/wake, Wails GUI, Linux/clean-machine,
 ongoing owner use and production release remain unverified or outside this run.
 One optional owner task is recommended in the knowledge-quality checkpoint; its
 absence adds no permission or gate. Whole-Epic acceptance remains with Master.
+
+## Assembled Epic audit and qualified closeout
+
+All six ordered members have verified separate completion commits and native
+handoffs. TASK-007-06's completion commit is
+`478613add548b79cfdf172838edc05209a308d28`; its tree is the assembled audit input.
+The continuous Epic Evaluator and two fresh non-authoring Task Operators each
+read the original Epic, all six Tasks, the dossier and the owner direction.
+No new product-provider call, browser acquisition or full-common rerun was used.
+
+The Epic Evaluator and one Task Operator passed their currently due selected-web
+technical integration checkpoints with zero due gaps. The other Task Operator
+confirmed that selected-web technical delivery and affected checks are ready,
+while retaining an inconclusive whole-original checkpoint with nine unverified
+parts for physical qualifications and later acceptance. No current mandatory
+product defect or affected-check failure was identified. These different scope
+judgments are preserved rather than averaged.
+
+The strict original whole-source composition remains not achieved, with zero
+unmet and nine unverified original parts. Same-host web evidence does not close
+those physical facts. The exact qualified overall owner acceptance chooses the
+web-only delivery as this run's terminal Epic basis; it does not relabel the
+original composition or any physical assertion as a test pass. Original Task
+assertions stay intact. Future full physical Stage A and release qualification
+keep their original owners and remain unverified here.
+
+The substantive exact closeout assessment and actual overall acceptance cover the
+canonical promotion and temporary dossier disposition. The original assertion
+map is retained in [Canonical Outcomes](../epics/EPIC-007.md#assertion-coverage-owners),
+and every member's original evidence, failure history and qualification remain
+in its linked record. The failed aggregate still failed; the current affected
+composition and conditional documentation checks carry their actual scopes.
+The internal normal package remains a modified-source darwin/arm64 test artifact,
+not an installation, release or clean-machine qualification.

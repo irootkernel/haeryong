@@ -118,3 +118,22 @@ routine scratch reports, scoped code changes and required checks need no repeate
 owner approval. This direction grants no public/Funnel exposure, tailnet
 enrollment, new domain, service installation, unscoped provider call, push or
 release. Preserve the verified Ouroboros relative-link corrections.
+
+## Owner acceptance: EPIC-007 selected-web closeout
+
+Master accepted the complete EPIC-007 delivery under the existing web-only run
+scope and the exact prepared closeout, authorizing its terminal lifecycle record,
+canonical promotion, sole-consumer dossier retirement and one conditional local
+closeout commit. This acceptance selects the delivered web-only scope as the completion basis
+for this EPIC-007 run; excluded physical qualification does not prevent its
+terminal delivery record. It does not pass the original complete Stage A gate.
+This records qualified selected-web acceptance; original
+physical second-device/mobile, Wails GUI, sleep/wake and complete physical Stage A
+remain unverified. Original assertions and historical negative evidence are
+preserved. No new provider call, public exposure, installation, push, release,
+maintenance or schedule execution is authorized by this closeout.
+
+For EPIC-008 entry, this owner-accepted web-only EPIC-007 closeout satisfies the
+predecessor completion, review and applicable exit requirement. The original
+physical Stage A remains unverified; EPIC-008 does not inherit an obligation to
+fabricate or silently qualify that excluded evidence.
