@@ -28,6 +28,7 @@ import (
 	"haeryong.local/haeryong/internal/adapters/gitreader"
 	httpconfig "haeryong.local/haeryong/internal/adapters/http/configuration"
 	httpimports "haeryong.local/haeryong/internal/adapters/http/imports"
+	httpscans "haeryong.local/haeryong/internal/adapters/http/scans"
 	httpsource "haeryong.local/haeryong/internal/adapters/http/source"
 	httpv1 "haeryong.local/haeryong/internal/adapters/http/v1"
 	"haeryong.local/haeryong/internal/adapters/localcontrol"
@@ -39,6 +40,7 @@ import (
 	"haeryong.local/haeryong/internal/application/query"
 	"haeryong.local/haeryong/internal/application/questions"
 	"haeryong.local/haeryong/internal/application/recovery"
+	"haeryong.local/haeryong/internal/application/scan"
 	"haeryong.local/haeryong/internal/application/service"
 	appsource "haeryong.local/haeryong/internal/application/source"
 	appstorage "haeryong.local/haeryong/internal/application/storage"
@@ -84,7 +86,7 @@ func parse(args []string) (options, error) {
 			continue
 		}
 		key, value, equals := strings.Cut(arg, "=")
-		if key == "--json" || key == "--no-input" || key == "--new-document" || key == "--resolve-link" || key == "--confirm" || key == "--confirmed" || key == "--unadopted" || key == "--include-retained-sources" {
+		if key == "--json" || key == "--no-input" || key == "--new-document" || key == "--resolve-link" || key == "--confirm" || key == "--confirmed" || key == "--unadopted" || key == "--include-retained-sources" || key == "--all-allowed-projects" {
 			if equals {
 				return opt, invalid("boolean flags do not accept a value")
 			}
@@ -98,7 +100,7 @@ func parse(args []string) (options, error) {
 			continue
 		}
 		switch key {
-		case "--source-mode", "--request-file", "--provider-binary", "--capture", "--other", "--read", "--decision", "--expected-attempt-generation", "--destination", "--metadata-destination", "--records", "--choices", "--index", "--expected-revision", "--flag", "--action", "--if-match", "--if-none-match", "--profile", "--data-dir", "--volume-root", "--port", "--endpoint", "--credential", "--client-dir", "--operation-id", "--project", "--document", "--base-version", "--metadata", "--version", "--path", "--output", "--input", "--state", "--cursor", "--limit", "--directory", "--kind", "--file", "--format", "--expected-config-revision", "--scope", "--name", "--evidence", "--expected-sha256", "--expected-excerpt-file", "--source-id", "--root-path", "--repo-id", "--retention-mode", "--provider-ids", "--plan-id", "--page", "--region", "--coverage-set", "--reference-id", "--query", "--lifecycle", "--versions":
+		case "--depth", "--job", "--status", "--target-set", "--source-mode", "--request-file", "--provider-binary", "--capture", "--other", "--read", "--decision", "--expected-attempt-generation", "--destination", "--metadata-destination", "--records", "--choices", "--index", "--expected-revision", "--flag", "--action", "--if-match", "--if-none-match", "--profile", "--data-dir", "--volume-root", "--port", "--endpoint", "--credential", "--client-dir", "--operation-id", "--project", "--document", "--base-version", "--metadata", "--version", "--path", "--output", "--input", "--state", "--cursor", "--limit", "--directory", "--kind", "--file", "--format", "--expected-config-revision", "--scope", "--name", "--evidence", "--expected-sha256", "--expected-excerpt-file", "--source-id", "--root-path", "--repo-id", "--retention-mode", "--provider-ids", "--plan-id", "--page", "--region", "--coverage-set", "--reference-id", "--query", "--lifecycle", "--versions":
 		default:
 			return opt, invalid("unsupported flag: " + key)
 		}
@@ -223,6 +225,8 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 			copyCore := recovery.New(store, core, store)
 			sourceCore := appsource.New(store, core, store, gitreader.New())
 			questionCore := questions.New(store, core, sourceCore, codex.SemanticRequestSHA)
+			scanCore := scan.New(store, core, store, nil)
+			scanWorker := scan.NewWorker(store, store)
 			profile, profileErr := service.Load(opt.selection)
 			if profileErr != nil {
 				return errors.Join(historicalDiagnostic, profileErr)
@@ -273,7 +277,7 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 					return nil, err
 				}
 				externalOrigin = configuredExternalOrigin(configuration.Value)
-				return productHandler(core, origin, configuration.Value, productRoutes{httpsource.New(sourceCore), httpimports.NewQuestions(imports, generationCore, questionCore), httpv1.New(queries, renderFacade, func() (string, string) { return managementOrigin, externalOrigin }), httpconfig.New(configurationCore)})
+				return productHandler(core, origin, configuration.Value, productRoutes{httpsource.New(sourceCore), httpscans.New(scanCore), httpimports.NewQuestions(imports, generationCore, questionCore), httpv1.New(queries, renderFacade, func() (string, string) { return managementOrigin, externalOrigin }), httpconfig.New(configurationCore)})
 			}}
 			runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: store, Endpoint: endpoint, Work: (work.Dispatcher{Provider: &work.ProviderCoordinator{Store: store, Bytes: store, Driver: providerDriver, Prepare: func(ctx context.Context, a domain.ProviderAttempt) error {
 				if e := imports.PrepareGeneration(ctx, a); e != nil {
@@ -285,7 +289,7 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 					return e
 				}
 				return questionCore.Apply(tx, a)
-			}}, Copies: copyCore, Purge: &work.Purger{Store: store, Bytes: store}, Store: store, Imports: imports, Derived: work.NewMaintenance(store, store)}).Run, CloseDependents: renderFacade.Shutdown, ListenerPort: func(ctx context.Context) (int, error) {
+			}}, Copies: copyCore, Purge: &work.Purger{Store: store, Bytes: store}, Store: store, Imports: imports, Derived: work.NewMaintenance(store, store), Scans: scanWorker}).Run, CloseDependents: renderFacade.Shutdown, ListenerPort: func(ctx context.Context) (int, error) {
 				configuration, e := store.Configuration(ctx)
 				if e != nil {
 					return 0, e

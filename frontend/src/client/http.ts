@@ -1,4 +1,4 @@
-import type {QuestionRequest,QuestionAccepted,QuestionView,AnswerView,RetainedSourceRead,GenerationRequest,GenerationAccepted,DraftView,DraftPatch} from "./types.ts";
+import type {ScanRequest,ScanAccepted,FindingView,JobFindingsFilter,QuestionRequest,QuestionAccepted,QuestionView,AnswerView,RetainedSourceRead,GenerationRequest,GenerationAccepted,DraftView,DraftPatch} from "./types.ts";
 import { providerStatus as verifiedProviderStatus } from "./provider-status.ts";
 import type { ProviderStatus, LifecyclePlanRequest,LifecycleCommitRequest,LifecyclePlanView,LifecycleResult,LifecyclePageRequest,TrashRequest,TrashItem, AnnotationCreate, AnnotationPatch, AnnotationView, AnnotationStream, RevisitView, ReviewView, ReviewRequest, ReviewCondition, ReviewEvent, DocumentFilter,
   BacklinksRequest, BacklinkPage, IndexValidation, IndexValidationRequest, IndexRebuild, IndexRebuildRequest,
@@ -215,6 +215,8 @@ export class HttpHaeryongClient implements HaeryongClient {
   retainedSourceReads(projectId:string,sourceId:string,cursor?:string):Promise<ListPage<RetainedSourceRead>> {return this.#request("GET",this.#collection(`/api/v1/projects/${encodeURIComponent(projectId)}/source-reads`,{source_id:sourceId,cursor}));}
 
   generationStart(request:GenerationRequest,key:string):Promise<GenerationAccepted>{return this.#sourceWrite("/api/v1/generations",request,key,true);}
+  scanStart(request:ScanRequest,key:string):Promise<ScanAccepted>{return this.#sourceWrite("/api/v1/scans",request,key,true);}
+  jobFindingsList(jobId:string,filter:JobFindingsFilter={}):Promise<ListPage<FindingView>>{return this.#request("GET",this.#collection(`/api/v1/jobs/${encodeURIComponent(jobId)}/findings`,{kind:filter.kind,status:filter.status,cursor:filter.cursor,limit:filter.limit===undefined?undefined:String(filter.limit)}));}
   questionStart(id:string,request:QuestionRequest,key:string):Promise<QuestionAccepted>{return this.#sourceWrite(`/api/v1/versions/${encodeURIComponent(id)}/questions`,request,key,true);}
   questionList(id:string,cursor?:string):Promise<ListPage<QuestionView>>{return this.#request("GET",this.#collection(`/api/v1/versions/${encodeURIComponent(id)}/questions`,{cursor}));}
   questionGet(id:string):Promise<QuestionView>{return this.#request("GET",`/api/v1/questions/${encodeURIComponent(id)}`);}

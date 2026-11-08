@@ -632,11 +632,15 @@ func (s *Service) CancelJob(ctx context.Context, token, id, operationID string) 
 	}
 	r := domain.Request{Key: domain.OperationKey{PrincipalID: record.PrincipalID, OperationID: operationID}, Method: "POST", Target: "/api/v1/jobs/" + id + "/cancel", Body: []byte(`{}`)}
 	return app.Execute(ctx, s.Store, s.Authority(token), r, nil, func(tx app.WriteTx, _ domain.Receipt) (domain.Response, error) {
+		current, err := s.authenticateTx(tx, token, false)
+		if err != nil {
+			return domain.Response{}, err
+		}
 		j, err := tx.CancelJob(id)
 		if err != nil {
 			return domain.Response{}, err
 		}
-		j, err = projectProviderJob(tx, record, j)
+		j, err = projectProviderJob(tx, current, j)
 		if err != nil {
 			return domain.Response{}, err
 		}
@@ -746,8 +750,10 @@ func (a *Authority) Filter(ctx context.Context, r domain.Request, response domai
 	// fields the saved response happens to include. Current explicit result IDs
 	// are checked as well, including responses from linked domain operations.
 	err := a.Service.Store.Write(ctx, func(tx app.WriteTx) error {
+		var record domain.Session
 		if !a.Bootstrap {
-			record, err := a.Service.authenticateTx(tx, a.Token, false)
+			var err error
+			record, err = a.Service.authenticateTx(tx, a.Token, false)
 			if err != nil {
 				return err
 			}
@@ -813,6 +819,11 @@ func (a *Authority) Filter(ctx context.Context, r domain.Request, response domai
 			job, err := tx.Job(data.JobID)
 			if err != nil {
 				return err
+			}
+			if !a.Bootstrap {
+				if err := visibleScanJobForActor(tx, record, job); err != nil {
+					return err
+				}
 			}
 			if err := visibleJob(tx, job); err != nil {
 				return err
@@ -1265,6 +1276,38 @@ func visibleJob(tx app.WriteTx, j domain.Job) error {
 		}
 		_, err = tx.Scope(d.ProjectID)
 		return err
+	}
+	if j.Kind == "scan" {
+		var scanScope struct {
+			PrincipalID string   `json:"principal_id"`
+			ProjectIDs  []string `json:"project_ids"`
+			DocumentID  string   `json:"document_id"`
+			DocumentIDs []string `json:"document_ids"`
+			VersionID   string   `json:"version_id"`
+		}
+		if json.Unmarshal(j.Scope, &scanScope) != nil || scanScope.PrincipalID == "" {
+			return domain.ErrNotFound
+		}
+		for _, pid := range scanScope.ProjectIDs {
+			if _, err := tx.Scope(pid); err != nil {
+				return err
+			}
+		}
+		if scanScope.VersionID != "" {
+			if err := visibleTarget(tx, "/api/v1/versions/"+scanScope.VersionID); err != nil {
+				return err
+			}
+		}
+		singleDoc := scanScope.DocumentID
+		if singleDoc == "" && len(scanScope.DocumentIDs) == 1 {
+			singleDoc = scanScope.DocumentIDs[0]
+		}
+		if singleDoc != "" {
+			if err := visibleTarget(tx, "/api/v1/documents/"+singleDoc); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 
 	var scope struct {

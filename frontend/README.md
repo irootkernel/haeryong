@@ -344,3 +344,15 @@ while current server data is revalidated. Known unfinished lifecycle receipts
 remain unresolved without masquerading as failed reads.
 
 See [multi-device reconciliation evidence](../docs/testing/multi-device-reconciliation.md).
+
+## TASK-008-01 scan admission and findings read transport
+
+The shared client contract (`src/client/types.ts`, `src/client/http-client.ts`,
+`src/client/native-client.ts`, `src/client/native-wire.ts`) and desktop
+`readerfacade` expose closed `scanStart` (`POST /api/v1/scans` with
+`Idempotency-Key`) and `jobFindingsList` (`GET /api/v1/jobs/{id}/findings` with
+optional `kind`, `status`, `limit`, `cursor`, and `passive` flag) gated by
+`capabilities.features.scans`. `src/client/scan-client.test.ts` verifies browser
+HTTP and native wire transport behavior, and the regenerated embedded bundle
+passes `python3 -B frontend/check_build.py`. See
+[scan inventory evidence](../docs/testing/scan-inventory.md).

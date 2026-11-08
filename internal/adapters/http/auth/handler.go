@@ -347,14 +347,21 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			items = append(items, jobWire(job))
 		}
 		h.private(w, r, token, func() { respond(w, r, 200, commonList(items), err) })
-	case len(parts) == 2 && parts[0] == "jobs" && r.Method == http.MethodGet:
+	case len(parts) == 2 && parts[0] == "jobs" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
 		value, err := h.core.Job(r.Context(), token, parts[1])
 		data := jobWire(value)
 		h.private(w, r, token, func() {
-			if err == nil {
-				w.Header().Set("ETag", data["etag"].(string))
+			if err != nil {
+				fail(w, r, err)
+				return
 			}
-			respond(w, r, 200, data, err)
+			w.Header().Set("ETag", data["etag"].(string))
+			if r.Method == http.MethodHead {
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				w.WriteHeader(200)
+				return
+			}
+			respond(w, r, 200, data, nil)
 		})
 	case len(parts) == 3 && parts[0] == "jobs" && parts[2] == "resume" && r.Method == http.MethodPost:
 		if err := mutationHeaders(r, false); err != nil {
@@ -712,6 +719,7 @@ func fail(w http.ResponseWriter, r *http.Request, err error) {
 		{domain.ErrDenied, 403, "FORBIDDEN"}, {domain.ErrConflict, 409, "OPERATION_CONFLICT"}, {domain.ErrTransition, 409, "INVALID_TRANSITION"},
 		{domain.ErrReconciliation, 409, "OPERATION_RECONCILIATION_REQUIRED"},
 		{errFeatureNotReady, 503, "FEATURE_NOT_READY"},
+		{domain.ErrFeatureNotReady, 503, "FEATURE_NOT_READY"},
 	} {
 		if errors.Is(err, item.err) {
 			status, code, retryable = item.status, item.code, false

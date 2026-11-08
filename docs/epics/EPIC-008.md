@@ -2,7 +2,7 @@
 id: "EPIC-008"
 type: "epic"
 title: "Manual AI wiki maintenance"
-status: "planned"
+status: "in_progress"
 depends_on: ["EPIC-007"]
 completion_requires: ["TASK-008-01","TASK-008-02","TASK-008-03","TASK-008-04","TASK-008-05","TASK-008-06"]
 ---

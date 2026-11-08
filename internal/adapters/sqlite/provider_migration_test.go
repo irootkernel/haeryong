@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 )
 
-// Later Q&A/generation children must be removed before reconstructing older schemas.
-const dropQuestionSchema = `DROP TABLE IF EXISTS answers;DROP TABLE IF EXISTS questions;`
+// Later scan/Q&A/generation children must be removed before reconstructing older schemas.
+const dropScanSchema = `DROP TABLE IF EXISTS findings;DROP TABLE IF EXISTS job_items;DROP TABLE IF EXISTS scan_captured_versions;DROP TABLE IF EXISTS scan_runs;`
+const dropQuestionSchema = dropScanSchema + `DROP TABLE IF EXISTS answers;DROP TABLE IF EXISTS questions;`
 const dropGenerationSchema = dropQuestionSchema + `DROP TABLE IF EXISTS workflow_selections;DROP TABLE IF EXISTS draft_history;DROP TABLE IF EXISTS drafts;DROP TABLE IF EXISTS generation_intents;`
 
 const dropProviderSchema = dropGenerationSchema + `DROP TABLE IF EXISTS provider_transport;DROP TABLE IF EXISTS job_inputs;DROP TABLE IF EXISTS source_capture_reads;DROP TABLE IF EXISTS source_captures;DROP TABLE IF EXISTS provider_inputs;DROP TABLE IF EXISTS provider_reconcile_intents;DROP TABLE IF EXISTS provider_retry_authorizations;DROP TABLE IF EXISTS provider_linked_retry_authorizations;DROP TABLE IF EXISTS provider_orphans;DROP TABLE IF EXISTS provider_attempts;`
@@ -64,7 +65,7 @@ var _ = It("PA12 revision14 migration fails atomically and upgrades to exact pro
 
 func assertEmptyProviderMigrationTables(db *sql.DB) {
 	GinkgoHelper()
-	for _, name := range []string{"provider_transport", "provider_attempts", "provider_inputs", "provider_retry_authorizations", "provider_linked_retry_authorizations", "provider_orphans", "provider_reconcile_intents", "source_captures", "source_capture_reads", "job_inputs", "generation_intents", "drafts", "draft_history", "workflow_selections", "questions", "answers"} {
+	for _, name := range []string{"provider_transport", "provider_attempts", "provider_inputs", "provider_retry_authorizations", "provider_linked_retry_authorizations", "provider_orphans", "provider_reconcile_intents", "source_captures", "source_capture_reads", "job_inputs", "generation_intents", "drafts", "draft_history", "workflow_selections", "questions", "answers", "scan_runs", "scan_captured_versions", "job_items", "findings"} {
 		var exists, count int
 		Expect(db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&exists)).To(Succeed())
 		if exists == 0 {

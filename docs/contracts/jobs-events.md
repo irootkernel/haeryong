@@ -707,3 +707,41 @@ verified connectivity also prevents acknowledgement. If authority is not yet
 ready or any sweep fails, `#pendingResync`
 remains armed with bounded retry rather than acknowledging the cursor past `H`.
 See [multi-device reconciliation evidence](../testing/multi-device-reconciliation.md).
+
+## Scan inventory, deterministic structure and repair child lifecycle (TASK-008-01)
+
+`job.kind = "scan"` progresses through stages `inventory` -> `inspect` ->
+`repair` (when deterministic `derived_index` (`references`) child repair jobs
+are active) -> `complete`. Each worker step claims the scan job and materializes
+or inspects at most 64 `job_items` (`document`, `version`, `page`, `region`,
+`entry`, `source`, `index`) per transaction (`EnumVersionOrdinal`,
+`EnumAfterPath`, `EnumAfterRegion`, `EntryAfterPath`, `SourceAfterIdx`) so large
+result directories remain interruptible and resumable across process restarts.
+Startup `recoverLocalJobs` transitions in-flight `running` scan jobs to
+`interrupted`, increments `attempt_generation`, resets in-flight `running`
+`job_items` to `pending`, and resumes from the committed cursor without
+duplicating items or findings.
+
+When structural inspection detects divergence between authored reference
+declarations and stored `authored_references`, `authored_edges`, and
+`reference_materializations` (`from_version_id`), it records a deterministic
+`backlink_index_repair` finding. Under effective
+`auto_apply.backlink_index_repair = "auto"`, the worker queues or reuses a
+`derived_index` (`references`) child job via `RebuildScanReferences`, guarded by
+the storage `ReferenceFence` (`scanRepairAuthority`). Before enqueuing or
+applying rebuilt reference edges, the fence verifies that the parent scan job is
+active and unheld (`restore_job_hold`), `attempt_generation` matches, current
+principal/workflow/source authority and `permissions_revision` still hold, the
+target document/project is not in Trash or purged (`document_trashed` /
+`document_purged`), the stricter of captured and current repair policy remains
+`"auto"`, and `max_run_seconds` has not expired; when a linked repair child
+cannot complete or is interrupted, the parent scan records the version in
+`result.incomplete_reference_repairs` with `rescan_recommended = true`.
+
+The scan run's `max_run_seconds` deadline is evaluated against elapsed wall time
+since the first `ClaimJob` (`StartedAt`), excluding only explicit
+protected-restore hold duration (`restore_job_hold`). When `max_run_seconds` is
+exhausted before completion, `result.budget_exhausted` is set to `true` and
+remaining unfinished (`pending` / `running`) items transition to `skipped` with
+reason `run_budget_exhausted` (`result.semantic.reason = "run_budget_exhausted"`).
+See [scan inventory evidence](../testing/scan-inventory.md).

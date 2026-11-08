@@ -6,9 +6,12 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"strconv"
 
 	generation "haeryong.local/haeryong/internal/application/generation"
 	importer "haeryong.local/haeryong/internal/application/import"
+	"haeryong.local/haeryong/internal/application/scan"
+	"haeryong.local/haeryong/internal/domain"
 )
 
 var generationID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
@@ -193,6 +196,55 @@ func (s *ReaderService) generationOperation(operation string, payload json.RawMe
 		}
 		result := s.request("POST", "/api/v1/drafts/"+url.PathEscape(in.ID)+"/publish", nil, map[string]string{"Idempotency-Key": in.OperationID, "If-Match": in.ETag}, jsonBody(map[string]any{}), auth)
 		return decision(result)
+	case "scanStart":
+		var in struct {
+			Request     json.RawMessage `json:"request"`
+			OperationID string          `json:"operation_id"`
+		}
+		if e := decodeGenerationPayload(payload, &in, "request", "operation_id"); e != nil {
+			return nil, e
+		}
+		var req domain.ScanRequest
+		if e := decodeGenerationPayload(in.Request, &req); e != nil || !generationID.MatchString(in.OperationID) {
+			return nil, generationInvalid()
+		}
+		result := s.request("POST", "/api/v1/scans", nil, map[string]string{"Idempotency-Key": in.OperationID}, in.Request, auth)
+		if result.werr == nil {
+			s.receipt(operation, map[string]any{"status": result.status})
+		}
+		return decision(result)
+	case "jobFindingsList":
+		var in struct {
+			JobID  string  `json:"job_id"`
+			Kind   *string `json:"kind"`
+			Status *string `json:"status"`
+			Cursor *string `json:"cursor"`
+			Limit  *int    `json:"limit"`
+		}
+		if e := decodeGenerationPayload(payload, &in, "job_id"); e != nil {
+			return nil, e
+		}
+		if !generationID.MatchString(in.JobID) ||
+			(in.Kind != nil && (*in.Kind == "" || !scan.ValidFindingKind(*in.Kind))) ||
+			(in.Status != nil && (*in.Status == "" || !scan.ValidFindingStatus(*in.Status))) ||
+			(in.Cursor != nil && *in.Cursor == "") ||
+			(in.Limit != nil && (*in.Limit < 1 || *in.Limit > 200)) {
+			return nil, generationInvalid()
+		}
+		params := map[string]string{}
+		if in.Kind != nil {
+			params["kind"] = *in.Kind
+		}
+		if in.Status != nil {
+			params["status"] = *in.Status
+		}
+		if in.Cursor != nil {
+			params["cursor"] = *in.Cursor
+		}
+		if in.Limit != nil {
+			params["limit"] = strconv.Itoa(*in.Limit)
+		}
+		return plain(s.request("GET", "/api/v1/jobs/"+url.PathEscape(in.JobID)+"/findings", collection(params), nil, nil, auth))
 	}
 	return nil, generationInvalid()
 }

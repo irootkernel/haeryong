@@ -599,3 +599,34 @@ test("Task04 createNativePort -> NativeHaeryongClient delivers initial bootstrap
   await sub3.closed;
   assert.deepEqual(subPayloads[2], { cursor: "ep:10" });
 });
+
+test("Task08-01 native scanStart and jobFindingsList forward closed operations, reconcile 202 receipts and honor passive/era guards", async () => {
+  const fake = port();
+  const key = "11111111-1111-4111-8111-111111111111";
+  const jobID = "22222222-2222-4222-8222-222222222222";
+  const req = { project_id: "33333333-3333-4333-8333-333333333333", depth: "change_focused" as const };
+  const accepted = { operation_id: key, job_id: jobID, coalesced: false, job: { job_id: jobID, kind: "scan", state: "queued" } };
+  fake.handlers.set("scanStart", () => ({ kind: "accepted", body: accepted }));
+  fake.handlers.set("operation", () => ({ operation_id: key, state: "completed", original_status: 202, result_metadata: accepted }));
+  fake.handlers.set("jobFindingsList", () => ({ items: [], next_cursor: null }));
+  const client = new NativeHaeryongClient(fake as unknown as NativePort);
+  assert.deepEqual(await client.scanStart(req, key), accepted);
+  assert.deepEqual(await client.jobFindingsList(jobID, { kind: "backlink_index_repair", status: "proposed", cursor: "c1", limit: 25 }), { items: [], next_cursor: null });
+  assert.deepEqual(fake.calls, [
+    ["scanStart", { request: req, operation_id: key }],
+    ["operation", { operation_id: key }],
+    ["jobFindingsList", { job_id: jobID, kind: "backlink_index_repair", status: "proposed", cursor: "c1", limit: 25 }],
+  ]);
+
+  const passive = client.passive();
+  await passive.jobFindingsList!(jobID, { status: "applied" });
+  assert.deepEqual(fake.calls[3], ["jobFindingsList", { job_id: jobID, status: "applied", passive: true }]);
+  await assert.rejects(
+    passive.scanStart!(req, key),
+    (err: unknown) => err instanceof ApiError && err.status === 400 && err.code === "NATIVE_PAYLOAD_INVALID",
+  );
+
+  const pending = client.jobFindingsList(jobID);
+  client.invalidate();
+  await assert.rejects(pending, StaleResponseError);
+});

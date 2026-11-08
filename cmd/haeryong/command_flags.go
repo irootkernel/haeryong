@@ -208,10 +208,29 @@ func validateCommandFlags(opt options) error {
 		}
 	case "events":
 		add("cursor")
+	case "scan":
+		add("project all-allowed-projects document version path region depth source-mode target-set capture operation-id")
+	case "findings":
+		switch verb {
+		case "list":
+			add("job kind status cursor limit")
+		case "approve", "reject":
+			add("if-match operation-id")
+		}
 	}
 	for name := range opt.flags {
 		if !allowed[name] {
 			return invalid("flag is unsupported for this command: --" + name)
+		}
+	}
+	if args[0] == "scan" {
+		if _, err := scanCLIInput(opt); err != nil {
+			return err
+		}
+	}
+	if args[0] == "findings" {
+		if _, err := findingsCLIInput(opt); err != nil {
+			return err
 		}
 	}
 	if args[0] == "backlinks" || args[0] == "indexes" {

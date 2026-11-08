@@ -9,6 +9,7 @@ import (
 	app "haeryong.local/haeryong/internal/application/storage"
 	"regexp"
 	"strings"
+	"time"
 
 	"haeryong.local/haeryong/internal/application/service"
 	"haeryong.local/haeryong/internal/domain"
@@ -99,6 +100,12 @@ func ProtectRestoredDatabase(ctx context.Context, path string, p service.Profile
 	if e = t.exec(`UPDATE jobs SET state='paused',attempt_generation=attempt_generation+1,revision=revision+1 WHERE state NOT IN ('completed','failed','cancelled')`); e != nil {
 		return lib, e
 	}
+	if e = t.exec(`UPDATE job_items SET state='pending' WHERE state='running'`); e != nil {
+		return lib, e
+	}
+	if e = pauseRestoredScanBudgets(t); e != nil {
+		return lib, e
+	}
 	if e = t.exec(`UPDATE libraries SET profile_id=?,runtime_generation=?,auth_epoch=?,stream_epoch=?`, lib.ProfileID, lib.RuntimeGeneration, lib.AuthEpoch, lib.StreamEpoch); e != nil {
 		return lib, e
 	}
@@ -181,29 +188,215 @@ func (t *writeTx) ReviewRecovery(id string, jobs []string) error {
 		if e != nil {
 			return e
 		}
-		if j.Kind != "lifecycle" || terminal(j.State) || j.CancelRequested {
+		if terminal(j.State) || j.CancelRequested {
 			return domain.ErrTransition
 		}
-		intent, e := t.PurgeIntent(id)
-		if e != nil {
-			return e
-		}
-		lib, e := t.Library()
-		if e != nil {
-			return e
-		}
-		intent.Runtime = lib.RuntimeGeneration
-		if e = t.purgeGuard(intent); e != nil {
-			return e
-		}
-		if e = t.savePurge(intent); e != nil {
-			return e
-		}
-		if e = t.exec(`DELETE FROM resource_revisions WHERE resource_kind='restore_job_hold' AND resource_id=?`, id); e != nil {
-			return e
+		switch j.Kind {
+		case "lifecycle":
+			intent, e := t.PurgeIntent(id)
+			if e != nil {
+				return e
+			}
+			lib, e := t.Library()
+			if e != nil {
+				return e
+			}
+			intent.Runtime = lib.RuntimeGeneration
+			if e = t.purgeGuard(intent); e != nil {
+				return e
+			}
+			if e = t.savePurge(intent); e != nil {
+				return e
+			}
+			if e = t.exec(`DELETE FROM resource_revisions WHERE resource_kind='restore_job_hold' AND resource_id=?`, id); e != nil {
+				return e
+			}
+		case "scan":
+			if e = t.reviewRestoredScan(j); e != nil {
+				return e
+			}
+		default:
+			return domain.ErrTransition
 		}
 	}
 	return t.exec(`UPDATE recovery_holds SET value=? WHERE singleton=1`, jsonBytes(hold))
+}
+
+func pauseRestoredScanBudgets(t *writeTx) error {
+	now := time.Now().UTC()
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT job_id,started_at,elapsed_ms FROM scan_runs WHERE started_at IS NOT NULL AND started_at!=''`)
+	if err != nil {
+		return err
+	}
+	type active struct {
+		id      string
+		started string
+		elapsed int64
+	}
+	list := []active{}
+	for rows.Next() {
+		var a active
+		if err := rows.Scan(&a.id, &a.started, &a.elapsed); err != nil {
+			rows.Close()
+			return err
+		}
+		list = append(list, a)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, a := range list {
+		add := int64(0)
+		if ts, e := time.Parse(time.RFC3339Nano, a.started); e == nil && now.After(ts) {
+			add = now.Sub(ts).Milliseconds()
+		}
+		if err := t.exec(`UPDATE scan_runs SET started_at=NULL,elapsed_ms=?,updated_at=? WHERE job_id=?`, a.elapsed+add, now.Format(time.RFC3339Nano), a.id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *writeTx) reviewRestoredScan(j domain.Job) error {
+	run, err := t.ScanRun(j.ID)
+	if err != nil {
+		return err
+	}
+	for _, pid := range run.RequestedScope.ProjectIDs {
+		if _, err := t.Scope(pid); err != nil {
+			return err
+		}
+	}
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT item_id,project_id,document_id,version_id,repair_job_id FROM job_items WHERE job_id=? AND repair_job_id!='' ORDER BY ordinal`, j.ID)
+	if err != nil {
+		return err
+	}
+	type repairItem struct {
+		itemID, projectID, documentID, versionID, childID string
+	}
+	items := []repairItem{}
+	for rows.Next() {
+		var ri repairItem
+		if err := rows.Scan(&ri.itemID, &ri.projectID, &ri.documentID, &ri.versionID, &ri.childID); err != nil {
+			rows.Close()
+			return err
+		}
+		items = append(items, ri)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	for _, ri := range items {
+		var held bool
+		if err := t.tx.QueryRowContext(t.ctx, `SELECT EXISTS(SELECT 1 FROM resource_revisions WHERE resource_kind='restore_job_hold' AND resource_id=?)`, ri.childID).Scan(&held); err != nil {
+			return err
+		}
+		child, childErr := t.Job(ri.childID)
+		if childErr != nil && !errors.Is(childErr, domain.ErrNotFound) {
+			return childErr
+		}
+		if held || (childErr == nil && !terminal(child.State)) {
+			if err := t.exec(`DELETE FROM resource_revisions WHERE resource_kind='restore_job_hold' AND resource_id=?`, ri.childID); err != nil {
+				return err
+			}
+			if childErr == nil && !terminal(child.State) {
+				child, err = t.CancelJob(ri.childID)
+				if err != nil {
+					return err
+				}
+				if !terminal(child.State) {
+					if err = t.ConfirmStop(ri.childID, child.AttemptGeneration); err != nil {
+						return err
+					}
+				}
+			}
+			detail := jsonBytes(map[string]any{
+				"repair_job_id":                        ri.childID,
+				"reason":                               "restored_repair_cancelled",
+				"incomplete_reference_materialization": true,
+				"rescan_recommended":                   true,
+			})
+			if err := t.exec(`UPDATE job_items SET state='blocked',stage='complete',reason='restored_repair_cancelled',detail=?,updated_at=? WHERE job_id=? AND item_id=?`, detail, now, j.ID, ri.itemID); err != nil {
+				return err
+			}
+			fp := "backlink_index_repair:" + ri.versionID + ":restored_repair_cancelled"
+			if existing, ok, e := t.FindingByFingerprint(j.ID, "backlink_index_repair", fp); e != nil {
+				return e
+			} else if !ok {
+				fid, e := service.NewID()
+				if e != nil {
+					return e
+				}
+				docID, verID := ri.documentID, ri.versionID
+				permRev := run.PermissionsRevisions[ri.projectID]
+				if permRev < 1 {
+					permRev = 1
+				}
+				if e = t.PutFinding(domain.Finding{
+					ID:                     fid,
+					JobID:                  j.ID,
+					Kind:                   "backlink_index_repair",
+					Origin:                 "deterministic",
+					ProjectID:              ri.projectID,
+					DocumentID:             &docID,
+					VersionID:              &verID,
+					Evidence:               detail,
+					EvidenceFingerprint:    fp,
+					Rationale:              "Restored active reference index repair child was cancelled during protected recovery review; reference materialization remains incomplete until an explicit rebuild or rescan.",
+					Uncertainty:            "none",
+					CapturedConfigRevision: run.ConfigRevision,
+					PermissionsRevision:    permRev,
+					Proposal:               jsonBytes(map[string]any{"action": "rebuild_reference_index", "version_id": ri.versionID, "repair_job_id": ri.childID}),
+					Status:                 "blocked",
+					ApprovalRequired:       true,
+					Reason:                 "restored_repair_cancelled",
+					Revision:               1,
+					CreatedAt:              now,
+					UpdatedAt:              now,
+				}); e != nil {
+					return e
+				}
+				_ = t.exec(`UPDATE job_items SET finding_id=? WHERE job_id=? AND item_id=?`, fid, j.ID, ri.itemID)
+			} else if existing.Status != "blocked" {
+				existing.Status = "blocked"
+				existing.ApprovalRequired = true
+				existing.Reason = "restored_repair_cancelled"
+				existing.AppliedRef = nil
+				existing.Revision++
+				existing.UpdatedAt = now
+				if e := t.PutFinding(existing); e != nil {
+					return e
+				}
+			}
+			run.Report.RescanRecommended = true
+			foundVer := false
+			for _, v := range run.Report.IncompleteReferenceRepairs {
+				if v == ri.versionID {
+					foundVer = true
+					break
+				}
+			}
+			if !foundVer && ri.versionID != "" {
+				run.Report.IncompleteReferenceRepairs = append(run.Report.IncompleteReferenceRepairs, ri.versionID)
+			}
+		}
+	}
+	run.UpdatedAt = now
+	if err := t.UpdateScanRun(run); err != nil {
+		return err
+	}
+	if err := t.exec(`DELETE FROM resource_revisions WHERE resource_kind='restore_job_hold' AND resource_id=?`, j.ID); err != nil {
+		return err
+	}
+	if err := t.exec(`UPDATE jobs SET state='queued',attempt_generation=attempt_generation+1,revision=revision+1 WHERE job_id=?`, j.ID); err != nil {
+		return err
+	}
+	return t.jobUpdated(j.ID)
 }
 
 // CheckRestoreOperationBindings reads only the current owner's available

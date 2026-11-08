@@ -25,6 +25,7 @@ type Dispatcher struct {
 	Purge    *Purger
 	Copies   Processor
 	Provider Processor
+	Scans    Processor
 }
 
 func (d Dispatcher) Run(ctx context.Context) (result error) {
@@ -100,6 +101,10 @@ func (d Dispatcher) Run(ctx context.Context) (result error) {
 			} else if j.Kind == "derived_index" {
 				if d.Derived != nil {
 					_ = d.Derived.Process(ctx, j.ID)
+				}
+			} else if j.Kind == "scan" {
+				if d.Scans != nil {
+					_ = d.Scans.Process(ctx, j.ID)
 				}
 			} else {
 				_ = d.Imports.Process(ctx, j.ID)

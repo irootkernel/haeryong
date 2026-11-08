@@ -397,3 +397,34 @@ web-only direction. The failed common and earlier failed observations retain
 their original results. Canonical Outcomes own the promoted integration and
 assertion map; the sole-consumer dossier is retired by that exact acceptance.
 No maintenance/schedule/release or untested-platform qualification is claimed.
+
+## Manual scan inventory and deterministic structure checks (TASK-008-01)
+
+TASK-008-01 implements schema revision 20 scan inventory (`scan_runs`,
+`scan_captured_versions`, `job_items`, `findings` in
+`internal/adapters/sqlite/scan_schema.go`), project-narrowed maintenance
+policy snapshots, pre-dispatch source target sets, incremental 64-unit batch
+enumeration (`document`, `version`, `page`, `region`, `entry`, `source`,
+`index`), deterministic structure and reference-index inspection (including
+stored `file`, `directory`, and `symlink` entries without AI), owned
+`derived_index` (`references`) repair child fencing (`scanRepairAuthority`),
+centralized `domain.RestrictCredentialScope` visibility/coalescing guards, and
+closed coverage/finding projections (`scan_report.stage` in
+`inventory`/`inspect`/`repair`/`complete`) across HTTP (`POST /api/v1/scans`,
+`GET/HEAD /api/v1/jobs/{id}/findings`), CLI (`haeryong scan`,
+`haeryong findings list`), and shared browser/native/desktop clients
+(`scanStart`, `jobFindingsList`) behind `features.scans`.
+[Scan inventory evidence](docs/testing/scan-inventory.md) records the bounded
+unit, SQLite persistence, HTTP integration, public E2E (including normal
+symlink/directory/binary import and 40-page/83-unit mid-scan `SIGKILL` and
+restart recovery), separate populated schema 19 -> 20 migration,
+frontend/desktop/contract (`59/59`), and full-root `go vet` checks together with
+retained earlier failures and limits. The corrected selected common passed
+1,390 Go and 256 Python cases on the frozen implementation/test candidate. Its
+separately settled Coordinator bytecode guard qualification and initial failed
+common remain explicit in that record. Independent Task/result and Epic-contribution
+assessments, current composition and CO substantive review support delegated
+bounded member acceptance. The factual/lifecycle record overlay has separate
+affected documentation checks; the normal commit and native finalization follow.
+TASK-008-02 through TASK-008-06 retain their ordered work and overall Epic
+acceptance remains with Master.

@@ -48,6 +48,11 @@ FIXED_INPUTS = ["index.html", "native.html", "package.json", "package-lock.json"
 
 
 def scratch_root():
+    env_tmp = os.environ.get("TMPDIR", "").strip()
+    if env_tmp:
+        p = Path(env_tmp)
+        if p.is_dir() and os.access(p, os.W_OK):
+            return p
     volume = Path("/Volumes/RootKernel")
     if os.path.ismount(volume) and os.access(volume, os.W_OK):
         return volume / "tmp"

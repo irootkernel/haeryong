@@ -910,9 +910,83 @@ export interface QuestionView {
  answers?:ListPage<AnswerView>;
 }
 
+export type ScanDepth = "change_focused" | "full_scope" | "deep_semantic";
+export type FindingKind = "backlink_index_repair" | "related_explanation" | "topic_assignment" | "freshness_assessment" | "new_version_proposal" | "new_document_proposal";
+export type FindingStatus = "proposed" | "applied" | "rejected" | "stale" | "blocked" | "undone";
+export interface ScanSourceSelector {
+  project_id?: string;
+  source_id?: string;
+  source_ids?: string[];
+  mode?: "pinned" | "current";
+  revision?: string;
+  branch?: string;
+  snapshot_id?: string;
+  target_set_id?: string;
+}
+export interface ScanRequest {
+  scope?: "selected_projects" | "all_allowed_projects";
+  project_id?: string;
+  project_ids?: string[];
+  document_id?: string;
+  document_ids?: string[];
+  version_id?: string;
+  path_prefix?: string;
+  page_path?: string;
+  region_id?: string;
+  depth?: ScanDepth;
+  source_mode?: "pinned" | "current";
+  target_set_id?: string;
+  sources?: ScanSourceSelector[];
+  finding_id?: string;
+  expected_finding_revision?: number;
+}
+export interface ScanAccepted {
+  operation_id: string;
+  job_id: string;
+  coalesced: boolean;
+  job: JobView;
+}
+export interface FindingView {
+  finding_id: string;
+  job_id: string;
+  kind: FindingKind;
+  origin: "deterministic" | "ai";
+  project_id: string;
+  document_id?: string | null;
+  version_id?: string | null;
+  page_path?: string | null;
+  region_id?: string | null;
+  target_set_id?: string | null;
+  evidence: unknown;
+  evidence_fingerprint: string;
+  rationale: string;
+  uncertainty: string;
+  captured_config_revision: number;
+  permissions_revision: number;
+  proposal: unknown;
+  status: FindingStatus;
+  approval_required: boolean;
+  reason?: string;
+  applied_ref: unknown;
+  decided_by?: string | null;
+  decided_at?: string | null;
+  revision: number;
+  etag: string;
+  created_at: string;
+  updated_at: string;
+}
+export interface JobFindingsFilter {
+  kind?: FindingKind;
+  status?: FindingStatus;
+  cursor?: string;
+  limit?: number;
+}
+
 export interface HaeryongClient {
   /** Read-only view that suppresses session idle-window renewal while preserving current authority checks. */
   passive?(): HaeryongClient;
+  scanStart?(request: ScanRequest, operationId: string): Promise<ScanAccepted>;
+  jobFindingsList?(jobId: string, filter?: JobFindingsFilter): Promise<ListPage<FindingView>>;
   consumeContext(binding:{version_id:string;page_path:string|null;render_instance_id:string|null},uploadId:string,operationId:string):Promise<DecisionResult>;
   questionStart(versionId:string,request:QuestionRequest,operationId:string):Promise<QuestionAccepted>;
   questionList(versionId:string,cursor?:string):Promise<ListPage<QuestionView>>;

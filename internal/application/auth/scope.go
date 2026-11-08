@@ -18,23 +18,9 @@ func contains(values []string, value string) bool {
 	}
 	return false
 }
-func intersect(a, b []string) []string {
-	allowed, seen := make(map[string]bool, len(b)), make(map[string]bool, len(a))
-	for _, v := range b {
-		allowed[v] = true
-	}
-	out := []string{}
-	for _, v := range a {
-		if allowed[v] && !seen[v] {
-			out = append(out, v)
-			seen[v] = true
-		}
-	}
-	return out
-}
 
 func RestrictScope(captured, current domain.CredentialScope) domain.CredentialScope {
-	return domain.CredentialScope{Kind: "workflow", Actions: intersect(captured.Actions, current.Actions), ProjectIDs: intersect(captured.ProjectIDs, current.ProjectIDs), DraftIDs: intersect(captured.DraftIDs, current.DraftIDs), VersionIDs: intersect(captured.VersionIDs, current.VersionIDs)}
+	return domain.RestrictCredentialScope(captured, current)
 }
 func (s *Service) scoped(tx app.WriteTx, token string, state domain.AuthState) (domain.Session, error) {
 	c, e := tx.ScopedCredentialByHash(sec.Verifier("workflow", token))
@@ -186,6 +172,90 @@ func authorizeScope(tx app.WriteTx, record domain.Session, r domain.Request) err
 			return e
 		}
 		return app.AuthorizeTarget(tx, target)
+	case "scans":
+		if r.Method != "POST" || len(parts) != 3 || !contains(record.Scope.Actions, "scan.request") {
+			return domain.ErrDenied
+		}
+		cfg, e := tx.Configuration()
+		if e != nil {
+			return e
+		}
+		var input struct {
+			ProjectID   string   `json:"project_id"`
+			ProjectIDs  []string `json:"project_ids"`
+			DocumentID  string   `json:"document_id"`
+			DocumentIDs []string `json:"document_ids"`
+			VersionID   string   `json:"version_id"`
+		}
+		if len(r.Body) > 0 && json.Unmarshal(r.Body, &input) != nil {
+			return sec.ErrInvalid
+		}
+		projects := []string{}
+		if strings.TrimSpace(input.ProjectID) != "" {
+			projects = append(projects, strings.TrimSpace(input.ProjectID))
+		}
+		for _, pid := range input.ProjectIDs {
+			if strings.TrimSpace(pid) != "" {
+				projects = append(projects, strings.TrimSpace(pid))
+			}
+		}
+		vid := strings.TrimSpace(input.VersionID)
+		if vid != "" {
+			_, d, e := app.CheckSourceVersion(tx, record, vid)
+			if e != nil {
+				return e
+			}
+			projects = append(projects, d.ProjectID)
+		}
+		docIDs := []string{}
+		if strings.TrimSpace(input.DocumentID) != "" {
+			docIDs = append(docIDs, strings.TrimSpace(input.DocumentID))
+		}
+		for _, did := range input.DocumentIDs {
+			if strings.TrimSpace(did) != "" {
+				docIDs = append(docIDs, strings.TrimSpace(did))
+			}
+		}
+		for _, did := range docIDs {
+			d, e := tx.Document(did)
+			if e != nil {
+				return e
+			}
+			if d.Lifecycle == "trash" || d.Lifecycle == "purged" {
+				return domain.ErrNotFound
+			}
+			if !contains(record.Scope.ProjectIDs, d.ProjectID) {
+				return domain.ErrNotFound
+			}
+			projects = append(projects, d.ProjectID)
+			if vid == "" {
+				if d.LatestVersionID == "" {
+					return domain.ErrNotFound
+				}
+				if _, _, e := app.CheckSourceVersion(tx, record, d.LatestVersionID); e != nil {
+					return e
+				}
+			}
+		}
+		if len(projects) == 0 {
+			if record.MutationProjectID != "" {
+				projects = []string{record.MutationProjectID}
+			} else {
+				projects = append(projects, record.Scope.ProjectIDs...)
+			}
+		}
+		for _, pid := range projects {
+			if record.MutationProjectID != "" && pid != record.MutationProjectID {
+				return domain.ErrDenied
+			}
+			if !contains(record.Scope.ProjectIDs, pid) || !projectPostWorkScanEnabled(cfg, pid) {
+				return domain.ErrDenied
+			}
+			if _, e := tx.Scope(pid); e != nil {
+				return e
+			}
+		}
+		return nil
 	case "lifecycle-plans", "trash":
 		return domain.ErrNotFound
 	case "annotations":
@@ -398,11 +468,11 @@ func authorizeScope(tx app.WriteTx, record domain.Session, r domain.Request) err
 			return domain.ErrNotFound
 		}
 	case "jobs":
-		if len(parts) > 4 && parts[4] == "resume" {
+		if len(parts) > 4 && (parts[4] == "resume" || parts[4] == "findings") {
 			return domain.ErrDenied
 		}
 		action := "job.read"
-		if r.Method != "GET" {
+		if r.Method != "GET" && r.Method != "HEAD" {
 			action = "job.cancel"
 		}
 		if !contains(record.Scope.Actions, action) {
@@ -415,6 +485,12 @@ func authorizeScope(tx app.WriteTx, record domain.Session, r domain.Request) err
 			}
 			if j.Kind == "derived_index" {
 				return domain.ErrNotFound
+			}
+			if j.Kind == "scan" {
+				if e := visibleScanJobForActor(tx, record, j); e != nil {
+					return e
+				}
+				return visibleJob(tx, j)
 			}
 			var owner struct {
 				Principal string          `json:"principal_id"`
@@ -467,6 +543,139 @@ func authorizeUpload(tx app.WriteTx, scope domain.CredentialScope, purpose strin
 	}
 	if project != "" && !contains(scope.ProjectIDs, project) {
 		return domain.ErrDenied
+	}
+	return nil
+}
+
+func visibleScanJobForActor(tx app.WriteTx, actor domain.Session, j domain.Job) error {
+	if j.Kind != "scan" {
+		return nil
+	}
+	var scanScope struct {
+		PrincipalID       string                 `json:"principal_id"`
+		ProjectIDs        []string               `json:"project_ids"`
+		DocumentID        string                 `json:"document_id"`
+		DocumentIDs       []string               `json:"document_ids"`
+		ActiveDocumentIDs []string               `json:"active_document_ids"`
+		ActiveVersionIDs  []string               `json:"active_version_ids"`
+		VersionID         string                 `json:"version_id"`
+		CredentialScope   domain.CredentialScope `json:"credential_scope"`
+	}
+	if json.Unmarshal(j.Scope, &scanScope) != nil || scanScope.PrincipalID == "" {
+		return domain.ErrNotFound
+	}
+	if actor.Scope.Kind == "owner" {
+		return nil
+	}
+	if scanScope.PrincipalID != actor.PrincipalID {
+		return domain.ErrNotFound
+	}
+	for _, pid := range scanScope.ProjectIDs {
+		if !contains(actor.Scope.ProjectIDs, pid) {
+			return domain.ErrNotFound
+		}
+		if _, e := tx.Scope(pid); e != nil {
+			return e
+		}
+	}
+	if scanScope.VersionID != "" {
+		if !contains(actor.Scope.VersionIDs, scanScope.VersionID) {
+			return domain.ErrNotFound
+		}
+		if e := visibleTarget(tx, "/api/v1/versions/"+scanScope.VersionID); e != nil {
+			return e
+		}
+	}
+	docIDs := []string{}
+	if strings.TrimSpace(scanScope.DocumentID) != "" {
+		docIDs = append(docIDs, strings.TrimSpace(scanScope.DocumentID))
+	}
+	for _, did := range scanScope.DocumentIDs {
+		trimmed := strings.TrimSpace(did)
+		if trimmed != "" && !contains(docIDs, trimmed) {
+			docIDs = append(docIDs, trimmed)
+		}
+	}
+	for _, did := range docIDs {
+		d, e := tx.Document(did)
+		if e != nil {
+			return e
+		}
+		if d.Lifecycle == "trash" || d.Lifecycle == "purged" || !contains(actor.Scope.ProjectIDs, d.ProjectID) {
+			return domain.ErrNotFound
+		}
+		if scanScope.VersionID == "" {
+			if d.LatestVersionID == "" || !contains(actor.Scope.VersionIDs, d.LatestVersionID) {
+				return domain.ErrNotFound
+			}
+		}
+	}
+	for _, vid := range scanScope.ActiveVersionIDs {
+		if !contains(actor.Scope.VersionIDs, vid) {
+			return domain.ErrNotFound
+		}
+		if e := visibleTarget(tx, "/api/v1/versions/"+vid); e != nil {
+			return e
+		}
+	}
+	for _, did := range scanScope.ActiveDocumentIDs {
+		if e := visibleTarget(tx, "/api/v1/documents/"+did); e != nil {
+			return e
+		}
+	}
+	hasCaptured := false
+	afterOrd := 0
+	for {
+		roster, e := tx.ScanCapturedVersions(j.ID, afterOrd, 256)
+		if e != nil {
+			return e
+		}
+		if len(roster) == 0 {
+			break
+		}
+		hasCaptured = true
+		for _, cv := range roster {
+			if cv.VersionOrdinal > afterOrd {
+				afterOrd = cv.VersionOrdinal
+			} else {
+				afterOrd++
+			}
+			if cv.ProjectID != "" && !contains(actor.Scope.ProjectIDs, cv.ProjectID) {
+				return domain.ErrNotFound
+			}
+			if cv.EnumState == "purged" {
+				return domain.ErrNotFound
+			}
+			if cv.VersionID == "" && cv.ExclusionReason != "" {
+				continue
+			}
+			if cv.VersionID != "" {
+				if !contains(actor.Scope.VersionIDs, cv.VersionID) {
+					return domain.ErrNotFound
+				}
+				if e := visibleTarget(tx, "/api/v1/versions/"+cv.VersionID); e != nil {
+					return e
+				}
+			}
+			if cv.DocumentID != "" {
+				if e := visibleTarget(tx, "/api/v1/documents/"+cv.DocumentID); e != nil {
+					return e
+				}
+			}
+		}
+		if len(roster) < 256 {
+			break
+		}
+	}
+	if !hasCaptured && len(scanScope.CredentialScope.VersionIDs) > 0 {
+		for _, vid := range scanScope.CredentialScope.VersionIDs {
+			if !contains(actor.Scope.VersionIDs, vid) {
+				return domain.ErrNotFound
+			}
+			if e := visibleTarget(tx, "/api/v1/versions/"+vid); e != nil {
+				return e
+			}
+		}
 	}
 	return nil
 }

@@ -2096,3 +2096,87 @@ func TestReaderTask04PassiveHeaderAndEventResyncContinuity(t *testing.T) {
 		t.Fatalf("unexpected Last-Event-ID progression: %#v", lastEventIDs)
 	}
 }
+
+func TestReaderTask0801ScanStartAndJobFindingsList(t *testing.T) {
+	const (
+		opID   = "11111111-1111-4111-8111-111111111111"
+		jobID  = "22222222-2222-4222-8222-222222222222"
+		projID = "33333333-3333-4333-8333-333333333333"
+	)
+	var seenKey, seenPassive, seenQuery string
+	service, _, _ := newReaderFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.Method == "POST" && r.URL.Path == "/api/v1/scans" {
+			seenKey = r.Header.Get("Idempotency-Key")
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body["finding_id"] != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(503)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"error": map[string]any{
+						"code":      "FEATURE_NOT_READY",
+						"message":   "finding reassessment not ready",
+						"retryable": false,
+						"details":   map[string]any{"reason": "finding_reassessment_not_ready"},
+					},
+				})
+				return true
+			}
+			dataReply(w, 202, map[string]any{
+				"operation_id": seenKey,
+				"job_id":       jobID,
+				"coalesced":    false,
+			})
+			return true
+		}
+		if r.Method == "GET" && r.URL.Path == "/api/v1/jobs/"+jobID+"/findings" {
+			seenPassive = r.Header.Get("Haeryong-Passive-Read")
+			seenQuery = r.URL.RawQuery
+			dataReply(w, 200, map[string]any{
+				"items":       []any{},
+				"next_cursor": nil,
+			})
+			return true
+		}
+		return false
+	})
+
+	res := invokeOK(t, service, "scanStart", fmt.Sprintf(`{"request":{"project_id":%q,"depth":"change_focused"},"operation_id":%q}`, projID, opID)).(map[string]any)
+	if res["kind"] != "accepted" || seenKey != opID {
+		t.Fatalf("expected scanStart 202 accepted with Idempotency-Key %s; got %#v (key=%q)", opID, res, seenKey)
+	}
+
+	werr503 := invokeFail(t, service, "scanStart", fmt.Sprintf(`{"request":{"finding_id":%q},"operation_id":%q}`, jobID, opID))
+	if werr503.Status != 503 || werr503.Code != "FEATURE_NOT_READY" {
+		t.Fatalf("expected 503 FEATURE_NOT_READY on premature finding_id; got %#v", werr503)
+	}
+
+	for _, bad := range []string{
+		fmt.Sprintf(`{"request":{"max_files_inspect":10},"operation_id":%q}`, opID),
+		`{"request":{"project_id":"33333333-3333-4333-8333-333333333333"},"operation_id":"not-a-uuid"}`,
+		fmt.Sprintf(`{"request":{"project_id":%q,"project_id":%q},"operation_id":%q}`, projID, projID, opID),
+	} {
+		if werr := invokeFail(t, service, "scanStart", bad); werr.Status != 400 || werr.Code != "NATIVE_PAYLOAD_INVALID" {
+			t.Fatalf("expected 400 NATIVE_PAYLOAD_INVALID for %s; got %#v", bad, werr)
+		}
+	}
+
+	page := invokeOK(t, service, "jobFindingsList", fmt.Sprintf(`{"job_id":%q,"kind":"backlink_index_repair","status":"proposed","cursor":"c1","limit":15,"passive":true}`, jobID)).(map[string]any)
+	if page["next_cursor"] != nil || seenPassive != "1" || seenQuery != "cursor=c1&kind=backlink_index_repair&limit=15&status=proposed" {
+		t.Fatalf("unexpected jobFindingsList result: page=%#v passive=%q query=%q", page, seenPassive, seenQuery)
+	}
+
+	for _, bad := range []string{
+		`{"job_id":"bad-id"}`,
+		fmt.Sprintf(`{"job_id":%q,"kind":"invalid_kind"}`, jobID),
+		fmt.Sprintf(`{"job_id":%q,"kind":""}`, jobID),
+		fmt.Sprintf(`{"job_id":%q,"status":"needs_approval"}`, jobID),
+		fmt.Sprintf(`{"job_id":%q,"cursor":""}`, jobID),
+		fmt.Sprintf(`{"job_id":%q,"limit":0}`, jobID),
+		fmt.Sprintf(`{"job_id":%q,"limit":201}`, jobID),
+	} {
+		if werr := invokeFail(t, service, "jobFindingsList", bad); werr.Status != 400 || werr.Code != "NATIVE_PAYLOAD_INVALID" {
+			t.Fatalf("expected 400 NATIVE_PAYLOAD_INVALID for %s; got %#v", bad, werr)
+		}
+	}
+}

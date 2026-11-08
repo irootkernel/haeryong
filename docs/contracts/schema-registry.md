@@ -1302,3 +1302,47 @@ Closed native `subscribeEvents` accepts `{cursor?: string}` and returns
 Closed native `eventsPoll` accepts `{subscription_id}` and returns
 `{closed: boolean, invalidated: boolean, cursor?: string, resync?: {reason, stream_epoch, head, resume_cursor}}`.
 See [multi-device reconciliation evidence](../testing/multi-device-reconciliation.md).
+
+## Scan and finding projections (TASK-008-01)
+
+The API remains v1 and package schema 1.0 at SQLite revision 20. Selected
+contract definitions in `tests/contracts/schema.json` add `scan_request`,
+`scan_accepted`, `scan_report`, `finding_view`, and `finding_page`, with
+`capabilities.features.scans = true` when the scan service is wired:
+
+- `ScanRequest`: closed object with optional `scope` (`selected_projects` |
+  `all_allowed_projects`), `project_id`, `project_ids`, `document_id`,
+  `document_ids`, `version_id`, `path_prefix`, `page_path`, `region_id`, `depth`
+  (`change_focused` | `full_scope` | `deep_semantic`, accepting hyphenated
+  aliases `change-focused` | `full-scope` | `deep-semantic`), `source_mode`
+  (`pinned` | `current`), `target_set_id`, `sources`, `finding_id`, and
+  `expected_finding_revision`.
+- `ScanAccepted`: `{operation_id, job_id, job_url, coalesced, target_set_id}`.
+- `ScanReport` (`job.result` for `kind = "scan"`): carries `job_id`, `stage`
+  (`inventory` | `inspect` | `repair` | `complete`), `enumeration_complete`,
+  `budget_exhausted`, `rescan_recommended`, `incomplete_reference_repairs`,
+  nullable `target_set_id`, `config_revision`, `permissions_revisions`,
+  `requested_scope`, `effective_policy`, `source_targets` (`kind` in `files` |
+  `git`), immutable `captured` denominator (`projects`, `documents`, `versions`,
+  `pages`, `regions`, `entries`, `sources`, `indexes`, `excluded_documents`,
+  `total_units`), `structural` (`checked`, `checked_index_items`, `repaired`,
+  `failed`, `anomalies_reported`, `excluded`, `blocked`, `skipped`,
+  `regionless_versions`, `metadata_less_versions`), `semantic` (`eligible`,
+  `assessed`, `skipped`, `unresolved`, `complete`, `status` in `not_assessed` |
+  `unable_to_verify`, `reason` in `semantic_assessment_not_run` |
+  `structural_or_source_blocked` | `run_budget_exhausted`), top-level
+  `provider_attempts`, and `findings` (`total`, `proposed`, `applied`,
+  `rejected`, `stale`, `blocked`, `undone`).
+- `Finding` (`finding_view`) and `FindingPage` (`finding_page`): each finding
+  carries `finding_id`, `job_id`, `kind`, `origin` (`deterministic` | `ai`),
+  `project_id`, nullable `document_id`/`version_id`/`page_path`/`region_id`/`target_set_id`,
+  `evidence`, `evidence_fingerprint`, `rationale`, `uncertainty`,
+  `captured_config_revision`, `permissions_revision`, `proposal`, `status`
+  (`proposed` | `applied` | `rejected` | `stale` | `blocked` | `undone`),
+  `approval_required`, optional `reason`, nullable `applied_ref`/`decided_by`/`decided_at`,
+  `revision`, strong `etag` (`"finding-{id}-r{revision}"`), `created_at`, and
+  `updated_at`.
+- Closed native operations in `desktop/readerfacade` and `frontend/src/client`:
+  `scanStart` (`{request, operation_id}`) and `jobFindingsList`
+  (`{job_id, kind?, status?, limit?, cursor?, passive?}`). See
+  [scan inventory evidence](../testing/scan-inventory.md).

@@ -1,5 +1,6 @@
 """Exercise documentation-validator admission against disposable full-doc fixtures."""
 from pathlib import Path
+from urllib.parse import unquote
 import json
 import itertools
 import os
@@ -18,12 +19,28 @@ class TestValidatorAdmission:
         source = Path(__file__).resolve().parents[2]
         for name in ('docs', 'spikes', 'tests', 'skills'):
             shutil.copytree(source / name, self.root / name)
-        # Copy the root authorities actually linked by the documentation;
-        # frontend dependencies and generated bundles are not fixture inputs.
-        for name in ('TESTING.md', 'frontend/README.md'):
-            target = self.root / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(source / name, target)
+        # Copy the root authorities and repository-local files actually linked
+        # by the documentation; frontend dependencies and generated bundles are
+        # not fixture inputs.
+        linked = {source / 'TESTING.md', source / 'frontend/README.md'}
+        fences = re.compile(r'^```([^\n]*)\n(.*?)^```[ \t]*$', re.M | re.S)
+        for doc in (source / 'docs').rglob('*.md'):
+            text = fences.sub('', doc.read_text(encoding='utf-8'))
+            for match in re.finditer(r'\]\(([^\n)]+)\)', text):
+                raw = match[1].strip().split(' "', 1)[0].strip('<>')
+                if re.match(r'^[A-Za-z][A-Za-z0-9+.-]*:', raw) or raw.startswith('//'):
+                    continue
+                filename = unquote(raw.partition('#')[0].split('?', 1)[0])
+                if not filename:
+                    continue
+                dest = (doc.parent / filename).resolve()
+                if dest.is_relative_to(source) and dest.is_file():
+                    linked.add(dest)
+        for dest in sorted(linked):
+            target = self.root / dest.relative_to(source)
+            if not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(dest, target)
         subprocess.run(['git', 'init', '--quiet', str(self.root)], check=True)
         self.task = self.root / 'docs/tasks/EPIC-001/TASK-001-01.md'
         self.original = self.task.read_text(encoding='utf-8')

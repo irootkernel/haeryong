@@ -727,3 +727,58 @@ record under current authority, and purge detaches question/answer ownership
 before parent deletion. Whole backup/protected restore and explicitly selected
 question export preserve the adopted objects and original audit facts. None of
 these operations fabricate provider observations or change personal Review.
+
+## Schema revision 20 scan inventory and deterministic structure checks (TASK-008-01)
+
+Migration 20 (`internal/adapters/sqlite/scan_schema.go`, wired by
+`internal/adapters/sqlite/schema.go`) adds `scan_runs`,
+`scan_captured_versions`, `job_items`, and `findings` with indexes
+`scan_runs_by_scope_hash`, `scan_captured_versions_by_job_doc`,
+`job_items_by_job_state_ordinal`, `job_items_by_document`,
+`job_items_by_version`, `job_items_by_repair_job`, `findings_by_job_order`,
+`findings_by_version_status`, `findings_by_project_status`, and
+`findings_by_fingerprint`; all earlier migrations and checksums remain
+unchanged. `scan_runs` binds the existing `jobs(job_id)` row (`kind = 'scan'`,
+whose `jobs.scope` JSON stores the captured `credential_scope` projected into
+`ScanRun`) to the admitting `principal_id`, `auth_kind`, principal-bound
+`scope_hash`, nullable primary `target_set_id`, captured `requested_scope`,
+narrowed `effective_policy` snapshot, `config_revision`,
+`permissions_revisions`, worker `stage` (`inventory`, `inspect`, `repair`,
+`complete`), batch enumeration cursor (`enum_version_ordinal`, `enum_after_path`,
+`enum_after_region`, `enumeration_complete`, `next_item_ordinal`), first-claim
+`started_at` and `elapsed_ms`, immutable `denominator`, and current `report`.
+
+`scan_captured_versions` stores the ordered version roster captured at admission
+(`ORDER BY document_id COLLATE BINARY`), including excluded document rows
+(`exclusion_reason` such as `document_trashed`, `no_published_version`, or
+`authority_denied`; archived documents remain eligible and are not excluded),
+per-version source selection (`selected_mode`, `selection_source`,
+`target_set_id`, `requested_selection`, `targets_json`), and per-version
+incremental enumeration cursors (`enum_state`, `enum_after_path`,
+`enum_after_region`, `entry_after_path`, `source_after_idx`,
+`materialized_units`, `entries_checked`). `job_items` materializes `document`,
+`version`, `page`, `region`, `entry`, `source`, and `index` units in bounded
+64-unit batches (`state` in `pending`, `running`, `completed`, `skipped`,
+`blocked`, `failed`, `cancelled`). Entry inspection verifies stored `file`
+objects, `directory` rows, and `symlink` rows (`content_hash IS NULL` with
+preserved `exact_link_text` under `domain.InventoryLine`, without reading an
+empty object hash or following external/dangling link targets). `findings`
+stores deterministic (`backlink_index_repair`) and later semantic maintenance
+findings with `evidence_fingerprint`, `config_revision` (projected as
+`captured_config_revision`), `permissions_revision`, `revision` (from which
+`"finding-{id}-r{revision}"` `etag` is computed on read), and explicit `status`
+(`proposed`, `applied`, `rejected`, `stale`, `blocked`, `undone`).
+
+When a document moves to Trash or is manually purged, the lifecycle transaction
+transitions unfinished `job_items` (`document_trashed` / `document_purged`),
+marks `proposed` findings `stale` or `blocked` as the path dictates, records
+`incomplete_reference_repairs` (`rescan_recommended = true`) if a linked
+`derived_index` (`references`) repair child is interrupted, and refreshes
+`scan_runs.report`. Manual purge scrubs private paths, region IDs, source
+selections, and finding payloads (`{"purged":true}`) while retaining minimal
+opaque identifiers and immutable denominator counts per the permanent minimal
+reservation policy, and preserves healthy sibling documents, versions, and
+`source_targets` in multi-target scans. Shared scope intersection is centralized
+in `domain.RestrictCredentialScope` across authentication and SQLite
+job/operation/event visibility guards. See
+[scan inventory evidence](testing/scan-inventory.md).

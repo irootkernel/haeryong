@@ -120,6 +120,15 @@ func (t *writeTx) referenceAuthority(j domain.Job, w domain.DerivedWork) error {
 	if d.Lifecycle == "trash" || d.Lifecycle == "purged" || p.Project.Lifecycle == "trash" || p.Project.Lifecycle == "purged" || j.Permissions[d.ProjectID] != p.Project.PermissionsRevision {
 		return domain.ErrSearchRestricted
 	}
+	var scanJobID, scanItemID string
+	err = t.tx.QueryRowContext(t.ctx, `SELECT job_id,item_id FROM job_items WHERE repair_job_id=? LIMIT 1`, j.ID).Scan(&scanJobID, &scanItemID)
+	if err == nil {
+		if err := t.scanRepairAuthority(scanJobID, scanItemID, w.VersionID); err != nil {
+			return domain.ErrSearchRestricted
+		}
+	} else if !errors.Is(notFound(err), domain.ErrNotFound) {
+		return err
+	}
 	return nil
 }
 func (t *writeTx) ReferenceFence(id string, generation int64) (domain.DerivedWork, error) {

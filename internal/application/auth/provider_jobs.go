@@ -27,6 +27,9 @@ func JobETag(j domain.Job) string {
 // Provider operational status remains owner-readable when its original payload
 // becomes hidden. It carries no scope, result, source identity or private text.
 func projectProviderJob(tx app.WriteTx, actor domain.Session, j domain.Job) (domain.Job, error) {
+	if e := visibleScanJobForActor(tx, actor, j); e != nil {
+		return j, e
+	}
 	e := visibleJob(tx, j)
 	if e == nil {
 		return redactProviderInvocation(j), nil

@@ -738,3 +738,93 @@ test("Task04 G3+G6 invalidateProviderReadinessOnResync retires readiness without
     restore();
   }
 });
+
+test("Task08-01 scanStart and jobFindingsList round-trip closed DTOs, operation reconciliation, 503 FEATURE_NOT_READY and passive header", async () => {
+  const calls: Array<{ path: string; method: string; key: string | null; passive: string | null; body: unknown }> = [];
+  const accepted = {
+    operation_id: "11111111-1111-4111-8111-111111111111",
+    job_id: "22222222-2222-4222-8222-222222222222",
+    coalesced: false,
+    job: { job_id: "22222222-2222-4222-8222-222222222222", kind: "scan", state: "queued" },
+  };
+  const finding = {
+    finding_id: "33333333-3333-4333-8333-333333333333",
+    job_id: accepted.job_id,
+    kind: "backlink_index_repair",
+    origin: "deterministic",
+    project_id: "44444444-4444-4444-8444-444444444444",
+    document_id: "55555555-5555-4555-8555-555555555555",
+    version_id: "66666666-6666-4666-8666-666666666666",
+    page_path: null,
+    region_id: null,
+    target_set_id: null,
+    evidence: [{ kind: "index_drift" }],
+    evidence_fingerprint: "a".repeat(64),
+    rationale: "Reference index diverged from authored declarations.",
+    uncertainty: "low",
+    captured_config_revision: 1,
+    permissions_revision: 1,
+    proposal: { action: "reindex_references" },
+    status: "proposed",
+    approval_required: true,
+    applied_ref: null,
+    decided_by: null,
+    decided_at: null,
+    revision: 1,
+    etag: '"finding-33333333-3333-4333-8333-333333333333-r1"',
+    created_at: "2026-11-08T00:00:00Z",
+    updated_at: "2026-11-08T00:00:00Z",
+  };
+  const restore = stubFetch(async (input, init) => {
+    const path = String(input);
+    const method = init?.method ?? "GET";
+    const headers = new Headers(init?.headers);
+    const body = init?.body ? JSON.parse(String(init.body)) : null;
+    calls.push({ path, method, key: headers.get("Idempotency-Key"), passive: headers.get("Haeryong-Passive-Read"), body });
+    if (method === "POST" && path === "/api/v1/scans") {
+      if ((body as Record<string, unknown>)?.finding_id || (body as Record<string, unknown>)?.expected_finding_revision) {
+        return new Response(
+          JSON.stringify({ error: { code: "FEATURE_NOT_READY", message: "not ready", retryable: false, details: { reason: "finding_reassessment_not_ready" } } }),
+          { status: 503 },
+        );
+      }
+      return new Response(JSON.stringify({ data: accepted }), { status: 202 });
+    }
+    if (method === "GET" && path === `/api/v1/operations/${accepted.operation_id}`) {
+      return new Response(
+        JSON.stringify({ data: { operation_id: accepted.operation_id, state: "completed", original_status: 202, result_metadata: accepted } }),
+        { status: 200 },
+      );
+    }
+    if (method === "GET" && path.startsWith(`/api/v1/jobs/${accepted.job_id}/findings`)) {
+      return new Response(JSON.stringify({ data: { items: [finding], next_cursor: null } }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ data: null }), { status: 404 });
+  });
+  try {
+    const client = new HttpHaeryongClient();
+    client.setCredential("tok");
+    const res = await client.scanStart({ project_id: "44444444-4444-4444-8444-444444444444", depth: "change_focused" }, accepted.operation_id);
+    assert.deepEqual(res, accepted);
+    assert.equal(calls[0]!.path, "/api/v1/scans");
+    assert.equal(calls[0]!.key, accepted.operation_id);
+    assert.equal(calls[1]!.path, `/api/v1/operations/${accepted.operation_id}`);
+
+    await assert.rejects(
+      client.scanStart({ finding_id: finding.finding_id, expected_finding_revision: 1 }, "77777777-7777-4777-8777-777777777777"),
+      (err: unknown) => err instanceof ApiError && err.status === 503 && err.code === "FEATURE_NOT_READY" && err.details?.reason === "finding_reassessment_not_ready",
+    );
+
+    const page = await client.jobFindingsList(accepted.job_id, { kind: "backlink_index_repair", status: "proposed", limit: 10 });
+    assert.equal(page.items.length, 1);
+    assert.equal(page.items[0]!.finding_id, finding.finding_id);
+    assert.equal(calls[3]!.path, `/api/v1/jobs/${accepted.job_id}/findings?kind=backlink_index_repair&status=proposed&limit=10`);
+    assert.equal(calls[3]!.passive, null);
+
+    await client.passive().jobFindingsList!(accepted.job_id, { cursor: "c1" });
+    assert.equal(calls[4]!.path, `/api/v1/jobs/${accepted.job_id}/findings?cursor=c1`);
+    assert.equal(calls[4]!.passive, "1");
+  } finally {
+    restore();
+  }
+});

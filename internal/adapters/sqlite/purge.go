@@ -51,6 +51,7 @@ func (t *writeTx) PurgeImpact(document string) ([]domain.LifecycleItem, error) {
 		{"answer_value", `SELECT a.value FROM answers a JOIN questions q USING(question_id) WHERE q.document_id=? ORDER BY a.answer_id`},
 		{"source_history", `SELECT value FROM (SELECT json_object('id',verification_id,'excerpt',hex(expected_excerpt),'ref',expected_excerpt_ref,'read',read_id,'outcome',outcome) AS value FROM citation_verifications WHERE version_id IN(SELECT version_id FROM document_versions WHERE document_id=?) ORDER BY verification_id)`},
 		{"managed_source_snapshot", sourceReadDependencies + `SELECT json_object('capture',c.capture_id,'read',r.read_id,'hash',r.content_hash,'retention',r.retention_mode,'availability',r.availability) FROM source_capture_reads r JOIN source_captures c ON c.capture_id=r.capture_id WHERE r.read_id IN(SELECT read_id FROM source_read_contexts WHERE version_id IN(SELECT version_id FROM document_versions WHERE document_id=?)) AND EXISTS(SELECT 1 FROM object_references own WHERE own.owner_kind='selected_snapshot' AND own.owner_id=r.read_id AND own.content_hash=r.content_hash) ORDER BY c.capture_id,r.read_id`},
+		{"finding_value", `SELECT json_object('id',finding_id,'rev',revision,'status',status,'fp',evidence_fingerprint) FROM findings WHERE document_id=? ORDER BY finding_id`},
 	} {
 		rs, e := t.tx.QueryContext(t.ctx, q.sql, document)
 		if e != nil {
@@ -220,6 +221,7 @@ var purgeDeletes = []struct{ table, where string }{
 	{"source_observations", `version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?)`},
 	{"observation_runs", `version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?)`},
 	{"citation_verifications", `version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?)`},
+	{"findings", `EXISTS(SELECT 1 FROM (SELECT ? AS doc_id) t WHERE findings.document_id=t.doc_id OR findings.version_id IN(SELECT version_id FROM purged_versions WHERE document_id=t.doc_id))`},
 	{"region_evidence", `version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?)`},
 	{"evidence", `version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?)`},
 	{"regions", `version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?)`},
@@ -315,11 +317,14 @@ func (t *writeTx) PurgeStep(id string, generation int64, limit int) (bool, error
 	// Do not remove a running worker's ownership ledger before it confirms
 	// stop. The serial dispatcher gives accepted cancellation its normal turn.
 	var active int
-	if err = t.tx.QueryRowContext(t.ctx, sourceJobDependencies+`SELECT count(*) FROM jobs WHERE state NOT IN('completed','failed','cancelled') AND job_id IN(SELECT job_id FROM derived_work WHERE version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?) UNION SELECT job_id FROM import_intents WHERE json_extract(value,'$.DocumentID')=? UNION SELECT job_id FROM jobs WHERE kind IN ('generation','question') AND (json_extract(scope,'$.target.document_id')=? OR json_extract(scope,'$.target.version_id') IN(SELECT version_id FROM purged_versions WHERE document_id=?)) UNION SELECT job_id FROM source_job_contexts WHERE version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?))`, i.DocumentID, i.DocumentID, i.DocumentID, i.DocumentID, i.DocumentID).Scan(&active); err != nil {
+	if err = t.tx.QueryRowContext(t.ctx, sourceJobDependencies+`SELECT count(*) FROM jobs WHERE state NOT IN('completed','failed','cancelled') AND job_id IN(SELECT job_id FROM derived_work WHERE version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?) UNION SELECT job_id FROM import_intents WHERE json_extract(value,'$.DocumentID')=? UNION SELECT job_id FROM jobs WHERE kind IN ('generation','question') AND (json_extract(scope,'$.target.document_id')=? OR json_extract(scope,'$.target.version_id') IN(SELECT version_id FROM purged_versions WHERE document_id=?)) UNION SELECT job_id FROM source_job_contexts WHERE version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?) UNION SELECT job_id FROM job_items WHERE document_id=? AND state='running')`, i.DocumentID, i.DocumentID, i.DocumentID, i.DocumentID, i.DocumentID, i.DocumentID).Scan(&active); err != nil {
 		return false, err
 	}
 	if active > 0 {
 		return false, nil
+	}
+	if err = t.redactPurgedScanRecords(i.DocumentID); err != nil {
+		return false, err
 	}
 	if err = t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM check_intents WHERE state='open' AND json_extract(canonical_target,'$.version_id') IN(SELECT version_id FROM purged_versions WHERE document_id=?)`, i.DocumentID).Scan(&active); err != nil {
 		return false, err
@@ -741,6 +746,48 @@ func (t *writeTx) minimizePurgeReceipts(i *domain.PurgeIntent) (bool, error) {
 		for _, name := range []string{"document_id", "DocumentID"} {
 			owned = owned || norm[name] == i.DocumentID
 		}
+		if r.Original.Target == "/api/v1/scans" {
+			var scanReq struct {
+				DocumentID  string   `json:"document_id"`
+				DocumentIDs []string `json:"document_ids"`
+				VersionID   string   `json:"version_id"`
+				PathPrefix  string   `json:"path_prefix"`
+				PagePath    string   `json:"page_path"`
+				RegionID    string   `json:"region_id"`
+			}
+			_ = json.Unmarshal(r.Original.Body, &scanReq)
+			if scanReq.DocumentID == i.DocumentID {
+				owned = true
+			}
+			for _, did := range scanReq.DocumentIDs {
+				if did == i.DocumentID {
+					owned = true
+				}
+			}
+			if scanReq.VersionID != "" {
+				var n int
+				if e := t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM purged_versions WHERE version_id=? AND document_id=?`, scanReq.VersionID, i.DocumentID).Scan(&n); e != nil {
+					return false, e
+				}
+				owned = owned || n > 0
+			}
+			if !owned {
+				var normScan struct {
+					DocumentIDs []string `json:"document_ids"`
+				}
+				_ = json.Unmarshal(r.Normalization, &normScan)
+				inNorm := false
+				for _, did := range normScan.DocumentIDs {
+					if did == i.DocumentID {
+						inNorm = true
+						break
+					}
+				}
+				if inNorm && (len(normScan.DocumentIDs) == 1 || scanReq.PathPrefix != "" || scanReq.PagePath != "" || scanReq.RegionID != "") {
+					owned = true
+				}
+			}
+		}
 		if !owned {
 			continue
 		}
@@ -804,10 +851,224 @@ func purgeStage(i domain.PurgeIntent) string {
 	if phase <= 5 {
 		return "personal"
 	}
-	if phase <= 13 {
+	if phase <= 14 {
 		return "source"
 	}
 	return "versions"
+}
+
+func (t *writeTx) redactPurgedScanRecords(documentID string) error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+
+	var candidateTS []string
+	tsRows, err := t.tx.QueryContext(t.ctx, `SELECT DISTINCT target_set_id FROM scan_captured_versions WHERE (document_id=? OR version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?)) AND target_set_id!=''`, documentID, documentID)
+	if err != nil {
+		return err
+	}
+	for tsRows.Next() {
+		var tsID string
+		if err := tsRows.Scan(&tsID); err != nil {
+			tsRows.Close()
+			return err
+		}
+		candidateTS = append(candidateTS, tsID)
+	}
+	if err := errors.Join(tsRows.Err(), tsRows.Close()); err != nil {
+		return err
+	}
+
+	var affectedJobs []string
+	jobRows, err := t.tx.QueryContext(t.ctx, `SELECT job_id FROM scan_runs WHERE EXISTS(SELECT 1 FROM scan_captured_versions cv WHERE cv.job_id=scan_runs.job_id AND (cv.document_id=? OR cv.version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?)))`, documentID, documentID)
+	if err != nil {
+		return err
+	}
+	for jobRows.Next() {
+		var jid string
+		if err := jobRows.Scan(&jid); err != nil {
+			jobRows.Close()
+			return err
+		}
+		affectedJobs = append(affectedJobs, jid)
+	}
+	if err := errors.Join(jobRows.Err(), jobRows.Close()); err != nil {
+		return err
+	}
+
+	if err := t.exec(`UPDATE job_items SET page_path='',region_id='',source_id='',target_set_id='',detail='{"purged":true}',state=CASE WHEN state IN ('pending','running') THEN 'skipped' ELSE state END,reason=CASE WHEN state IN ('pending','running') OR reason='document_trashed' THEN 'document_purged' ELSE reason END,stage='complete',updated_at=? WHERE (document_id=? OR version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?)) AND (page_path!='' OR region_id!='' OR source_id!='' OR target_set_id!='' OR CAST(detail AS TEXT)!='{"purged":true}' OR state IN ('pending','running') OR reason='document_trashed')`, now, documentID, documentID); err != nil {
+		return err
+	}
+	if err := t.exec(`UPDATE scan_captured_versions SET enum_after_path='',enum_after_region='',entry_after_path='',source_after_idx=0,target_set_id='',requested_selection='{"purged":true}',targets_json='[]',exclusion_reason='document_purged',enum_state=CASE WHEN enum_state='complete' THEN 'complete' ELSE 'purged' END WHERE (document_id=? OR version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?)) AND (enum_after_path!='' OR enum_after_region!='' OR entry_after_path!='' OR source_after_idx!=0 OR target_set_id!='' OR CAST(requested_selection AS TEXT)!='{"purged":true}' OR CAST(targets_json AS TEXT)!='[]' OR exclusion_reason!='document_purged' OR enum_state NOT IN ('complete','purged'))`, documentID, documentID); err != nil {
+		return err
+	}
+
+	scrubbedTS := map[string]bool{}
+	for _, tsID := range candidateTS {
+		var shared bool
+		if err := t.tx.QueryRowContext(t.ctx, `SELECT EXISTS(
+			SELECT 1 FROM source_captures WHERE target_set_id=?
+			UNION ALL SELECT 1 FROM scan_captured_versions WHERE target_set_id=?
+			UNION ALL SELECT 1 FROM observation_runs WHERE target_set_id=? AND version_id NOT IN(SELECT version_id FROM purged_versions WHERE document_id=?)
+			UNION ALL SELECT 1 FROM citation_verifications WHERE target_set_id=? AND version_id NOT IN(SELECT version_id FROM purged_versions WHERE document_id=?)
+			UNION ALL SELECT 1 FROM coverage_sets WHERE target_set_id=? AND version_id NOT IN(SELECT version_id FROM purged_versions WHERE document_id=?)
+		)`, tsID, tsID, tsID, documentID, tsID, documentID, tsID, documentID).Scan(&shared); err != nil {
+			return err
+		}
+		if shared {
+			continue
+		}
+		scrubbedTS[tsID] = true
+		if err := t.exec(`DELETE FROM captured_reads WHERE target_set_id=? AND NOT EXISTS(SELECT 1 FROM citation_verifications cv WHERE cv.read_id=captured_reads.read_id)`, tsID); err != nil {
+			return err
+		}
+		if err := t.exec(`UPDATE captured_target_sets SET requested_selection='{"purged":true}',targets_json='[]' WHERE target_set_id=?`, tsID); err != nil {
+			return err
+		}
+	}
+
+	for _, jid := range affectedJobs {
+		run, err := t.ScanRun(jid)
+		if err != nil {
+			return err
+		}
+		var healthyTargets []domain.ScanSourceTarget
+		var firstHealthyTS string
+		var hasHealthyDocs, hasHealthyPaths, hasHealthyRegions, currentOrdIsHealthy bool
+		afterOrd := 0
+		for {
+			cvs, err := t.ScanCapturedVersions(jid, afterOrd, 256)
+			if err != nil {
+				return err
+			}
+			if len(cvs) == 0 {
+				break
+			}
+			for _, cv := range cvs {
+				afterOrd = cv.VersionOrdinal
+				if cv.DocumentID == documentID || cv.ExclusionReason == "document_purged" || cv.EnumState == "purged" {
+					continue
+				}
+				hasHealthyDocs = true
+				if cv.PageCount > 0 || cv.EntryCount > 0 {
+					hasHealthyPaths = true
+				}
+				if cv.RegionCount > 0 {
+					hasHealthyRegions = true
+				}
+				if cv.VersionOrdinal > run.EnumVersionOrdinal && !currentOrdIsHealthy {
+					if cv.EnumAfterPath != "" || cv.EnumAfterRegion != "" {
+						currentOrdIsHealthy = true
+					}
+				}
+				if cv.ExclusionReason == "" {
+					if firstHealthyTS == "" && cv.TargetSetID != "" {
+						firstHealthyTS = cv.TargetSetID
+					}
+					healthyTargets = append(healthyTargets, cv.Targets...)
+				}
+			}
+		}
+
+		if !currentOrdIsHealthy {
+			run.EnumAfterPath = ""
+			run.EnumAfterRegion = ""
+		}
+		if !hasHealthyDocs || !hasHealthyPaths {
+			run.RequestedScope.PathPrefix = ""
+			run.RequestedScope.PagePath = ""
+		}
+		if !hasHealthyDocs || !hasHealthyRegions {
+			run.RequestedScope.RegionID = ""
+		}
+		if run.RequestedScope.DocumentID == documentID {
+			run.RequestedScope.DocumentID = ""
+		}
+		if len(run.RequestedScope.DocumentIDs) > 0 {
+			keptDocs := make([]string, 0, len(run.RequestedScope.DocumentIDs))
+			for _, did := range run.RequestedScope.DocumentIDs {
+				if did != documentID {
+					keptDocs = append(keptDocs, did)
+				}
+			}
+			run.RequestedScope.DocumentIDs = keptDocs
+			if len(keptDocs) == 1 && run.RequestedScope.DocumentID == "" {
+				run.RequestedScope.DocumentID = keptDocs[0]
+			}
+		}
+		if run.TargetSetID != "" && scrubbedTS[run.TargetSetID] {
+			run.TargetSetID = firstHealthyTS
+		}
+		if run.Report.TargetSetID != "" && scrubbedTS[run.Report.TargetSetID] {
+			run.Report.TargetSetID = firstHealthyTS
+		}
+		for i := range healthyTargets {
+			if tsVal := healthyTargets[i].RequestedSelection.TargetSetID; tsVal != "" && scrubbedTS[tsVal] {
+				healthyTargets[i].RequestedSelection.TargetSetID = ""
+			}
+		}
+		run.Report.SourceTargets = healthyTargets
+		if run.RequestedScope.TargetSetID != "" && scrubbedTS[run.RequestedScope.TargetSetID] {
+			run.RequestedScope.TargetSetID = ""
+		}
+		if len(run.RequestedScope.Sources) > 0 {
+			for i := range run.RequestedScope.Sources {
+				if run.RequestedScope.Sources[i].TargetSetID != "" && scrubbedTS[run.RequestedScope.Sources[i].TargetSetID] {
+					run.RequestedScope.Sources[i].TargetSetID = ""
+				}
+			}
+		}
+		reqScopeCopy := run.RequestedScope
+		run.Report.RequestedScope = &reqScopeCopy
+		if err := t.refreshScanReportCounts(&run); err != nil {
+			return err
+		}
+		run.RequestedScopeJSON = jsonBytes(run.RequestedScope)
+		run.ReportJSON = jsonBytes(run.Report)
+		if err := t.exec(`UPDATE scan_runs SET target_set_id=?,requested_scope=?,enum_after_path=?,enum_after_region=?,report=? WHERE job_id=?`,
+			nullable(run.TargetSetID), run.RequestedScopeJSON, run.EnumAfterPath, run.EnumAfterRegion, run.ReportJSON, jid,
+		); err != nil {
+			return err
+		}
+		if err := t.SetJobResult(jid, run.ReportJSON); err != nil {
+			return err
+		}
+		if j, err := job(t.ctx, t.tx, jid); err == nil {
+			var scopeMap map[string]any
+			if json.Unmarshal(j.Scope, &scopeMap) == nil && scopeMap != nil {
+				changed := false
+				if !hasHealthyDocs || !hasHealthyPaths {
+					for _, k := range []string{"path_prefix", "page_path"} {
+						if v, ok := scopeMap[k].(string); ok && v != "" {
+							scopeMap[k] = ""
+							changed = true
+						}
+					}
+				}
+				if !hasHealthyDocs || !hasHealthyRegions {
+					if v, ok := scopeMap["region_id"].(string); ok && v != "" {
+						scopeMap["region_id"] = ""
+						changed = true
+					}
+				}
+				if tsVal, ok := scopeMap["target_set_id"].(string); ok && tsVal != "" && scrubbedTS[tsVal] {
+					scopeMap["target_set_id"] = firstHealthyTS
+					changed = true
+				}
+				if changed {
+					if err := t.exec(`UPDATE jobs SET scope=? WHERE job_id=?`, jsonBytes(scopeMap), jid); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+
+	for tsID := range scrubbedTS {
+		if err := t.exec(`DELETE FROM captured_target_sets WHERE target_set_id=? AND NOT EXISTS(SELECT 1 FROM captured_reads WHERE target_set_id=?) AND NOT EXISTS(SELECT 1 FROM citation_verifications WHERE target_set_id=?) AND NOT EXISTS(SELECT 1 FROM observation_runs WHERE target_set_id=?) AND NOT EXISTS(SELECT 1 FROM source_observations WHERE target_set_id=?) AND NOT EXISTS(SELECT 1 FROM reassessment_triggers WHERE target_set_id=?) AND NOT EXISTS(SELECT 1 FROM coverage_sets WHERE target_set_id=?) AND NOT EXISTS(SELECT 1 FROM scan_runs WHERE target_set_id=?) AND NOT EXISTS(SELECT 1 FROM scan_captured_versions WHERE target_set_id=?) AND NOT EXISTS(SELECT 1 FROM findings WHERE target_set_id=?)`, tsID, tsID, tsID, tsID, tsID, tsID, tsID, tsID, tsID, tsID); err != nil {
+			return err
+		}
+	}
+
+	return t.exec(`DELETE FROM object_pins WHERE owner_kind='job' AND EXISTS(SELECT 1 FROM purged_versions pv WHERE pv.document_id=? AND object_pins.pin_id GLOB 'scan:*:'||pv.version_id||':*')`, documentID)
 }
 
 func (t *writeTx) detachManagedSnapshots(job, document string, limit int) (bool, error) {

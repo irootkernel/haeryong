@@ -29,6 +29,7 @@ type Store interface {
 // Each callback is a short serialized write transaction. Files are streamed and
 // synced before entry; only atomic publication/directory sync may run inside it.
 type WriteTx interface {
+	ScanTx
 	SourceCaptureTx
 	ProviderTx
 	GenerationTx
@@ -225,6 +226,38 @@ type WriteTx interface {
 	// AppendEvent appends one transactional-outbox event inside the caller's
 	// transaction (the sqlite adapter's appendEvent).
 	AppendEvent(resourceKind, id, kind string, revision int64, body []byte) error
+}
+
+type ScanTx interface {
+	ActiveCoalescedScan(scopeHash string) (domain.Job, bool, error)
+	CreateScanRun(run domain.ScanRun, versions []domain.ScanCapturedVersion) error
+	ScanRun(jobID string) (domain.ScanRun, error)
+	UpdateScanRun(run domain.ScanRun) error
+	ScanCapturedVersions(jobID string, afterOrdinal, limit int) ([]domain.ScanCapturedVersion, error)
+	ScanCapturedVersion(jobID string, ordinal int) (domain.ScanCapturedVersion, error)
+	ScanCapturedVersionByID(jobID, versionID string) (domain.ScanCapturedVersion, error)
+	UpdateScanCapturedVersion(v domain.ScanCapturedVersion) error
+	PutJobItem(item domain.JobItem) error
+	JobItem(jobID, itemID string) (domain.JobItem, error)
+	JobItems(jobID string, afterOrdinal, limit int) ([]domain.JobItem, error)
+	JobItemsByState(jobID, state string, afterOrdinal, limit int) ([]domain.JobItem, error)
+	NextPendingJobItem(jobID string) (domain.JobItem, bool, error)
+	UpdateJobItem(item domain.JobItem) error
+	SkipRemainingScanItems(jobID, reason string) error
+	ActiveDerivedWorkJob(versionID, workKind string) (domain.Job, bool, error)
+	RebuildScanReferences(scanJobID, itemID, versionID string) (string, error)
+	PutFinding(f domain.Finding) error
+	Finding(findingID string) (domain.Finding, error)
+	FindingByFingerprint(jobID, kind, fingerprint string) (domain.Finding, bool, error)
+	JobFindings(filter domain.FindingFilter, afterCreatedAt, afterID string) ([]domain.Finding, error)
+	ScanFindingSummary(jobID string) (domain.ScanFindingSummary, error)
+	ProjectDocumentsAll(projectID string) ([]domain.Document, error)
+	CountVersionInventory(versionID, contentSetID, pathPrefix, regionID string) (pages, regions, entries, sources int, err error)
+	VersionPagesAfter(versionID, pathPrefix, afterPath string, limit int) ([]domain.Page, error)
+	VersionRegionsAfter(versionID, pagePath, regionID, afterRegion string, limit int) ([]domain.Region, error)
+	SourceCaptureByTargetSet(targetSetID string) (domain.SourceCapture, bool, error)
+	VerificationsByTargetSet(versionID, targetSetID string) ([]domain.CitationVerification, error)
+	ScanTargetSetCommitted(projectID, versionID, targetSetID string) (bool, error)
 }
 
 // SourceReadStore exposes recorded source facts to read-only composers.

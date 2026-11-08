@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"time"
 
 	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
@@ -48,7 +49,7 @@ func (s *Store) Job(ctx context.Context, id string) (domain.Job, error) {
 }
 func (t *writeTx) CreateJob(j domain.Job) error {
 	switch j.Kind {
-	case "upload_seal", "import", "lifecycle", "backup", "export", "restore", "derived_index", "generation", "question":
+	case "upload_seal", "import", "lifecycle", "backup", "export", "restore", "derived_index", "generation", "question", "scan":
 	default:
 		return errors.New("local job kind not implemented")
 	}
@@ -91,6 +92,12 @@ func (t *writeTx) ClaimJob(id string) (domain.Job, error) {
 	if err := t.exec("UPDATE jobs SET state='running',attempt_generation=?,revision=revision+1 WHERE job_id=?", j.AttemptGeneration, id); err != nil {
 		return j, err
 	}
+	if j.Kind == "scan" {
+		now := time.Now().UTC().Format(time.RFC3339Nano)
+		if err := t.exec("UPDATE scan_runs SET started_at=coalesce(started_at,?),updated_at=? WHERE job_id=?", now, now, id); err != nil {
+			return j, err
+		}
+	}
 	return j, t.jobUpdated(id)
 }
 func terminal(state string) bool {
@@ -128,7 +135,15 @@ func (t *writeTx) CancelJob(id string) (domain.Job, error) {
 	if terminal(j.State) || j.CancelRequested {
 		return j, nil
 	}
-	wasQueued := j.State == "queued"
+	wasQueued := j.State == "queued" || ((j.Kind == "scan" || j.Kind == "derived_index") && j.State == "paused")
+	if j.Kind == "scan" {
+		if err := t.exec(`DELETE FROM resource_revisions WHERE resource_kind='restore_job_hold' AND resource_id=?`, id); err != nil {
+			return j, err
+		}
+		if err := t.settleScanOwnedRepairs(id); err != nil {
+			return j, err
+		}
+	}
 	j.CancelRequested = true
 	j.AttemptGeneration++
 	j.State = "cancelling"
@@ -149,7 +164,7 @@ func (t *writeTx) ConfirmStop(id string, generation int64) error {
 	if err != nil {
 		return err
 	}
-	if j.AttemptGeneration != generation || !j.CancelRequested || (j.State != "cancelling" && j.State != "interrupted" && j.State != "cancelled" && !(domain.ProviderJob(j.Kind) && (j.State == "paused" || j.State == "reconciling"))) {
+	if j.AttemptGeneration != generation || !j.CancelRequested || (j.State != "cancelling" && j.State != "interrupted" && j.State != "cancelled" && !(domain.ProviderJob(j.Kind) && (j.State == "paused" || j.State == "reconciling")) && !((j.Kind == "scan" || j.Kind == "derived_index") && j.State == "paused")) {
 		return domain.ErrStaleWorker
 	}
 	if domain.ProviderJob(j.Kind) {
@@ -526,7 +541,7 @@ func (s *Store) recoverLocalJobs(ctx context.Context) error {
 		return err
 	}
 	var pending int
-	if err := s.db.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM provider_reconcile_intents WHERE state='executing')+(SELECT count(*) FROM provider_attempts WHERE state IN ('dispatching','running'))`).Scan(&pending); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM provider_reconcile_intents WHERE state='executing')+(SELECT count(*) FROM provider_attempts WHERE state IN ('dispatching','running'))+(SELECT count(*) FROM job_items WHERE state='running')`).Scan(&pending); err != nil {
 		return err
 	}
 	if count == 0 && pending == 0 {
@@ -547,6 +562,9 @@ func (s *Store) recoverLocalJobs(ctx context.Context) error {
 		return err
 	}
 	if err := t.exec(`UPDATE provider_attempts SET state='outcome_unknown',reason='transport_unknown' WHERE state IN ('dispatching','running')`); err != nil {
+		return err
+	}
+	if err := t.exec(`UPDATE job_items SET state='pending' WHERE state='running'`); err != nil {
 		return err
 	}
 	if err := t.exec("INSERT INTO events(stream_epoch,resource_kind,resource_id,kind,revision,body) SELECT libraries.stream_epoch,'job',jobs.job_id,'job.updated',jobs.revision+1,NULL FROM jobs CROSS JOIN libraries WHERE libraries.singleton=1 AND (" + needs + ")"); err != nil {
@@ -633,6 +651,26 @@ func (t *writeTx) stoppedOwnership(j domain.Job) error {
 		if err := t.DiscardContentSet(j.ID); err != nil {
 			return err
 		}
+	case "scan":
+		if err := t.settleScanOwnedRepairs(j.ID); err != nil {
+			return err
+		}
+		itemState := "failed"
+		reason := j.Error
+		if j.CancelRequested {
+			itemState = "cancelled"
+			reason = "cancelled"
+		}
+		if reason == "" {
+			reason = itemState
+		}
+		now := time.Now().UTC().Format(time.RFC3339Nano)
+		if err := t.exec(`UPDATE job_items SET state=?,reason=?,stage='complete',updated_at=? WHERE job_id=? AND state IN ('pending','running')`, itemState, reason, now, j.ID); err != nil {
+			return err
+		}
+		if err := t.finalizeUnmaterializedScanUnits(j.ID, itemState, reason, now); err != nil {
+			return err
+		}
 	default:
 		return nil
 	}
@@ -641,6 +679,51 @@ func (t *writeTx) stoppedOwnership(j domain.Job) error {
 	}
 	if j.UploadID != "" {
 		return t.ReclaimAbandonedUpload(j.UploadID)
+	}
+	return nil
+}
+
+func (t *writeTx) settleScanOwnedRepairs(scanJobID string) error {
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT DISTINCT repair_job_id FROM job_items WHERE job_id=? AND repair_job_id!=''`, scanJobID)
+	if err != nil {
+		return err
+	}
+	childIDs := []string{}
+	for rows.Next() {
+		var cid string
+		if err := rows.Scan(&cid); err != nil {
+			rows.Close()
+			return err
+		}
+		childIDs = append(childIDs, cid)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, cid := range childIDs {
+		if err := t.exec(`DELETE FROM resource_revisions WHERE resource_kind='restore_job_hold' AND resource_id=?`, cid); err != nil {
+			return err
+		}
+		child, e := job(t.ctx, t.tx, cid)
+		if errors.Is(e, domain.ErrNotFound) {
+			continue
+		}
+		if e != nil {
+			return e
+		}
+		if !terminal(child.State) {
+			child, e = t.CancelJob(cid)
+			if e != nil {
+				return e
+			}
+			if !terminal(child.State) {
+				if e = t.ConfirmStop(cid, child.AttemptGeneration); e != nil {
+					return e
+				}
+			}
+		}
 	}
 	return nil
 }

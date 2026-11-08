@@ -403,4 +403,32 @@ No maintenance/schedule/release or untested-platform qualification is claimed.
 
 ## Manual maintenance execution context
 
-[EPIC-008](epics/EPIC-008.md) uses its [execution dossier](todo/TODO-EPIC-008.md) as a thin integration map. The roadmap, original Task assertions and linked product contracts retain their authority. This preparation changes no implementation or gate status.
+[EPIC-008](epics/EPIC-008.md) uses its [execution dossier](todo/TODO-EPIC-008.md) as a thin integration map. The roadmap, original Task assertions and linked product contracts retain their authority.
+
+## Scan inventory and deterministic structure checks (TASK-008-01)
+
+[TASK-008-01](tasks/EPIC-008/TASK-008-01.md) adds schema revision 20 scan
+admission (`scan_runs`, `scan_captured_versions`, `job_items`, `findings`),
+narrowed project numeric policy budgets, pre-dispatch source target resolution,
+incremental 64-unit `job_items` enumeration (`document`, `version`, `page`,
+`region`, `entry`, `source`, `index`), deterministic structure and
+reference-index inspection across `file`/`directory`/`symlink` entries without
+LLM calls, owned `derived_index` (`references`) repair child fencing, and closed
+coverage/finding projections across HTTP (`POST /api/v1/scans`,
+`GET/HEAD /api/v1/jobs/{id}/findings`), CLI (`haeryong scan`,
+`haeryong findings list`), and shared browser/native/desktop clients
+(`scanStart`, `jobFindingsList`) behind `features.scans`.
+[Scan inventory and deterministic structure evidence](testing/scan-inventory.md)
+records the executed unit, persistence, HTTP, public E2E (including normal
+symlink/directory/binary import and 40-page/83-unit mid-scan `SIGKILL` and
+restart recovery), populated schema 19 -> 20 migration, contract (`59/59`), and
+`go vet` proof alongside retained earlier failures and qualification limits.
+The corrected selected common passed 1,390 Go and 256 Python cases on the frozen
+implementation/test candidate. The record preserves the initial failed common
+and separately settled Coordinator bytecode guard qualification. Independent
+Task/result and Epic-contribution assessments, current composition and CO
+substantive review support delegated bounded member acceptance. The final
+factual/lifecycle record overlay has separate affected documentation checks; the
+normal commit and native finalization follow. `TASK-008-02` through `TASK-008-06`
+retain semantic discovery, freshness assessment, overlays, approval/undo, and the
+manual maintenance exit gate. Overall Epic acceptance remains with Master.

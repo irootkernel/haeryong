@@ -56,8 +56,22 @@ func workflowActions(kind string) []string {
 		return []string{"project.read", "version.read", "draft.write"}
 	case "draft_publish":
 		return []string{"project.read", "version.read", "draft.publish"}
+	case "scan":
+		return []string{"project.read", "version.read", "source.read", "scan.request", "job.read", "job.cancel"}
 	}
 	return nil
+}
+
+func projectPostWorkScanEnabled(cfg domain.Configuration, projectID string) bool {
+	var parsed struct {
+		Projects map[string]struct {
+			PostWorkScanEnabled bool `json:"post_work_scan_enabled"`
+		} `json:"projects"`
+	}
+	if json.Unmarshal(cfg.Value, &parsed) != nil {
+		return false
+	}
+	return parsed.Projects[projectID].PostWorkScanEnabled
 }
 func (s *Service) workflowOwner(ctx context.Context, tx app.WriteTx, token string) (domain.Session, error) {
 	actor, e := s.AuthenticateWrite(ctx, tx, token)
@@ -140,7 +154,23 @@ func (s *Service) IssueWorkflowGrant(ctx context.Context, token, key string, inp
 		if e := app.AuthorizeTarget(tx, target); e != nil {
 			return domain.Response{}, e
 		}
-		scope := domain.CredentialScope{Kind: "workflow", Actions: workflowActions(input.Workflow), ProjectIDs: []string{input.ProjectID}, VersionIDs: input.VersionIDs, DraftIDs: input.DraftIDs}
+		cfg, e := tx.Configuration()
+		if e != nil {
+			return domain.Response{}, e
+		}
+		scanEnabled := projectPostWorkScanEnabled(cfg, input.ProjectID)
+		if input.Workflow == "scan" && !scanEnabled {
+			return domain.Response{}, domain.ErrDenied
+		}
+		actions := append([]string(nil), workflowActions(input.Workflow)...)
+		if scanEnabled {
+			for _, extra := range []string{"scan.request", "job.read", "job.cancel"} {
+				if !contains(actions, extra) {
+					actions = append(actions, extra)
+				}
+			}
+		}
+		scope := domain.CredentialScope{Kind: "workflow", Actions: actions, ProjectIDs: []string{input.ProjectID}, VersionIDs: input.VersionIDs, DraftIDs: input.DraftIDs}
 		for _, id := range input.VersionIDs {
 			v, e := tx.PublishedVersion(id)
 			if e != nil {

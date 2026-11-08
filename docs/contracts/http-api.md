@@ -1109,3 +1109,40 @@ that receipt. A `404` receipt under the same `runtime_generation` refreshes the
 resource and retries with the same `operation_id` only if the captured
 precondition is still current; a changed `runtime_generation` never auto-resends.
 See [multi-device reconciliation evidence](../testing/multi-device-reconciliation.md).
+
+## Scan admission and findings read delivery (TASK-008-01)
+
+`POST /api/v1/scans` is a keyed (`Idempotency-Key`) mutation available to the
+owner or a derived workflow credential with `scan.request`. It decodes the
+closed `ScanRequest` shape (`scope`, `project_id`, `project_ids`, `document_id`,
+`document_ids`, `version_id`, `path_prefix`, `page_path`, `region_id`, `depth`
+in `change_focused` | `full_scope` | `deep_semantic` with hyphenated aliases,
+`source_mode`, `target_set_id`, `sources`, `finding_id`,
+`expected_finding_revision`) with duplicate-key and unknown-field rejection
+(`400 INVALID_REQUEST`, including forbidden `max_files_inspect` caps). Premature
+finding-reassessment selectors (`finding_id` or `expected_finding_revision`)
+return `503 FEATURE_NOT_READY`; finding decision mutations remain owned by
+TASK-008-05.
+
+Admission captures the authorized document/version roster (`ORDER BY document_id COLLATE BINARY`,
+excluding pre-existing trashed documents as `document_trashed` in
+`result.captured.excluded_documents` without adding them to
+`active_document_ids`), resolves pre-dispatch source target sets outside the
+SQLite writer, and commits or coalesces the scan job (`202 Accepted` with
+`{operation_id, job_id, job_url, coalesced, target_set_id}`). `ScopeHash` binds
+the admitting `PrincipalID`, `AuthKind`, and `CredentialScope` so distinct
+workflow principals and the owner principal never coalesce across principals,
+while equivalent requests sharing the same authorized principal, `auth_kind`,
+and `credential_scope` (including different remembered owner device sessions)
+coalesce onto an active `queued`, `running`, or `interrupted` scan job.
+
+`GET/HEAD /api/v1/jobs/{id}/findings` is an owner-only read accepting optional
+`kind`, `status`, `limit` (`1..200`, default `50`), and keyset `cursor`. It
+returns `{items, next_cursor}` with a strong SHA-256 `ETag` and `304 Not Modified`
+on matching `If-None-Match`. Current-authority visibility across `GET /api/v1/jobs/{id}`,
+`GET /api/v1/jobs`, `GET /api/v1/events`, `GET /api/v1/operations/{id}`,
+`POST /api/v1/jobs/{id}/cancel`, and `GET /api/v1/jobs/{id}/findings` hides
+single-target scans whose document is in Trash or purged (`404 NOT_FOUND`) and
+hides workflow scan jobs when the workflow principal's project/version scope no
+longer covers all active captured targets. See
+[scan inventory evidence](../testing/scan-inventory.md).

@@ -532,3 +532,29 @@ shows the same profile/data directory selection and an explicit unused `--port`
 override, which remains ephemeral. Missing discovery/identity errors give local
 startup/recovery guidance; no random listener fallback or credential forwarding
 is performed. The status API itself is unchanged.
+
+## Scan and findings CLI (TASK-008-01)
+
+```sh
+haeryong scan [--all-allowed-projects | --project PROJECT_ID[,PROJECT_ID...]] [--document DOCUMENT_ID] [--version VERSION_ID] [--path PATH [--region ID]] [--depth change-focused|full-scope|deep-semantic] [--source-mode pinned|current] [--target-set TARGET_SET_ID | --capture TARGET_SET_ID] [--operation-id K]
+haeryong findings list --job JOB_ID [--kind KIND] [--status STATUS] [--limit N] [--cursor CURSOR]
+haeryong findings approve FINDING_ID [--if-match ETAG] [--operation-id K]
+haeryong findings reject FINDING_ID [--if-match ETAG] [--operation-id K]
+```
+
+`haeryong scan` validates `--depth` (`change-focused`, `full-scope`, or
+`deep-semantic`, normalized to `change_focused`, `full_scope`, `deep_semantic`),
+`--source-mode` (`pinned` or `current`), and `--region` (which requires
+`--path`), and rejects conflicting `--all-allowed-projects`/`--project` or
+`--target-set`/`--capture` flags (`exit 2`). Before sending `POST /api/v1/scans`,
+the CLI persists a local caller journal entry binding `operation_id`,
+`runtime_generation`, `library_id`, `principal_id`, and the canonical request
+payload. If the `202` response is lost, the CLI exits `5` with the pending
+`operation_id` in error data; same-intent retry queries
+`GET /api/v1/operations/{id}` first and reuses the committed scan receipt, or
+resends the exact saved request only when the receipt is absent under the same
+`runtime_generation`. `haeryong findings list --job` enumerates job findings for
+the owner (`--limit` `1..200`); `haeryong findings approve` and
+`haeryong findings reject` exit `5` (`UNAVAILABLE` envelope code with
+`FEATURE_NOT_READY: findings approve|reject` message) until TASK-008-05.
+See [scan inventory evidence](../testing/scan-inventory.md).

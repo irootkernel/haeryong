@@ -46,7 +46,7 @@ var _ = It("T5QSQL01 revision19 Q&A migration rolls back atomically preserves al
 	health, e := upgraded.Health(ctx)
 	Expect(e).NotTo(HaveOccurred())
 	Expect(health.Library.ID).To(Equal(old.Library.ID))
-	Expect(health.Library.SchemaRevision).To(Equal(19))
+	Expect(health.Library.SchemaRevision).To(Equal(SchemaRevision))
 	Expect(upgraded.validateTables(ctx, SchemaRevision)).To(Succeed())
 	for _, table := range []string{"questions", "answers"} {
 		Expect(upgraded.db.QueryRow(`SELECT count(*) FROM ` + table).Scan(&count)).To(Succeed())

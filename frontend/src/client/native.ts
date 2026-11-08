@@ -1,4 +1,4 @@
-import type {QuestionRequest,QuestionAccepted,QuestionView,AnswerView,RetainedSourceRead,GenerationRequest,GenerationAccepted,DraftView,DraftPatch} from "./types.ts";
+import type {ScanRequest,ScanAccepted,FindingView,JobFindingsFilter,FindingKind,FindingStatus,QuestionRequest,QuestionAccepted,QuestionView,AnswerView,RetainedSourceRead,GenerationRequest,GenerationAccepted,DraftView,DraftPatch} from "./types.ts";
 import { providerStatus as verifiedProviderStatus } from "./provider-status.ts";
 // Narrow native transport boundary. The desktop companion (TASK-003-05) binds
 // these named operations to a typed Go proxy. The port accepts no arbitrary
@@ -150,6 +150,8 @@ export interface NativePort {
   call(operation:"answerCitationStream",payload:{answer_id:string;citation_index:number}):Promise<AnnotationStream>;
   call(operation:"retainedSourceReads",payload:{project_id:string;source_id:string;cursor?:string}):Promise<ListPage<RetainedSourceRead>>;
   call(operation:"generationStart",payload:{request:GenerationRequest;operation_id:string}):Promise<DecisionResult>;
+  call(operation:"scanStart",payload:{request:ScanRequest;operation_id:string}):Promise<DecisionResult>;
+  call(operation:"jobFindingsList",payload:{job_id:string;kind?:FindingKind;status?:FindingStatus;cursor?:string;limit?:number}):Promise<ListPage<FindingView>>;
   call(operation:"draftList",payload:{project_id?:string;cursor?:string}):Promise<ListPage<DraftView>>;
   call(operation:"draftGet",payload:{draft_id:string}):Promise<DraftView>;
   call(operation:"draftHistory",payload:{draft_id:string;cursor?:string}):Promise<ListPage<DraftView>>;
@@ -253,6 +255,7 @@ export interface NativePort {
 }
 
 export const NATIVE_OPERATIONS = [
+ "scanStart","jobFindingsList",
  "questionStart","questionList","questionGet","questionAnswers","answerGet","questionTextStream","questionContextStream","answerBodyStream","answerCitationStream",
  "retainedSourceReads","generationStart","draftList","draftGet","draftHistory","draftPatch","draftPublish",
   "lifecyclePlan", "lifecyclePlanGet", "lifecyclePlanCommit", "trashList",
@@ -345,6 +348,7 @@ export const NATIVE_PASSIVE_READ_OPERATIONS = new Set<string>([
   "listUploads", "uploadDetail", "uploadEntries", "uploadRanges", "uploadPins",
   "jobGet", "verifyContextFresh", "packageStream", "fileStream",
   "draftList", "draftGet", "draftHistory",
+  "jobFindingsList",
   "questionList", "questionGet", "questionAnswers", "answerGet",
   "questionTextStream", "questionContextStream", "answerBodyStream", "answerCitationStream",
 ]);
@@ -612,6 +616,8 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
   async #savedStream(operation:"annotationBodyStream"|"annotationContextStream",id:string,revision:number):Promise<AnnotationStream>{const era=this.#era;const s=await this.#freshStream(()=>this.#port.call(operation,{annotation_id:id,revision}),era);return {...s,body:eraGuardedStream(s.body,()=>era!==this.#era)};}
 
   generationStart(request:GenerationRequest,key:string):Promise<GenerationAccepted>{const era=this.#era;return sourceWrite<GenerationAccepted>(key,()=>this.#fresh(this.#port.call("generationStart",{request,operation_id:key}),era),id=>{if(era!==this.#era)throw new StaleResponseError();return this.operation(id);},true);}
+  scanStart(request:ScanRequest,key:string):Promise<ScanAccepted>{const era=this.#era;return sourceWrite<ScanAccepted>(key,()=>this.#fresh(this.#port.call("scanStart",{request,operation_id:key}),era),id=>{if(era!==this.#era)throw new StaleResponseError();return this.operation(id);},true);}
+  jobFindingsList(jobId:string,filter:JobFindingsFilter={}):Promise<ListPage<FindingView>>{return this.#fresh(this.#port.call("jobFindingsList",{job_id:jobId,...(filter.kind?{kind:filter.kind}:{}),...(filter.status?{status:filter.status}:{}),...(filter.cursor?{cursor:filter.cursor}:{}),...(filter.limit!==undefined?{limit:filter.limit}:{})}),this.#era);}
   questionStart(versionId:string,request:QuestionRequest,key:string):Promise<QuestionAccepted>{const era=this.#era;return sourceWrite<QuestionAccepted>(key,()=>this.#fresh(this.#port.call("questionStart",{version_id:versionId,request,operation_id:key}),era),id=>{if(era!==this.#era)throw new StaleResponseError();return this.operation(id);},true);}
   questionList(versionId:string,cursor?:string):Promise<ListPage<QuestionView>>{return this.#fresh(this.#port.call("questionList",{version_id:versionId,cursor}),this.#era);}
   questionGet(id:string):Promise<QuestionView>{return this.#fresh(this.#port.call("questionGet",{question_id:id}),this.#era);}

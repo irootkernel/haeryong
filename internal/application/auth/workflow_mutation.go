@@ -27,6 +27,78 @@ func AuthorizeFreshWorkflowMutation(tx app.WriteTx, actor domain.Session, r doma
 	switch path {
 	case "/api/v1/generations":
 		raw = r.Body
+	case "/api/v1/scans":
+		if len(r.Body) == 0 {
+			return nil
+		}
+		var scanBody struct {
+			ProjectID   string   `json:"project_id"`
+			ProjectIDs  []string `json:"project_ids"`
+			DocumentID  string   `json:"document_id"`
+			DocumentIDs []string `json:"document_ids"`
+			VersionID   string   `json:"version_id"`
+		}
+		if json.Unmarshal(r.Body, &scanBody) != nil {
+			return domain.ErrInvalidTarget
+		}
+		resolved := ""
+		addProject := func(pid string) error {
+			pid = strings.TrimSpace(pid)
+			if pid == "" {
+				return nil
+			}
+			if resolved == "" {
+				resolved = pid
+			} else if resolved != pid {
+				return domain.ErrDenied
+			}
+			return nil
+		}
+		if err := addProject(scanBody.ProjectID); err != nil {
+			return err
+		}
+		for _, pid := range scanBody.ProjectIDs {
+			if err := addProject(pid); err != nil {
+				return err
+			}
+		}
+		docIDs := append([]string{}, scanBody.DocumentIDs...)
+		if strings.TrimSpace(scanBody.DocumentID) != "" {
+			docIDs = append(docIDs, scanBody.DocumentID)
+		}
+		for _, docID := range docIDs {
+			docID = strings.TrimSpace(docID)
+			if docID == "" {
+				continue
+			}
+			d, e := tx.Document(docID)
+			if e != nil {
+				return e
+			}
+			if err := addProject(d.ProjectID); err != nil {
+				return err
+			}
+		}
+		if vID := strings.TrimSpace(scanBody.VersionID); vID != "" {
+			v, e := tx.PublishedVersion(vID)
+			if e != nil {
+				return e
+			}
+			d, e := tx.Document(v.DocumentID)
+			if e != nil {
+				return e
+			}
+			if err := addProject(d.ProjectID); err != nil {
+				return err
+			}
+		}
+		if resolved == "" {
+			resolved = actor.MutationProjectID
+		}
+		if resolved == "" {
+			return domain.ErrDenied
+		}
+		raw, _ = json.Marshal(map[string]string{"project_id": resolved})
 	case "/api/v1/uploads":
 		if json.Unmarshal(r.Body, &body) != nil {
 			return domain.ErrInvalidTarget
