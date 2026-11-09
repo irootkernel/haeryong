@@ -3,6 +3,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"haeryong.local/haeryong/internal/domain"
 )
 
@@ -258,6 +259,17 @@ type ScanTx interface {
 	SourceCaptureByTargetSet(targetSetID string) (domain.SourceCapture, bool, error)
 	VerificationsByTargetSet(versionID, targetSetID string) ([]domain.CitationVerification, error)
 	ScanTargetSetCommitted(projectID, versionID, targetSetID string) (bool, error)
+	CreateMaintenanceJob(job domain.Job, intent domain.MaintenanceIntent) error
+	MaintenanceIntent(jobID string) (domain.MaintenanceIntent, error)
+	MaintenanceIntentByItem(scanJobID, itemID string) (domain.MaintenanceIntent, bool, error)
+	MaintenanceIntentsByScan(scanJobID string) ([]domain.MaintenanceIntent, error)
+	UpdateMaintenanceIntent(intent domain.MaintenanceIntent) error
+	AdmitMaintenanceCapture(job domain.Job, intent domain.MaintenanceIntent) error
+	PauseMaintenanceCapture(jobID, reason string, limitations []domain.MaintenanceLimitation) error
+	RecordPreparedMaintenanceOutput(jobID, attemptID string, outputJSON json.RawMessage) error
+	ScanProviderAttemptCount(scanJobID, excludeAttemptID string) (int, error)
+	ScanSearchText(versionID, pagePath, regionID string) (title string, headings []string, terms []string, body string, err error)
+	ScanCandidateUnits(scanJobID, focalVersionID, focalPagePath, focalRegionID string, terms, sourcePaths []string, limit int) (units []domain.CandidateTarget, skipped int, err error)
 }
 
 // SourceReadStore exposes recorded source facts to read-only composers.

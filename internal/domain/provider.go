@@ -51,7 +51,82 @@ type ProviderScope struct {
 	ReadIDs         []string            `json:"read_ids"`
 }
 
-func ProviderJob(kind string) bool { return kind == "generation" || kind == "question" }
+func ProviderJob(kind string) bool {
+	return kind == "generation" || kind == "question" || kind == "maintenance"
+}
+
+type MaintenanceReadBinding struct {
+	ReadID      string `json:"read_id"`
+	ProjectID   string `json:"project_id"`
+	VersionID   string `json:"version_id,omitempty"`
+	TargetSetID string `json:"target_set_id"`
+}
+
+type MaintenanceExplanation struct {
+	Role        string  `json:"role,omitempty"`
+	UnitID      string  `json:"unit_id,omitempty"`
+	UnitKind    string  `json:"unit_kind,omitempty"`
+	ItemID      string  `json:"item_id,omitempty"`
+	ProjectID   string  `json:"project_id"`
+	DocumentID  string  `json:"document_id"`
+	VersionID   string  `json:"version_id"`
+	PagePath    *string `json:"page_path,omitempty"`
+	RegionID    *string `json:"region_id,omitempty"`
+	Title       string  `json:"title,omitempty"`
+	ObjectHash  string  `json:"object_hash"`
+	Size        int64   `json:"byte_size"`
+	TargetSetID string  `json:"target_set_id,omitempty"`
+}
+
+type MaintenanceInvocation struct {
+	Mode              string                   `json:"mode,omitempty"`
+	ScanJobID         string                   `json:"scan_job_id,omitempty"`
+	ItemID            string                   `json:"item_id,omitempty"`
+	BatchID           string                   `json:"batch_id,omitempty"`
+	BatchItemIDs      []string                 `json:"batch_item_ids,omitempty"`
+	CardPayloadDigest string                   `json:"card_payload_digest,omitempty"`
+	UnitKind          string                   `json:"unit_kind"`
+	ProjectID         string                   `json:"project_id"`
+	DocumentID        string                   `json:"document_id"`
+	VersionID         string                   `json:"version_id"`
+	PagePath          *string                  `json:"page_path,omitempty"`
+	RegionID          *string                  `json:"region_id,omitempty"`
+	SourceMode        string                   `json:"source_mode"`
+	Explanations      []MaintenanceExplanation `json:"explanations,omitempty"`
+	ReadBindings      []MaintenanceReadBinding `json:"read_bindings,omitempty"`
+}
+
+func MaintenanceReadTarget(scope ProviderScope, defaultTargetSetID, defaultProjectID, readID string) (targetSetID, projectID, versionID string, ok bool) {
+	if scope.Invocation != nil && scope.Invocation.Maintenance != nil && len(scope.Invocation.Maintenance.ReadBindings) > 0 {
+		seen := map[string]bool{}
+		var matched *MaintenanceReadBinding
+		for i := range scope.Invocation.Maintenance.ReadBindings {
+			b := &scope.Invocation.Maintenance.ReadBindings[i]
+			if b.ReadID == "" || b.ProjectID == "" || b.VersionID == "" || b.TargetSetID == "" || seen[b.ReadID] {
+				return "", "", "", false
+			}
+			seen[b.ReadID] = true
+			if b.ReadID == readID {
+				matched = b
+			}
+		}
+		if matched == nil {
+			return "", "", "", false
+		}
+		return matched.TargetSetID, matched.ProjectID, matched.VersionID, true
+	}
+	if scope.Invocation != nil && scope.Invocation.Maintenance != nil {
+		if defaultTargetSetID == "" || (defaultProjectID == "" && scope.Invocation.Maintenance.ProjectID == "") {
+			return "", "", "", false
+		}
+		proj := defaultProjectID
+		if proj == "" {
+			proj = scope.Invocation.Maintenance.ProjectID
+		}
+		return defaultTargetSetID, proj, scope.Invocation.Maintenance.VersionID, true
+	}
+	return defaultTargetSetID, defaultProjectID, "", true
+}
 
 // Summary exposes operational accounting, never native IDs, input or output.
 type ProviderAttemptSummary struct {
@@ -72,13 +147,14 @@ type ProviderText struct {
 }
 
 type ProviderInvocation struct {
-	PromptRef  *ProviderText         `json:"prompt_ref,omitempty"`
-	Prompt     string                `json:"prompt"`
-	CWD        string                `json:"cwd"`
-	Model      string                `json:"model,omitempty"`
-	Effort     string                `json:"effort,omitempty"`
-	Generation *GenerationInvocation `json:"generation,omitempty"`
-	Question   *QuestionInvocation   `json:"question,omitempty"`
+	PromptRef   *ProviderText          `json:"prompt_ref,omitempty"`
+	Prompt      string                 `json:"prompt"`
+	CWD         string                 `json:"cwd"`
+	Model       string                 `json:"model,omitempty"`
+	Effort      string                 `json:"effort,omitempty"`
+	Generation  *GenerationInvocation  `json:"generation,omitempty"`
+	Question    *QuestionInvocation    `json:"question,omitempty"`
+	Maintenance *MaintenanceInvocation `json:"maintenance,omitempty"`
 }
 
 type ProviderDisclosure struct {

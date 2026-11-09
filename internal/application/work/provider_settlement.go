@@ -98,7 +98,10 @@ func (p *ProviderCoordinator) settleProvider(ctx context.Context, a domain.Provi
 			if current.AttemptGeneration != expected {
 				return domain.ErrStaleWorker
 			}
-			return tx.PauseProviderJob(a.JobID, reason)
+			if err := tx.PauseProviderJob(a.JobID, reason); err != nil {
+				return err
+			}
+			return settleParentScanAfterChild(tx, current)
 		})
 		if e != nil {
 			return fail(e)
@@ -239,7 +242,10 @@ func (p *ProviderCoordinator) settleProvider(ctx context.Context, a domain.Provi
 				if current.AttemptGeneration != expected {
 					return domain.ErrStaleWorker
 				}
-				return tx.PauseProviderJob(current.ID, providerPreparationReason(preparationErr))
+				if err := tx.PauseProviderJob(current.ID, providerPreparationReason(preparationErr)); err != nil {
+					return err
+				}
+				return settleParentScanAfterChild(tx, current)
 			})
 			if settleErr != nil {
 				return fail(errors.Join(preparationErr, settleErr))
@@ -257,7 +263,10 @@ func (p *ProviderCoordinator) settleProvider(ctx context.Context, a domain.Provi
 			return nil
 		}
 		if current.CancelRequested {
-			return tx.ConfirmStop(current.ID, current.AttemptGeneration)
+			if err := tx.ConfirmStop(current.ID, current.AttemptGeneration); err != nil {
+				return err
+			}
+			return settleParentScanAfterChild(tx, current)
 		}
 		expected := a.Generation
 		if reconcile {
@@ -268,7 +277,10 @@ func (p *ProviderCoordinator) settleProvider(ctx context.Context, a domain.Provi
 		}
 		if saved {
 			if reconcile {
-				return tx.PauseProviderJob(a.JobID, "saved_result_requires_continuation")
+				if err := tx.PauseProviderJob(a.JobID, "saved_result_requires_continuation"); err != nil {
+					return err
+				}
+				return settleParentScanAfterChild(tx, current)
 			}
 			return tx.ApplyProviderResult(a.ID, func(tx app.WriteTx) error {
 				if p.Apply != nil {
@@ -285,13 +297,19 @@ func (p *ProviderCoordinator) settleProvider(ctx context.Context, a domain.Provi
 			}
 		}
 		if current.ProviderAttempts != nil && current.ProviderAttempts.Unknown > 0 {
-			return tx.PauseProviderJob(a.JobID, "outcome_unknown")
+			if err := tx.PauseProviderJob(a.JobID, "outcome_unknown"); err != nil {
+				return err
+			}
+			return settleParentScanAfterChild(tx, current)
 		}
 		reason := out.Reason
 		if reason == "" {
 			reason = out.State
 		}
-		return tx.PauseProviderJob(a.JobID, reason)
+		if err := tx.PauseProviderJob(a.JobID, reason); err != nil {
+			return err
+		}
+		return settleParentScanAfterChild(tx, current)
 	})
 	if e != nil {
 		if !ProviderAuthorityRefusal(e) {
@@ -313,7 +331,10 @@ func (p *ProviderCoordinator) settleProvider(ctx context.Context, a domain.Provi
 			if current.AttemptGeneration != expected {
 				return domain.ErrStaleWorker
 			}
-			return tx.PauseProviderJob(a.JobID, "authority_reconciliation_required")
+			if err := tx.PauseProviderJob(a.JobID, "authority_reconciliation_required"); err != nil {
+				return err
+			}
+			return settleParentScanAfterChild(tx, current)
 		}); refusalErr != nil {
 			if ProviderAuthorityRefusal(refusalErr) {
 				done()
@@ -365,4 +386,46 @@ func ProviderAuthorityRefusal(cause error) bool {
 // leader and reader drain succeeded; it is not cleanup uncertainty.
 func providerDrainedReason(reason string) bool {
 	return reason == "" || reason == "signal_error_drained"
+}
+
+func settleParentScanAfterChild(tx app.WriteTx, child domain.Job) error {
+	if child.Kind != "maintenance" || child.ParentID == "" {
+		return nil
+	}
+	parent, err := tx.Job(child.ParentID)
+	if err != nil || parent.Kind != "scan" {
+		return nil
+	}
+	updatedChild, err := tx.Job(child.ID)
+	if err != nil {
+		return nil
+	}
+	if parent.CancelRequested && (parent.State == "paused" || parent.State == "cancelling") {
+		if parent.ProviderAttempts == nil || parent.ProviderAttempts.Unknown == 0 {
+			return tx.ConfirmStop(parent.ID, parent.AttemptGeneration)
+		}
+		return nil
+	}
+	if (parent.State == "running" || parent.State == "queued") && !parent.CancelRequested && updatedChild.State == "paused" {
+		switch updatedChild.Error {
+		case "outcome_unknown", "saved_result_requires_continuation", "reconciliation_required", "authority_reconciliation_required", "preparation_failed", "captured_input_unavailable", "captured_input_invalid":
+			return tx.PauseProviderJob(parent.ID, updatedChild.Error)
+		}
+		if updatedChild.ProviderAttempts != nil && (updatedChild.ProviderAttempts.Unknown > 0 || updatedChild.ProviderAttempts.LatestState == "result_saved") {
+			reason := updatedChild.Error
+			if reason == "" {
+				reason = "outcome_unknown"
+			}
+			return tx.PauseProviderJob(parent.ID, reason)
+		}
+	}
+	if parent.State == "paused" && (parent.ProviderAttempts == nil || parent.ProviderAttempts.Unknown == 0) {
+		if updatedChild.State == "paused" && updatedChild.Error == "saved_result_requires_continuation" {
+			return tx.PauseProviderJob(parent.ID, "saved_result_requires_continuation")
+		}
+		if updatedChild.State == "paused" && updatedChild.Error != "" && parent.Error == "outcome_unknown" {
+			return tx.PauseProviderJob(parent.ID, updatedChild.Error)
+		}
+	}
+	return nil
 }

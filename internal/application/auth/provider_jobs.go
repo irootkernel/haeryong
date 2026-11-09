@@ -30,6 +30,15 @@ func projectProviderJob(tx app.WriteTx, actor domain.Session, j domain.Job) (dom
 	if e := visibleScanJobForActor(tx, actor, j); e != nil {
 		return j, e
 	}
+	if j.Kind == "maintenance" && j.ParentID != "" && actor.Scope.Kind != "owner" {
+		parent, e := tx.Job(j.ParentID)
+		if e != nil {
+			return j, e
+		}
+		if e := visibleScanJobForActor(tx, actor, parent); e != nil {
+			return j, e
+		}
+	}
 	e := visibleJob(tx, j)
 	if e == nil {
 		return redactProviderInvocation(j), nil
@@ -38,7 +47,7 @@ func projectProviderJob(tx app.WriteTx, actor domain.Session, j domain.Job) (dom
 		return j, e
 	}
 	var scope domain.ProviderScope
-	if json.Unmarshal(j.Scope, &scope) != nil || scope.PrincipalID != actor.PrincipalID {
+	if json.Unmarshal(j.Scope, &scope) != nil || (scope.PrincipalID != actor.PrincipalID && j.Kind != "maintenance") {
 		return j, domain.ErrNotFound
 	}
 	j.ProjectionETag = JobETag(j)
@@ -65,11 +74,14 @@ func providerReconcileOnly(tx app.WriteTx, actor domain.Session, r domain.Reques
 	if e != nil {
 		return false, e
 	}
+	if j.Kind == "scan" {
+		return true, nil
+	}
 	if !domain.ProviderJob(j.Kind) {
 		return false, nil
 	}
 	var scope domain.ProviderScope
-	if json.Unmarshal(j.Scope, &scope) != nil || scope.PrincipalID != actor.PrincipalID {
+	if json.Unmarshal(j.Scope, &scope) != nil || (scope.PrincipalID != actor.PrincipalID && j.Kind != "maintenance") {
 		return false, domain.ErrNotFound
 	}
 	return true, nil

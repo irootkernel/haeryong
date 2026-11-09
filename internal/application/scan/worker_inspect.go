@@ -72,13 +72,18 @@ func (w *Worker) stepInspectAndRepair(ctx context.Context, j domain.Job) error {
 		if err != nil {
 			return err
 		}
-		if !hasItem {
+		if hasItem && isStructuralReadyItem(item) && len(activeRunning) > 0 {
+			item = activeRunning[0]
+		} else if !hasItem {
 			if len(activeRunning) > 0 {
 				item = activeRunning[0]
 				hasItem = true
 			} else {
-				// All items are terminal; complete the scan run.
+				// All items are terminal; complete the scan run unless an unresolved maintenance attempt remains.
 				settledInTx = true
+				if curJob.ProviderAttempts != nil && curJob.ProviderAttempts.Unknown > 0 {
+					return tx.PauseProviderJob(j.ID, "outcome_unknown")
+				}
 				run.Stage = "complete"
 				run.UpdatedAt = nowStr
 				if run.StartedAt != nil && *run.StartedAt != "" {
@@ -101,7 +106,18 @@ func (w *Worker) stepInspectAndRepair(ctx context.Context, j domain.Job) error {
 		if reason, state, purged, fenced := w.checkItemFence(tx, j, run, item); fenced {
 			settledInTx = true
 			if item.RepairJobID != "" {
-				_ = w.cancelSingleRepairChild(tx, item.RepairJobID, reason, nowStr)
+				if err := w.cancelSingleRepairChild(tx, item.RepairJobID, reason, nowStr); err != nil {
+					return err
+				}
+			}
+			mIntent, ok, e := tx.MaintenanceIntentByItem(j.ID, item.ItemID)
+			if e != nil {
+				return e
+			}
+			if ok && mIntent.JobID != "" {
+				if err := w.cancelSingleRepairChild(tx, mIntent.JobID, reason, nowStr); err != nil {
+					return err
+				}
 			}
 			item.State = state
 			item.Reason = reason
@@ -244,7 +260,7 @@ func projectPostWorkScanEnabled(cfgJSON []byte, projectID string) bool {
 func (w *Worker) cancelSingleRepairChild(tx app.WriteTx, childJobID, reason, nowStr string) error {
 	child, err := tx.Job(childJobID)
 	if err != nil {
-		return nil
+		return err
 	}
 	if child.State != "completed" && child.State != "failed" && child.State != "cancelled" {
 		if !child.CancelRequested {
@@ -253,8 +269,10 @@ func (w *Worker) cancelSingleRepairChild(tx app.WriteTx, childJobID, reason, now
 				return err
 			}
 		}
-		if child.State == "queued" || child.State == "paused" || child.State == "interrupted" || child.State == "running" || child.State == "cancelling" {
-			_ = tx.ConfirmStop(child.ID, child.AttemptGeneration)
+		if child.State != "completed" && child.State != "failed" && child.State != "cancelled" && (!domain.ProviderJob(child.Kind) || child.ProviderAttempts == nil || child.ProviderAttempts.Unknown == 0) {
+			if err := tx.ConfirmStop(child.ID, child.AttemptGeneration); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -487,7 +505,7 @@ func (w *Worker) inspectVersionItem(ctx context.Context, j domain.Job, run domai
 		}
 	}
 	// Ordinary imports without supplied metadata or without regions remain completely valid (R07 / C06).
-	detail, _ := json.Marshal(map[string]any{
+	baseDetail := map[string]any{
 		"manifest_sha256": v.ManifestSHA,
 		"regionless":      cv.RegionCount == 0,
 		"metadata_less":   !hasMeta,
@@ -496,7 +514,11 @@ func (w *Worker) inspectVersionItem(ctx context.Context, j domain.Job, run domai
 		"region_count":    cv.RegionCount,
 		"entry_count":     cv.EntryCount,
 		"source_count":    cv.SourceCount,
-	})
+	}
+	if cv.PageCount == 0 && cv.RegionCount == 0 {
+		return w.stepUnitSemanticEvaluation(ctx, j, run, item, baseDetail)
+	}
+	detail, _ := json.Marshal(baseDetail)
 	return w.completeItem(ctx, j, item, "completed", "ok", detail)
 }
 
@@ -524,8 +546,12 @@ func (w *Worker) verifyObjectBytes(ctx context.Context, jobID string, obj domain
 
 func (w *Worker) inspectPageItem(ctx context.Context, j domain.Job, run domain.ScanRun, item domain.JobItem) error {
 	var failedReason string
+	var cv domain.ScanCapturedVersion
+	var pageObj domain.Object
+	var pageHasRegions bool
 	err := w.Store.Write(ctx, func(tx app.WriteTx) error {
-		cv, err := tx.ScanCapturedVersionByID(j.ID, item.VersionID)
+		var err error
+		cv, err = tx.ScanCapturedVersionByID(j.ID, item.VersionID)
 		if err != nil {
 			failedReason = "version_missing"
 			return nil
@@ -544,6 +570,12 @@ func (w *Worker) inspectPageItem(ctx context.Context, j domain.Job, run domain.S
 			failedReason = "content_integrity_failed"
 			return nil
 		}
+		pageObj = obj
+		regs, err := tx.VersionRegionsAfter(item.VersionID, item.PagePath, "", "", 1)
+		if err != nil {
+			return err
+		}
+		pageHasRegions = len(regs) > 0
 		return nil
 	})
 	if err != nil {
@@ -553,10 +585,20 @@ func (w *Worker) inspectPageItem(ctx context.Context, j domain.Job, run domain.S
 		detail, _ := json.Marshal(map[string]any{"error": failedReason})
 		return w.completeItem(ctx, j, item, "failed", failedReason, detail)
 	}
-	detail, _ := json.Marshal(map[string]any{
+	if !pageHasRegions && run.RequestedScope.RegionID == "" && !isStructuralReadyItem(item) && w.Bytes != nil {
+		if err := w.verifyObjectBytes(ctx, j.ID, pageObj); err != nil {
+			detail, _ := json.Marshal(map[string]any{"error": "page_integrity_failed"})
+			return w.completeItem(ctx, j, item, "failed", "content_integrity_failed", detail)
+		}
+	}
+	baseDetail := map[string]any{
 		"page_path": item.PagePath,
 		"eligible":  true,
-	})
+	}
+	if !pageHasRegions && run.RequestedScope.RegionID == "" {
+		return w.stepUnitSemanticEvaluation(ctx, j, run, item, baseDetail)
+	}
+	detail, _ := json.Marshal(baseDetail)
 	return w.completeItem(ctx, j, item, "completed", "ok", detail)
 }
 
@@ -564,8 +606,25 @@ func (w *Worker) inspectRegionItem(ctx context.Context, j domain.Job, run domain
 	var failedReason string
 	var anchorStatus string
 	var evidenceCount int
+	var pageObj domain.Object
 	err := w.Store.Write(ctx, func(tx app.WriteTx) error {
-		_, err := tx.VersionRegion(item.VersionID, item.PagePath, item.RegionID)
+		cv, err := tx.ScanCapturedVersionByID(j.ID, item.VersionID)
+		if err != nil {
+			failedReason = "version_missing"
+			return nil
+		}
+		entry, err := tx.QueryEntry(cv.ContentSetID, item.PagePath)
+		if err != nil || entry.Kind != "file" || entry.Hash == "" {
+			failedReason = "page_entry_missing"
+			return nil
+		}
+		obj, err := tx.Object(entry.Hash)
+		if err != nil || obj.State != "ready" || obj.Size != entry.Size {
+			failedReason = "content_integrity_failed"
+			return nil
+		}
+		pageObj = obj
+		_, err = tx.VersionRegion(item.VersionID, item.PagePath, item.RegionID)
 		if err != nil {
 			failedReason = "region_missing"
 			return nil
@@ -607,14 +666,20 @@ func (w *Worker) inspectRegionItem(ctx context.Context, j domain.Job, run domain
 		detail, _ := json.Marshal(map[string]any{"error": failedReason})
 		return w.completeItem(ctx, j, item, "failed", failedReason, detail)
 	}
-	detail, _ := json.Marshal(map[string]any{
+	if !isStructuralReadyItem(item) && w.Bytes != nil {
+		if err := w.verifyObjectBytes(ctx, j.ID, pageObj); err != nil {
+			detail, _ := json.Marshal(map[string]any{"error": "region_page_integrity_failed"})
+			return w.completeItem(ctx, j, item, "failed", "content_integrity_failed", detail)
+		}
+	}
+	baseDetail := map[string]any{
 		"page_path":      item.PagePath,
 		"region_id":      item.RegionID,
 		"anchor_status":  anchorStatus,
 		"evidence_count": evidenceCount,
 		"eligible":       true,
-	})
-	return w.completeItem(ctx, j, item, "completed", "ok", detail)
+	}
+	return w.stepUnitSemanticEvaluation(ctx, j, run, item, baseDetail)
 }
 
 func (w *Worker) inspectSourceItem(ctx context.Context, j domain.Job, run domain.ScanRun, item domain.JobItem) error {

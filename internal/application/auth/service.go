@@ -1309,6 +1309,34 @@ func visibleJob(tx app.WriteTx, j domain.Job) error {
 		}
 		return nil
 	}
+	if j.Kind == "maintenance" {
+		var scope domain.ProviderScope
+		if json.Unmarshal(j.Scope, &scope) != nil || scope.Invocation == nil || scope.Invocation.Maintenance == nil {
+			return domain.ErrNotFound
+		}
+		for _, exp := range scope.Invocation.Maintenance.Explanations {
+			if exp.ProjectID != "" {
+				if _, err := tx.Scope(exp.ProjectID); err != nil {
+					return err
+				}
+			}
+			if exp.VersionID != "" {
+				if err := visibleTarget(tx, "/api/v1/versions/"+exp.VersionID); err != nil {
+					return err
+				}
+			}
+		}
+		if j.ParentID != "" {
+			parent, err := tx.Job(j.ParentID)
+			if err != nil {
+				return err
+			}
+			if err := visibleJob(tx, parent); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 
 	var scope struct {
 		Target json.RawMessage `json:"target"`

@@ -227,6 +227,8 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 			questionCore := questions.New(store, core, sourceCore, codex.SemanticRequestSHA)
 			scanCore := scan.New(store, core, store, nil)
 			scanWorker := scan.NewWorker(store, store)
+			scanWorker.Sources = sourceCore
+			scanWorker.Identity = codex.SemanticRequestSHA
 			profile, profileErr := service.Load(opt.selection)
 			if profileErr != nil {
 				return errors.Join(historicalDiagnostic, profileErr)
@@ -279,16 +281,24 @@ func execute(ctx context.Context, opt options, emit func(any) error) error {
 				externalOrigin = configuredExternalOrigin(configuration.Value)
 				return productHandler(core, origin, configuration.Value, productRoutes{httpsource.New(sourceCore), httpscans.New(scanCore), httpimports.NewQuestions(imports, generationCore, questionCore), httpv1.New(queries, renderFacade, func() (string, string) { return managementOrigin, externalOrigin }), httpconfig.New(configurationCore)})
 			}}
-			runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: store, Endpoint: endpoint, Work: (work.Dispatcher{Provider: &work.ProviderCoordinator{Store: store, Bytes: store, Driver: providerDriver, Prepare: func(ctx context.Context, a domain.ProviderAttempt) error {
+			runner := service.Runner{Selection: opt.selection, Port: opt.port, Storage: store, Endpoint: endpoint, Work: (work.Dispatcher{Provider: &work.ProviderCoordinator{Store: store, Bytes: store, Driver: providerDriver, MaintenanceSource: func(ctx context.Context, id string) error {
+				return sourceCore.CaptureMaintenanceAndAdmit(ctx, id, codex.SemanticRequestSHA)
+			}, Prepare: func(ctx context.Context, a domain.ProviderAttempt) error {
 				if e := imports.PrepareGeneration(ctx, a); e != nil {
 					return e
 				}
-				return questionCore.Prepare(ctx, a)
+				if e := questionCore.Prepare(ctx, a); e != nil {
+					return e
+				}
+				return scanWorker.PrepareMaintenance(ctx, a)
 			}, Apply: func(tx appstorage.WriteTx, a domain.ProviderAttempt) error {
 				if e := imports.ApplyGeneration(tx, a); e != nil {
 					return e
 				}
-				return questionCore.Apply(tx, a)
+				if e := questionCore.Apply(tx, a); e != nil {
+					return e
+				}
+				return scanWorker.ApplyMaintenance(tx, a)
 			}}, Copies: copyCore, Purge: &work.Purger{Store: store, Bytes: store}, Store: store, Imports: imports, Derived: work.NewMaintenance(store, store), Scans: scanWorker}).Run, CloseDependents: renderFacade.Shutdown, ListenerPort: func(ctx context.Context) (int, error) {
 				configuration, e := store.Configuration(ctx)
 				if e != nil {

@@ -61,8 +61,8 @@
     },
     {
       "path": "tests/contracts/schema.json",
-      "bytes": 228698,
-      "sha256": "1e373d2526a95084ebe75caba2868f186af9b535338802e1e85ab786c2f1ae1b"
+      "bytes": 228719,
+      "sha256": "78e3cfa0478c8cc9dce4bbc2c1eeebcc00b8f345c1984436a1cec10fed0b3b7b"
     },
     {
       "path": "tests/contracts/test_contracts.py",
@@ -76,8 +76,8 @@
     },
     {
       "path": "tests/contracts/test_search_contracts.py",
-      "bytes": 5362,
-      "sha256": "5abf5b262bbd878feaf89560c520ddb43f641aa18203939b791c27c810ea115f"
+      "bytes": 5379,
+      "sha256": "33e886c08031df850b31cddae43d10e3da1e5315a3023cc8dde7d9517b461281"
     },
     {
       "path": "docs/testing/search-relevance-worksheet.md",

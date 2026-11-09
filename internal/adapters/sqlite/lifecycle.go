@@ -102,7 +102,7 @@ func (t *writeTx) CommitLifecycle(p domain.LifecyclePlan, r domain.LifecycleResu
 		}
 		if r.Lifecycle == "trash" || r.Lifecycle == "purged" {
 			// Fence accepted publication and deterministic work before releasing the writer gate.
-			rows, err := t.tx.QueryContext(t.ctx, sourceJobDependencies+`SELECT job_id FROM derived_work WHERE version_id IN (SELECT version_id FROM document_versions WHERE document_id=?) UNION SELECT job_id FROM import_intents WHERE json_extract(value,'$.DocumentID')=? UNION SELECT job_id FROM jobs WHERE kind IN ('generation','question') AND (json_extract(scope,'$.target.document_id')=? OR json_extract(scope,'$.target.version_id') IN (SELECT version_id FROM document_versions WHERE document_id=?)) UNION SELECT job_id FROM source_job_contexts WHERE version_id IN(SELECT version_id FROM document_versions WHERE document_id=?) UNION SELECT job_id FROM scan_runs WHERE json_extract(requested_scope,'$.document_id')=? OR json_extract(requested_scope,'$.version_id') IN (SELECT version_id FROM document_versions WHERE document_id=?)`, p.DocumentID, p.DocumentID, p.DocumentID, p.DocumentID, p.DocumentID, p.DocumentID, p.DocumentID)
+			rows, err := t.tx.QueryContext(t.ctx, sourceJobDependencies+`SELECT job_id FROM derived_work WHERE version_id IN (SELECT version_id FROM document_versions WHERE document_id=?) UNION SELECT job_id FROM import_intents WHERE json_extract(value,'$.DocumentID')=? UNION SELECT job_id FROM jobs WHERE kind IN ('generation','question','maintenance') AND (json_extract(scope,'$.target.document_id')=? OR json_extract(scope,'$.target.version_id') IN (SELECT version_id FROM document_versions WHERE document_id=?)) UNION SELECT job_id FROM source_job_contexts WHERE version_id IN(SELECT version_id FROM document_versions WHERE document_id=?) UNION SELECT job_id FROM scan_runs WHERE json_extract(requested_scope,'$.document_id')=? OR json_extract(requested_scope,'$.version_id') IN (SELECT version_id FROM document_versions WHERE document_id=?)`, p.DocumentID, p.DocumentID, p.DocumentID, p.DocumentID, p.DocumentID, p.DocumentID, p.DocumentID)
 			if err != nil {
 				return err
 			}
@@ -160,16 +160,47 @@ func (t *writeTx) fenceScanDocument(documentID, lifecycle string) error {
 		reason = "document_purged"
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	if err := t.exec(`UPDATE job_items SET state='skipped',reason=?,stage='complete',attempt_generation=attempt_generation+1,updated_at=? WHERE document_id=? AND state IN ('pending','running')`, reason, now, documentID); err != nil {
+	mRows, err := t.tx.QueryContext(t.ctx, `SELECT m.job_id FROM maintenance_intents m JOIN jobs mj ON mj.job_id=m.job_id WHERE mj.state NOT IN ('completed','failed','cancelled') AND (json_extract(m.value,'$.document_id')=? OR json_extract(m.value,'$.version_id') IN(SELECT version_id FROM document_versions WHERE document_id=?) OR EXISTS(SELECT 1 FROM json_each(CASE WHEN json_type(m.value,'$.shortlist.candidates')='array' THEN json_extract(m.value,'$.shortlist.candidates') ELSE '[]' END) c WHERE json_extract(c.value,'$.document_id')=? OR json_extract(c.value,'$.version_id') IN(SELECT version_id FROM document_versions WHERE document_id=?)) OR EXISTS(SELECT 1 FROM json_each(CASE WHEN json_type(m.value,'$.cards')='array' THEN json_extract(m.value,'$.cards') ELSE '[]' END) c WHERE json_extract(c.value,'$.document_id')=? OR json_extract(c.value,'$.version_id') IN(SELECT version_id FROM document_versions WHERE document_id=?)))`, documentID, documentID, documentID, documentID, documentID, documentID)
+	if err != nil {
+		return err
+	}
+	var maintJobIDs []string
+	for mRows.Next() {
+		var mjid string
+		if err := mRows.Scan(&mjid); err != nil {
+			mRows.Close()
+			return err
+		}
+		maintJobIDs = append(maintJobIDs, mjid)
+	}
+	if err := mRows.Close(); err != nil {
+		return err
+	}
+	for _, mjid := range maintJobIDs {
+		child, cErr := t.Job(mjid)
+		if cErr != nil {
+			continue
+		}
+		if !child.CancelRequested {
+			child, cErr = t.CancelJob(mjid)
+			if cErr != nil {
+				return cErr
+			}
+		}
+		if child.State == "queued" || child.State == "paused" || child.State == "interrupted" {
+			_ = t.ConfirmStop(mjid, child.AttemptGeneration)
+		}
+	}
+	if err := t.exec(`UPDATE job_items SET state='skipped',reason=?,stage='complete',attempt_generation=attempt_generation+1,updated_at=? WHERE document_id=? AND state IN ('pending','running') AND NOT EXISTS(SELECT 1 FROM maintenance_intents m JOIN jobs mj ON mj.job_id=m.job_id WHERE m.scan_job_id=job_items.job_id AND mj.state NOT IN ('completed','failed','cancelled') AND (m.item_id=job_items.item_id OR EXISTS(SELECT 1 FROM json_each(CASE WHEN json_type(m.value,'$.cards')='array' THEN json_extract(m.value,'$.cards') ELSE '[]' END) c WHERE json_extract(c.value,'$.item_id')=job_items.item_id)))`, reason, now, documentID); err != nil {
 		return err
 	}
 	if err := t.exec(`UPDATE scan_captured_versions SET exclusion_reason=CASE WHEN exclusion_reason='' OR exclusion_reason='document_trashed' THEN ? ELSE exclusion_reason END WHERE document_id=?`, reason, documentID); err != nil {
 		return err
 	}
-	if err := t.exec(`DELETE FROM object_pins WHERE owner_kind='job' AND pin_id GLOB 'scan:*' AND EXISTS(SELECT 1 FROM document_versions v WHERE v.document_id=? AND object_pins.pin_id GLOB 'scan:*:'||v.version_id||':*')`, documentID); err != nil {
+	if err := t.exec(`DELETE FROM object_pins WHERE owner_kind='job' AND pin_id GLOB 'scan:*' AND EXISTS(SELECT 1 FROM document_versions v WHERE v.document_id=? AND object_pins.pin_id GLOB 'scan:*:'||v.version_id||':*' AND NOT EXISTS(SELECT 1 FROM maintenance_intents m JOIN jobs mj ON mj.job_id=m.job_id WHERE m.scan_job_id=object_pins.owner_id AND mj.state NOT IN ('completed','failed','cancelled')))`, documentID); err != nil {
 		return err
 	}
-	rows, err := t.tx.QueryContext(t.ctx, `SELECT finding_id,job_id,kind,revision FROM findings WHERE document_id=? AND status='proposed' ORDER BY finding_id`, documentID)
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT finding_id,job_id,kind,revision FROM findings WHERE (document_id=? OR json_extract(proposal_json,'$.target_document_id')=? OR json_extract(proposal_json,'$.target_version_id') IN(SELECT version_id FROM document_versions WHERE document_id=?) OR json_extract(proposal_json,'$.origin_unit.document_id')=? OR json_extract(proposal_json,'$.origin_unit.version_id') IN(SELECT version_id FROM document_versions WHERE document_id=?) OR EXISTS(SELECT 1 FROM json_each(CASE WHEN json_type(findings.evidence_json)='array' THEN findings.evidence_json ELSE '[]' END) ev WHERE json_extract(ev.value,'$.version_id') IN(SELECT version_id FROM document_versions WHERE document_id=?))) AND status='proposed' ORDER BY finding_id`, documentID, documentID, documentID, documentID, documentID, documentID)
 	if err != nil {
 		return err
 	}
@@ -200,7 +231,7 @@ func (t *writeTx) fenceScanDocument(documentID, lifecycle string) error {
 			return err
 		}
 	}
-	jobRows, err := t.tx.QueryContext(t.ctx, `SELECT DISTINCT job_id FROM scan_captured_versions WHERE document_id=? UNION SELECT DISTINCT job_id FROM job_items WHERE document_id=? UNION SELECT DISTINCT job_id FROM findings WHERE document_id=?`, documentID, documentID, documentID)
+	jobRows, err := t.tx.QueryContext(t.ctx, `SELECT DISTINCT job_id FROM scan_captured_versions WHERE document_id=? UNION SELECT DISTINCT job_id FROM job_items WHERE document_id=? UNION SELECT DISTINCT scan_job_id FROM maintenance_intents WHERE json_extract(value,'$.document_id')=? OR json_extract(value,'$.version_id') IN(SELECT version_id FROM document_versions WHERE document_id=?) OR EXISTS(SELECT 1 FROM json_each(CASE WHEN json_type(value,'$.shortlist.candidates')='array' THEN json_extract(value,'$.shortlist.candidates') ELSE '[]' END) c WHERE json_extract(c.value,'$.document_id')=? OR json_extract(c.value,'$.version_id') IN(SELECT version_id FROM document_versions WHERE document_id=?)) OR EXISTS(SELECT 1 FROM json_each(CASE WHEN json_type(value,'$.cards')='array' THEN json_extract(value,'$.cards') ELSE '[]' END) c WHERE json_extract(c.value,'$.document_id')=? OR json_extract(c.value,'$.version_id') IN(SELECT version_id FROM document_versions WHERE document_id=?)) UNION SELECT DISTINCT job_id FROM findings WHERE document_id=? OR json_extract(proposal_json,'$.target_document_id')=? OR json_extract(proposal_json,'$.target_version_id') IN(SELECT version_id FROM document_versions WHERE document_id=?) OR json_extract(proposal_json,'$.origin_unit.document_id')=? OR json_extract(proposal_json,'$.origin_unit.version_id') IN(SELECT version_id FROM document_versions WHERE document_id=?) OR EXISTS(SELECT 1 FROM json_each(CASE WHEN json_type(findings.evidence_json)='array' THEN findings.evidence_json ELSE '[]' END) ev WHERE json_extract(ev.value,'$.version_id') IN(SELECT version_id FROM document_versions WHERE document_id=?))`, documentID, documentID, documentID, documentID, documentID, documentID, documentID, documentID, documentID, documentID, documentID, documentID, documentID, documentID)
 	if err != nil {
 		return err
 	}

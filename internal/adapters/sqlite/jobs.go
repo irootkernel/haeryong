@@ -39,6 +39,24 @@ func job(ctx context.Context, q rowReader, id string) (domain.Job, error) {
 			summary.UnknownReason = "outcome_unknown"
 		}
 		j.ProviderAttempts = summary
+	} else if j.Kind == "scan" {
+		summary := &domain.ProviderAttemptSummary{}
+		err = q.QueryRowContext(ctx, `WITH child_jobs AS (
+ SELECT job_id,revision,rowid AS child_seq FROM jobs WHERE parent_id=? AND kind='maintenance'
+ ), facts AS (
+ SELECT a.attempt_id,a.attempt_generation AS generation,a.state,c.revision AS child_rev,c.child_seq,c.job_id AS child_id,a.rowid AS seq FROM provider_attempts a JOIN child_jobs c ON c.job_id=a.job_id
+ UNION ALL SELECT o.attempt_id,coalesce(json_extract(o.value,'$.attempt_generation'),0),o.state,coalesce(c.revision,0),coalesce(c.child_seq,0),coalesce(c.job_id,coalesce(json_extract(o.value,'$.job_id'),'')),0 FROM provider_orphans o LEFT JOIN child_jobs c ON c.job_id=json_extract(o.value,'$.job_id') WHERE json_extract(o.value,'$.job_id') IN (SELECT job_id FROM child_jobs) OR o.attempt_id IN(SELECT prior_attempt_id FROM provider_linked_retry_authorizations WHERE job_id IN (SELECT job_id FROM child_jobs) AND decision='reconcile_only')
+ ), unique_facts AS(SELECT attempt_id,max(state IN ('dispatching','running','outcome_unknown')) AS unresolved FROM facts GROUP BY attempt_id)
+ SELECT count(*),coalesce(sum(unresolved),0),coalesce((SELECT state FROM facts ORDER BY (state IN ('dispatching','running','outcome_unknown')) DESC,(state='result_saved') DESC,child_rev DESC,child_seq DESC,child_id DESC,generation DESC,seq DESC LIMIT 1),''),(SELECT count(*) FROM provider_reconcile_intents WHERE job_id IN (SELECT job_id FROM child_jobs)) FROM unique_facts`, id).Scan(&summary.Count, &summary.Unknown, &summary.LatestState, &summary.ReconciliationPending)
+		if err != nil {
+			return j, err
+		}
+		if summary.Count > 0 || summary.Unknown > 0 || summary.ReconciliationPending > 0 {
+			if summary.Unknown > 0 {
+				summary.UnknownReason = "outcome_unknown"
+			}
+			j.ProviderAttempts = summary
+		}
 	}
 	return j, nil
 }
@@ -49,7 +67,7 @@ func (s *Store) Job(ctx context.Context, id string) (domain.Job, error) {
 }
 func (t *writeTx) CreateJob(j domain.Job) error {
 	switch j.Kind {
-	case "upload_seal", "import", "lifecycle", "backup", "export", "restore", "derived_index", "generation", "question", "scan":
+	case "upload_seal", "import", "lifecycle", "backup", "export", "restore", "derived_index", "generation", "question", "scan", "maintenance":
 	default:
 		return errors.New("local job kind not implemented")
 	}
@@ -157,6 +175,18 @@ func (t *writeTx) CancelJob(id string) (domain.Job, error) {
 		}
 		return job(t.ctx, t.tx, id)
 	}
+	if j.Kind == "scan" {
+		updated, err := job(t.ctx, t.tx, id)
+		if err != nil {
+			return j, err
+		}
+		if updated.ProviderAttempts != nil && updated.ProviderAttempts.Unknown > 0 {
+			if err := t.ConfirmStop(id, updated.AttemptGeneration); err != nil {
+				return j, err
+			}
+			return job(t.ctx, t.tx, id)
+		}
+	}
 	return j, t.jobUpdated(id)
 }
 func (t *writeTx) ConfirmStop(id string, generation int64) error {
@@ -184,6 +214,22 @@ func (t *writeTx) ConfirmStop(id string, generation int64) error {
 					return e
 				}
 			}
+		}
+	}
+	if j.Kind == "scan" {
+		if err := t.settleScanOwnedRepairs(id); err != nil {
+			return err
+		}
+		j, err = job(t.ctx, t.tx, id)
+		if err != nil {
+			return err
+		}
+		var unresolvedChildren int
+		if err := t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM jobs WHERE parent_id=? AND kind='maintenance' AND state NOT IN ('completed','failed','cancelled')`, id).Scan(&unresolvedChildren); err != nil {
+			return err
+		}
+		if (j.ProviderAttempts != nil && j.ProviderAttempts.Unknown > 0) || unresolvedChildren > 0 {
+			return t.PauseProviderJob(id, "outcome_unknown")
 		}
 	}
 	if j.State != "cancelled" {
@@ -684,7 +730,7 @@ func (t *writeTx) stoppedOwnership(j domain.Job) error {
 }
 
 func (t *writeTx) settleScanOwnedRepairs(scanJobID string) error {
-	rows, err := t.tx.QueryContext(t.ctx, `SELECT DISTINCT repair_job_id FROM job_items WHERE job_id=? AND repair_job_id!=''`, scanJobID)
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT DISTINCT repair_job_id FROM job_items WHERE job_id=? AND repair_job_id!='' UNION SELECT job_id FROM jobs WHERE parent_id=? AND kind='maintenance' ORDER BY 1`, scanJobID, scanJobID)
 	if err != nil {
 		return err
 	}
@@ -714,11 +760,18 @@ func (t *writeTx) settleScanOwnedRepairs(scanJobID string) error {
 			return e
 		}
 		if !terminal(child.State) {
-			child, e = t.CancelJob(cid)
-			if e != nil {
-				return e
+			if !child.CancelRequested {
+				child, e = t.CancelJob(cid)
+				if e != nil {
+					return e
+				}
 			}
-			if !terminal(child.State) {
+			if !terminal(child.State) && !domain.ProviderJob(child.Kind) {
+				if e = t.ConfirmStop(cid, child.AttemptGeneration); e != nil {
+					return e
+				}
+			}
+			if !terminal(child.State) && domain.ProviderJob(child.Kind) && (child.ProviderAttempts == nil || child.ProviderAttempts.Unknown == 0) {
 				if e = t.ConfirmStop(cid, child.AttemptGeneration); e != nil {
 					return e
 				}

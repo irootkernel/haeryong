@@ -65,6 +65,7 @@ type ProviderCoordinator struct {
 	// cannot dispatch; final application still rechecks the same authority.
 	Prepare           func(context.Context, domain.ProviderAttempt) error
 	Apply             func(app.WriteTx, domain.ProviderAttempt) error
+	MaintenanceSource func(context.Context, string) error
 	active            atomic.Pointer[providerPhase]
 	accountingFailure atomic.Pointer[providerAccountingError]
 	accountingUnsafe  atomic.Pointer[providerAccountingError]
@@ -77,6 +78,44 @@ func (p *ProviderCoordinator) Process(ctx context.Context, id string) error {
 }
 
 func (p *ProviderCoordinator) process(ctx context.Context, id string, phase *providerPhase) error {
+	if jPre, err := p.Store.Job(ctx, id); err == nil && jPre.Kind == "maintenance" && jPre.State == "paused" && jPre.Error == "source_capture_pending" && !jPre.CancelRequested {
+		if p.MaintenanceSource == nil {
+			_ = p.Store.Write(context.WithoutCancel(ctx), func(tx app.WriteTx) error {
+				return tx.PauseMaintenanceCapture(id, "source_capture_unavailable", nil)
+			})
+			if phase != nil {
+				phase.accounted = true
+			}
+			return nil
+		}
+		if err := p.MaintenanceSource(ctx, id); err != nil {
+			_ = p.Store.Write(context.WithoutCancel(ctx), func(tx app.WriteTx) error {
+				cur, e := tx.Job(id)
+				if e != nil {
+					return e
+				}
+				if cur.CancelRequested {
+					_ = tx.ReleaseOwnerPins("job_input", cur.ID)
+					return tx.ConfirmStop(cur.ID, cur.AttemptGeneration)
+				}
+				if cur.State == "paused" && cur.Error == "source_capture_pending" {
+					return tx.PauseMaintenanceCapture(id, "source_capture_unavailable", nil)
+				}
+				return nil
+			})
+			if phase != nil {
+				phase.accounted = true
+			}
+			return nil
+		}
+		jPost, err := p.Store.Job(ctx, id)
+		if err != nil || jPost.State != "queued" {
+			if phase != nil {
+				phase.accounted = true
+			}
+			return err
+		}
+	}
 	var a domain.ProviderAttempt
 	var inputs []domain.ProviderInput
 	var j domain.Job
@@ -158,7 +197,10 @@ func (p *ProviderCoordinator) process(ctx context.Context, id string, phase *pro
 			return nil
 		}
 		if j.CancelRequested {
-			return tx.ConfirmStop(id, j.AttemptGeneration)
+			if e := tx.ConfirmStop(id, j.AttemptGeneration); e != nil {
+				return e
+			}
+			return settleParentScanAfterChild(tx, j)
 		}
 
 		if j.State == "running" {
@@ -448,7 +490,10 @@ func (p *ProviderCoordinator) pauseContinuation(ctx context.Context, expected do
 		if j.AttemptGeneration != expected.AttemptGeneration || j.State != "queued" || j.CancelRequested {
 			return nil
 		}
-		return tx.PauseProviderJob(j.ID, reason)
+		if err := tx.PauseProviderJob(j.ID, reason); err != nil {
+			return err
+		}
+		return settleParentScanAfterChild(tx, j)
 	})
 }
 

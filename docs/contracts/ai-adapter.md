@@ -275,3 +275,144 @@ explicit continuation reuses its saved output with Execute zero. Current
 execution epoch/source/disclosure restrictions, cancellation, hidden targets,
 restore/orphan uncertainty and bounded retry authority remain enforced. Saved
 history uses current owner read authority without repeating a provider turn.
+
+## Typed read-only maintenance candidate consumer (TASK-008-02)
+
+`MaintenanceInvocation` is the third mutually exclusive consumer on
+`ProviderInvocation` (`job.kind = "maintenance"`), alongside `Generation` and
+`Question`. It runs in read-only mode in a fresh private attempt directory with
+no writable result tree or generation skill. The trusted `maintenance_context`
+frame (`internal/adapters/ai/codex/maintenance.go` and `input.go`, with prompt
+whitespace normalized via `normalizeMaintenancePrompt` and candidate explanations
+sorted deterministically by `(ProjectID, DocumentID, VersionID, PagePath, RegionID)`
+in `SemanticRequestSHA`) supplies the focus `MaintenanceExplanation` (`Focal`:
+exact `project_id`, `document_id`, `version_id`, `page_path`, `region_id`,
+`title`, `heading`, `body_excerpt`, `declared_topics`, `source_ids`, `signals`,
+and `existing_refs`), the pre-inspected `Candidates` (`[]MaintenanceExplanation`,
+bounded to `K <= 6`), the vocabulary of `declared_terms` across the scope, and
+`ReadBindings` (`[]MaintenanceReadBinding` preserving `read_id`, `project_id`,
+`version_id`, and `target_set_id` across multi-step `CaptureMaintenanceAndAdmit`).
+Actual retained source file bytes are streamed through `orderedInputs` under
+`GuardSourceInput` / `AttachSourceInputs` (binding each `read_id` to its exact
+`MaintenanceReadTarget` `project_id`, `version_id`, `source_id`, and
+`bytes_sha256` across multi-project candidate scopes) so `observed_input` is
+recorded only after complete native frame transmission and matching turn
+acceptance.
+
+The native turn enforces a closed JSON output schema (`maintenanceFrame` /
+`MaintenanceOutputEnvelope`) whose top-level object requires `relations`,
+`topics`, `content_gaps`, and `limitations` (`additionalProperties: false` at
+the root and every item object):
+
+- `relations`: items require `target_version_id`, `target_page_path`,
+  `target_region_id`, `relation_type` (`depends_on` | `source_dependency` |
+  `related` | `complementary_explanation` | `shared_source` |
+  `thematic_analogy`), `rationale`, and `uncertainty`.
+- `topics`: items require `topic`, `rationale`, and `uncertainty`.
+- `content_gaps`: items require `kind` (`new_version_proposal` |
+  `new_document_proposal`), `theme`, `rationale`, and `uncertainty`.
+- `limitations`: items require `kind`, `reason`, `target_version_id`, and
+  `message`.
+
+The complete raw public-final text is saved as the attempt's result object before
+`PrepareMaintenance` runs outside the SQLite writer (`decodeMaintenanceOutput`
+plus streaming full non-truncated retained source objects, including `> 256 KiB`,
+for each unit's cited evidence paths). `PrepareMaintenance` and
+`ApplyMaintenance` (`internal/application/scan/candidates.go`) enforce the
+deterministic domain invariants before persisting `PreparedMaintenancePayload`
+on `maintenance_intents` and findings on `findings`. The maintenance prompt
+requires a concrete mechanism comparison and reader-useful connection, with
+abstention on generic similarity. These instructions require actual quality
+evaluation; their presence does not establish useful model behavior:
+
+1. **Directional source-dependency verification and unit-scoped source evidence (`T-008-02-01`, `B01`, `B02`, `B12`)**:
+   A proposed `relation_type = "depends_on"` / `"source_dependency"`
+   (`evidence_basis = "source_fact"`) is accepted only when the focal unit and
+   candidate target unit each have complete, non-truncated retained source reads
+   scoped to that unit's own cited evidence paths (`VerifiedEvidenceByUnit` and
+   `AllSourceReadsReadyByUnit`, without leaking sibling region source files from
+   the same version) and `verifySourceDependencyFactWithRepo` confirms a
+   directional import or call from a focal unit source file to a candidate
+   target unit source file using either a verified module/namespace declaration
+   (`go.mod` `module` directive, canonical Go `// import "..."` comment on the
+   `package` line, `package.json` `"name"`, `pyproject.toml` `name`, or
+   `Cargo.toml` `[package] name`) or a resolved local relative import (`./...`,
+   `../...`, or Python `.pkg`/`..pkg`) within the same verified repository
+   (`RepoKey`), case-sensitively and without multi-segment path-suffix guessing.
+   In `current` mode, Git targets resolve to the exact revision captured at scan
+   admission (`st.ResolvedRevision`), and `files` targets without an admission
+   capture fail closed (`source_unavailable` / `source_capture_required`)
+   without falling back to live working-copy files. When source reads are
+   missing, unverified-module, reverse-direction, or keyword-only, the
+   relationship is never emitted as `depends_on` or `source_fact`; if the target
+   remains an inspected candidate, it is downgraded to `relation_type = "related"`
+   with `evidence_basis = "thematic_analogy"`, explicit `uncertainty`
+   (`"source_unverified"` or `"partial_source"`), and a qualified `rationale`
+   that explicitly withdraws the unverified code-dependency claim (`B12`).
+2. **Candidate target, coordinate containment, and lifecycle/pagination fencing (`T-008-02-02`, `B03`, `B07`)**:
+   Every proposed relation target must belong to the inspected
+   `CandidateShortlist` (`K <= 6`), pass current active authority and
+   non-Trash/non-purged checks across shortlist, inspection, dispatch, and
+   `ApplyMaintenance`, and cite an actually inspected
+   `(target_version_id, target_page_path, target_region_id)` coordinate
+   (preserving multiple distinct region/page candidates within the same version
+   while rejecting invented uninspected coordinates on an inspected version).
+   Emitted findings record `proposal.origin_unit` (`version_id`, `document_id`,
+   `project_id`, `page_path`, `region_id`); document Trash, manual purge, and
+   `ListJobFindings` cursor pagination fence both `$.origin_unit` and
+   `evidence_json` target version references so trashed or purged origin/target
+   findings are hidden or scrubbed and paginated queries continue past filtered
+   rows until `limit` is filled or the table is exhausted.
+3. **Topic grounding and content-gap proposals (`T-008-02-03`)**:
+   `evaluateTopicFocalGrounding` checks normalized topic tokens, compounds and
+   stems against focal body/headings and unit-scoped verified source tokens.
+   It can accept a bounded paraphrase when specific focal concepts and a
+   focal-grounded rationale support it; it no longer requires a literal match
+   for every slug token. This is a lexical eligibility check, not proof of
+   general semantic entailment. Opposite-polarity qualifiers supported only by
+   a contradictory focal counterpart are rejected before generic and paraphrase
+   acceptance; actual negative-token/stem matches remain eligible. This is
+   bounded lexical protection, not a general natural-language verifier.
+   Declared themes missing from the focal body
+   can become source-qualified content gaps; other ungrounded topics are
+   rejected with per-proposal reasons. Provider `limitations` remain
+   uncertainty/abstention records and never synthesize content-gap proposals or
+   findings; only explicit `content_gaps` and declared missing scope themes
+   (`evaluateTopicFocalGrounding`) enter the gap-validation path, preserving the
+   original limitations and raw output. Generic source absence alone and
+   neighbor absence do not establish a missing focal explanation. Actual
+   quality evaluation must still detect false coverage or unhelpful gaps.
+4. **Stage-1 global semantic nomination frame and strict closed-schema validation (`Mode = "semantic_nomination"`, `EE-SN-P01`, `N2`, `N5`)**:
+   When `MaintenanceInvocation.Mode == "semantic_nomination"`, the Codex driver
+   builds `maintenanceNominationFrame` (`internal/adapters/ai/codex/maintenance.go`)
+   from `Invocation.Prompt` (`MaintenanceNominationBatchPrompt`) without reading
+   full explanation HTML or attaching source-read files. Each projected card
+   (`ProjectNominationCard`, `ProjectNominationBatchCards`) is full-fit-first up
+   to `<= 8192` raw serialized JSON bytes and `<= 8192` JSON-string re-encoded
+   bytes without a fixed `900`-byte excerpt cap or per-card average quota. When a
+   single card exceeds `8192` raw or JSON-encoded bytes, or when a batch of
+   `<= 64` cards exceeds the `<= 144 KiB` total frame budget (`8 KiB` fixed frame
+   reserve), `body_excerpt` is deterministically shrunk from the unspliced
+   original available excerpt via UTF-8-safe head (`60%`) + `"\n...\n"` + tail
+   (`40%`) truncation (falling back to single-slice UTF-8 prefix truncation when
+   a tiny byte budget cannot fit both non-empty ends and the separator) and
+   secondary metadata dropping while preserving service identity (`unit_id`,
+   `unit_kind`, `item_id`, `project_id`, `document_id`, `version_id`,
+   `page_path`, `region_id`), recording exact `total_body_bytes` and
+   `excerpt_coverage = "truncated"` only when trimmed. The complete nomination
+   frame is capped at `<= 144 KiB` (`8 KiB` fixed reserve) across both raw and
+   JSON-string re-encoded prompt bytes. Both nomination and
+   Stage-2 verification normalize `SemanticRequestSHA` across mode, batch/focal
+   identity, candidate order, prompt digest, and sorted source bindings (`N5`).
+   `decodeMaintenanceNominationOutput` enforces a strict closed JSON schema with
+   `DisallowUnknownFields`, exact batch cardinality (`minItems == maxItems ==
+   len(cards)`, requiring one nomination entry for every supplied focal card),
+   and required field presence (`focal_unit_id`, `abstained`, `candidates`,
+   `candidate_unit_id`, `rationale`), requiring a non-blank `abstain_reason` and
+   `candidates: []` when `abstained == true`, requiring `1..6` candidates and an
+   omitted or empty (`""`) `abstain_reason` when `abstained == false`, and
+   rejecting missing focal rows, missing `abstained`, unknown/out-of-batch/self/duplicate
+   unit IDs, or `> 6` candidates per focal unit without silent repair. Validated
+   nominations merged into Stage-2 candidate shortlists carry signal `kind =
+   "semantic_nomination"` with `detail` prefixed `unverified_card_routing_hint: `
+   to distinguish card-level routing hints from Stage-2 inspected evidence.

@@ -45,6 +45,8 @@ var _ = It("SCLI01 scan and findings CLI flag validation and request constructio
 		{"findings", "list", "--job", "not-a-uuid"},
 		{"findings", "list", "--job", validJob, "--kind", "broken_reference"},
 		{"findings", "list", "--job", validJob, "--status", "open"},
+		{"findings", "list", "--job", validJob, "--status", "superseded"},
+		{"findings", "list", "--job", validJob, "--status", "expired"},
 		{"findings", "list", "--job", validJob, "--limit", "0"},
 		{"findings", "list", "--job", validJob, "--limit", "201"},
 		{"findings", "list", "--job", validJob, "--version", validJob},
@@ -55,12 +57,22 @@ var _ = It("SCLI01 scan and findings CLI flag validation and request constructio
 		Expect(vErr).To(HaveOccurred(), "expected validation failure for %v", badArgs)
 	}
 
-	optList, err := parse([]string{"findings", "list", "--job", validJob, "--kind", "backlink_index_repair", "--status", "proposed", "--limit", "25", "--cursor", "cur-1"})
-	Expect(err).NotTo(HaveOccurred())
-	Expect(validateCommandFlags(optList)).To(Succeed())
-	route, err := findingsCLIInput(optList)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(route).To(Equal("/api/v1/jobs/" + validJob + "/findings?cursor=cur-1&kind=backlink_index_repair&limit=25&status=proposed"))
+	for _, kind := range []string{
+		"backlink_index_repair",
+		"related_explanation",
+		"topic_assignment",
+		"new_version_proposal",
+		"new_document_proposal",
+	} {
+		for _, st := range []string{"proposed", "applied", "rejected", "stale", "blocked", "undone"} {
+			optList, err := parse([]string{"findings", "list", "--job", validJob, "--kind", kind, "--status", st, "--limit", "25", "--cursor", "cur-1"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(validateCommandFlags(optList)).To(Succeed())
+			route, err := findingsCLIInput(optList)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(route).To(Equal("/api/v1/jobs/" + validJob + "/findings?cursor=cur-1&kind=" + kind + "&limit=25&status=" + st))
+		}
+	}
 
 	for _, action := range []string{"approve", "reject"} {
 		optAct, pErr := parse([]string{"findings", action, "f-1", "--if-match", `"etag"`, "--operation-id", validJob})

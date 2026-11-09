@@ -87,3 +87,15 @@ preserve current owner/epoch/runtime/CWD authority, unknown quota semantics and
 freshness, and must not cache account entitlement. This independent refinement
 adds no cache or new scheduler now; M07's separate scheduling/coalescing/budget
 obligations retain their ordered EPIC-009 owners (TASK-009-02/03).
+
+### DF-09 Large-scan nomination prephase query and write coalescing
+
+During the Stage-1 global semantic nomination prephase (`TASK-008-02`, `NS-02`),
+`stepGlobalNominationPrephase` and `collectEligibleSemanticItems` re-verify live
+unit/document/version authority and write `job_items.detail` per covered item
+inside the SQLite writer transaction. This executes repeated per-item read
+queries and row updates on each prephase turn while enforcing the required
+per-card live authority checks (`N1`). If measured SQLite writer latency or
+multi-hundred-unit deep-semantic scans create contention, coalesce read-only
+metadata lookups and batch `job_items.detail` updates while preserving exact
+all-card live authority and lifecycle fences.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -324,7 +325,7 @@ func (t *writeTx) JobItemsByState(jobID, state string, afterOrdinal, limit int) 
 }
 
 func (t *writeTx) NextPendingJobItem(jobID string) (domain.JobItem, bool, error) {
-	item, err := scanJobItemRow(t.tx.QueryRowContext(t.ctx, `SELECT `+jobItemColumns+` FROM job_items WHERE job_id=? AND state='pending' ORDER BY ordinal LIMIT 1`, jobID).Scan)
+	item, err := scanJobItemRow(t.tx.QueryRowContext(t.ctx, `SELECT `+jobItemColumns+` FROM job_items WHERE job_id=? AND state='pending' ORDER BY CASE WHEN coalesce(json_extract(detail,'$.structural_ready'),0)=1 THEN 1 ELSE 0 END, ordinal LIMIT 1`, jobID).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.JobItem{}, false, nil
 	}
@@ -488,6 +489,46 @@ func (t *writeTx) effectiveScanMaxRunSeconds(run domain.ScanRun, projectID strin
 		maxRunSec = curMax
 	}
 	return maxRunSec, nil
+}
+
+func (t *writeTx) effectiveScanMaxProviderAttempts(run domain.ScanRun, projectID string) (int, error) {
+	maxAttempts := run.EffectivePolicy.MaxProviderAttemptsPerRun
+	cfg, err := t.Configuration()
+	if err != nil {
+		return maxAttempts, err
+	}
+	var parsed struct {
+		Maintenance struct {
+			MaxProviderAttemptsPerRun int `json:"max_provider_attempts_per_run"`
+		} `json:"maintenance"`
+		Projects map[string]struct {
+			Maintenance *struct {
+				MaxProviderAttemptsPerRun *int `json:"max_provider_attempts_per_run"`
+			} `json:"maintenance"`
+		} `json:"projects"`
+	}
+	if err := json.Unmarshal(cfg.Value, &parsed); err != nil {
+		return maxAttempts, nil
+	}
+	curMax := parsed.Maintenance.MaxProviderAttemptsPerRun
+	if curMax <= 0 {
+		curMax = 32
+	}
+	checkProj := func(pid string) {
+		if p, ok := parsed.Projects[pid]; ok && p.Maintenance != nil && p.Maintenance.MaxProviderAttemptsPerRun != nil && *p.Maintenance.MaxProviderAttemptsPerRun > 0 && *p.Maintenance.MaxProviderAttemptsPerRun < curMax {
+			curMax = *p.Maintenance.MaxProviderAttemptsPerRun
+		}
+	}
+	for _, pid := range run.RequestedScope.ProjectIDs {
+		checkProj(pid)
+	}
+	if projectID != "" {
+		checkProj(projectID)
+	}
+	if maxAttempts <= 0 || (curMax > 0 && curMax < maxAttempts) {
+		maxAttempts = curMax
+	}
+	return maxAttempts, nil
 }
 
 // scanRepairAuthority checks that a parent scan job associated with a repair
@@ -844,6 +885,27 @@ func (t *writeTx) refreshScanReportCounts(run *domain.ScanRun) error {
 	if err != nil {
 		return err
 	}
+	provAttempts, err := t.ScanProviderAttemptCount(run.JobID, "")
+	if err != nil {
+		return err
+	}
+	var inspectedRelations int
+	if err := t.tx.QueryRowContext(t.ctx, `SELECT coalesce(sum(CASE WHEN json_type(m.value,'$.shortlist.candidates')='array' THEN json_array_length(m.value,'$.shortlist.candidates') ELSE 0 END),0) FROM maintenance_intents m JOIN jobs j ON j.job_id=m.job_id WHERE m.scan_job_id=? AND j.state='completed' AND coalesce(json_extract(m.value,'$.mode'),'')='' AND coalesce(json_extract(m.value,'$.purged'),0)=0`, run.JobID).Scan(&inspectedRelations); err != nil {
+		return err
+	}
+	var itemInspected int
+	if err := t.tx.QueryRowContext(t.ctx, `SELECT coalesce(sum(CASE WHEN json_type(detail,'$.inspected_candidates')='integer' THEN CAST(json_extract(detail,'$.inspected_candidates') AS INTEGER) ELSE 0 END),0) FROM job_items WHERE job_id=?`, run.JobID).Scan(&itemInspected); err != nil {
+		return err
+	}
+	if itemInspected > inspectedRelations {
+		inspectedRelations = itemInspected
+	}
+	if inspectedRelations > run.Report.InspectedCandidateRelations {
+		run.Report.InspectedCandidateRelations = inspectedRelations
+	}
+	var hasAttemptBudgetExhausted, hasProviderUnavailable int
+	_ = t.tx.QueryRowContext(t.ctx, `SELECT coalesce(sum(CASE WHEN json_extract(detail,'$.semantic_reason')='provider_attempt_budget_exhausted' THEN 1 ELSE 0 END),0), coalesce(sum(CASE WHEN json_extract(detail,'$.semantic_reason')='provider_unavailable' THEN 1 ELSE 0 END),0) FROM job_items WHERE job_id=?`, run.JobID).Scan(&hasAttemptBudgetExhausted, &hasProviderUnavailable)
+	run.Report.ProviderAttempts = provAttempts
 	run.Report.Stage = run.Stage
 	run.Report.EnumerationComplete = run.EnumerationComplete
 	run.Report.Structural = st
@@ -861,6 +923,12 @@ func (t *writeTx) refreshScanReportCounts(run *domain.ScanRun) error {
 	} else if st.Failed > 0 || st.Blocked > 0 {
 		run.Report.Semantic.Status = "unable_to_verify"
 		run.Report.Semantic.Reason = "structural_or_source_blocked"
+	} else if hasProviderUnavailable > 0 {
+		run.Report.Semantic.Status = "unable_to_verify"
+		run.Report.Semantic.Reason = "provider_unavailable"
+	} else if hasAttemptBudgetExhausted > 0 {
+		run.Report.Semantic.Status = "unable_to_verify"
+		run.Report.Semantic.Reason = "provider_attempt_budget_exhausted"
 	} else {
 		run.Report.Semantic.Status = "not_assessed"
 		run.Report.Semantic.Reason = "semantic_assessment_not_run"
@@ -1003,7 +1071,7 @@ func (t *writeTx) JobFindings(filter domain.FindingFilter, afterCreatedAt, after
 	if limit > 201 {
 		limit = 201
 	}
-	rows, err := t.tx.QueryContext(t.ctx, `SELECT `+findingColumns+` FROM findings WHERE job_id=? AND (?='' OR kind=?) AND (?='' OR status=?) AND (created_at>? OR (created_at=? AND finding_id>?)) ORDER BY created_at,finding_id LIMIT ?`,
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT `+findingColumns+` FROM findings WHERE job_id=? AND (?='' OR kind=?) AND (?='' OR status=?) AND reason!='document_purged' AND NOT EXISTS(SELECT 1 FROM documents d WHERE d.document_id=findings.document_id AND d.lifecycle IN ('trash','purged')) AND NOT EXISTS(SELECT 1 FROM purged_versions pv WHERE pv.version_id=findings.version_id) AND NOT EXISTS(SELECT 1 FROM documents td WHERE td.document_id=json_extract(findings.proposal_json,'$.target_document_id') AND td.lifecycle IN ('trash','purged')) AND NOT EXISTS(SELECT 1 FROM purged_versions tpv WHERE tpv.version_id=json_extract(findings.proposal_json,'$.target_version_id')) AND NOT EXISTS(SELECT 1 FROM projects tp WHERE tp.project_id=json_extract(findings.proposal_json,'$.target_project_id') AND tp.lifecycle!='active') AND NOT EXISTS(SELECT 1 FROM documents od WHERE (od.document_id=json_extract(findings.proposal_json,'$.origin_unit.document_id') OR od.document_id IN(SELECT dv.document_id FROM document_versions dv WHERE dv.version_id=json_extract(findings.proposal_json,'$.origin_unit.version_id'))) AND od.lifecycle IN ('trash','purged')) AND NOT EXISTS(SELECT 1 FROM purged_versions opv WHERE opv.version_id=json_extract(findings.proposal_json,'$.origin_unit.version_id')) AND NOT EXISTS(SELECT 1 FROM json_each(CASE WHEN json_type(findings.evidence_json)='array' THEN findings.evidence_json ELSE '[]' END) ev WHERE json_extract(ev.value,'$.version_id') IN(SELECT pv.version_id FROM purged_versions pv UNION SELECT dv.version_id FROM document_versions dv JOIN documents d ON d.document_id=dv.document_id WHERE d.lifecycle IN ('trash','purged'))) AND (created_at>? OR (created_at=? AND finding_id>?)) ORDER BY created_at,finding_id LIMIT ?`,
 		filter.JobID, filter.Kind, filter.Kind, filter.Status, filter.Status, afterCreatedAt, afterCreatedAt, afterID, limit,
 	)
 	if err != nil {
@@ -1160,6 +1228,459 @@ func (t *writeTx) ScanTargetSetCommitted(projectID, versionID, targetSetID strin
 	var ok bool
 	err := t.tx.QueryRowContext(t.ctx, `SELECT EXISTS(SELECT 1 FROM scan_captured_versions WHERE project_id=? AND (?='' OR version_id=?) AND target_set_id=?)`, projectID, versionID, versionID, targetSetID).Scan(&ok)
 	return ok, err
+}
+
+func (t *writeTx) CreateMaintenanceJob(j domain.Job, intent domain.MaintenanceIntent) error {
+	if j.Kind != "maintenance" || j.ParentID == "" || j.ParentID != intent.ScanJobID || j.ID == "" || j.ID != intent.JobID || intent.ItemID == "" {
+		return domain.ErrInvalidTarget
+	}
+	var scope domain.ProviderScope
+	if json.Unmarshal(j.Scope, &scope) != nil || scope.Invocation == nil || scope.Invocation.Maintenance == nil || scope.Invocation.Generation != nil || scope.Invocation.Question != nil || len(scope.Invocation.Maintenance.Explanations) == 0 {
+		return domain.ErrInvalidTarget
+	}
+	if err := t.CreateJob(j); err != nil {
+		return err
+	}
+	if err := t.exec(`INSERT INTO maintenance_intents(job_id,scan_job_id,item_id,value) VALUES(?,?,?,?)`, intent.JobID, intent.ScanJobID, intent.ItemID, jsonBytes(intent)); err != nil {
+		return err
+	}
+	if err := app.AuthorizeMaintenance(t, j, scope, "", ""); err != nil {
+		return err
+	}
+	if !intent.AdmissionReady {
+		if err := t.PauseProviderJob(j.ID, "source_capture_pending"); err != nil {
+			return err
+		}
+	}
+	objects, err := app.ProviderInputObjects(t, scope)
+	if err != nil {
+		return err
+	}
+	for _, object := range objects {
+		if err := t.AcquirePin(domain.Pin{ID: "job-input:" + j.ID + ":exp:" + object.Hash, Kind: "job_input", OwnerID: j.ID, Hash: object.Hash}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *writeTx) MaintenanceIntent(jobID string) (domain.MaintenanceIntent, error) {
+	var m domain.MaintenanceIntent
+	var scanJobID, itemID string
+	var raw []byte
+	if err := t.tx.QueryRowContext(t.ctx, `SELECT scan_job_id,item_id,value FROM maintenance_intents WHERE job_id=?`, jobID).Scan(&scanJobID, &itemID, &raw); err != nil {
+		return m, notFound(err)
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return m, err
+	}
+	if m.JobID == "" {
+		m.JobID = jobID
+		m.ScanJobID = scanJobID
+		m.ItemID = itemID
+	}
+	if m.JobID != jobID || m.ScanJobID != scanJobID || m.ItemID != itemID {
+		return m, domain.ErrContentIntegrity
+	}
+	return m, nil
+}
+
+func (t *writeTx) MaintenanceIntentByItem(scanJobID, itemID string) (domain.MaintenanceIntent, bool, error) {
+	var jobID string
+	err := t.tx.QueryRowContext(t.ctx, `SELECT job_id FROM maintenance_intents WHERE scan_job_id=? AND item_id=? ORDER BY job_id DESC LIMIT 1`, scanJobID, itemID).Scan(&jobID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.MaintenanceIntent{}, false, nil
+	}
+	if err != nil {
+		return domain.MaintenanceIntent{}, false, err
+	}
+	m, err := t.MaintenanceIntent(jobID)
+	if err != nil {
+		return domain.MaintenanceIntent{}, false, err
+	}
+	return m, true, nil
+}
+
+func (t *writeTx) MaintenanceIntentsByScan(scanJobID string) ([]domain.MaintenanceIntent, error) {
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT job_id FROM maintenance_intents WHERE scan_job_id=? ORDER BY item_id ASC, job_id ASC`, scanJobID)
+	if err != nil {
+		return nil, err
+	}
+	var jobIDs []string
+	for rows.Next() {
+		var jid string
+		if err := rows.Scan(&jid); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		jobIDs = append(jobIDs, jid)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	out := make([]domain.MaintenanceIntent, 0, len(jobIDs))
+	for _, jid := range jobIDs {
+		m, err := t.MaintenanceIntent(jid)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, nil
+}
+
+func (t *writeTx) UpdateMaintenanceIntent(intent domain.MaintenanceIntent) error {
+	if intent.JobID == "" || intent.ScanJobID == "" || intent.ItemID == "" {
+		return domain.ErrInvalidTarget
+	}
+	return t.exec(`UPDATE maintenance_intents SET value=? WHERE job_id=? AND scan_job_id=? AND item_id=?`, jsonBytes(intent), intent.JobID, intent.ScanJobID, intent.ItemID)
+}
+
+func (t *writeTx) AdmitMaintenanceCapture(next domain.Job, intent domain.MaintenanceIntent) error {
+	old, err := t.Job(next.ID)
+	if err != nil {
+		return err
+	}
+	oldIntent, err := t.MaintenanceIntent(next.ID)
+	if err != nil {
+		return err
+	}
+	if old.Kind != "maintenance" || old.State != "paused" || old.Error != "source_capture_pending" || old.CancelRequested || oldIntent.AdmissionReady || old.AttemptGeneration != next.AttemptGeneration || intent.JobID != next.ID {
+		return domain.ErrStaleWorker
+	}
+	before, after := old, next
+	before.Scope, after.Scope = nil, nil
+	before.Permissions, after.Permissions = nil, nil
+	if !reflect.DeepEqual(before, after) {
+		return domain.ErrInvalidTarget
+	}
+	attempts, err := t.ProviderAttempts(next.ID)
+	if err != nil {
+		return err
+	}
+	if len(attempts) != 0 {
+		return domain.ErrReconciliation
+	}
+	var scope domain.ProviderScope
+	if json.Unmarshal(next.Scope, &scope) != nil || scope.Invocation == nil || scope.Invocation.Maintenance == nil || len(scope.RequestSHA) != 64 {
+		return domain.ErrInvalidTarget
+	}
+	if err := app.AuthorizeMaintenance(t, next, scope, "", ""); err != nil {
+		return err
+	}
+	intent.AdmissionReady = true
+	if err := t.UpdateMaintenanceIntent(intent); err != nil {
+		return err
+	}
+	if err := t.exec(`UPDATE jobs SET scope=?,permissions_revisions=?,state='queued',error='',revision=revision+1 WHERE job_id=?`, next.Scope, jsonBytes(next.Permissions), next.ID); err != nil {
+		return err
+	}
+	return t.jobUpdated(next.ID)
+}
+
+func (t *writeTx) PauseMaintenanceCapture(jobID, reason string, limitations []domain.MaintenanceLimitation) error {
+	j, err := t.Job(jobID)
+	if err != nil {
+		return err
+	}
+	intent, err := t.MaintenanceIntent(jobID)
+	if err != nil {
+		return err
+	}
+	if j.Kind != "maintenance" || j.State != "paused" || j.Error != "source_capture_pending" || j.CancelRequested || intent.AdmissionReady {
+		return domain.ErrStaleWorker
+	}
+	intent.Limitations = append(intent.Limitations, limitations...)
+	if err := t.UpdateMaintenanceIntent(intent); err != nil {
+		return err
+	}
+	if err := t.exec(`DELETE FROM object_pins WHERE owner_kind='job_input' AND owner_id=? AND pin_id NOT GLOB 'job-input:*:exp:*'`, jobID); err != nil {
+		return err
+	}
+	return t.PauseProviderJob(jobID, reason)
+}
+
+func (t *writeTx) RecordPreparedMaintenanceOutput(jobID, attemptID string, output json.RawMessage) error {
+	a, err := t.ProviderAttempt(attemptID)
+	if err != nil {
+		return err
+	}
+	if a.JobID != jobID || a.State != "result_saved" {
+		return domain.ErrStaleWorker
+	}
+	intent, err := t.MaintenanceIntent(jobID)
+	if err != nil {
+		return err
+	}
+	if len(intent.PreparedOutputJSON) > 0 {
+		if intent.PreparedAttemptID == attemptID && string(intent.PreparedOutputJSON) == string(output) {
+			return nil
+		}
+		return domain.ErrConflict
+	}
+	intent.PreparedAttemptID = attemptID
+	intent.PreparedOutputJSON = output
+	return t.UpdateMaintenanceIntent(intent)
+}
+
+func (t *writeTx) ScanProviderAttemptCount(scanJobID, excludeAttemptID string) (int, error) {
+	var n int
+	err := t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM provider_attempts a JOIN jobs j ON j.job_id=a.job_id WHERE j.parent_id=? AND j.kind='maintenance' AND (?='' OR a.attempt_id!=?) AND NOT (a.state='cancelled' AND a.reason='cancel_before_dispatch' AND a.may_have_dispatched=0)`, scanJobID, excludeAttemptID, excludeAttemptID).Scan(&n)
+	return n, err
+}
+
+func (t *writeTx) ScanSearchText(versionID, pagePath, regionID string) (title string, headings []string, terms []string, body string, err error) {
+	var docTitle string
+	_ = t.tx.QueryRowContext(t.ctx, `SELECT coalesce(d.title,'') FROM document_versions v JOIN documents d ON d.document_id=v.document_id WHERE v.version_id=?`, versionID).Scan(&docTitle)
+	seenHeadings := map[string]bool{}
+	addHeading := func(h string) {
+		h = strings.TrimSpace(h)
+		if h != "" && !seenHeadings[h] {
+			seenHeadings[h] = true
+			headings = append(headings, h)
+			if title == "" {
+				title = h
+			}
+		}
+	}
+	if pagePath != "" && regionID != "" {
+		var anchorLabel string
+		_ = t.tx.QueryRowContext(t.ctx, `SELECT coalesce(pa.label,'') FROM page_anchors pa WHERE pa.version_id=? AND pa.page_path=? AND pa.anchor_id=? AND NOT EXISTS(SELECT 1 FROM search_indexes si WHERE si.version_id=pa.version_id AND si.state='pending') AND EXISTS(SELECT 1 FROM (`+searchReadUnits+`) psu WHERE psu.version_id=pa.version_id AND coalesce(psu.page_path,'')=pa.page_path AND coalesce(psu.region_id,'')='' AND psu.read_state='ready' AND psu.read_body_state='complete') LIMIT 1`, versionID, pagePath, regionID).Scan(&anchorLabel)
+		if strings.TrimSpace(anchorLabel) != "" && strings.TrimSpace(anchorLabel) != regionID {
+			addHeading(anchorLabel)
+		}
+	} else if pagePath != "" {
+		aRows, aErr := t.tx.QueryContext(t.ctx, `SELECT coalesce(pa.label,'') FROM page_anchors pa WHERE pa.version_id=? AND pa.page_path=? AND coalesce(pa.label,'')!='' AND coalesce(pa.label,'')!=pa.anchor_id AND NOT EXISTS(SELECT 1 FROM search_indexes si WHERE si.version_id=pa.version_id AND si.state='pending') AND EXISTS(SELECT 1 FROM (`+searchReadUnits+`) psu WHERE psu.version_id=pa.version_id AND coalesce(psu.page_path,'')=pa.page_path AND coalesce(psu.region_id,'')='' AND psu.read_state='ready' AND psu.read_body_state='complete') ORDER BY pa.ordinal ASC`, versionID, pagePath)
+		if aErr == nil {
+			for aRows.Next() {
+				var lbl string
+				if aRows.Scan(&lbl) == nil {
+					addHeading(lbl)
+				}
+			}
+			_ = aRows.Close()
+		}
+	}
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT u.kind,coalesce(u.title,''),coalesce(c.part,''),coalesce(c.ordinal,0),coalesce(c.title,''),coalesce(c.terms,''),coalesce(c.display_body,''),coalesce(c.body,'') FROM (`+searchReadUnits+`) u LEFT JOIN search_chunks c ON c.unit_id=u.unit_id AND (c.part='metadata' OR u.read_body_state='complete') WHERE u.version_id=? AND u.read_state='ready' AND NOT EXISTS(SELECT 1 FROM search_indexes si WHERE si.version_id=u.version_id AND si.state='pending') AND (?='' OR coalesce(u.page_path,'')=?) AND ((?='' AND (?='' OR coalesce(u.region_id,'')='')) OR (? !='' AND coalesce(u.region_id,'')=?)) ORDER BY u.unit_id,coalesce(c.ordinal,0)`, versionID, pagePath, pagePath, regionID, pagePath, regionID, regionID)
+	if err != nil {
+		if title == "" {
+			title = docTitle
+		}
+		return title, nil, nil, "", err
+	}
+	defer rows.Close()
+	seenTerms := map[string]bool{}
+	seenBody := map[string]bool{}
+	var bodyParts []string
+	for rows.Next() {
+		var uKind, uTitle, cPart, cTitle, cTerms, cDisplay, cBody string
+		var cOrdinal int
+		if err := rows.Scan(&uKind, &uTitle, &cPart, &cOrdinal, &cTitle, &cTerms, &cDisplay, &cBody); err != nil {
+			if title == "" {
+				title = docTitle
+			}
+			return title, nil, nil, "", err
+		}
+		for _, h := range []string{uTitle, cTitle} {
+			addHeading(h)
+		}
+		if cPart != "body" {
+			continue
+		}
+		for _, tok := range strings.Fields(cTerms) {
+			tok = strings.TrimSpace(tok)
+			if tok != "" && !seenTerms[tok] {
+				seenTerms[tok] = true
+				terms = append(terms, tok)
+			}
+		}
+		txt := strings.TrimSpace(cDisplay)
+		if txt == "" && cOrdinal%2 == 0 {
+			rawBody := cBody
+			if strings.HasPrefix(rawBody, domain.SearchNominationPrefix) {
+				if nl := strings.IndexByte(rawBody, '\n'); nl >= 0 {
+					rawBody = rawBody[nl+1:]
+				} else {
+					rawBody = ""
+				}
+			}
+			txt = strings.TrimSpace(rawBody)
+		}
+		if txt != "" && !seenBody[txt] {
+			seenBody[txt] = true
+			bodyParts = append(bodyParts, txt)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		if title == "" {
+			title = docTitle
+		}
+		return title, nil, nil, "", err
+	}
+	if title == "" {
+		title = docTitle
+	}
+	body = strings.Join(bodyParts, "\n")
+	return title, headings, terms, body, nil
+}
+
+func (t *writeTx) ScanCandidateUnits(scanJobID, focalVersionID, focalPagePath, focalRegionID string, terms, sourcePaths []string, limit int) ([]domain.CandidateTarget, int, error) {
+	if limit <= 0 {
+		limit = 64
+	}
+	var skipped int
+	_ = t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM scan_captured_versions cv WHERE cv.job_id=? AND (cv.exclusion_reason!='' OR cv.enum_state='purged' OR cv.version_id='' OR EXISTS(SELECT 1 FROM documents d WHERE d.document_id=cv.document_id AND d.lifecycle IN ('trash','purged')) OR EXISTS(SELECT 1 FROM projects p WHERE p.project_id=cv.project_id AND p.lifecycle!='active') OR EXISTS(SELECT 1 FROM purged_versions pv WHERE pv.version_id=cv.version_id))`, scanJobID).Scan(&skipped)
+
+	normTerms := []string{}
+	seenTerms := map[string]bool{}
+	for _, tok := range terms {
+		tok = strings.ToLower(strings.TrimSpace(tok))
+		if len(tok) >= 3 && !seenTerms[tok] {
+			seenTerms[tok] = true
+			normTerms = append(normTerms, tok)
+			if len(normTerms) >= 64 {
+				break
+			}
+		}
+	}
+	normPaths := []string{}
+	normStems := []string{}
+	seenPaths := map[string]bool{}
+	seenStems := map[string]bool{}
+	for _, sp := range sourcePaths {
+		sp = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(sp), "/"))
+		if sp != "" && !seenPaths[sp] {
+			seenPaths[sp] = true
+			normPaths = append(normPaths, sp)
+		}
+		base := sp
+		if idx := strings.LastIndexByte(base, '/'); idx >= 0 {
+			base = base[idx+1:]
+		}
+		if dot := strings.LastIndexByte(base, '.'); dot > 0 {
+			base = base[:dot]
+		}
+		if len(base) >= 3 && !seenStems[base] {
+			seenStems[base] = true
+			normStems = append(normStems, base)
+		}
+	}
+	termsJSON := string(jsonBytes(normTerms))
+	pathsJSON := string(jsonBytes(normPaths))
+	stemsJSON := string(jsonBytes(normStems))
+
+	rows, err := t.tx.QueryContext(t.ctx, `
+		WITH read_units AS (`+searchReadUnits+`),
+		eligible_units AS (
+			SELECT cv.project_id, cv.document_id, cv.version_id, r.page_path, r.region_id, 'region' AS unit_kind, cv.target_set_id, coalesce(d.title,'') AS doc_title, coalesce(CAST(r.metadata AS TEXT),'') AS unit_meta,
+				coalesce((SELECT pa.label FROM page_anchors pa WHERE pa.version_id=cv.version_id AND pa.page_path=r.page_path AND pa.anchor_id=r.region_id AND NOT EXISTS(SELECT 1 FROM search_indexes si WHERE si.version_id=cv.version_id AND si.state='pending') AND EXISTS(SELECT 1 FROM read_units psu WHERE psu.version_id=cv.version_id AND coalesce(psu.page_path,'')=r.page_path AND coalesce(psu.region_id,'')='' AND psu.read_state='ready' AND psu.read_body_state='complete') LIMIT 1),'') AS anchor_label
+			FROM scan_captured_versions cv
+			JOIN documents d ON d.document_id=cv.document_id
+			JOIN projects p ON p.project_id=cv.project_id
+			JOIN regions r ON r.version_id=cv.version_id
+			WHERE cv.job_id=? AND cv.exclusion_reason='' AND cv.enum_state!='purged' AND cv.version_id!=''
+			  AND d.lifecycle NOT IN ('trash','purged') AND p.lifecycle='active'
+			  AND NOT EXISTS(SELECT 1 FROM purged_versions pv WHERE pv.version_id=cv.version_id)
+			UNION ALL
+			SELECT cv.project_id, cv.document_id, cv.version_id, vp.page_path, '' AS region_id, 'page' AS unit_kind, cv.target_set_id, coalesce(d.title,'') AS doc_title, coalesce(CAST(vp.metadata AS TEXT),'') AS unit_meta, '' AS anchor_label
+			FROM scan_captured_versions cv
+			JOIN documents d ON d.document_id=cv.document_id
+			JOIN projects p ON p.project_id=cv.project_id
+			JOIN version_pages vp ON vp.version_id=cv.version_id
+			WHERE cv.job_id=? AND cv.exclusion_reason='' AND cv.enum_state!='purged' AND cv.version_id!=''
+			  AND d.lifecycle NOT IN ('trash','purged') AND p.lifecycle='active'
+			  AND NOT EXISTS(SELECT 1 FROM purged_versions pv WHERE pv.version_id=cv.version_id)
+			  AND NOT EXISTS(SELECT 1 FROM regions r WHERE r.version_id=vp.version_id AND r.page_path=vp.page_path)
+			UNION ALL
+			SELECT cv.project_id, cv.document_id, cv.version_id, '' AS page_path, '' AS region_id, 'version' AS unit_kind, cv.target_set_id, coalesce(d.title,'') AS doc_title, '' AS unit_meta, '' AS anchor_label
+			FROM scan_captured_versions cv
+			JOIN documents d ON d.document_id=cv.document_id
+			JOIN projects p ON p.project_id=cv.project_id
+			WHERE cv.job_id=? AND cv.exclusion_reason='' AND cv.enum_state!='purged' AND cv.version_id!=''
+			  AND d.lifecycle NOT IN ('trash','purged') AND p.lifecycle='active'
+			  AND NOT EXISTS(SELECT 1 FROM purged_versions pv WHERE pv.version_id=cv.version_id)
+			  AND cv.page_count=0 AND cv.region_count=0
+		),
+		scored_units AS (
+			SELECT u.project_id, u.document_id, u.version_id, u.page_path, u.region_id, u.unit_kind, u.target_set_id, u.doc_title,
+				CASE WHEN EXISTS(
+					SELECT 1 FROM authored_references ar
+					WHERE ar.from_version_id=?
+					  AND (?='' OR ar.from_page_path IS NULL OR ar.from_page_path=?)
+					  AND (?='' OR ar.from_region_id IS NULL OR ar.from_region_id=?)
+					  AND (ar.target_version_id=u.version_id OR ar.target_document_id=u.document_id)
+					  AND (ar.target_page_path IS NULL OR ar.target_page_path='' OR ar.target_page_path=u.page_path)
+					  AND (ar.target_region_id IS NULL OR ar.target_region_id='' OR ar.target_region_id=u.region_id)
+				) THEN 1 ELSE 0 END AS ref_hit,
+				CASE WHEN EXISTS(
+					SELECT 1 FROM evidence ev
+					LEFT JOIN region_evidence re ON re.version_id=ev.version_id AND re.evidence_id=ev.evidence_id
+					WHERE ev.version_id=u.version_id
+					  AND (u.page_path='' OR re.page_path IS NULL OR re.page_path=u.page_path)
+					  AND (u.region_id='' OR re.region_id IS NULL OR re.region_id=u.region_id)
+					  AND (
+						lower(ltrim(coalesce(json_extract(ev.metadata,'$.locator.path'),json_extract(ev.metadata,'$.path'),''),'/')) IN (SELECT value FROM json_each(?))
+						OR EXISTS(SELECT 1 FROM json_each(?) st WHERE instr(lower(coalesce(json_extract(ev.metadata,'$.locator.path'),json_extract(ev.metadata,'$.path'),'')), st.value)>0)
+					  )
+				) THEN 1 ELSE 0 END AS source_hit,
+				coalesce((
+					SELECT sum(CASE WHEN length(tm.value)>=7 THEN 3 WHEN length(tm.value)>=5 THEN 2 ELSE 1 END) FROM json_each(?) tm
+					WHERE instr(lower(u.unit_meta), tm.value)>0
+					   OR instr(lower(u.anchor_label), tm.value)>0
+					   OR (u.unit_kind='version' AND instr(lower(u.doc_title), tm.value)>0)
+					   OR EXISTS(
+						   SELECT 1 FROM read_units su
+						   LEFT JOIN search_chunks sc ON sc.unit_id=su.unit_id AND (sc.part='metadata' OR su.read_body_state='complete')
+						   WHERE su.version_id=u.version_id
+						     AND su.read_state='ready'
+						     AND NOT EXISTS(SELECT 1 FROM search_indexes si WHERE si.version_id=su.version_id AND si.state='pending')
+						     AND (u.page_path='' OR coalesce(su.page_path,'')=u.page_path)
+						     AND (
+							   (u.region_id!='' AND coalesce(su.region_id,'')=u.region_id)
+							   OR (u.region_id='' AND coalesce(su.region_id,'')='')
+							   OR (u.region_id!='' AND coalesce(su.region_id,'')='' AND su.read_body_state='complete' AND NOT EXISTS(SELECT 1 FROM read_units su2 WHERE su2.version_id=u.version_id AND coalesce(su2.page_path,'')=u.page_path AND coalesce(su2.region_id,'')=u.region_id))
+						     )
+						     AND (
+							   instr(lower(coalesce(su.title,'')), tm.value)>0
+							   OR instr(lower(coalesce(sc.title,'')), tm.value)>0
+							   OR instr(' '||lower(coalesce(sc.terms,''))||' ', ' '||tm.value||' ')>0
+							   OR (length(tm.value)>=5 AND instr(lower(coalesce(sc.terms,'')), tm.value)>0)
+							   OR instr(lower(coalesce(sc.display_body,'')), tm.value)>0
+							   OR instr(lower(coalesce(sc.body,'')), tm.value)>0
+						     )
+					   )
+				), 0) AS search_hits
+			FROM eligible_units u
+			WHERE NOT (u.version_id=? AND u.page_path=? AND u.region_id=?)
+		)
+		SELECT project_id, document_id, version_id, page_path, region_id, unit_kind, target_set_id, doc_title
+		FROM scored_units
+		WHERE ref_hit>0 OR source_hit>0 OR search_hits>0
+		ORDER BY (ref_hit*100 + source_hit*50 + search_hits) DESC, version_id ASC, page_path ASC, region_id ASC
+		LIMIT ?`,
+		scanJobID, scanJobID, scanJobID,
+		focalVersionID, focalPagePath, focalPagePath, focalRegionID, focalRegionID,
+		pathsJSON, stemsJSON, termsJSON,
+		focalVersionID, focalPagePath, focalRegionID,
+		limit,
+	)
+	if err != nil {
+		return nil, skipped, err
+	}
+	defer rows.Close()
+	var out []domain.CandidateTarget
+	for rows.Next() {
+		var c domain.CandidateTarget
+		if err := rows.Scan(&c.ProjectID, &c.DocumentID, &c.VersionID, &c.PagePath, &c.RegionID, &c.UnitKind, &c.TargetSetID, &c.Title); err != nil {
+			return nil, skipped, err
+		}
+		out = append(out, c)
+	}
+	return out, skipped, rows.Err()
 }
 
 func nullablePtr(p *string) any {

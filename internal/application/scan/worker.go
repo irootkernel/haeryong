@@ -10,6 +10,7 @@ import (
 
 	"haeryong.local/haeryong/internal/application/auth"
 	"haeryong.local/haeryong/internal/application/search"
+	"haeryong.local/haeryong/internal/application/source"
 	app "haeryong.local/haeryong/internal/application/storage"
 	"haeryong.local/haeryong/internal/domain"
 )
@@ -17,6 +18,8 @@ import (
 type Worker struct {
 	Store    app.Store
 	Bytes    search.ObjectReader
+	Sources  *source.Service
+	Identity func(string, json.RawMessage, domain.ProviderInvocation, []domain.CapturedRead) (string, error)
 	Now      func() time.Time
 	StepHook func(jobID, stage string)
 }
@@ -211,6 +214,9 @@ func (w *Worker) exhaustRunBudget(tx app.WriteTx, j domain.Job, run domain.ScanR
 	if err := tx.UpdateScanRun(run); err != nil {
 		return err
 	}
+	if curJob, err := tx.Job(j.ID); err == nil && curJob.ProviderAttempts != nil && curJob.ProviderAttempts.Unknown > 0 {
+		return tx.PauseProviderJob(j.ID, "outcome_unknown")
+	}
 	return tx.FinishJob(j.ID, j.AttemptGeneration, "", func(tx app.WriteTx) error {
 		return tx.ReleaseOwnerPins("job", j.ID)
 	})
@@ -251,12 +257,49 @@ func (w *Worker) revokeRunAuthority(tx app.WriteTx, j domain.Job, run domain.Sca
 	if err := tx.UpdateScanRun(run); err != nil {
 		return err
 	}
+	if curJob, err := tx.Job(j.ID); err == nil && curJob.ProviderAttempts != nil && curJob.ProviderAttempts.Unknown > 0 {
+		return tx.PauseProviderJob(j.ID, "outcome_unknown")
+	}
 	return tx.FinishJob(j.ID, j.AttemptGeneration, "", func(tx app.WriteTx) error {
 		return tx.ReleaseOwnerPins("job", j.ID)
 	})
 }
 
 func (w *Worker) cancelActiveRepairChildren(tx app.WriteTx, scanJobID, reason, nowStr string) error {
+	seenChild := map[string]bool{}
+	cancelChildID := func(cid string) error {
+		if cid == "" || seenChild[cid] {
+			return nil
+		}
+		seenChild[cid] = true
+		child, err := tx.Job(cid)
+		if err != nil {
+			return err
+		}
+		if child.State != "completed" && child.State != "failed" && child.State != "cancelled" {
+			if !child.CancelRequested {
+				child, err = tx.CancelJob(child.ID)
+				if err != nil {
+					return err
+				}
+			}
+			if child.State != "completed" && child.State != "failed" && child.State != "cancelled" && (!domain.ProviderJob(child.Kind) || child.ProviderAttempts == nil || child.ProviderAttempts.Unknown == 0) {
+				if err := tx.ConfirmStop(child.ID, child.AttemptGeneration); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	mIntents, err := tx.MaintenanceIntentsByScan(scanJobID)
+	if err != nil {
+		return err
+	}
+	for _, m := range mIntents {
+		if err := cancelChildID(m.JobID); err != nil {
+			return err
+		}
+	}
 	afterOrd := 0
 	for {
 		items, err := tx.JobItems(scanJobID, afterOrd, 256)
@@ -268,22 +311,18 @@ func (w *Worker) cancelActiveRepairChildren(tx app.WriteTx, scanJobID, reason, n
 		}
 		for _, it := range items {
 			afterOrd = it.Ordinal
-			if it.RepairJobID == "" {
-				continue
-			}
-			child, err := tx.Job(it.RepairJobID)
-			if err != nil {
-				continue
-			}
-			if child.State != "completed" && child.State != "failed" && child.State != "cancelled" {
-				if !child.CancelRequested {
-					child, err = tx.CancelJob(child.ID)
-					if err != nil {
-						return err
-					}
+			if it.RepairJobID != "" {
+				if err := cancelChildID(it.RepairJobID); err != nil {
+					return err
 				}
-				if child.State == "queued" || child.State == "paused" || child.State == "interrupted" || child.State == "running" || child.State == "cancelling" {
-					_ = tx.ConfirmStop(child.ID, child.AttemptGeneration)
+			}
+			mIntent, ok, e := tx.MaintenanceIntentByItem(scanJobID, it.ItemID)
+			if e != nil {
+				return e
+			}
+			if ok && mIntent.JobID != "" {
+				if err := cancelChildID(mIntent.JobID); err != nil {
+					return err
 				}
 			}
 			if it.FindingID != "" {
@@ -292,7 +331,9 @@ func (w *Worker) cancelActiveRepairChildren(tx app.WriteTx, scanJobID, reason, n
 					f.Reason = reason
 					f.Revision++
 					f.UpdatedAt = nowStr
-					_ = tx.PutFinding(f)
+					if err := tx.PutFinding(f); err != nil {
+						return err
+					}
 				}
 			}
 		}

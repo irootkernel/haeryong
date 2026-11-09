@@ -782,3 +782,35 @@ reservation policy, and preserves healthy sibling documents, versions, and
 in `domain.RestrictCredentialScope` across authentication and SQLite
 job/operation/event visibility guards. See
 [scan inventory evidence](testing/scan-inventory.md).
+
+## Schema revision 21 maintenance intents and candidate discovery (TASK-008-02)
+
+Migration 21 (`internal/adapters/sqlite/scan_schema.go`, wired by
+`internal/adapters/sqlite/schema.go`) advances `SchemaRevision` from 20 to 21 by
+adding `maintenance_intents(job_id TEXT PRIMARY KEY REFERENCES jobs(job_id), scan_job_id TEXT NOT NULL REFERENCES jobs(job_id), item_id TEXT NOT NULL, value BLOB NOT NULL CHECK(json_valid(value)))`
+and index `maintenance_intents_by_scan_item(scan_job_id, item_id)`.
+`maintenance_source_contexts` is a query-local CTE in
+`internal/adapters/sqlite/source_capture.go`, not a persisted view or migration
+object. It derives version dependencies from invocation explanations,
+`$.source_read_ids` and `$.captures`. All earlier migrations and checksums
+(1–20) remain unchanged.
+
+Each `maintenance_intents` row binds one child provider job
+(`jobs.kind = 'maintenance'`) to its parent `scan` job (`scan_job_id`) and
+unit `job_items` row (`item_id`). Its JSON `value` (`domain.MaintenanceIntent`)
+freezes the focal project/document/version/page/region coordinates, the
+`CandidateShortlist` (`K <= 6`), per-step capture outcomes (`captures`), exact
+`source_read_ids`, multi-version/multi-project `read_bindings`
+(`MaintenanceReadBinding`) and explicit `limitations`. The optional
+`prepared_output_json` holds the validated `PreparedMaintenancePayload`
+(envelope, input digest, verified dependencies/evidence and partial-source
+unit/version facts), with `prepared_attempt_id` identifying its attempt.
+`PrepareMaintenance` prepares this result before `ApplyMaintenance` settles the
+parent item. Object GC, backup/restore orphan accounting
+(`provider_restore.go`, `copy_restore.go`; the restored-scan query uses existing
+`rowid,job_id` rather than a nonexistent creation-time column, `B10`), Trash, and manual purge
+(`lifecycle.go`, `purge.go`, including `$.origin_unit` and `evidence_json`
+version fencing/redaction, `B03`, `B07`) include `maintenance_intents` and
+`findings` so active execution pins, retained source snapshots, and candidate
+references are protected during execution and scrubbed (`{"purged":true}`) or
+deleted on manual target purge without leaking denied or trashed targets.

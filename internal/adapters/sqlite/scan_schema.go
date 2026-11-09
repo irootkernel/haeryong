@@ -24,15 +24,28 @@ CREATE INDEX findings_by_project_status ON findings(project_id,status,created_at
 CREATE INDEX findings_by_fingerprint ON findings(project_id,kind,evidence_fingerprint);
 `
 
+const maintenanceMigration = `
+CREATE TABLE maintenance_intents(job_id TEXT PRIMARY KEY REFERENCES jobs(job_id),scan_job_id TEXT NOT NULL REFERENCES jobs(job_id),item_id TEXT NOT NULL,value BLOB NOT NULL CHECK(json_valid(value)));
+CREATE INDEX maintenance_intents_by_scan_item ON maintenance_intents(scan_job_id,item_id);
+`
+
 func (s *Store) validateScanDeclarations(ctx context.Context) error {
+	return s.validateDDL(ctx, scanMigration, "scan")
+}
+
+func (s *Store) validateMaintenanceDeclarations(ctx context.Context) error {
+	return s.validateDDL(ctx, maintenanceMigration, "maintenance")
+}
+
+func (s *Store) validateDDL(ctx context.Context, ddl, label string) error {
 	normalize := func(v string) string { return strings.TrimSuffix(strings.Join(strings.Fields(v), " "), ";") }
-	for _, m := range regexp.MustCompile(`(?s)CREATE (TABLE|INDEX) ([a-z_]+).*?;`).FindAllStringSubmatch(scanMigration, -1) {
+	for _, m := range regexp.MustCompile(`(?s)CREATE (TABLE|INDEX) ([a-z_]+).*?;`).FindAllStringSubmatch(ddl, -1) {
 		var actual string
 		if e := s.db.QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE type=? AND name=?`, strings.ToLower(m[1]), m[2]).Scan(&actual); e != nil {
-			return errors.New("missing scan schema declaration")
+			return errors.New("missing " + label + " schema declaration")
 		}
 		if normalize(actual) != normalize(m[0]) {
-			return errors.New("changed scan schema declaration")
+			return errors.New("changed " + label + " schema declaration")
 		}
 	}
 	return nil

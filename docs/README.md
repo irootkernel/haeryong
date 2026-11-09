@@ -432,3 +432,24 @@ factual/lifecycle record overlay has separate affected documentation checks; the
 normal commit and native finalization follow. `TASK-008-02` through `TASK-008-06`
 retain semantic discovery, freshness assessment, overlays, approval/undo, and the
 manual maintenance exit gate. Overall Epic acceptance remains with Master.
+
+## Bounded relationship and topic discovery (TASK-008-02)
+
+Schema revision 21 adds retained maintenance intents, bounded candidate retrieval,
+accounted provider children and guarded relationship/topic/content-gap proposals.
+The [quality record](testing/knowledge-quality.md) and
+[scan record](testing/scan-inventory.md) retain actual evidence and limits.
+The five affected focused scopes and the original-profile independent quality
+component passed on the corrected product. The final cohort saved all 25
+attempts and produced 290 independently inspected proposals; source-input,
+cleanup, borderline-analogy and historical failure qualifications remain explicit.
+The subsequent full common failed on two stale contract hash records and one
+incorrect CLI test expectation; integration, persistence and all 95 E2E cases
+passed. A bounded metadata/test correction passed current prepare and the CLI
+race case without changing product code. The failed aggregate remains failed;
+independent final original-Goal/scoped contribution judgments and explicit
+settlement of all 21 original findings support the current composition and CO
+product review. The bounded Task02 Goal is achieved and the exact member is
+accepted under Master delegation. This factual/lifecycle overlay has separate
+affected documentation checks; the normal commit and native finalization follow.
+Tasks03–06 and overall Epic acceptance retain their ordered owners.

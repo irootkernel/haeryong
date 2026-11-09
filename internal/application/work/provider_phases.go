@@ -81,7 +81,10 @@ func (p *ProviderCoordinator) collectProvider(phase *providerPhase) error {
 			}
 		}
 		if j.CancelRequested {
-			return tx.ConfirmStop(j.ID, j.AttemptGeneration)
+			if e := tx.ConfirmStop(j.ID, j.AttemptGeneration); e != nil {
+				return e
+			}
+			return settleParentScanAfterChild(tx, j)
 		}
 		// A successful turn may only normalize or advance a finite lookup set.
 		// Keep that intended progress after the unchanged ownership/cancel guards.

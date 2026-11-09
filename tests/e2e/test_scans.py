@@ -135,14 +135,23 @@ def test_scans_T00801_public_api_cli_lost_response_and_findings_flow(product, ow
     )
     assert not_mod_status == 304
 
-    # 4. CLI findings list with canonical filters and premature approve/reject refusal
-    findings_page = product.cli(
-        ["findings", "list", "--job", job_id, "--kind", "backlink_index_repair", "--status", "proposed"],
-        client=owner,
-    )["data"]
-    assert findings_page["items"] == []
-    assert findings_page["next_cursor"] is None
-    assert str(tmp_path) not in json.dumps(findings_page)
+    # 4. CLI findings list with canonical filters (including TASK-008-02 candidate discovery kinds) and premature approve/reject refusal
+    assert report["inspected_candidate_relations"] == 0
+    assert report["provider_attempts"] == 0
+    for f_kind in (
+        "backlink_index_repair",
+        "related_explanation",
+        "topic_assignment",
+        "new_version_proposal",
+        "new_document_proposal",
+    ):
+        findings_page = product.cli(
+            ["findings", "list", "--job", job_id, "--kind", f_kind, "--status", "proposed"],
+            client=owner,
+        )["data"]
+        assert findings_page["items"] == []
+        assert findings_page["next_cursor"] is None
+        assert str(tmp_path) not in json.dumps(findings_page)
 
     dummy_id = str(uuid.uuid4())
     product.cli(["findings", "approve", dummy_id, "--if-match", f'"finding-{dummy_id}-r1"'], client=owner, code=5)

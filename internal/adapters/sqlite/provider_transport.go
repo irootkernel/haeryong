@@ -199,7 +199,16 @@ func (t *writeTx) GuardProviderLookup(jobID, attemptID string) error {
 		return e
 	}
 	if scope.PrincipalID != state.OwnerID {
-		return domain.ErrDenied
+		if j.Kind != "maintenance" {
+			return domain.ErrDenied
+		}
+		var raw []byte
+		if e = t.tx.QueryRowContext(t.ctx, `SELECT value FROM resource_revisions WHERE resource_kind='provider_reconciliation_authority' AND resource_id=?`, jobID).Scan(&raw); e != nil {
+			p, pErr := t.WorkflowPrincipal(scope.PrincipalID)
+			if pErr != nil || !p.Active {
+				return domain.ErrDenied
+			}
+		}
 	}
 	// Original producing authority remains immutable. A current explicit finite
 	// status grant can account an older effect after protected owner recovery.

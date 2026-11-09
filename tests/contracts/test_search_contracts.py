@@ -81,10 +81,10 @@ def test_search_SC11_additive_kind_preserves_existing_scopes():
     # Reversal: remove derived_index from the registry's closed selected enum.
     kinds = c.SCHEMA['shared_enums']['job.kind']
     assert 'derived_index' in kinds
-    # TASK-005-05 adds offline restore; all nine existing kinds stay selected.
-    assert len(kinds) == len(set(kinds)) == 10
+    # TASK-008-02 adds maintenance child jobs; all existing kinds stay selected.
+    assert len(kinds) == len(set(kinds)) == 11
     assert set(kinds) == {'upload_seal', 'import', 'generation', 'question',
-                          'scan', 'lifecycle', 'backup', 'export', 'derived_index', 'restore'}
+                          'scan', 'maintenance', 'lifecycle', 'backup', 'export', 'derived_index', 'restore'}
     assert 'future_kind' not in kinds
     assert c.SCHEMA['shared_enums']['workflow.scope'] == [
         'project.read', 'source.read', 'version.read', 'package.export',

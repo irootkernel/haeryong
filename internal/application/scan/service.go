@@ -1061,28 +1061,166 @@ func (s *Service) ListJobFindings(ctx context.Context, token string, filter doma
 
 		f := filter
 		f.Limit = limit + 1
-		rows, e := tx.JobFindings(f, afterCreated, afterID)
-		if e != nil {
-			return e
+		if f.Limit < 32 {
+			f.Limit = 32
 		}
-		for i, item := range rows {
-			if i == limit {
-				last := rows[i-1]
-				nextRaw, _ := json.Marshal(findingCursor{
-					Binding:   binding,
-					CreatedAt: last.CreatedAt,
-					FindingID: last.ID,
-				})
-				nextStr := base64.RawURLEncoding.EncodeToString(nextRaw)
-				out.NextCursor = &nextStr
+		curAfterCreated := afterCreated
+		curAfterID := afterID
+		for {
+			rows, e := tx.JobFindings(f, curAfterCreated, curAfterID)
+			if e != nil {
+				return e
+			}
+			if len(rows) == 0 {
 				break
 			}
-			out.Items = append(out.Items, item)
+			reachedPageLimit := false
+			for _, item := range rows {
+				curAfterCreated = item.CreatedAt
+				curAfterID = item.ID
+				if !visibleFindingForActor(tx, actor, item) {
+					continue
+				}
+				if len(out.Items) == limit {
+					last := out.Items[len(out.Items)-1]
+					nextRaw, _ := json.Marshal(findingCursor{
+						Binding:   binding,
+						CreatedAt: last.CreatedAt,
+						FindingID: last.ID,
+					})
+					nextStr := base64.RawURLEncoding.EncodeToString(nextRaw)
+					out.NextCursor = &nextStr
+					reachedPageLimit = true
+					break
+				}
+				out.Items = append(out.Items, item)
+			}
+			if reachedPageLimit || len(rows) < f.Limit {
+				break
+			}
 		}
 		out.ETag = domain.FindingPageETag(j.ID, j.Revision, filter.Kind, filter.Status, out.Items, out.NextCursor)
 		return nil
 	})
 	return out, err
+}
+
+func checkVersionVisibleForFinding(tx app.WriteTx, actor domain.Session, verID string) bool {
+	if verID == "" {
+		return true
+	}
+	if tomb, err := tx.TombstonedVersion(verID); err != nil || tomb {
+		return false
+	}
+	v, err := tx.PublishedVersion(verID)
+	if err != nil {
+		return false
+	}
+	doc, err := tx.Document(v.DocumentID)
+	if err != nil || doc.Lifecycle == "trash" || doc.Lifecycle == "purged" {
+		return false
+	}
+	if pScope, err := tx.Scope(doc.ProjectID); err != nil || pScope.Project.Lifecycle == "trash" || pScope.Project.Lifecycle == "purged" {
+		return false
+	}
+	if actor.Scope.Kind != "" && actor.Scope.Kind != "owner" {
+		if _, _, err := app.CheckSourceVersion(tx, actor, verID); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+func visibleFindingForActor(tx app.WriteTx, actor domain.Session, f domain.Finding) bool {
+	if f.Reason == "document_purged" {
+		return false
+	}
+	if pScope, err := tx.Scope(f.ProjectID); err != nil || pScope.Project.Lifecycle == "trash" || pScope.Project.Lifecycle == "purged" {
+		return false
+	}
+	if f.DocumentID != nil && *f.DocumentID != "" {
+		doc, err := tx.Document(*f.DocumentID)
+		if err != nil || doc.Lifecycle == "trash" || doc.Lifecycle == "purged" {
+			return false
+		}
+	}
+	if f.VersionID != nil && *f.VersionID != "" {
+		if !checkVersionVisibleForFinding(tx, actor, *f.VersionID) {
+			return false
+		}
+	}
+	var prop struct {
+		Purged           bool   `json:"purged"`
+		TargetProjectID  string `json:"target_project_id"`
+		TargetDocumentID string `json:"target_document_id"`
+		TargetVersionID  string `json:"target_version_id"`
+		OriginUnit       *struct {
+			ProjectID  string `json:"project_id"`
+			DocumentID string `json:"document_id"`
+			VersionID  string `json:"version_id"`
+		} `json:"origin_unit"`
+	}
+	if len(f.Proposal) > 0 && json.Unmarshal(f.Proposal, &prop) == nil {
+		if prop.Purged {
+			return false
+		}
+		if prop.TargetProjectID != "" {
+			if pScope, err := tx.Scope(prop.TargetProjectID); err != nil || pScope.Project.Lifecycle == "trash" || pScope.Project.Lifecycle == "purged" {
+				return false
+			}
+		}
+		if prop.TargetDocumentID != "" {
+			doc, err := tx.Document(prop.TargetDocumentID)
+			if err != nil || doc.Lifecycle == "trash" || doc.Lifecycle == "purged" {
+				return false
+			}
+		}
+		if prop.TargetVersionID != "" {
+			if !checkVersionVisibleForFinding(tx, actor, prop.TargetVersionID) {
+				return false
+			}
+		}
+		if prop.OriginUnit != nil {
+			if prop.OriginUnit.ProjectID != "" {
+				if pScope, err := tx.Scope(prop.OriginUnit.ProjectID); err != nil || pScope.Project.Lifecycle == "trash" || pScope.Project.Lifecycle == "purged" {
+					return false
+				}
+			}
+			if prop.OriginUnit.DocumentID != "" {
+				doc, err := tx.Document(prop.OriginUnit.DocumentID)
+				if err != nil || doc.Lifecycle == "trash" || doc.Lifecycle == "purged" {
+					return false
+				}
+			}
+			if prop.OriginUnit.VersionID != "" {
+				if !checkVersionVisibleForFinding(tx, actor, prop.OriginUnit.VersionID) {
+					return false
+				}
+			}
+		}
+	}
+	if len(f.Evidence) > 0 {
+		var evArr []struct {
+			VersionID string `json:"version_id"`
+		}
+		if json.Unmarshal(f.Evidence, &evArr) == nil {
+			for _, ev := range evArr {
+				if ev.VersionID != "" && !checkVersionVisibleForFinding(tx, actor, ev.VersionID) {
+					return false
+				}
+			}
+		} else {
+			var evObj struct {
+				VersionID string `json:"version_id"`
+			}
+			if json.Unmarshal(f.Evidence, &evObj) == nil && evObj.VersionID != "" {
+				if !checkVersionVisibleForFinding(tx, actor, evObj.VersionID) {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 func nullableStr(s string) *string {

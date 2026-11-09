@@ -38,7 +38,17 @@ func (r guardedReader) Read(p []byte) (int, error) {
 // SemanticRequestSHA excludes operation/job/capture IDs and observation time.
 // It is calculated at trusted admission from the actual prompt and exact inputs.
 func SemanticRequestSHA(principal string, target json.RawMessage, invocation domain.ProviderInvocation, reads []domain.CapturedRead) (string, error) {
-	if invocation.Generation != nil && invocation.Question != nil {
+	modes := 0
+	if invocation.Generation != nil {
+		modes++
+	}
+	if invocation.Question != nil {
+		modes++
+	}
+	if invocation.Maintenance != nil {
+		modes++
+	}
+	if modes > 1 {
 		return "", domain.ErrInvalidTarget
 	}
 	if invocation.Generation != nil {
@@ -85,6 +95,62 @@ func SemanticRequestSHA(principal string, target json.RawMessage, invocation dom
 		delete(fields, "operation_id")
 		target, _ = json.Marshal(fields)
 	}
+	if invocation.Maintenance != nil {
+		if invocation.PromptRef != nil || strings.TrimSpace(invocation.Prompt) == "" || len(invocation.Maintenance.Explanations) == 0 {
+			return "", domain.ErrInvalidTarget
+		}
+		maint := *invocation.Maintenance
+		maint.ScanJobID = ""
+		maint.ItemID = ""
+		maint.BatchID = ""
+		maint.BatchItemIDs = nil
+		exps := make([]domain.MaintenanceExplanation, len(maint.Explanations))
+		copy(exps, maint.Explanations)
+		for i := range exps {
+			exps[i].TargetSetID = ""
+			exps[i].ItemID = ""
+		}
+		ptrStr := func(p *string) string {
+			if p == nil {
+				return ""
+			}
+			return *p
+		}
+		sort.SliceStable(exps, func(i, j int) bool {
+			if exps[i].Role != exps[j].Role {
+				return exps[i].Role < exps[j].Role
+			}
+			if exps[i].UnitID != exps[j].UnitID {
+				return exps[i].UnitID < exps[j].UnitID
+			}
+			if exps[i].VersionID != exps[j].VersionID {
+				return exps[i].VersionID < exps[j].VersionID
+			}
+			if ptrStr(exps[i].PagePath) != ptrStr(exps[j].PagePath) {
+				return ptrStr(exps[i].PagePath) < ptrStr(exps[j].PagePath)
+			}
+			if ptrStr(exps[i].RegionID) != ptrStr(exps[j].RegionID) {
+				return ptrStr(exps[i].RegionID) < ptrStr(exps[j].RegionID)
+			}
+			return exps[i].ObjectHash < exps[j].ObjectHash
+		})
+		maint.Explanations = exps
+		maint.ReadBindings = nil
+		invocation.Maintenance = &maint
+		invocation.Prompt = normalizeMaintenancePrompt(invocation.Prompt)
+		invocation.CWD = ""
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(target, &fields) != nil {
+			return "", domain.ErrInvalidTarget
+		}
+		delete(fields, "operation_id")
+		delete(fields, "scan_job_id")
+		delete(fields, "item_id")
+		delete(fields, "batch_id")
+		delete(fields, "target_set_id")
+		delete(fields, "capture_id")
+		target, _ = json.Marshal(fields)
+	}
 	stable := []semanticInput{}
 	for _, r := range reads {
 		item, e := semanticIdentity(r)
@@ -106,6 +172,64 @@ func SemanticRequestSHA(principal string, target json.RawMessage, invocation dom
 	}
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func normalizeMaintenancePrompt(prompt string) string {
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(prompt), &payload); err != nil {
+		return prompt
+	}
+	delete(payload, "scan_job_id")
+	delete(payload, "item_id")
+	delete(payload, "batch_id")
+	delete(payload, "target_set_id")
+	delete(payload, "capture_id")
+	delete(payload, "operation_id")
+	if reqScope, ok := payload["requested_scope"].(map[string]any); ok {
+		delete(reqScope, "target_set_id")
+		delete(reqScope, "capture_id")
+		if srcs, ok := reqScope["sources"].([]any); ok {
+			for _, elem := range srcs {
+				if sm, ok := elem.(map[string]any); ok {
+					delete(sm, "target_set_id")
+					delete(sm, "capture_id")
+				}
+			}
+		}
+	}
+	if cands, ok := payload["candidates"].([]any); ok {
+		for _, elem := range cands {
+			if cm, ok := elem.(map[string]any); ok {
+				delete(cm, "target_set_id")
+				delete(cm, "capture_id")
+				delete(cm, "read_id")
+				delete(cm, "scan_job_id")
+				delete(cm, "item_id")
+			}
+		}
+		sort.SliceStable(cands, func(i, j int) bool {
+			mi, _ := cands[i].(map[string]any)
+			mj, _ := cands[j].(map[string]any)
+			vi, _ := mi["version_id"].(string)
+			vj, _ := mj["version_id"].(string)
+			if vi != vj {
+				return vi < vj
+			}
+			pi, _ := mi["page_path"].(string)
+			pj, _ := mj["page_path"].(string)
+			if pi != pj {
+				return pi < pj
+			}
+			ri, _ := mi["region_id"].(string)
+			rj, _ := mj["region_id"].(string)
+			return ri < rj
+		})
+	}
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return prompt
+	}
+	return string(out)
 }
 
 type semanticInput struct {
@@ -162,7 +286,8 @@ func (d *Driver) orderedInputs(ctx context.Context, a domain.ProviderAttempt, in
 			if e != nil {
 				return e
 			}
-			if read.BytesSHA != input.Hash || read.TargetSetID != a.TargetSetID {
+			expectedTargetSet, _, _, ok := domain.MaintenanceReadTarget(scope, a.TargetSetID, "", input.ReadID)
+			if !ok || read.BytesSHA != input.Hash || read.TargetSetID != expectedTargetSet {
 				return domain.ErrInvalidTarget
 			}
 			identity, e := semanticIdentity(read)
@@ -370,19 +495,37 @@ func (d *Driver) frame(ctx context.Context, a domain.ProviderAttempt, inputs []d
 			return fail(e)
 		}
 	}
+	if inv.Maintenance != nil {
+		if e = d.maintenanceFrame(ctx, w, a, *inv.Maintenance); e != nil {
+			return fail(e)
+		}
+	}
 	for _, v := range inputs {
 		var object domain.Object
 		var read domain.CapturedRead
+		var expectedTargetSet, readProjectID, readVersionID string
 		e = d.Store.Write(ctx, func(tx app.WriteTx) error {
 			if e := tx.GuardProviderPayload(a.JobID, a.ID, false); e != nil {
 				return e
 			}
-			var e error
+			j, e := tx.Job(a.JobID)
+			if e != nil {
+				return e
+			}
+			var scope domain.ProviderScope
+			if json.Unmarshal(j.Scope, &scope) != nil {
+				return domain.ErrInvalidTarget
+			}
+			var ok bool
+			expectedTargetSet, readProjectID, readVersionID, ok = domain.MaintenanceReadTarget(scope, a.TargetSetID, "", v.ReadID)
+			if !ok {
+				return domain.ErrInvalidTarget
+			}
 			read, e = tx.CapturedRead(v.ReadID)
 			if e != nil {
 				return e
 			}
-			if read.BytesSHA != v.Hash || read.TargetSetID != a.TargetSetID {
+			if read.BytesSHA != v.Hash || read.TargetSetID != expectedTargetSet {
 				return domain.ErrInvalidTarget
 			}
 			object, e = tx.Object(v.Hash)
@@ -400,6 +543,18 @@ func (d *Driver) frame(ctx context.Context, a domain.ProviderAttempt, inputs []d
 			Location json.RawMessage `json:"location"`
 			SHA      string          `json:"bytes_sha256"`
 		}{identity.Source, identity.Location, v.Hash})
+		if inv.Maintenance != nil {
+			header, _ = json.Marshal(map[string]any{
+				"basis":         "project_source",
+				"project_id":    readProjectID,
+				"version_id":    readVersionID,
+				"target_set_id": expectedTargetSet,
+				"read_id":       read.ID,
+				"source":        identity.Source,
+				"location":      identity.Location,
+				"bytes_sha256":  v.Hash,
+			})
+		}
 		if inv.Question != nil {
 			// IDs are correlation data for validation, not authority. The actual
 			// observation is recorded only after complete write and native ACK.
@@ -436,6 +591,12 @@ func (d *Driver) frame(ctx context.Context, a domain.ProviderAttempt, inputs []d
 	}
 	if e = buffer.Flush(); e != nil {
 		return fail(e)
+	}
+	if inv.Maintenance != nil && inv.Maintenance.Mode == domain.MaintenanceModeSemanticNomination {
+		st, statErr := f.Stat()
+		if statErr != nil || st.Size() > 144*1024 {
+			return fail(domain.ErrInvalidTarget)
+		}
 	}
 	if _, e = f.Seek(0, 0); e != nil {
 		return fail(e)

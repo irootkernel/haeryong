@@ -165,7 +165,8 @@ func (t *writeTx) PrepareProviderAttempt(a domain.ProviderAttempt, inputs []doma
 		if e = t.tx.QueryRowContext(t.ctx, `SELECT target_set_id,coalesce(bytes_sha256,'') FROM captured_reads WHERE read_id=?`, v.ReadID).Scan(&target, &hash); e != nil {
 			return notFound(e)
 		}
-		if target != a.TargetSetID || hash != v.Hash {
+		expectedTarget, _, _, ok := domain.MaintenanceReadTarget(scope, a.TargetSetID, "", v.ReadID)
+		if !ok || target != expectedTarget || hash != v.Hash {
 			return domain.ErrInvalidTarget
 		}
 		o, e := t.Object(v.Hash)
@@ -400,13 +401,183 @@ func (t *writeTx) PauseProviderJob(id, reason string) error {
 	if e != nil {
 		return e
 	}
-	if !domain.ProviderJob(j.Kind) || terminal(j.State) {
+	if (!domain.ProviderJob(j.Kind) && j.Kind != "scan") || terminal(j.State) {
 		return domain.ErrTransition
 	}
 	if e = t.exec(`UPDATE jobs SET state='paused',error=?,revision=revision+1 WHERE job_id=?`, reason, id); e != nil {
 		return e
 	}
+	if j.Kind == "scan" {
+		if e = t.pauseScanRunElapsed(id, time.Now().UTC()); e != nil {
+			return e
+		}
+	}
 	return t.jobUpdated(id)
+}
+
+func (t *writeTx) pauseScanRunElapsed(id string, now time.Time) error {
+	var started sql.NullString
+	var elapsed int64
+	err := t.tx.QueryRowContext(t.ctx, `SELECT started_at,elapsed_ms FROM scan_runs WHERE job_id=?`, id).Scan(&started, &elapsed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	add := int64(0)
+	if started.Valid && started.String != "" {
+		if ts, e := time.Parse(time.RFC3339Nano, started.String); e == nil && now.After(ts) {
+			add = now.Sub(ts).Milliseconds()
+		}
+	}
+	return t.exec(`UPDATE scan_runs SET started_at=NULL,elapsed_ms=?,updated_at=? WHERE job_id=?`, elapsed+add, now.Format(time.RFC3339Nano), id)
+}
+
+func (t *writeTx) checkScanResumeBudget(scanID, decision string) error {
+	if decision != "continue" && decision != "retry" {
+		return nil
+	}
+	run, err := t.ScanRun(scanID)
+	if err != nil {
+		return err
+	}
+	maxRunSec, err := t.effectiveScanMaxRunSeconds(run, "")
+	if err != nil {
+		return err
+	}
+	elapsed := run.ElapsedMs
+	if run.StartedAt != nil && *run.StartedAt != "" {
+		if ts, e := time.Parse(time.RFC3339Nano, *run.StartedAt); e == nil {
+			now := time.Now().UTC()
+			if now.After(ts) {
+				elapsed += now.Sub(ts).Milliseconds()
+			}
+		}
+	}
+	if maxRunSec > 0 && elapsed >= int64(maxRunSec)*1000 {
+		return domain.ErrDenied
+	}
+	if decision == "retry" {
+		maxAttempts, err := t.effectiveScanMaxProviderAttempts(run, "")
+		if err != nil {
+			return err
+		}
+		count, err := t.ScanProviderAttemptCount(scanID, "")
+		if err != nil {
+			return err
+		}
+		if maxAttempts > 0 && count >= maxAttempts {
+			return domain.ErrDenied
+		}
+	}
+	return nil
+}
+func (t *writeTx) resumeScanProviderJob(j domain.Job, decision string) (domain.Job, error) {
+	if j.CancelRequested && decision != "reconcile_only" {
+		return j, domain.ErrTransition
+	}
+	hold, err := t.RecoveryHold()
+	if err != nil {
+		return j, err
+	}
+	if hold != nil && hold.State != "reviewed" {
+		return j, domain.ErrReconciliation
+	}
+	terminalReconcile := terminal(j.State) && decision == "reconcile_only"
+	if j.State != "paused" && !(j.State == "interrupted" && decision == "reconcile_only") && !terminalReconcile {
+		return j, domain.ErrTransition
+	}
+	var restoreHeld int
+	if err = t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM resource_revisions WHERE resource_kind='restore_job_hold' AND resource_id=?`, j.ID).Scan(&restoreHeld); err != nil {
+		return j, err
+	}
+	if restoreHeld > 0 && decision != "reconcile_only" {
+		return j, domain.ErrReconciliation
+	}
+	if err = t.checkScanResumeBudget(j.ID, decision); err != nil {
+		return j, err
+	}
+	if decision != "reconcile_only" && decision != "continue" && decision != "retry" {
+		return j, domain.ErrInvalidTarget
+	}
+	cRows, err := t.tx.QueryContext(t.ctx, `SELECT job_id FROM jobs WHERE parent_id=? AND kind='maintenance' ORDER BY rowid,job_id`, j.ID)
+	if err != nil {
+		return j, err
+	}
+	childIDs := []string{}
+	for cRows.Next() {
+		var cid string
+		if err := cRows.Scan(&cid); err != nil {
+			cRows.Close()
+			return j, err
+		}
+		childIDs = append(childIDs, cid)
+	}
+	err = errors.Join(cRows.Err(), cRows.Close())
+	if err != nil {
+		return j, err
+	}
+	if decision == "continue" || decision == "retry" {
+		if err = t.exec(`UPDATE jobs SET state='queued',error='',revision=revision+1 WHERE job_id=?`, j.ID); err != nil {
+			return j, err
+		}
+		if err = t.jobUpdated(j.ID); err != nil {
+			return j, err
+		}
+	}
+	resumedAny := false
+	for _, cid := range childIDs {
+		child, err := t.Job(cid)
+		if err != nil {
+			return j, err
+		}
+		var childHeld int
+		if err = t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM resource_revisions WHERE resource_kind='restore_job_hold' AND resource_id=?`, cid).Scan(&childHeld); err != nil {
+			return j, err
+		}
+		if decision == "reconcile_only" {
+			hasUnknown := child.ProviderAttempts != nil && (child.ProviderAttempts.Unknown > 0 || child.ProviderAttempts.ReconciliationPending > 0)
+			if !hasUnknown && childHeld == 0 {
+				continue
+			}
+			if _, err = t.ResumeProviderJob(cid, child.AttemptGeneration, decision); err != nil {
+				return j, err
+			}
+			resumedAny = true
+			continue
+		}
+		if terminal(child.State) {
+			continue
+		}
+		if _, err = t.ResumeProviderJob(cid, child.AttemptGeneration, decision); err != nil {
+			return j, err
+		}
+		resumedAny = true
+	}
+	if decision == "reconcile_only" {
+		if !resumedAny && restoreHeld == 0 {
+			return j, domain.ErrTransition
+		}
+		if err = t.exec(`DELETE FROM resource_revisions WHERE resource_kind='restore_job_hold' AND resource_id=?`, j.ID); err != nil {
+			return j, err
+		}
+		if err = t.exec(`UPDATE jobs SET revision=revision+1 WHERE job_id=?`, j.ID); err != nil {
+			return j, err
+		}
+		if err = t.jobUpdated(j.ID); err != nil {
+			return j, err
+		}
+		return job(t.ctx, t.tx, j.ID)
+	}
+	updated, err := job(t.ctx, t.tx, j.ID)
+	if err != nil {
+		return j, err
+	}
+	if decision == "continue" && updated.ProviderAttempts != nil && updated.ProviderAttempts.Unknown > 0 {
+		return j, domain.ErrReconciliation
+	}
+	return updated, nil
 }
 func (t *writeTx) ResumeProviderJob(id string, generation int64, decision string) (domain.Job, error) {
 	j, e := t.Job(id)
@@ -415,6 +586,9 @@ func (t *writeTx) ResumeProviderJob(id string, generation int64, decision string
 	}
 	if j.AttemptGeneration != generation {
 		return j, domain.ErrPrecondition
+	}
+	if j.Kind == "scan" {
+		return t.resumeScanProviderJob(j, decision)
 	}
 	if !domain.ProviderJob(j.Kind) {
 		return j, domain.ErrTransition
@@ -453,6 +627,29 @@ func (t *writeTx) ResumeProviderJob(id string, generation int64, decision string
 				return j, domain.ErrReconciliation
 			}
 			if decision == "retry" && question.PreparedAnswer != nil {
+				return j, domain.ErrTransition
+			}
+		}
+	}
+	if j.Kind == "maintenance" && decision != "reconcile_only" {
+		if j.ParentID != "" {
+			if e = t.checkScanResumeBudget(j.ParentID, decision); e != nil {
+				return j, e
+			}
+		}
+		var scope domain.ProviderScope
+		if json.Unmarshal(j.Scope, &scope) != nil {
+			return j, domain.ErrInvalidTarget
+		}
+		if scope.Invocation != nil && scope.Invocation.Maintenance != nil {
+			intent, e := t.MaintenanceIntent(j.ID)
+			if e != nil {
+				return j, e
+			}
+			if !intent.AdmissionReady {
+				return j, domain.ErrReconciliation
+			}
+			if decision == "retry" && len(intent.PreparedOutputJSON) > 0 {
 				return j, domain.ErrTransition
 			}
 		}
@@ -593,6 +790,21 @@ func (t *writeTx) ResumeProviderJob(id string, generation int64, decision string
 			return j, e
 		}
 	}
+	if j.Kind == "maintenance" && j.ParentID != "" && (decision == "continue" || decision == "retry") {
+		parent, pErr := t.Job(j.ParentID)
+		if pErr == nil && parent.State == "paused" && !parent.CancelRequested {
+			var parentHeld int
+			_ = t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM resource_revisions WHERE resource_kind='restore_job_hold' AND resource_id=?`, parent.ID).Scan(&parentHeld)
+			if parentHeld == 0 {
+				if e = t.exec(`UPDATE jobs SET state='queued',error='',revision=revision+1 WHERE job_id=?`, parent.ID); e != nil {
+					return j, e
+				}
+				if e = t.jobUpdated(parent.ID); e != nil {
+					return j, e
+				}
+			}
+		}
+	}
 
 	return job(t.ctx, t.tx, id)
 }
@@ -603,5 +815,17 @@ func (t *writeTx) providerUpdated(id string) error {
 	if e := t.exec(`UPDATE jobs SET revision=revision+1 WHERE job_id=?`, id); e != nil {
 		return e
 	}
-	return t.jobUpdated(id)
+	if e := t.jobUpdated(id); e != nil {
+		return e
+	}
+	var kind, parentID string
+	if e := t.tx.QueryRowContext(t.ctx, `SELECT kind,coalesce(parent_id,'') FROM jobs WHERE job_id=?`, id).Scan(&kind, &parentID); e == nil && kind == "maintenance" && parentID != "" {
+		if e := t.exec(`UPDATE jobs SET revision=revision+1 WHERE job_id=?`, parentID); e != nil {
+			return e
+		}
+		if e := t.jobUpdated(parentID); e != nil {
+			return e
+		}
+	}
+	return nil
 }

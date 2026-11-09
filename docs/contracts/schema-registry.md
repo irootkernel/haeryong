@@ -76,7 +76,7 @@ A stored default value remains an existing resource with its actual validator.
 | draft.action | `reject`, `replace` |
 | finding.decision | `approve`, `reject` |
 | job.state | `queued`, `running`, `paused`, `interrupted`, `reconciling`, `cancelling`, `completed`, `failed`, `cancelled` |
-| job.kind | `upload_seal`, `import`, `generation`, `question`, `scan`, `lifecycle`, `backup`, `export`, `derived_index` |
+| job.kind | `upload_seal`, `import`, `generation`, `question`, `scan`, `maintenance`, `lifecycle`, `backup`, `export`, `derived_index`, `restore` |
 | job.resume.decision | `reconcile_only`, `continue`, `retry`; request includes expected_attempt_generation and the job ETag |
 | job_item.state | `pending`, `running`, `completed`, `skipped`, `blocked`, `failed`, `cancelled`; skipped/blocked items retain their exact coverage reason |
 | provider_attempt.dispatch_state | `prepared`, `dispatching`, `running`, `result_saved`, `failed`, `cancelled`, `outcome_unknown` |
@@ -1346,3 +1346,50 @@ contract definitions in `tests/contracts/schema.json` add `scan_request`,
   `scanStart` (`{request, operation_id}`) and `jobFindingsList`
   (`{job_id, kind?, status?, limit?, cursor?, passive?}`). See
   [scan inventory evidence](../testing/scan-inventory.md).
+
+## Bounded relationship, topic, and content-gap finding projections (TASK-008-02)
+
+The API remains v1 and package schema 1.0 while the physical SQLite schema
+advances to revision 21 (`maintenance_intents` table and
+`maintenance_intents_by_scan_item` index). The selected machine contract in
+`tests/contracts/schema.json` and embedded `internal/application/configuration/schema.json`
+include:
+
+- `job.kind`: includes `"maintenance"` alongside existing job kinds; `job.state`
+  includes `"paused"` for parent `scan` jobs waiting on a child `maintenance`
+  job (`reason: "waiting_for_provider"`) as well as paused provider jobs.
+- `ScanReport` (`scan_report`): gains required integer
+  `inspected_candidate_relations >= 0` (counting distinct shortlisted candidate
+  targets whose HTML/region excerpts were inspected before provider evaluation)
+  and optional `provider_attempts` (`provider_attempt_summary`) aggregated
+  across child `maintenance` jobs (`latest_state` preserves `outcome_unknown`
+  over terminal states when any child attempt remains unresolved).
+  `semantic.status` reports `assessed` when semantic candidate evaluation
+  completes for eligible versions, or `unable_to_verify` with `semantic.reason`
+  in `provider_unavailable` | `provider_attempt_budget_exhausted` |
+  `run_budget_exhausted` | `structural_or_source_blocked` when skipped or
+  blocked.
+- `Finding` (`finding_view`) proposals for `origin = "ai"` emitted by
+  `TASK-008-02`:
+  - `kind = "related_explanation"`: `proposal` carries `relation_type`
+    (`depends_on` | `source_dependency` | `related` |
+    `complementary_explanation` | `shared_source` | `thematic_analogy`),
+    `target_project_id`, `target_document_id`, `target_version_id`, nullable
+    `target_page_path`/`target_region_id`, `evidence_basis` (`source_fact` |
+    `shared_source` | `authored_reference` | `thematic_analogy`), optional
+    `verified_dependency` and `downgraded_from`, and `origin_unit`.
+  - `kind = "topic_assignment"`: `proposal` carries `topic`, `evidence_basis`
+    (`explanation_text` | `source_verified`), and `origin_unit`.
+  - `kind = "new_version_proposal"` and `kind = "new_document_proposal"`:
+    `proposal` carries `theme`, `scope`, and `origin_unit` (`version_id`,
+    `document_id`, `project_id`, `page_path`, `region_id`), with non-empty
+    finding `uncertainty`. `ListJobFindings`, document Trash, and manual purge
+    fence both `$.origin_unit` and `evidence_json` version references (`B03`,
+    `B07`).
+- Internal `maintenance_intents.intent_json` (`MaintenanceIntent`) and
+  `job_items.detail` add optional Stage-1 semantic nomination fields (`mode`,
+  `batch_id`, `batch_item_ids`, `card_payload_digest`, `cards`,
+  `prepared_nomination`, `structural_ready`, `nominated_candidates`,
+  `nomination_batch_id`, `nomination_status`) while keeping the public HTTP/CLI
+  API and SQLite schema at revision 21 (`maintenance_intents_by_scan_item`
+  indexes `item_id = batch_id` for nomination batches).

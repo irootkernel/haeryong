@@ -465,7 +465,7 @@ func RetainProviderOrphans(ctx context.Context, path string, input io.Reader, av
 	// Bounded keyset enumeration avoids buffering the library's full job inventory.
 	after := ""
 	for {
-		rows, e := tx.QueryContext(ctx, `SELECT job_id FROM jobs WHERE job_id>? AND kind IN ('question','generation') AND state IN ('completed','failed','cancelled') ORDER BY job_id LIMIT 64`, after)
+		rows, e := tx.QueryContext(ctx, `SELECT job_id FROM jobs WHERE job_id>? AND kind IN ('question','generation','maintenance') AND state IN ('completed','failed','cancelled') ORDER BY job_id LIMIT 64`, after)
 		if e != nil {
 			return e
 		}

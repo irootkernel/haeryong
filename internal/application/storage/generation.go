@@ -27,10 +27,10 @@ func ProviderInputObjects(tx WriteTx, scope domain.ProviderScope) ([]domain.Obje
 		return out, nil
 	}
 	inv := scope.Invocation
-	if inv.Generation != nil && inv.Question != nil {
+	if (inv.Generation != nil && inv.Question != nil) || (inv.Maintenance != nil && (inv.Generation != nil || inv.Question != nil)) {
 		return nil, domain.ErrInvalidTarget
 	}
-	if inv.Generation == nil && inv.Question == nil {
+	if inv.Generation == nil && inv.Question == nil && inv.Maintenance == nil {
 		if inv.PromptRef != nil {
 			return nil, domain.ErrInvalidTarget
 		}
@@ -38,7 +38,7 @@ func ProviderInputObjects(tx WriteTx, scope domain.ProviderScope) ([]domain.Obje
 	}
 	refs := []domain.ProviderText{}
 	if inv.PromptRef != nil {
-		if inv.Prompt != "" {
+		if inv.Prompt != "" || inv.Maintenance != nil {
 			return nil, domain.ErrInvalidTarget
 		}
 		refs = append(refs, *inv.PromptRef)
@@ -53,6 +53,16 @@ func ProviderInputObjects(tx WriteTx, scope domain.ProviderScope) ([]domain.Obje
 		refs = append(refs, domain.ProviderText{Hash: q.Explanation.ObjectHash, Size: q.Explanation.Size})
 		if q.Context != nil {
 			refs = append(refs, domain.ProviderText{Hash: q.Context.Hash, Size: q.Context.Size})
+		}
+	}
+	if inv.Maintenance != nil {
+		if inv.Prompt == "" {
+			return nil, domain.ErrInvalidTarget
+		}
+		for _, exp := range inv.Maintenance.Explanations {
+			if exp.ObjectHash != "" {
+				refs = append(refs, domain.ProviderText{Hash: exp.ObjectHash, Size: exp.Size})
+			}
 		}
 	}
 	seen := map[string]bool{}

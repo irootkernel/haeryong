@@ -309,6 +309,10 @@ func (d *Driver) execute(ctx context.Context, setupTimeout time.Duration, a doma
 		out.Reason = "question_setup_failed"
 		return out, e
 	}
+	if _, e = d.prepareMaintenance(a, &inv); e != nil {
+		out.Reason = "maintenance_setup_failed"
+		return out, e
+	}
 	// Preserve the actual local preparation deadline, independently of caller
 	// cancellation and the later one-use dispatch fence.
 	defer func() {

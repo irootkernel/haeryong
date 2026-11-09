@@ -133,6 +133,355 @@ func (s *Service) CaptureQuestionAndAdmit(ctx context.Context, jobID string, adm
 	}
 	return s.captureAndAdmit(ctx, "", q.CaptureOperationID, q.ProjectID, input, admit, jobID, "question")
 }
+
+// CaptureMaintenanceAndAdmit executes each planned source capture step for a
+// paused maintenance child job, pinning every captured read across multi-step
+// captures before releasing transient source_capture pins, and atomically admits
+// the maintenance job to queued once all steps complete.
+func (s *Service) CaptureMaintenanceAndAdmit(ctx context.Context, jobID string, identity func(string, json.RawMessage, domain.ProviderInvocation, []domain.CapturedRead) (string, error)) error {
+	if identity == nil {
+		return errors.Join(domain.ErrInvalidTarget, s.pauseMaintenanceCapture(context.WithoutCancel(ctx), jobID, "source_capture_unavailable", nil))
+	}
+	var count int
+	var done bool
+	if e := s.Store.Write(ctx, func(tx app.WriteTx) error {
+		j, e := tx.Job(jobID)
+		if e != nil {
+			return e
+		}
+		if j.CancelRequested {
+			done = true
+			if err := tx.ReleaseOwnerPins("job_input", j.ID); err != nil {
+				return err
+			}
+			return tx.ConfirmStop(j.ID, j.AttemptGeneration)
+		}
+		if j.Kind != "maintenance" || j.State != "paused" || j.Error != "source_capture_pending" {
+			done = true
+			return nil
+		}
+		intent, e := tx.MaintenanceIntent(jobID)
+		if e != nil {
+			return e
+		}
+		if intent.AdmissionReady {
+			done = true
+			return nil
+		}
+		count = len(intent.Captures)
+		return nil
+	}); e != nil || done {
+		return e
+	}
+	for idx := 0; idx < count; idx++ {
+		var step domain.MaintenanceCaptureStep
+		var skip bool
+		if e := s.Store.Write(ctx, func(tx app.WriteTx) error {
+			j, e := tx.Job(jobID)
+			if e != nil {
+				return e
+			}
+			if j.CancelRequested {
+				done = true
+				if err := tx.ReleaseOwnerPins("job_input", j.ID); err != nil {
+					return err
+				}
+				return tx.ConfirmStop(j.ID, j.AttemptGeneration)
+			}
+			if j.Kind != "maintenance" || j.State != "paused" || j.Error != "source_capture_pending" {
+				done = true
+				return nil
+			}
+			intent, e := tx.MaintenanceIntent(jobID)
+			if e != nil {
+				return e
+			}
+			if intent.AdmissionReady || idx >= len(intent.Captures) {
+				done = true
+				return nil
+			}
+			step = intent.Captures[idx]
+			if step.Finished {
+				skip = true
+			}
+			return nil
+		}); e != nil || done {
+			return e
+		}
+		if skip {
+			continue
+		}
+		var input CaptureRequest
+		if json.Unmarshal(step.SourceSelection, &input) != nil || step.ProjectID == "" || step.VersionID == "" || input.VersionID == "" || input.VersionID != step.VersionID {
+			lim := []domain.MaintenanceLimitation{{
+				Kind:            "source_unavailable",
+				TargetVersionID: step.VersionID,
+				Reason:          "incomplete_source_capture",
+			}}
+			return errors.Join(domain.ErrInvalidTarget, s.pauseMaintenanceCapture(context.WithoutCancel(ctx), jobID, "source_capture_unavailable", lim))
+		}
+		_, captureErr := s.captureAndAdmit(ctx, "", step.OperationID, step.ProjectID, input, func(tx app.WriteTx, c domain.SourceCapture) error {
+			j, e := tx.Job(jobID)
+			if e != nil {
+				return e
+			}
+			curIntent, e := tx.MaintenanceIntent(jobID)
+			if e != nil {
+				return e
+			}
+			if idx >= len(curIntent.Captures) {
+				return domain.ErrInvalidTarget
+			}
+			var scope domain.ProviderScope
+			if json.Unmarshal(j.Scope, &scope) != nil {
+				return domain.ErrInvalidTarget
+			}
+			if e = app.AuthorizeMaintenance(tx, j, scope, "", ""); e != nil {
+				return e
+			}
+			if c.ProjectID != step.ProjectID || c.PrincipalID != scope.PrincipalID || c.ConfigRevision != j.ConfigRevision || c.PermissionsRevision != j.Permissions[c.ProjectID] {
+				return domain.ErrPrecondition
+			}
+			readIDs := []string{}
+			after := ""
+			for {
+				rows, e := tx.SourceCaptureReads(c.ID, after, 64)
+				if e != nil {
+					return e
+				}
+				if len(rows) == 0 {
+					break
+				}
+				for _, r := range rows {
+					if r.Availability != "available" {
+						return domain.ErrReconciliation
+					}
+					read, e := tx.CapturedRead(r.ID)
+					if e != nil {
+						return e
+					}
+					if e = tx.AcquirePin(domain.Pin{ID: "job-input:" + j.ID + ":" + r.ID, Kind: "job_input", OwnerID: j.ID, Hash: read.BytesSHA}); e != nil {
+						return e
+					}
+					readIDs = append(readIDs, r.ID)
+					after = r.ID
+				}
+			}
+			curStep := curIntent.Captures[idx]
+			curStep.CaptureID = c.ID
+			curStep.TargetSetID = c.TargetSetID
+			curStep.ReadIDs = readIDs
+			curStep.State = c.State
+			curStep.Reason = c.Reason
+			curStep.Finished = true
+			curIntent.Captures[idx] = curStep
+			return tx.UpdateMaintenanceIntent(curIntent)
+		}, jobID, "maintenance")
+		if captureErr != nil {
+			if errors.Is(captureErr, domain.ErrStaleWorker) {
+				return nil
+			}
+			return errors.Join(captureErr, s.pauseMaintenanceCapture(context.WithoutCancel(ctx), jobID, "source_capture_unavailable", nil))
+		}
+		var stepFinished bool
+		if e := s.Store.Write(context.WithoutCancel(ctx), func(tx app.WriteTx) error {
+			curIntent, e := tx.MaintenanceIntent(jobID)
+			if e != nil {
+				return e
+			}
+			if idx < len(curIntent.Captures) {
+				stepFinished = curIntent.Captures[idx].Finished && curIntent.Captures[idx].State == "completed"
+			}
+			return nil
+		}); e != nil {
+			return e
+		}
+		if !stepFinished {
+			lim := []domain.MaintenanceLimitation{{
+				Kind:            "source_unavailable",
+				TargetVersionID: step.VersionID,
+				Reason:          "incomplete_source_capture",
+			}}
+			return s.pauseMaintenanceCapture(context.WithoutCancel(ctx), jobID, "source_capture_unavailable", lim)
+		}
+	}
+	var failLims []domain.MaintenanceLimitation
+	admitErr := s.Store.Write(context.WithoutCancel(ctx), func(tx app.WriteTx) error {
+		j, e := tx.Job(jobID)
+		if e != nil {
+			return e
+		}
+		if j.CancelRequested {
+			if err := tx.ReleaseOwnerPins("job_input", j.ID); err != nil {
+				return err
+			}
+			return tx.ConfirmStop(j.ID, j.AttemptGeneration)
+		}
+		if j.State != "paused" || j.Error != "source_capture_pending" {
+			return nil
+		}
+		curIntent, e := tx.MaintenanceIntent(jobID)
+		if e != nil {
+			return e
+		}
+		if curIntent.AdmissionReady {
+			return nil
+		}
+		var scope domain.ProviderScope
+		if json.Unmarshal(j.Scope, &scope) != nil || scope.Invocation == nil || scope.Invocation.Maintenance == nil {
+			return domain.ErrInvalidTarget
+		}
+		if e = app.AuthorizeMaintenance(tx, j, scope, "", ""); e != nil {
+			return e
+		}
+		allReads := []domain.CapturedRead{}
+		allReadIDs := []string{}
+		bindings := []domain.MaintenanceReadBinding{}
+		seenReadID := map[string]bool{}
+		targetSetsByVersion := map[string]string{}
+		distinctTargetSets := map[string]bool{}
+		for _, b := range curIntent.ReadBindings {
+			if b.ReadID == "" || seenReadID[b.ReadID] {
+				continue
+			}
+			read, e := tx.CapturedRead(b.ReadID)
+			if e != nil {
+				return e
+			}
+			seenReadID[b.ReadID] = true
+			allReads = append(allReads, read)
+			allReadIDs = append(allReadIDs, b.ReadID)
+			bindings = append(bindings, b)
+			if b.TargetSetID != "" {
+				distinctTargetSets[b.TargetSetID] = true
+			}
+		}
+		for _, step := range curIntent.Captures {
+			if !step.Finished || step.State != "completed" || step.TargetSetID == "" || step.ProjectID == "" || step.VersionID == "" {
+				failLims = []domain.MaintenanceLimitation{{
+					Kind:            "source_unavailable",
+					TargetVersionID: step.VersionID,
+					Reason:          "incomplete_source_capture",
+				}}
+				return domain.ErrReconciliation
+			}
+			targetSetsByVersion[step.VersionID] = step.TargetSetID
+			distinctTargetSets[step.TargetSetID] = true
+			for _, readID := range step.ReadIDs {
+				if seenReadID[readID] {
+					continue
+				}
+				read, e := tx.CapturedRead(readID)
+				if e != nil {
+					return e
+				}
+				seenReadID[readID] = true
+				allReads = append(allReads, read)
+				allReadIDs = append(allReadIDs, readID)
+				bindings = append(bindings, domain.MaintenanceReadBinding{
+					ReadID:      readID,
+					ProjectID:   step.ProjectID,
+					VersionID:   step.VersionID,
+					TargetSetID: step.TargetSetID,
+				})
+			}
+		}
+		scope.Invocation.Maintenance.ReadBindings = bindings
+		for i := range scope.Invocation.Maintenance.Explanations {
+			verID := scope.Invocation.Maintenance.Explanations[i].VersionID
+			if ts, ok := targetSetsByVersion[verID]; ok {
+				scope.Invocation.Maintenance.Explanations[i].TargetSetID = ts
+			}
+		}
+		scope.ReadIDs = allReadIDs
+		if len(distinctTargetSets) == 1 {
+			for ts := range distinctTargetSets {
+				scope.TargetSetID = ts
+			}
+		} else {
+			scope.TargetSetID = ""
+		}
+		scope.RequestSHA, e = identity(scope.PrincipalID, scope.Target, *scope.Invocation, allReads)
+		if e != nil {
+			return e
+		}
+		j.Scope = encoded(scope)
+		curIntent.SourceReadIDs = allReadIDs
+		curIntent.ReadBindings = bindings
+		if e = tx.AdmitMaintenanceCapture(j, curIntent); e != nil {
+			return e
+		}
+		return tx.AttachSourceInputs(j.ID, scope.ReadIDs)
+	})
+	if admitErr != nil {
+		if errors.Is(admitErr, domain.ErrStaleWorker) {
+			return nil
+		}
+		return errors.Join(admitErr, s.pauseMaintenanceCapture(context.WithoutCancel(ctx), jobID, "source_capture_unavailable", failLims))
+	}
+	return nil
+}
+
+func (s *Service) pauseMaintenanceCapture(ctx context.Context, jobID, reason string, lims []domain.MaintenanceLimitation) error {
+	return s.Store.Write(ctx, func(tx app.WriteTx) error {
+		j, e := tx.Job(jobID)
+		if e != nil {
+			return e
+		}
+		if e := tx.ReleaseOwnerPins("job_input", j.ID); e != nil {
+			return e
+		}
+		if j.CancelRequested {
+			return tx.ConfirmStop(j.ID, j.AttemptGeneration)
+		}
+		if j.State != "paused" || j.Error != "source_capture_pending" {
+			return nil
+		}
+		return tx.PauseMaintenanceCapture(jobID, reason, lims)
+	})
+}
+
+func maintenanceCapturePrincipal(tx app.WriteTx, actor domain.Session, project, version string) error {
+	if _, e := tx.Scope(project); e != nil {
+		return e
+	}
+	if version != "" {
+		v, e := tx.PublishedVersion(version)
+		if e != nil {
+			return e
+		}
+		d, e := tx.Document(v.DocumentID)
+		if e != nil {
+			return e
+		}
+		if d.ProjectID != project || d.Lifecycle == "trash" || d.Lifecycle == "purged" {
+			return domain.ErrNotFound
+		}
+		if actor.Scope.Kind != "owner" {
+			if _, _, e := app.CheckSourceVersion(tx, actor, version); e != nil {
+				return e
+			}
+		}
+	}
+	if actor.Scope.Kind == "owner" {
+		return nil
+	}
+	has := func(values []string, want string) bool {
+		for _, v := range values {
+			if v == want {
+				return true
+			}
+		}
+		return false
+	}
+	if !has(actor.Scope.ProjectIDs, project) {
+		return domain.ErrNotFound
+	}
+	if !has(actor.Scope.Actions, "scan.request") || !has(actor.Scope.Actions, "source.read") {
+		return domain.ErrDenied
+	}
+	return nil
+}
 func generationCapturePrincipal(tx app.WriteTx, actor domain.Session, project string) error {
 	if _, e := tx.Scope(project); e != nil {
 		return e
@@ -186,6 +535,24 @@ func (s *Service) captureAndAdmit(ctx context.Context, token, key, project strin
 			if q.AdmissionReady || q.ProjectID != project || q.VersionID != input.VersionID || q.CaptureOperationID != key || !bytes.Equal(q.SourceSelection, requestedSelection) {
 				return domain.Session{}, domain.ErrStaleWorker
 			}
+		case "maintenance":
+			m, e := tx.MaintenanceIntent(j.ID)
+			if e != nil {
+				return domain.Session{}, e
+			}
+			if m.AdmissionReady {
+				return domain.Session{}, domain.ErrStaleWorker
+			}
+			matched := false
+			for _, step := range m.Captures {
+				if !step.Finished && step.ProjectID == project && step.OperationID == key && bytes.Equal(step.SourceSelection, requestedSelection) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				return domain.Session{}, domain.ErrStaleWorker
+			}
 		default:
 			return domain.Session{}, domain.ErrInvalidTarget
 		}
@@ -198,6 +565,11 @@ func (s *Service) captureAndAdmit(ctx context.Context, token, key, project strin
 		}
 		if acceptedKind == "question" {
 			if e = app.AuthorizeQuestion(tx, scope); e != nil {
+				return domain.Session{}, e
+			}
+		}
+		if acceptedKind == "maintenance" {
+			if e = app.AuthorizeMaintenance(tx, j, scope, "", ""); e != nil {
 				return domain.Session{}, e
 			}
 		}
@@ -214,6 +586,9 @@ func (s *Service) captureAndAdmit(ctx context.Context, token, key, project strin
 	principal := func(tx app.WriteTx, actor domain.Session) error {
 		if acceptedKind == "generation" {
 			return generationCapturePrincipal(tx, actor, project)
+		}
+		if acceptedKind == "maintenance" {
+			return maintenanceCapturePrincipal(tx, actor, project, input.VersionID)
 		}
 		return s.capturePrincipal(tx, actor, project, input.VersionID)
 	}
@@ -417,7 +792,9 @@ func (s *Service) captureAndAdmit(ctx context.Context, token, key, project strin
 		var resolveErr error
 		if mapping.Kind == "git" && !selection.WorkingCopy {
 			if input.SourceMode == "current" {
-				if resolver, ok := s.Reader.(interface {
+				if selection.Revision != "" && s.Reader.ResolveRevision(turn, mapping.RootPath, selection.Revision) == nil {
+					revision = selection.Revision
+				} else if resolver, ok := s.Reader.(interface {
 					ResolveRef(context.Context, string, string) (string, error)
 				}); ok {
 					revision, resolveErr = resolver.ResolveRef(turn, mapping.RootPath, selection.Revision)

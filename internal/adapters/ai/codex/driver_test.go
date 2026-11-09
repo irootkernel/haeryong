@@ -795,3 +795,259 @@ var _ = It("C03 malformed terminal envelope cannot complete an owned request", L
 	Expect(out.Body).To(BeNil())
 	Expect(out.RequestID).To(Equal("turn"))
 })
+
+type failingNominationBytesSpy struct {
+	reads int
+}
+
+func (s *failingNominationBytesSpy) Read(_ context.Context, _ domain.Object, _ domain.Pin, _ func(io.ReadSeeker) error) error {
+	s.reads++
+	return errors.New("unexpected explanation or source object read during Stage-1 semantic nomination")
+}
+
+type failingNominationStoreSpy struct {
+	app.Store
+	writes int
+}
+
+func (s *failingNominationStoreSpy) Write(_ context.Context, _ func(app.WriteTx) error) error {
+	s.writes++
+	return errors.New("unexpected store write/object lookup during Stage-1 semantic nomination")
+}
+
+var _ = It("builds Stage-1 semantic nomination frame with near-limit adaptive cards (>2KiB, <=8KiB) and 64-card batches without duplicating cards or reading explanation objects and enforces <=144KiB cap (TASK-008-02)", Label("unit"), func() {
+	scratchDir := GinkgoT().TempDir()
+	bytesSpy := &failingNominationBytesSpy{}
+	storeSpy := &failingNominationStoreSpy{}
+	d := &Driver{
+		Scratch: scratchDir,
+		Bytes:   bytesSpy,
+		Store:   storeSpy,
+	}
+
+	cards := make([]domain.MaintenanceProjectedCard, 64)
+	exps := make([]domain.MaintenanceExplanation, 64)
+	for i := 0; i < 64; i++ {
+		uid := fmt.Sprintf("u%02d", i+1)
+		pagePath := fmt.Sprintf("page-%02d.html", i+1)
+		regID := fmt.Sprintf("region-%02d", i+1)
+		cards[i] = domain.MaintenanceProjectedCard{
+			UnitID:          uid,
+			UnitKind:        "region",
+			ProjectID:       "00000000-0000-4000-8000-000000000001",
+			VersionID:       "00000000-0000-4000-8000-000000000003",
+			Title:           fmt.Sprintf(`Card "%s" — 한국어 제목`, uid),
+			Headings:        []string{fmt.Sprintf("Heading %s", uid)},
+			DeclaredTopics:  []string{"bounded-nomination"},
+			SourcePaths:     []string{"internal/application/scan/nomination.go"},
+			BodyExcerpt:     fmt.Sprintf("unique-card-payload-%s: %s", uid, strings.Repeat(`"quoted\segment" 한국어 `, 20)),
+			ExcerptCoverage: "truncated",
+			TotalBodyBytes:  2048,
+		}
+		exps[i] = domain.MaintenanceExplanation{
+			Role:       "candidate",
+			UnitID:     uid,
+			UnitKind:   "region",
+			ItemID:     fmt.Sprintf("item-%06d", i+1),
+			ProjectID:  cards[i].ProjectID,
+			DocumentID: "00000000-0000-4000-8000-000000000002",
+			VersionID:  cards[i].VersionID,
+			PagePath:   &pagePath,
+			RegionID:   &regID,
+			Title:      cards[i].Title,
+			ObjectHash: strings.Repeat(fmt.Sprintf("%02x", i+1), 32),
+			Size:       4096,
+		}
+	}
+	cardsRaw, err := json.Marshal(cards)
+	Expect(err).NotTo(HaveOccurred())
+	cardSum := sha256.Sum256(cardsRaw)
+	promptBytes, err := json.Marshal(struct {
+		Consumer string                            `json:"consumer"`
+		Cards    []domain.MaintenanceProjectedCard `json:"cards"`
+	}{
+		Consumer: "managed-maintenance-nomination",
+		Cards:    cards,
+	})
+	Expect(err).NotTo(HaveOccurred())
+
+	attempt := domain.ProviderAttempt{
+		ID:    "00000000-0000-4000-8000-000000000099",
+		JobID: "00000000-0000-4000-8000-000000000098",
+	}
+	inv := domain.ProviderInvocation{
+		Prompt: string(promptBytes),
+		Maintenance: &domain.MaintenanceInvocation{
+			Mode:              domain.MaintenanceModeSemanticNomination,
+			BatchID:           "nomination:p0:b0000",
+			CardPayloadDigest: fmt.Sprintf("sha256:%x", cardSum[:]),
+			Explanations:      exps,
+		},
+	}
+
+	f, frameSHA, err := d.frame(context.Background(), attempt, nil, inv, "thread-nomination-01")
+	Expect(err).NotTo(HaveOccurred())
+	Expect(frameSHA).To(HaveLen(64))
+	Expect(bytesSpy.reads).To(Equal(0), "Stage-1 nomination must not read backing explanation objects")
+	Expect(storeSpy.writes).To(Equal(0), "Stage-1 nomination must not query store objects during framing")
+
+	framePath := f.Name()
+	rawFrame, err := io.ReadAll(f)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(f.Close()).To(Succeed())
+	Expect(os.Remove(framePath)).To(Succeed())
+	Expect(len(rawFrame)).To(BeNumerically("<=", 144*1024))
+
+	var native struct {
+		ThreadID string `json:"threadId"`
+		Input    []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"input"`
+	}
+	Expect(json.Unmarshal(rawFrame, &native)).To(Succeed())
+	Expect(native.ThreadID).To(Equal("thread-nomination-01"))
+	Expect(native.Input).To(HaveLen(2))
+	Expect(native.Input[0].Type).To(Equal("text"))
+	Expect(native.Input[1].Type).To(Equal("text"))
+	Expect(native.Input[0].Text).To(Equal(string(promptBytes)))
+
+	var decodedPrompt struct {
+		Consumer string                            `json:"consumer"`
+		Cards    []domain.MaintenanceProjectedCard `json:"cards"`
+	}
+	Expect(json.Unmarshal([]byte(native.Input[0].Text), &decodedPrompt)).To(Succeed())
+	Expect(decodedPrompt.Consumer).To(Equal("managed-maintenance-nomination"))
+	Expect(decodedPrompt.Cards).To(Equal(cards))
+
+	// Supplied projected card payload occurs exactly once (in Input[0].Text) and is not duplicated in Input[1].Text.
+	Expect(strings.Count(string(rawFrame), "unique-card-payload-u01")).To(Equal(1))
+	Expect(native.Input[1].Text).NotTo(ContainSubstring("unique-card-payload-u01"))
+
+	instructionLines := strings.Split(native.Input[1].Text, "\n")
+	Expect(len(instructionLines)).To(BeNumerically(">=", 5))
+	var decodedSchema struct {
+		Type                 string   `json:"type"`
+		AdditionalProperties bool     `json:"additionalProperties"`
+		Required             []string `json:"required"`
+		Properties           struct {
+			Nominations struct {
+				Type     string `json:"type"`
+				MinItems int    `json:"minItems"`
+				MaxItems int    `json:"maxItems"`
+				Items    struct {
+					Type                 string   `json:"type"`
+					AdditionalProperties bool     `json:"additionalProperties"`
+					Required             []string `json:"required"`
+					Properties           struct {
+						AbstainReason struct {
+							Type string `json:"type"`
+						} `json:"abstain_reason"`
+						Candidates struct {
+							Type     string `json:"type"`
+							MaxItems int    `json:"maxItems"`
+						} `json:"candidates"`
+					} `json:"properties"`
+				} `json:"items"`
+			} `json:"nominations"`
+		} `json:"properties"`
+	}
+	Expect(json.Unmarshal([]byte(instructionLines[3]), &decodedSchema)).To(Succeed())
+	Expect(decodedSchema.Type).To(Equal("object"))
+	Expect(decodedSchema.AdditionalProperties).To(BeFalse())
+	Expect(decodedSchema.Required).To(Equal([]string{"nominations"}))
+	Expect(decodedSchema.Properties.Nominations.Type).To(Equal("array"))
+	Expect(decodedSchema.Properties.Nominations.MinItems).To(Equal(len(exps)))
+	Expect(decodedSchema.Properties.Nominations.MaxItems).To(Equal(len(exps)))
+	Expect(decodedSchema.Properties.Nominations.Items.AdditionalProperties).To(BeFalse())
+	Expect(decodedSchema.Properties.Nominations.Items.Required).To(Equal([]string{"focal_unit_id", "abstained", "candidates"}))
+	Expect(decodedSchema.Properties.Nominations.Items.Properties.AbstainReason.Type).To(Equal("string"))
+	Expect(decodedSchema.Properties.Nominations.Items.Properties.Candidates.MaxItems).To(Equal(6))
+
+	// Near-limit adaptive cards (>2048B and up to ~7.5KiB each across 18 cards) build a valid <=144KiB complete native frame without reading explanation objects.
+	adaptiveCards := make([]domain.MaintenanceProjectedCard, 18)
+	adaptiveExps := make([]domain.MaintenanceExplanation, 18)
+	for i := 0; i < 18; i++ {
+		uid := fmt.Sprintf("u%02d", i+1)
+		pagePath := fmt.Sprintf("adaptive-%02d.html", i+1)
+		regID := fmt.Sprintf("adaptive-reg-%02d", i+1)
+		fullBody := fmt.Sprintf("adaptive-full-card-%s: %s", uid, strings.Repeat("consensus-epoch-fencing-reconciliation-barrier ", 130)) // ~6.1KiB (>2KiB, <=8KiB)
+		adaptiveCards[i] = domain.MaintenanceProjectedCard{
+			UnitID:          uid,
+			UnitKind:        "region",
+			ProjectID:       "00000000-0000-4000-8000-000000000001",
+			VersionID:       "00000000-0000-4000-8000-000000000003",
+			Title:           fmt.Sprintf("Adaptive Card %s", uid),
+			Headings:        []string{fmt.Sprintf("Adaptive Heading %s", uid)},
+			DeclaredTopics:  []string{"adaptive-nomination"},
+			SourcePaths:     []string{"internal/application/scan/nomination.go"},
+			BodyExcerpt:     fullBody,
+			ExcerptCoverage: "full",
+			TotalBodyBytes:  len(fullBody),
+		}
+		rawAdaptiveCard, mErr := json.Marshal(adaptiveCards[i])
+		Expect(mErr).NotTo(HaveOccurred())
+		Expect(len(rawAdaptiveCard)).To(BeNumerically(">", 2048))
+		Expect(len(rawAdaptiveCard)).To(BeNumerically("<=", 8192))
+		adaptiveExps[i] = domain.MaintenanceExplanation{
+			Role:       "card",
+			UnitID:     uid,
+			UnitKind:   "region",
+			ItemID:     fmt.Sprintf("item-%06d", i+1),
+			ProjectID:  adaptiveCards[i].ProjectID,
+			DocumentID: "00000000-0000-4000-8000-000000000002",
+			VersionID:  adaptiveCards[i].VersionID,
+			PagePath:   &pagePath,
+			RegionID:   &regID,
+			Title:      adaptiveCards[i].Title,
+			ObjectHash: strings.Repeat(fmt.Sprintf("%02x", i+1), 32),
+			Size:       8192,
+		}
+	}
+	adaptiveCardsRaw, err := json.Marshal(adaptiveCards)
+	Expect(err).NotTo(HaveOccurred())
+	adaptiveSum := sha256.Sum256(adaptiveCardsRaw)
+	adaptivePromptBytes, err := json.Marshal(struct {
+		Consumer string                            `json:"consumer"`
+		Cards    []domain.MaintenanceProjectedCard `json:"cards"`
+	}{
+		Consumer: "managed-maintenance-nomination",
+		Cards:    adaptiveCards,
+	})
+	Expect(err).NotTo(HaveOccurred())
+	adaptiveInv := domain.ProviderInvocation{
+		Prompt: string(adaptivePromptBytes),
+		Maintenance: &domain.MaintenanceInvocation{
+			Mode:              domain.MaintenanceModeSemanticNomination,
+			BatchID:           "nomination:p0:b0000",
+			CardPayloadDigest: fmt.Sprintf("sha256:%x", adaptiveSum[:]),
+			Explanations:      adaptiveExps,
+		},
+	}
+	fAdaptive, shaAdaptive, errAdaptive := d.frame(context.Background(), attempt, nil, adaptiveInv, "thread-nomination-adaptive")
+	Expect(errAdaptive).NotTo(HaveOccurred())
+	Expect(shaAdaptive).To(HaveLen(64))
+	Expect(bytesSpy.reads).To(Equal(0))
+	Expect(storeSpy.writes).To(Equal(0))
+	adaptiveFramePath := fAdaptive.Name()
+	rawAdaptiveFrame, err := io.ReadAll(fAdaptive)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(fAdaptive.Close()).To(Succeed())
+	Expect(os.Remove(adaptiveFramePath)).To(Succeed())
+	Expect(len(rawAdaptiveFrame)).To(BeNumerically(">", 100*1024))
+	Expect(len(rawAdaptiveFrame)).To(BeNumerically("<=", 144*1024))
+	Expect(strings.Count(string(rawAdaptiveFrame), "adaptive-full-card-u01")).To(Equal(1))
+
+	// Oversized actual frame (>144 KiB after JSON quoting) is refused with ErrInvalidTarget and cleans up its temp file.
+	oversizedInv := inv
+	oversizedInv.Prompt = `{"consumer":"managed-maintenance-nomination","cards":"` + strings.Repeat(`\"`, 60000) + `"}`
+	fOver, shaOver, errOver := d.frame(context.Background(), attempt, nil, oversizedInv, "thread-nomination-over")
+	Expect(errors.Is(errOver, domain.ErrInvalidTarget)).To(BeTrue())
+	Expect(fOver).To(BeNil())
+	Expect(shaOver).To(BeEmpty())
+	Expect(bytesSpy.reads).To(Equal(0))
+	Expect(storeSpy.writes).To(Equal(0))
+	entries, dirErr := os.ReadDir(scratchDir)
+	Expect(dirErr).NotTo(HaveOccurred())
+	Expect(entries).To(BeEmpty(), "failed oversized frame must remove its temporary provider-input file")
+})

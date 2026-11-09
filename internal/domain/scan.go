@@ -331,3 +331,225 @@ func RestrictCredentialScope(captured, current CredentialScope) CredentialScope 
 		VersionIDs: intersectScopeStrings(captured.VersionIDs, current.VersionIDs),
 	}
 }
+
+type MaintenanceCaptureStep struct {
+	ProjectID       string          `json:"project_id"`
+	OperationID     string          `json:"operation_id"`
+	SourceMode      string          `json:"source_mode,omitempty"`
+	VersionID       string          `json:"version_id,omitempty"`
+	VersionIDs      []string        `json:"version_ids,omitempty"`
+	SourceSelection json.RawMessage `json:"source_selection,omitempty"`
+	CaptureID       string          `json:"capture_id,omitempty"`
+	TargetSetID     string          `json:"target_set_id,omitempty"`
+	ReadIDs         []string        `json:"read_ids,omitempty"`
+	State           string          `json:"state,omitempty"`
+	Reason          string          `json:"reason,omitempty"`
+	Finished        bool            `json:"finished"`
+}
+
+const MaintenanceModeSemanticNomination = "semantic_nomination"
+
+type MaintenanceNominationCard struct {
+	UnitID              string   `json:"unit_id"`
+	ItemID              string   `json:"item_id"`
+	UnitKind            string   `json:"unit_kind"`
+	ProjectID           string   `json:"project_id"`
+	DocumentID          string   `json:"document_id"`
+	VersionID           string   `json:"version_id"`
+	PagePath            string   `json:"page_path,omitempty"`
+	RegionID            string   `json:"region_id,omitempty"`
+	TargetSetID         string   `json:"target_set_id,omitempty"`
+	ObjectHash          string   `json:"object_hash"`
+	ByteSize            int64    `json:"byte_size"`
+	Title               string   `json:"title,omitempty"`
+	Headings            []string `json:"headings,omitempty"`
+	DeclaredTopics      []string `json:"declared_topics,omitempty"`
+	SourcePaths         []string `json:"source_paths,omitempty"`
+	BodyExcerpt         string   `json:"body_excerpt"`
+	ExcerptCoverage     string   `json:"excerpt_coverage"`
+	TotalBodyBytes      int      `json:"total_body_bytes"`
+	AuthoredRefUnitIDs  []string `json:"authored_ref_unit_ids,omitempty"`
+	SharedSourceUnitIDs []string `json:"shared_source_unit_ids,omitempty"`
+}
+
+type MaintenanceProjectedCard struct {
+	UnitID              string   `json:"unit_id"`
+	UnitKind            string   `json:"unit_kind"`
+	ProjectID           string   `json:"project_id"`
+	VersionID           string   `json:"version_id"`
+	Title               string   `json:"title,omitempty"`
+	Headings            []string `json:"headings,omitempty"`
+	DeclaredTopics      []string `json:"declared_topics,omitempty"`
+	SourcePaths         []string `json:"source_paths,omitempty"`
+	BodyExcerpt         string   `json:"body_excerpt"`
+	ExcerptCoverage     string   `json:"excerpt_coverage"`
+	TotalBodyBytes      int      `json:"total_body_bytes"`
+	AuthoredRefUnitIDs  []string `json:"authored_ref_unit_ids,omitempty"`
+	SharedSourceUnitIDs []string `json:"shared_source_unit_ids,omitempty"`
+}
+
+type MaintenanceNominatedCandidate struct {
+	CandidateUnitID string `json:"candidate_unit_id"`
+	Rationale       string `json:"rationale"`
+}
+
+type MaintenanceNominationFocalResult struct {
+	FocalUnitID   string                          `json:"focal_unit_id"`
+	Abstained     bool                            `json:"abstained"`
+	AbstainReason string                          `json:"abstain_reason,omitempty"`
+	Candidates    []MaintenanceNominatedCandidate `json:"candidates"`
+}
+
+type MaintenanceNominationEnvelope struct {
+	Nominations []MaintenanceNominationFocalResult `json:"nominations"`
+}
+
+type PreparedMaintenanceNominationPayload struct {
+	BatchID           string                                      `json:"batch_id"`
+	Pass              int                                         `json:"pass"`
+	Coverage          string                                      `json:"coverage"`
+	InputDigest       string                                      `json:"input_digest"`
+	CardPayloadDigest string                                      `json:"card_payload_digest"`
+	VisitedItemIDs    []string                                    `json:"visited_item_ids"`
+	Shortlists        map[string]MaintenanceNominationFocalResult `json:"shortlists"`
+}
+
+type MaintenanceIntent struct {
+	JobID               string                      `json:"job_id"`
+	ScanJobID           string                      `json:"scan_job_id"`
+	ItemID              string                      `json:"item_id"`
+	Mode                string                      `json:"mode,omitempty"`
+	BatchID             string                      `json:"batch_id,omitempty"`
+	BatchPass           int                         `json:"batch_pass,omitempty"`
+	TotalPlannedBatches int                         `json:"total_planned_batches,omitempty"`
+	BatchItemIDs        []string                    `json:"batch_item_ids,omitempty"`
+	Cards               []MaintenanceNominationCard `json:"cards,omitempty"`
+	CardPayloadDigest   string                      `json:"card_payload_digest,omitempty"`
+	NominationState     string                      `json:"nomination_state,omitempty"`
+	NominationReason    string                      `json:"nomination_reason,omitempty"`
+	Purged              bool                        `json:"purged,omitempty"`
+	UnitKind            string                      `json:"unit_kind"`
+	ProjectID           string                      `json:"project_id"`
+	DocumentID          string                      `json:"document_id"`
+	VersionID           string                      `json:"version_id"`
+	PagePath            string                      `json:"page_path,omitempty"`
+	RegionID            string                      `json:"region_id,omitempty"`
+	SourceMode          string                      `json:"source_mode,omitempty"`
+	AdmissionReady      bool                        `json:"admission_ready"`
+	Shortlist           CandidateShortlist          `json:"shortlist"`
+	Captures            []MaintenanceCaptureStep    `json:"captures,omitempty"`
+	SourceReadIDs       []string                    `json:"source_read_ids,omitempty"`
+	ReadBindings        []MaintenanceReadBinding    `json:"read_bindings,omitempty"`
+	Limitations         []MaintenanceLimitation     `json:"limitations,omitempty"`
+	PreparedAttemptID   string                      `json:"prepared_attempt_id,omitempty"`
+	PreparedOutputJSON  json.RawMessage             `json:"prepared_output_json,omitempty"`
+}
+
+type CandidateSignal struct {
+	Kind   string  `json:"kind"`
+	Weight float64 `json:"weight"`
+	Detail string  `json:"detail,omitempty"`
+}
+
+type CandidateTarget struct {
+	ProjectID   string            `json:"project_id"`
+	DocumentID  string            `json:"document_id"`
+	VersionID   string            `json:"version_id"`
+	PagePath    string            `json:"page_path,omitempty"`
+	RegionID    string            `json:"region_id,omitempty"`
+	UnitKind    string            `json:"unit_kind"`
+	TargetSetID string            `json:"target_set_id,omitempty"`
+	Title       string            `json:"title,omitempty"`
+	Score       float64           `json:"score"`
+	Signals     []CandidateSignal `json:"signals"`
+}
+
+type CandidateShortlist struct {
+	ItemID               string            `json:"item_id"`
+	UnitKind             string            `json:"unit_kind"`
+	VersionID            string            `json:"version_id"`
+	PagePath             string            `json:"page_path,omitempty"`
+	RegionID             string            `json:"region_id,omitempty"`
+	ShortlistFingerprint string            `json:"shortlist_fingerprint"`
+	Candidates           []CandidateTarget `json:"candidates"`
+	Themes               []string          `json:"themes"`
+}
+
+type MaintenanceRelationProposal struct {
+	TargetVersionID string `json:"target_version_id"`
+	TargetPagePath  string `json:"target_page_path,omitempty"`
+	TargetRegionID  string `json:"target_region_id,omitempty"`
+	RelationType    string `json:"relation_type"`
+	Rationale       string `json:"rationale"`
+	Uncertainty     string `json:"uncertainty,omitempty"`
+}
+
+type MaintenanceTopicProposal struct {
+	Topic       string `json:"topic"`
+	Rationale   string `json:"rationale"`
+	Uncertainty string `json:"uncertainty,omitempty"`
+}
+
+type MaintenanceGapProposal struct {
+	Kind        string `json:"kind"`
+	Theme       string `json:"theme"`
+	Rationale   string `json:"rationale"`
+	Uncertainty string `json:"uncertainty,omitempty"`
+}
+
+type MaintenanceLimitation struct {
+	Code            string `json:"code,omitempty"`
+	Message         string `json:"message,omitempty"`
+	Kind            string `json:"kind,omitempty"`
+	TargetVersionID string `json:"target_version_id,omitempty"`
+	Reason          string `json:"reason,omitempty"`
+}
+
+type FindingEvidence struct {
+	Kind           string `json:"kind"`
+	Basis          string `json:"basis,omitempty"`
+	ReadID         string `json:"read_id,omitempty"`
+	InputOrigin    string `json:"input_origin,omitempty"`
+	TargetSetID    string `json:"target_set_id,omitempty"`
+	SourceID       string `json:"source_id,omitempty"`
+	VersionID      string `json:"version_id,omitempty"`
+	PagePath       string `json:"page_path,omitempty"`
+	RegionID       string `json:"region_id,omitempty"`
+	Path           string `json:"path,omitempty"`
+	SnapshotSHA256 string `json:"snapshot_sha256,omitempty"`
+	ByteSize       int64  `json:"byte_size,omitempty"`
+}
+
+type MaintenanceOutputEnvelope struct {
+	Relations   []MaintenanceRelationProposal `json:"relations"`
+	Topics      []MaintenanceTopicProposal    `json:"topics"`
+	ContentGaps []MaintenanceGapProposal      `json:"content_gaps"`
+	Limitations []MaintenanceLimitation       `json:"limitations"`
+}
+
+type MaintenanceProposalDecision struct {
+	Category        string `json:"category"`
+	Decision        string `json:"decision"`
+	Reason          string `json:"reason"`
+	Uncertainty     string `json:"uncertainty,omitempty"`
+	TargetVersionID string `json:"target_version_id,omitempty"`
+	TargetPagePath  string `json:"target_page_path,omitempty"`
+	TargetRegionID  string `json:"target_region_id,omitempty"`
+	RelationType    string `json:"relation_type,omitempty"`
+	DowngradedFrom  string `json:"downgraded_from,omitempty"`
+	MechanismKey    string `json:"mechanism_key,omitempty"`
+	Topic           string `json:"topic,omitempty"`
+	Kind            string `json:"kind,omitempty"`
+	Theme           string `json:"theme,omitempty"`
+}
+
+type PreparedMaintenancePayload struct {
+	Envelope                  MaintenanceOutputEnvelope    `json:"envelope"`
+	InputDigest               string                       `json:"input_digest"`
+	VerifiedDependencies      map[string]string            `json:"verified_dependencies,omitempty"`
+	VerifiedEvidenceByUnit    map[string][]FindingEvidence `json:"verified_evidence_by_unit,omitempty"`
+	VerifiedEvidenceByVersion map[string][]FindingEvidence `json:"verified_evidence_by_version,omitempty"`
+	VerifiedFocalSourceTerms  []string                     `json:"verified_focal_source_terms,omitempty"`
+	PartialSourceUnits        map[string]bool              `json:"partial_source_units,omitempty"`
+	PartialSourceVersions     map[string]bool              `json:"partial_source_versions,omitempty"`
+}

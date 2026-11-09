@@ -60,3 +60,189 @@ Key delivered boundaries and limits:
 
 - **Completed in this task**: Schema revision 20 storage and migration, scan admission and policy snapshot narrowing, pre-dispatch source target resolution and object pinning, 64-unit incremental `job_items` enumeration and deterministic structure inspector (including valid `file`/`directory`/`symlink` entry inspection), owned `derived_index` (`references`) repair child fencing, closed `scan_report.stage` schema and coverage/finding projections across HTTP/CLI/frontend/desktop, source-audit and CO substantive review reconciliations, the focused task-local unit, persistence, HTTP, E2E, migration, contract, and `go vet` verification set, the first independent result/EE panel round (which completed negatively on the initial candidate), and the two test-fixture corrections (`docs/testing/test_validate_docs.py` and `internal/adapters/sqlite/search_migration_test.go`) after the initial `make test KEEP_GOING=1` run. Corrected fixture checks, populated revision-19 public upgrade observation, current desktop facade observation, unchanged-input frontend evidence reuse, corrected complete common, independent affected result/Epic-contribution assessments, eligible original-finding closures and current composition are complete. CO accepts this exact bounded implementation/test basis and the separately verified record-only closeout overlay under Master delegation.
 - **Remaining for task closeout and next task**: The normal completion commit and native finalization precede [TASK-008-02](../tasks/EPIC-008/TASK-008-02.md) (`Implement bounded relationship/topic candidate discovery`). Later semantic, overlay, approval/undo and assembled quality gates remain with their ordered owners. This member acceptance is not Master overall Epic acceptance or physical-device/Wails GUI qualification.
+
+## Bounded relationship and topic candidate discovery additions (TASK-008-02)
+
+`TASK-008-02` extends the scan worker and SQLite persistence from schema
+revision 20 to revision 21 (`maintenance_intents` table and
+`maintenance_intents_by_scan_item` index in
+`internal/adapters/sqlite/scan_schema.go`). Source-context dependencies use a
+query-local CTE in `internal/adapters/sqlite/source_capture.go`:
+
+- **Candidate retrieval and pre-call excerpt inspection (`B05`, `B06`, `QR2`, `QR4`)**: During
+  `inspect`, each structurally checked active semantic unit (`region`, or `page`
+  when that page has no regions even on a mixed version (`B05`), or `version`
+  when pageless) runs `shortlistCandidates` (region-scoped `ScanSearchText` with
+  `page_anchors.label` headings + region-scoped SQL `ScanCandidateUnits` +
+  effective parent-EOF body readiness + deterministic discriminative content
+  ranking over at most 64 candidates, with canonical-stem deduplication and
+  same-version body-redundancy damping, capped at `maxShortlistCandidates = 6`
+  without fixed cross-version slots, `B06`, `QR2`, `QR4`) and inspects actual
+  HTML/region excerpts before any provider call. The report's
+  `inspected_candidate_relations` is populated from applied item detail and
+  completed-child shortlist totals; it is not a pre-call live counter.
+- **Child `job.kind = "maintenance"` lifecycle, per-version capture bindings, and budget/restore preservation (`B01`, `B04`, `B08`, `B09`, `B10`)**:
+  `stepUnitSemanticEvaluation` groups source capture steps per exact
+  `(ProjectID, VersionID)` so every `MaintenanceReadBinding` preserves a
+  non-empty `VersionID` and version-specific source revisions;
+  `CaptureMaintenanceAndAdmit` preserves `ReadBindings` across multi-step
+  captures and binds `current`-mode Git captures to the scan-start
+  `ResolvedRevision` while admission-unavailable `files` targets fail closed
+  without live fallback (`B01`). `SemanticRequestSHA` normalizes maintenance
+  prompt whitespace (`normalizeMaintenancePrompt`) and breaks ties on
+  `MaintenanceExplanation` coordinates deterministically (`B04`).
+  `exhaustRunBudget` and `revokeRunAuthority` check
+  `curJob.ProviderAttempts.Unknown > 0` (`B08`), `checkScanResumeBudget`
+  enforces `effectiveScanMaxProviderAttempts` on `decision == "retry"` (`B09`),
+  and `copy_restore.go` orders restored jobs by `ORDER BY rowid,job_id` so
+  parent `scan` jobs precede child `maintenance` jobs (`B10`).
+- **Deterministic post-model verification (`T-008-02-01..03`, `B02`, `B03`, `B07`, `B12`, `QR1`..`QR5`) and schema 20 -> 21 migration**:
+  `PrepareMaintenance` and `ApplyMaintenance` in
+  `internal/application/scan/candidates.go` enforce unit-scoped source evidence
+  (`VerifiedEvidenceByUnit`, `B02`) and verified module/repository directional
+  import checks for `depends_on` / `source_fact` with qualified rationale
+  withdrawal on downgraded claims (`T-008-02-01`, `B12`), four-boundary
+  Trash/authority filtering, `$.origin_unit` and `evidence_json`
+  lifecycle/purge/pagination fencing (`B03`, `B07`), exact
+  `(VersionID, PagePath, RegionID)` coordinate containment (`T-008-02-02`),
+  distinct same-pair mechanism fingerprinting (`mechanism_key`) vs
+  true-equivalent deduplication (`QR2`), stem/paraphrase topic grounding and
+  normalization with per-proposal `proposal_decisions` audit (`QR3`),
+  focal-scope content-gap direction verification (`QR1`), `source0`
+  (`uncertainty = "source_unverified"` and `no_source_declared`) qualification
+  (`QR4`), and separation of relationship inspection from `TASK-008-03`
+  freshness (`semantic.assessed = 0`, `semantic.complete = false`, `QR5`).
+  Offline unit (`internal/application/scan`), SQLite persistence and revision
+  20 -> 21 migration rollback (`internal/adapters/sqlite`), and populated
+  revision 20 binary -> revision 21 binary public upgrade checks
+  (`GET /api/v1/status` `schema_revision: 20` -> `21`,
+  `pre-migration-*.sqlite`/`.json`/`.objects`, exact HTML byte/SHA-256
+  round-trip, preserved revision 20 scan/findings, and post-upgrade
+  `deep-semantic` scan + CLI `findings list`) verify these invariants while the
+  live held-out provider quality cohort (`T-008-02-04`) and full canonical
+  common gate are coordinated separately.
+
+The owner-approved additional correction uses the ordinary search EOF projection,
+content-discriminative candidate ranking without fixed version slots, specific
+mechanism/reader-utility provider guidance, conservative focal limitation-to-gap
+promotion and bounded lexical topic-paraphrase grounding. Parent scans remain
+active during ordinary child waiting. Explicit unresolved/saved-result or input
+holds pause the parent and snapshot elapsed time; owner resume retains its
+budget checks. The earlier source-qualified checks above predate this correction.
+Its affected offline checks passed as qualified below; the actual quality gate
+failed and the full common remains unexecuted on the latest correction.
+
+The original quality acquisition failed (useful cases 1/4, required focal gaps
+0/2; page-only input scope). The first repaired 24-region acquisition also failed
+(useful cases 2/4 against a 3/4 requirement, required gaps 1/2, and 32 unhelpful
+cross-project relations against the predeclared allowance of at most one
+unhelpful thematic extra). Its 24 saved attempts and natural service exit were
+acquisition facts, not a quality pass. Both corresponding common executions were
+cancelled with native `killed`/130; neither proves the aggregate gate. Master
+approved one additional bounded correction and original-set quality experiment
+under unchanged criteria. No Task02 acceptance or current common pass is claimed.
+
+The approved additional original-set experiment also failed: useful cases 1/4
+(required 3/4), focal gaps 2/2, uncertainty cases 2/2 and one unhelpful extra
+(within the original allowance). All 24 attempts saved results, all children
+completed, all 277 findings were independently graded, and the service exited
+naturally with unchanged recorded inputs. Three required useful pairs were
+never shortlisted. The completed experiment is a pre-qualifier-fix observation;
+its failure and original target remain preserved.
+
+A later finite correction rejects opposite-polarity topic qualifiers before both
+early and paraphrase acceptance, while preserving genuinely described negative
+qualifiers and valid topics. Current race unit, controlled SQLite QR and build
+checks passed for that correction; a missing test import and its initial compile
+failure remain in the local execution record. The original finding owner
+independently confirmed the bounded correction after inspecting current source
+and negative/positive cases and applying those check receipts. This changes topic
+post-processing, not the candidate retrieval that missed those three pairs.
+At that checkpoint, the full common was not started after the failed quality
+result, Task02 remained unaccepted, and no fourth provider cohort or later
+dependent Task had started.
+
+Master subsequently approved the bounded two-stage semantic candidate nomination
+design amendment (`Mode = "semantic_nomination"`, Pass-1 `structural_ready`
+readiness ordering across all semantic leaves before global nomination,
+deterministic `nomination:p{pass}:b{index}` batching initially at the historical
+`<= 2048`-byte projected-card / `900`-byte excerpt checkpoint within the
+`<= 144 KiB` frame budget, strict closed-schema output
+validation requiring exact per-card cardinality (`minItems == maxItems ==
+len(cards)`) and required non-blank `abstain_reason` when `abstained == true`
+versus omitted/empty `""` when `abstained == false`, strict
+`AuthorizeMaintenance` prompt/digest/projected-card equality and pending/running
+batch-item guards, `unverified_card_routing_hint: ` signal labeling in the
+shared `K <= 6` Stage-2 shortlist, `PV01` saved-result continuation, and
+`N4`/`PV02` minimal purge tombstones with result-object unpinning) and one new
+`<= 25`-attempt live provider quality experiment under unchanged criteria.
+Focused race evidence covered that historical checkpoint across the
+nomination/card, actual adapter-frame and
+SQLite worker/guard/continuation/purge boundaries; a finite source-contract
+correction aligned exact focal-row cardinality, `abstain_reason` rules, unverified
+routing-hint signal labeling and contract documentation. The affected checks
+retain their source qualifications and failed parent runs. A later saved-result
+continuation defect was corrected by queuing the parent before resuming its
+children in the existing atomic write transaction; independent source-delta
+assessments and affected race checks cover that correction. The malformed-output
+fixture isolates each actual request in its own authenticated disposable
+store without bypassing unresolved-result identity guards. The two final
+fixture checks passed; earlier failures remain historical evidence.
+
+The one authorized semantic-nomination experiment completed on that historical
+`<= 2048`-byte / `900`-byte card candidate: one nomination attempt and 24 regular evaluation
+attempts were dispatched and saved, all 25 maintenance children completed, and
+286 proposed findings were retained. All 25 saved public result hashes and byte
+counts match the durable postmortem. The scan inspected 144 candidate relations
+across two projects, two versions, four pages and 24 regions, with no declared
+project sources. All transports recorded completed results and positive owned
+process drain; six retained `signal_error_drained` reasons qualify cleanup and
+must not be reported as error-free transport cleanup. The daemon exited `0`
+naturally and recorded runtime inputs were unchanged. These acquisition facts
+are not a reader-quality pass. Independent grading of all 24 regular outputs
+and all 286 findings under the unchanged original 12-case rule returned `fail`:
+useful relations were 2/4 against the required 3/4, and three non-actionable
+limitation-derived gap proposals exceeded the allowance of one unhelpful extra.
+Safety, negative controls, both focal gaps and both uncertainty cases passed
+within their recorded scope. Two required useful pairs were neither nominated
+nor recovered by lexical fill. All 24 nomination cards were truncated at `900 B`; this
+identifies a coverage limitation without proving that a larger excerpt would
+have produced the missing relations. Three ordinary limitation/abstention notes
+were incorrectly promoted into proposed gaps by the prose-based promotion path.
+
+Master then approved a bounded two-correction amendment and one additional
+`<= 25`-attempt original-set quality experiment under unchanged criteria:
+full-fit-first adaptive Stage-1 card projection up to `<= 8192` raw and
+JSON-encoded bytes per card within the unchanged `<= 144 KiB` (`8 KiB` fixed
+reserve) nomination frame without an average per-card quota (using deterministic
+UTF-8 `60%/40%` head/tail truncation from the unspliced original excerpt only
+when a card exceeds `8192` raw/encoded bytes or when the batch exceeds the
+`<= 144 KiB` frame budget with `8 KiB` reserve), and removal of
+`extractFocalGuaranteeGapFromLimitation` so `limitations` remain
+uncertainty/abstention records only while explicit `content_gaps` and declared
+missing scope themes (`evaluateTopicFocalGrounding`) remain the sole content-gap
+sources. All five affected focused scopes passed by exact-input composition.
+The additional cohort completed `25` dispatched/saved attempts and `25` completed,
+positively drained children, with all `24` cards full (`54,096/54,096` body bytes).
+Its `290` proposals (`152` relationships, `106` topics, `32` typed gaps) and all
+saved regular public outputs received independent original-profile grading.
+The unchanged original-set quality component passed; the
+[quality record](knowledge-quality.md) preserves the qualified useful case, two
+accepted borderline analogies, nonretrieved negatives, three
+`signal_error_drained` cleanups, zero project-source inputs and all historical
+failures.
+
+The subsequent full common failed with exit `2` on two stale contract digest
+records and an invalid CLI test status expectation. Integration, persistence and
+all `95` E2E cases passed. The aggregate remains failed; only the two metadata
+rows and test literals/negative cases changed afterward, with no runtime change.
+The corrected CLI race case and current prepare stage passed. Independent final
+original-Goal/scoped contribution judgments, all `21` original issue settlements,
+current composition and CO product review establish the bounded delivery under
+delegated member acceptance. The exact applicable layers and affected cases cover
+`1,407` Go and `256` Python cases, without claiming a fresh aggregate pass.
+All five native Goal criteria are satisfied. This factual/lifecycle overlay has
+separate affected documentation checks; the normal commit and native finalization
+precede Task03.
+Semantic freshness remains with TASK-008-03; `semantic.assessed = 0` and
+`semantic.complete = false` are preserved.

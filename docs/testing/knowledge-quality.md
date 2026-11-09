@@ -215,3 +215,190 @@ Recommended optional owner task: open Gaori G12 in the private Reader, follow
 its prior-compose link and explain why a lost MCP session does not authorize a
 replacement command. Owner performance remains `unmeasured`; this recommendation
 adds no permission question, required participation or gate.
+
+### Bounded relationship, topic, and content-gap candidate discovery (TASK-008-02)
+
+`TASK-008-02` implements schema revision 21 (`maintenance_intents`), the
+scoped search/shared-source/reference candidate shortlist
+(`CandidateShortlist`, `maxShortlistCandidates = 6`, `B06`), pre-call candidate
+HTML/region excerpt inspection (`inspected_candidate_relations`), child
+`job.kind = "maintenance"` admission and multi-project/multi-version source
+input guarding (`CaptureMaintenanceAndAdmit`, `GuardSourceInput`, `B01`), the
+closed native JSON schema (`maintenanceFrame` / `MaintenanceOutputEnvelope`),
+and deterministic post-model verification in
+`internal/application/scan/candidates.go`:
+
+- `T-008-02-01` (`keyword-dependency`): `depends_on` / `source_dependency`
+  (`evidence_basis = "source_fact"`) requires full non-truncated (including
+  `> 256 KiB`) retained source reads outside the SQLite writer scoped to each
+  focal and candidate unit's own cited evidence paths (`VerifiedEvidenceByUnit`,
+  `B02`) and verified directional import parsing
+  (`verifySourceDependencyFactWithRepo`) anchored by either a verified
+  module/namespace declaration (`go.mod`, canonical Go `// import "..."`
+  comment, `package.json`, `pyproject.toml`, `Cargo.toml`) or a resolved local
+  relative import in the same verified repository (`RepoKey`), case-sensitively
+  and without multi-segment suffix guessing. Keyword-only, reverse-direction,
+  partial-source, or unverified-module proposals are never emitted as
+  `depends_on` or `source_fact` and downgrade to `related` (`evidence_basis =
+  "thematic_analogy"`) with `uncertainty = "source_unverified"` (or
+  `"partial_source"`) and a qualified `rationale` that explicitly withdraws the
+  unverified code-dependency claim (`B12`).
+- `T-008-02-02` (`denied-trash`): Trashed, purged, or unauthorized targets are
+  filtered across shortlist selection, byte inspection, child provider dispatch,
+  and parent `ApplyMaintenance`, as well as `$.origin_unit` and `evidence_json`
+  lifecycle/purge/pagination fencing (`B03`, `B07`); distinct region/page
+  candidates within the same target version `(VersionID, PagePath, RegionID)`
+  and multiple genuinely distinct relationship mechanisms on the same
+  `(source, target, relation_type)` pair (`mechanism_key`, `QR2`) are preserved
+  without overwrite while true-equivalent duplicates and uninspected coordinates
+  are rejected.
+- `T-008-02-03` (`missing-theme`, `QR1`, `QR3`, `QR4`): `topic_assignment`
+  normalizes labels (`normalizeTopicLabel`) and uses
+  `evaluateTopicFocalGrounding` for focal body/headings, unit-scoped verified
+  source, compound/stem matches and bounded paraphrases supported by specific
+  focal concepts and rationale. This lexical check is not a general semantic
+  entailment guarantee. Declared themes absent from the focal body can convert
+  to `new_version_proposal` gaps, while ungrounded topics retain per-proposal
+  rejection reasons (`QR3`). Provider `limitations` remain uncertainty/abstention
+  records only and do not synthesize content-gap findings; generic
+  source absence alone does not create a gap. Content-gap proposals must
+  identify a genuine missing explanation or unelaborated detail in the focal
+  unit's own available scope rather than restating a focal-covered theme based
+  on neighbor omission (`QR1`), and explanation-only (`source0`) units qualify
+  findings with `uncertainty = "source_unverified"` and `no_source_declared`
+  limitations (`QR4`).
+- `T-008-02-04` (`heldout-quality`, `QR5`): Offline unit
+  (`internal/application/scan`), SQLite persistence (`internal/adapters/sqlite`,
+  including `B01`..`B12` and `QR1`..`QR5` regressions), and populated schema
+  20 -> 21 public upgrade checks verify `T-008-02-01..03`, `QR1`..`QR5`
+  (including preserving `result.semantic.assessed = 0` and
+  `result.semantic.complete = false` for `TASK-008-03` freshness separation),
+  and schema 21 migration invariants; the live held-out provider quality cohort
+  and full canonical common gate are coordinated separately before final task
+  closeout.
+
+The first recorded relationship-quality acquisition and its single predeclared
+repair both failed their required reader outcomes. The latter used all 24
+registered regions but met only 2/4 useful cases (required 3/4), 1/2 required
+focal-gap cases and produced 32 unhelpful cross-project relations. Acquisition
+success, scoped offline checks and a cancelled common are not quality or whole
+Task passage. Under the reconsideration rule above, Master explicitly approved
+one additional bounded correction and one original-set quality experiment.
+The original cases, full-output inspection, safety/coverage rules and thresholds
+remain unchanged; another failure ends that attempt without an automatic further
+cohort.
+
+That additional experiment completed naturally with 24 saved attempts and 277
+findings. Independent agent grading inspected all 12 original cases and all 277
+outputs: useful connections failed at 1/4 (required 3/4); required focal gaps and
+uncertainty cases passed 2/2 each, and one unhelpful extra was within the original
+allowance. The other three useful pairs never entered either direction's
+shortlist. Cross-project inspection slots fell from 96/144 to 33/144. This
+records a retrieval failure, not an excuse to replace cases or lower thresholds.
+Source0, familiar-corpus and unexercised restricted-target qualifications remain.
+No fourth cohort is authorized, the full common was not started, and Task02 is
+not accepted.
+
+The separate static opposite-qualifier defect was not observed among that
+cohort's 102 topics. Its later bounded guard correction has current race unit
+and controlled SQLite checks for contradicted qualifiers, reverse contradictions,
+actual negative-token presence and retained valid topics. These checks do not
+relabel the earlier native cohort as a post-fix execution or repair the missed
+retrieval cases. The original finding owner independently confirmed this bounded
+correction using current source, negative/positive cases and those check receipts;
+that confirmation does not establish general semantic entailment or Task passage.
+
+To address the cross-project candidate shortlist bottleneck without altering the
+held-out benchmark or its thresholds, Master approved the bounded two-stage
+semantic candidate nomination amendment (`internal/application/scan/nomination.go`,
+`Mode = "semantic_nomination"`): Pass 1 verifies backing explanation object
+availability and marks eligible semantic leaves `structural_ready` while
+completing all structural/repair work first; Pass 2 runs bounded global
+card-only nomination batches (`nomination:p0:b0000` for `<= 64` units, or
+two-pass cross-project interleaved batches for `> 64` units, initially at the
+historical `<= 2048`-byte serialized JSON card / `900`-byte excerpt checkpoint
+within the `<= 144 KiB` total frame budget) under strict
+closed-schema output validation (`minItems == maxItems == len(cards)` requiring
+one entry per supplied focal card, required non-blank `abstain_reason` with
+`candidates: []` when `abstained == true`, and `1..6` candidates with omitted or
+empty `""` `abstain_reason` when `abstained == false`), exact
+prompt/digest/projected-card `AuthorizeMaintenance` verification (`EE-SN-P01`,
+`N1`), `PV01` saved-result continuation, and `N4`/`PV02` purge tombstoning.
+Batch state is stored on `maintenance_intents` and per-unit coverage in
+`job_items.detail` (`nomination_coverage`, `visited_nomination_batches`,
+`nominated_candidates`, `nomination_abstained`). Structural anchors, validated
+nominations (`semantic_nomination` signals labeled with
+`unverified_card_routing_hint: `) and current-authority lexical fallbacks share
+the existing `K <= 6` Stage-2 shortlist, with up to `6` same-page sibling
+regions appended only when a region unit's shortlist would otherwise be empty.
+
+Focused offline race evidence covered that historical `<= 2048`-byte / `900`-byte
+checkpoint across card projection and strict decoding, actual serialized adapter
+frames (including decoded JSON schema assertions), structural worker ordering,
+all-card authority, invalid-output continuation without another Execute, and
+secondary-card Trash/Purge with result-pin reclamation, retaining the earlier
+failed compile, parent-ordering and fixture runs. The one authorized
+semantic-nomination quality cohort on that frozen candidate completed with `25`
+saved attempts (`1` nomination + `24` Stage-2 evaluations), `286` proposed
+findings, and `6` `signal_error_drained` transport cleanup qualifications, and
+failed independent grading under the unchanged 12-case rule: useful relations
+were `2/4` (required `3/4`) and `3` non-actionable limitation-derived pseudo-gaps
+exceeded the `<= 1` unhelpful-extra allowance, while safety, negative controls,
+both focal gaps, and both uncertainty cases passed (`all 24` Stage-1 cards were
+truncated at `900 B`, and `extractFocalGuaranteeGapFromLimitation` promoted `3`
+epistemic limitation notes into extra gap findings).
+
+Following that cohort failure, Master approved a bounded two-correction
+amendment and one additional `<= 25`-attempt original-set quality experiment
+under unchanged thresholds: (1) full-fit-first adaptive Stage-1 card projection
+up to `<= 8192` raw and JSON-string re-encoded bytes per card within the
+unchanged `<= 144 KiB` (`8 KiB` fixed reserve) nomination frame without an
+average per-card quota, using deterministic UTF-8 head (`60%`) + `"\n...\n"` +
+tail (`40%`) truncation from the unspliced original excerpt only when a card
+exceeds `8192` raw/encoded bytes or when the batch exceeds the `<= 144 KiB`
+(`8 KiB` reserve) frame budget, and (2) removal of
+`extractFocalGuaranteeGapFromLimitation` so `limitations` remain
+uncertainty/abstention records only while explicit `content_gaps` and declared
+missing scope themes (`evaluateTopicFocalGrounding`) remain the sole content-gap
+sources. All five affected focused scopes passed with their exact-input reuse;
+failed parent runs retain their original outcomes.
+
+The additional original-set cohort completed with `25` dispatched/saved attempts
+(`1` nomination + `24` regular evaluations), `25` completed children and positive
+drain for every child. All `24` cards retained their full `54,096` original body
+bytes. The resulting `290` proposed findings comprise `152` relationships,
+`106` topics and `32` typed gaps; `144` ordered candidate pairs were inspected.
+The original Claude Opus 5.5/high Task Evaluator inspected every saved regular
+public output and all `290` findings under the unchanged predeclared rule.
+The quality component passed: `4/4` useful cases (`3/4` even without the qualified
+fourth), both focal gaps, both uncertainty cases, no material false fact,
+dependency, source or coverage claims, and no unhelpful thematic extras.
+The four negative cases were not retrieved; this is not observed abstention.
+Two accepted borderline analogies retain their mechanism-specific comparison
+and explicit non-transfer qualification; classifying both as unhelpful would
+exceed the original extras allowance. The independent judgment and Coordinator
+review accepted them without changing the rule.
+
+Three attempts retain `signal_error_drained`; positive drain is not pristine
+cleanup. No project-source bytes were supplied. Two malformed target identities
+and eleven unsupported topics were filtered. These agent-only corpus observations
+do not prove general precision, human usefulness, physical-device behavior,
+positive live dependency evidence or live restricted-target isolation.
+`semantic.assessed = 0` and `semantic.complete = false` retain Task03 ownership.
+All four earlier failed quality cohorts remain failed on their original inputs.
+
+The subsequent complete `make test KEEP_GOING=1` execution failed with exit `2`:
+two stale selected-contract digest records and one CLI test expecting unregistered
+finding statuses. Its integration, persistence and E2E layers passed, including
+all `95` E2E cases; the aggregate remains failed. The bounded correction changes
+only the test's status literals/negative cases and those two digest records,
+with no product-code change. The corrected CLI race spec and current prepare
+stage passed. Independent final original-Goal and scoped contribution judgments
+and the four original roles' explicit settlement of all `21` original findings
+establish the current composition. Its executed layer/affected-case composition
+covers `1,407` Go and `256` Python cases; this is not a fresh full aggregate.
+CO substantive review and delegated acceptance establish the bounded Task02
+delivery, and all five native Goal criteria are satisfied. This factual/lifecycle
+overlay receives separate affected documentation checks. The normal completion
+commit/native finalization and Tasks03–06 remain separate; no overall Epic,
+general usefulness or physical-device acceptance is claimed.

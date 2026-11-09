@@ -81,10 +81,16 @@ func CheckCaptureActor(tx WriteTx, actor domain.Session, c domain.SourceCapture)
 	if err != nil {
 		return err
 	}
-	if receipt.Original.Target != "/api/v1/projects/"+c.ProjectID+"/generation-source-captures" {
+	if !generationContains(actor.Scope.ProjectIDs, c.ProjectID) {
 		return domain.ErrNotFound
 	}
-	if !generationContains(actor.Scope.ProjectIDs, c.ProjectID) {
+	if receipt.Original.Target == "/api/v1/projects/"+c.ProjectID+"/maintenance-source-captures" {
+		if !generationContains(actor.Scope.Actions, "scan.request") || !generationContains(actor.Scope.Actions, "source.read") {
+			return domain.ErrDenied
+		}
+		return nil
+	}
+	if receipt.Original.Target != "/api/v1/projects/"+c.ProjectID+"/generation-source-captures" {
 		return domain.ErrNotFound
 	}
 	if !generationContains(actor.Scope.Actions, "generation.request") || !generationContains(actor.Scope.Actions, "source.read") {
@@ -205,6 +211,13 @@ func GuardSourceInput(tx WriteTx, scope domain.ProviderScope, readID string) err
 	project, err := TargetProject(tx, scope.Target)
 	if err != nil {
 		return err
+	}
+	if scope.Invocation != nil && scope.Invocation.Maintenance != nil && len(scope.Invocation.Maintenance.ReadBindings) > 0 {
+		var ok bool
+		_, project, _, ok = domain.MaintenanceReadTarget(scope, scope.TargetSetID, project, readID)
+		if !ok || project == "" {
+			return domain.ErrDenied
+		}
 	}
 	actor := domain.Session{PrincipalID: scope.PrincipalID, AuthEpoch: scope.AuthEpoch, Scope: scope.CredentialScope}
 	if scope.PrincipalID == auth.OwnerID {

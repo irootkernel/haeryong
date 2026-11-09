@@ -458,6 +458,15 @@ func (t *writeTx) CheckProviderPolicy(a domain.ProviderAttempt) error {
 	if json.Unmarshal(j.Scope, &scope) != nil {
 		return domain.ErrInvalidTarget
 	}
+	if j.Kind == "maintenance" {
+		st := a.State
+		if j.State == "reconciling" {
+			st = "reconciling"
+		}
+		if e = app.AuthorizeMaintenance(t, j, scope, a.ID, st); e != nil {
+			return e
+		}
+	}
 	for _, readID := range scope.ReadIDs {
 		var sourceID, project, state, availability, sourceVersion string
 		e := t.tx.QueryRowContext(t.ctx, `SELECT r.source_id,c.project_id,c.state,r.availability,coalesce(json_extract(c.requested_selection,'$.version_id'),'') FROM source_capture_reads r JOIN source_captures c ON c.capture_id=r.capture_id WHERE r.read_id=?`, readID).Scan(&sourceID, &project, &state, &availability, &sourceVersion)

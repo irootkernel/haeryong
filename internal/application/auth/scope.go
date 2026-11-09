@@ -89,6 +89,8 @@ func AuthorizeUploadScope(scope domain.CredentialScope, purpose string, raw []by
 		switch target.Action {
 		case "generation":
 			action = "generation.request"
+		case "maintenance":
+			action = "scan.request"
 		case "evidence_verification":
 			// The sealed expectation transfer for the exact verification
 			// operation requires both byte-affecting actions; the shared
@@ -488,6 +490,16 @@ func authorizeScope(tx app.WriteTx, record domain.Session, r domain.Request) err
 			}
 			if j.Kind == "scan" {
 				if e := visibleScanJobForActor(tx, record, j); e != nil {
+					return e
+				}
+				return visibleJob(tx, j)
+			}
+			if j.Kind == "maintenance" && j.ParentID != "" {
+				parent, e := tx.Job(j.ParentID)
+				if e != nil {
+					return e
+				}
+				if e := visibleScanJobForActor(tx, record, parent); e != nil {
 					return e
 				}
 				return visibleJob(tx, j)

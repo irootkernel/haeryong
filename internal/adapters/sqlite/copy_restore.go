@@ -386,12 +386,93 @@ func (t *writeTx) reviewRestoredScan(j domain.Job) error {
 			}
 		}
 	}
+	mRows, err := t.tx.QueryContext(t.ctx, `SELECT job_id FROM jobs WHERE parent_id=? AND kind='maintenance' ORDER BY rowid,job_id`, j.ID)
+	if err != nil {
+		return err
+	}
+	mIDs := []string{}
+	for mRows.Next() {
+		var mid string
+		if err := mRows.Scan(&mid); err != nil {
+			mRows.Close()
+			return err
+		}
+		mIDs = append(mIDs, mid)
+	}
+	err = mRows.Err()
+	mRows.Close()
+	if err != nil {
+		return err
+	}
+	hasPausedMaintenance := false
+	parentPauseError := ""
+	for _, mid := range mIDs {
+		mc, err := t.Job(mid)
+		if err != nil {
+			return err
+		}
+		effects, err := t.providerJobEffects(mid)
+		if err != nil {
+			return err
+		}
+		unknown := mc.ProviderAttempts != nil && mc.ProviderAttempts.Unknown > 0
+		for _, a := range effects {
+			if a.State == "dispatching" || a.State == "running" || a.State == "outcome_unknown" {
+				unknown = true
+			}
+		}
+		if terminal(mc.State) {
+			if !unknown {
+				if err := t.exec(`DELETE FROM resource_revisions WHERE resource_kind='restore_job_hold' AND resource_id=?`, mid); err != nil {
+					return err
+				}
+			} else {
+				hasPausedMaintenance = true
+				parentPauseError = "outcome_unknown"
+			}
+			continue
+		}
+		hasPausedMaintenance = true
+		if unknown {
+			parentPauseError = "outcome_unknown"
+			if err := t.PauseProviderJob(mid, "outcome_unknown"); err != nil {
+				return err
+			}
+			continue
+		}
+		for _, a := range effects {
+			if a.State == "prepared" {
+				if err := t.ObserveProviderAttempt(a.ID, "cancelled", "", "", "cancel_before_dispatch"); err != nil {
+					return err
+				}
+			}
+		}
+		if err := t.exec(`DELETE FROM resource_revisions WHERE resource_kind='restore_job_hold' AND resource_id=?`, mid); err != nil {
+			return err
+		}
+		childErr := mc.Error
+		if childErr == "" || childErr == "source_capture_pending" {
+			childErr = "restored_verification_required"
+		}
+		if err := t.PauseProviderJob(mid, childErr); err != nil {
+			return err
+		}
+		if parentPauseError == "" {
+			parentPauseError = childErr
+		}
+	}
 	run.UpdatedAt = now
 	if err := t.UpdateScanRun(run); err != nil {
 		return err
 	}
 	if err := t.exec(`DELETE FROM resource_revisions WHERE resource_kind='restore_job_hold' AND resource_id=?`, j.ID); err != nil {
 		return err
+	}
+	if hasPausedMaintenance {
+		if parentPauseError == "" {
+			parentPauseError = "restored_verification_required"
+		}
+		return t.PauseProviderJob(j.ID, parentPauseError)
 	}
 	if err := t.exec(`UPDATE jobs SET state='queued',attempt_generation=attempt_generation+1,revision=revision+1 WHERE job_id=?`, j.ID); err != nil {
 		return err

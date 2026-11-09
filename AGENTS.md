@@ -428,3 +428,86 @@ bounded member acceptance. The factual/lifecycle record overlay has separate
 affected documentation checks; the normal commit and native finalization follow.
 TASK-008-02 through TASK-008-06 retain their ordered work and overall Epic
 acceptance remains with Master.
+
+## Bounded relationship and topic candidate discovery (TASK-008-02)
+
+TASK-008-02 adds schema revision 21 (`maintenance_intents` and
+`maintenance_intents_by_scan_item` in `internal/adapters/sqlite/scan_schema.go`),
+query-local `maintenance_source_contexts` dependency projection in
+`internal/adapters/sqlite/source_capture.go`, bounded
+candidate retrieval (`ScanSearchText`, `ScanCandidateUnits`, shared sources, and
+outgoing references capped at `maxShortlistCandidates = 6`, `B06`), per-page
+region presence granularity on mixed versions (`B05`), pre-call candidate
+HTML/region excerpt inspection (`inspected_candidate_relations`), child
+`job.kind = "maintenance"` admission (`CaptureMaintenanceAndAdmit`) preserving
+multi-step `ReadBindings` and scan-start `current`-mode Git `ResolvedRevision`
+while admission-unavailable `files` targets fail closed (`B01`), multi-project
+`MaintenanceReadTarget` source input guarding (`GuardSourceInput`), normalized
+`SemanticRequestSHA` prompt/coordinate tie-breaking (`B04`), parent scan
+pause/resume budget and restore ordering (`pauseScanRunElapsed`,
+`checkScanResumeBudget` on `retry`, `curJob.ProviderAttempts.Unknown > 0`,
+`ORDER BY rowid,job_id`, `B08`..`B10`), the closed Codex JSON schema
+(`maintenanceFrame` / `MaintenanceOutputEnvelope`), and deterministic post-model
+verification (`PrepareMaintenance` and `ApplyMaintenance` in
+`internal/application/scan/candidates.go`) for `T-008-02-01` (unit-scoped source
+evidence `VerifiedEvidenceByUnit` and verified module/repository directional
+import required for `depends_on` / `source_fact`, with qualified rationale
+withdrawal on downgraded claims, `B02`, `B12`), `T-008-02-02`
+(Trash/purged/unauthorized target exclusion across all four boundaries,
+`$.origin_unit` and `evidence_json` lifecycle/purge/pagination fencing, and
+multi-region `(VersionID, PagePath, RegionID)` preservation without uninspected
+coordinate leakage plus distinct same-pair mechanism fingerprinting
+(`mechanism_key`) without overwrite, `B03`, `B07`, `QR2`), and `T-008-02-03`
+(stem/paraphrase topic grounding and `kebab-case` normalization with
+per-proposal `proposal_decisions`, focal-only content-gap direction without
+neighbor-absence inversion, `source0` `source_unverified` qualification, and
+preserved `semantic.assessed = 0` / `semantic.complete = false` separation from
+`TASK-008-03` freshness, `QR1`, `QR3`..`QR5`). `TASK-008-02` remains in progress
+pending the Coordinator-owned live held-out provider quality cohort
+(`T-008-02-04`), canonical common gate, and independent assessment. The current
+additional correction uses effective parent-EOF body reads, deterministic
+content-discriminative ranking without fixed version slots, specific mechanism
+comparison guidance and bounded lexical topic-paraphrase/focal-gap handling.
+Ordinary maintenance-child waiting leaves the parent active; explicit
+unresolved-result/input holds use pause/resume elapsed accounting. Inspected
+progress derives from applied item detail/completed children, not admission.
+The initial quality acquisition and first repaired acquisition both failed;
+Master approved one additional bounded original-set experiment with unchanged
+criteria. That experiment failed useful retrieval at 1/4 (required 3/4),
+although focal gaps/uncertainty passed and unhelpful extras met the original
+allowance. A later opposite-qualifier guard correction passed current race unit,
+controlled SQLite and build checks; it does not repair the missed candidate
+pairs or relabel the earlier cohort. Task02 is not accepted, no fourth cohort
+is authorized, and the full common and later dependent Tasks have not started.
+Master subsequently approved the bounded two-stage semantic candidate nomination
+amendment (`Mode = "semantic_nomination"`, Pass-1 `structural_ready` ordering
+before global nomination batches `nomination:p{pass}:b{index}`, initially at the
+historical `<= 2048`-byte projected-card / `900`-byte excerpt checkpoint within
+a `<= 144 KiB` frame, strict `AuthorizeMaintenance` prompt/digest/card equality
+and batch-item guards, `PV01` continuation, and `N4`/`PV02` purge
+tombstones/unpinning) and one new `<= 25`-attempt original-set provider quality
+experiment. That semantic-nomination cohort completed (`25` saved attempts,
+`286` findings, `6` `signal_error_drained` cleanup qualifications) and failed
+independent grading (`2/4` useful `< 3/4`, `3` non-actionable limitation-derived
+pseudo-gaps `> 1`; all `24` cards truncated at `900 B`). Master then approved a
+bounded two-correction amendment (full-fit-first `<= 8192`-byte raw and
+JSON-encoded card projection with UTF-8 head/tail truncation inside the
+`<= 144 KiB` frame + `8 KiB` reserve without average quota, and removal of
+`extractFocalGuaranteeGapFromLimitation` so `limitations` remain uncertainty
+records only) and one additional `<= 25`-attempt original-set quality
+experiment. The five affected focused scopes and independent original-rule
+quality component passed. The actual cohort saved all 25 attempts, retained all
+24 cards in full and produced 290 independently inspected proposals. Three
+`signal_error_drained` qualifications, zero project-source inputs, two accepted
+borderline analogies and prior failed cohorts remain explicit in the
+[quality record](docs/testing/knowledge-quality.md).
+The subsequent full common failed on two stale contract digest records and one
+invalid CLI test status expectation; integration, persistence and all 95 E2E
+cases passed. The bounded metadata/test correction passed its CLI race case and
+current prepare stage, with no product-code change. The failed aggregate is not
+relabelled as passing. Independent final original-Goal and scoped contribution
+judgments, explicit settlement of all 21 original findings, current composition
+and CO product review establish the bounded delivery. All five native Goal
+criteria are satisfied, and CO accepted the exact member under Master delegation.
+The normal completion commit and native finalization follow; Tasks03–06 and
+Master overall Epic acceptance remain future.

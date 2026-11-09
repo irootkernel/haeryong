@@ -37,6 +37,29 @@ func (s *Store) recoverQuestions(ctx context.Context) error {
 			return e
 		}
 	}
+	mRows, e := tx.QueryContext(ctx, `SELECT m.job_id FROM maintenance_intents m JOIN jobs j ON j.job_id=m.job_id WHERE j.state='paused' AND j.error='source_capture_pending' ORDER BY m.job_id`)
+	if e != nil {
+		return e
+	}
+	mIDs := []string{}
+	for mRows.Next() {
+		var id string
+		if e = mRows.Scan(&id); e != nil {
+			mRows.Close()
+			return e
+		}
+		mIDs = append(mIDs, id)
+	}
+	e = mRows.Err()
+	mRows.Close()
+	if e != nil {
+		return e
+	}
+	for _, id := range mIDs {
+		if e = t.PauseMaintenanceCapture(id, "source_capture_unavailable", []domain.MaintenanceLimitation{{Code: "unable_to_verify", Message: "Exact source capture was interrupted before admission. No provider execution was admitted."}}); e != nil {
+			return e
+		}
+	}
 	return tx.Commit()
 }
 

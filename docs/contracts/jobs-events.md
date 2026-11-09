@@ -738,10 +738,158 @@ target document/project is not in Trash or purged (`document_trashed` /
 cannot complete or is interrupted, the parent scan records the version in
 `result.incomplete_reference_repairs` with `rescan_recommended = true`.
 
-The scan run's `max_run_seconds` deadline is evaluated against elapsed wall time
-since the first `ClaimJob` (`StartedAt`), excluding only explicit
-protected-restore hold duration (`restore_job_hold`). When `max_run_seconds` is
-exhausted before completion, `result.budget_exhausted` is set to `true` and
-remaining unfinished (`pending` / `running`) items transition to `skipped` with
-reason `run_budget_exhausted` (`result.semantic.reason = "run_budget_exhausted"`).
+The scan run's `max_run_seconds` budget uses accumulated `elapsed_ms` plus
+wall time since the active `started_at`. Ordinary maintenance-child waiting
+leaves the parent active and counts toward this budget; active daemon downtime
+also counts. An explicit parent pause snapshots elapsed time and clears
+`started_at` through `pauseScanRunElapsed`, so that paused interval is not
+charged. Protected-restore hold duration (`restore_job_hold`) remains excluded.
+`checkScanResumeBudget` checks the accumulated budget on `continue` and `retry`.
+When `max_run_seconds` is exhausted before completion, `result.budget_exhausted`
+is set to `true` and remaining unfinished (`pending` / `running`) items
+transition to `skipped` with reason `run_budget_exhausted`
+(`result.semantic.reason = "run_budget_exhausted"`).
 See [scan inventory evidence](../testing/scan-inventory.md).
+
+## Bounded maintenance child jobs and candidate discovery (TASK-008-02)
+
+During `job.kind = "scan"` inspection (`stage = "inspect"`), after a semantic
+unit (`region`, or `page` when that page has no regions even on a mixed version
+(`B05`), or `version` when pageless) has completed structural checks, the scan
+worker runs bounded candidate discovery (`internal/application/scan/candidates.go`)
+before admitting at most one owned child provider job (`job.kind = "maintenance"`)
+per active semantic unit:
+
+1. **Deterministic candidate retrieval and shortlist (`CandidateShortlist`)**:
+   The worker derives normalized query tokens from the focal unit's declared
+   topics, heading, body text, and cited source file basenames, runs
+   `ScanSearchText` plus bounded SQL candidate retrieval (`ScanCandidateUnits`)
+   across eligible authorized units in the scan's captured project scope. These
+   reads use the existing effective parent-EOF `searchReadUnits` projection and
+   admit body chunks only when their effective body state is complete. The
+   worker ranks at most 64 candidates by discriminative content, source and
+   authored-reference signals, with deterministic canonical-stem matching and
+   same-version body-redundancy damping. It uses no fixed cross-version slot
+   allocation, caps the shortlist at `maxShortlistCandidates = 6`
+   (`K <= 6`, `B06`), and filters out any candidate whose document is in Trash or
+   purged (`document_trashed` / `document_purged`) or outside current
+   principal/project/source authority at the shortlist boundary.
+2. **Pre-call content inspection and recorded progress**: Before creating the
+   provider child, the worker inspects actual immutable HTML/region excerpts of
+   the shortlisted candidates and focal unit. Admission records
+   `shortlisted_candidates` and `skipped_candidates` in item detail. Successful
+   `ApplyMaintenance` records `inspected_candidates` and completes the item;
+   observing a completed child can also populate this item count. Report refresh
+   takes the greater of the completed-child shortlist total and the per-item
+   inspected total, and preserves its prior high-water value in
+   `result.inspected_candidate_relations`. This is recorded directional candidate
+   inspection progress, not a pre-call live counter or a unique wiki-edge count.
+3. **Child `job.kind = "maintenance"` admission, pause, and settlement**:
+   When provider evaluation is permitted by effective policy
+   (`provider_allowed`, `max_provider_attempts_per_run`, `max_run_seconds`, and
+   `provider.ProviderID` + `Worker.Identity`), `CreateMaintenanceJob` and
+   `CaptureMaintenanceAndAdmit` validate current
+   principal/project/version/source/disclosure authority across all focal and
+   candidate `MaintenanceReadBinding` / `MaintenanceReadTarget` bindings
+   (preserving prior step `ReadBindings` across multi-step captures and binding
+   `current`-mode Git captures to the scan-start `ResolvedRevision`, `B01`), pin
+   the focal and candidate version content sets plus any retained source read
+   objects, create the child `maintenance` job and `maintenance_intents` row,
+   and record `eval_job_id` in item detail. The unit returns to `pending` at
+   `stage = "inspect"` while the parent scan remains `running`; ordinary child
+   waiting does not pause it. Source capture can leave the child paused with
+   `source_capture_pending` until its owned capture continuation is ready.
+4. **Parent/child lifecycle and budget coordination**: The provider worker
+   executes the `maintenance` child through the existing provider attempt,
+   transport audit, result object, and reconciliation state machines, preparing
+   validated proposals outside the SQLite writer (`PrepareMaintenance`) and
+   persisting them in a short writer transaction (`ApplyMaintenance`). When the
+   child needs unresolved-result, saved-result, reconciliation, preparation or
+   captured-input handling, `settleParentScanAfterChild` and the scan worker can
+   explicitly pause the parent through `PauseProviderJob`. The helper does not
+   automatically re-queue a paused parent when a child terminates. Authorized
+   resume uses `checkScanResumeBudget`: `continue` and `retry` check elapsed
+   time, and `retry` additionally checks the effective attempt cap (`B09`);
+   `reconcile_only` preserves its separate reconciliation path. The job projection
+   aggregates `provider_attempts` (`count`, `unresolved_count`,
+   `reconciled_count`, `latest_state` with `outcome_unknown` precedence) across
+   linked `maintenance` children. Budget exhaustion and authority revocation checks
+   (`exhaustRunBudget`, `revokeRunAuthority`) inspect
+   `curJob.ProviderAttempts.Unknown > 0` (`B08`) rather than passing a state name
+   as `excludeAttemptID`. On a later parent step, `stepUnitSemanticEvaluation`
+   verifies that the parent scan job is still `running` under the matching
+   `attempt_generation` and current focal/target authority before completing the
+   unit item. Unresolved-result holds keep the item pending. Failed or cancelled
+   children complete the item with `detail.semantic_state = "skipped"` and
+   `detail.semantic_reason = "provider_unavailable"`; this is not an item
+   `blocked` transition. Report status and reasons continue to distinguish
+   provider unavailability, attempt exhaustion, structural/source blocking and
+   run-budget exhaustion from successful relationship inspection.
+5. **Per-proposal decision audit, distinct same-pair mechanisms, focal-only gap direction, and relationship-vs-freshness separation (`QR1`..`QR5`)**:
+   `ApplyMaintenance` records per-proposal acceptance, downgrade, conversion, and
+   rejection decisions in `job_item.detail.proposal_decisions` and child
+   `job.result.proposal_decisions` (`MaintenanceProposalDecision`) alongside the
+   aggregate `filtered_*` and `downgraded_relations` counters while retaining the
+   immutable raw provider result object. Multiple genuinely distinct relationship
+   mechanisms for the same `(source, target, relation_type)` coordinate pair are
+   preserved as separate `related_explanation` findings via deterministic
+   `mechanism_key` fingerprinting, while true-equivalent rationales are
+   deduplicated (`reason = "duplicate_relation"`, `QR2`). Topic proposals are
+   normalized to `kebab-case` (`normalizeTopicLabel`). The lexical
+   `evaluateTopicFocalGrounding` check accepts supported compound/stem matches
+   and bounded paraphrases with specific focal concepts and a grounded rationale;
+   it does not prove general semantic entailment (`QR3`). Qualifiers that
+   contradict an actual focal body/heading/verified-source counterpart are
+   rejected before generic-token acceptance or paraphrase fallback. An actually
+   described negative qualifier remains eligible; declaration metadata alone
+   does not prove its meaning. Provider `limitations` record uncertainty or
+   abstention only and never synthesize `content_gap` proposals or findings;
+   only explicit `content_gaps` and declared missing scope themes converted by
+   `evaluateTopicFocalGrounding` enter the content-gap validation path, and
+   generic source-unavailability limitations alone do not create gaps. The raw
+   provider object is preserved, and
+   `content_gap` proposals must fill a missing explanation or implementation
+   detail in the focal unit's own available scope rather than restating a
+   focal-explained theme based on neighbor absence (`QR1`). When a version has
+   no declared or verified source (`sources == 0`), emitted findings carry
+   `uncertainty = "source_unverified"` and `no_source_declared` limitations
+   (`QR4`). Relationship candidate evaluation in `TASK-008-02` reports its
+   progress through `result.inspected_candidate_relations`,
+   `result.provider_attempts`, and per-item `job_item.detail.semantic_state` /
+   `proposal_decisions`, whereas `result.semantic.assessed` (`0`) and
+   `result.semantic.complete` (`false`) remain reserved for `TASK-008-03`
+   freshness/contradiction assessment (`QR5`).
+6. **Two-stage global semantic nomination prephase (`Mode = "semantic_nomination"`, `N1`..`N5`, `PV01`)**:
+   Before per-unit Stage-2 verification, eligible semantic units complete a
+   Pass-1 deterministic structural and explanation-object readiness check
+   (`detail.structural_ready = true` while remaining `stage = "inspect"` and
+   `state = "pending"` until every structural/index repair item settles and
+   every eligible semantic leaf is ready). Once all eligible leaves are
+   `structural_ready`, `stepGlobalNominationPrephase` plans deterministic global
+   nomination batches (`nomination:p0:b0000` for `<= 64` units; two-pass
+   cross-project interleaved windows `nomination:p0:b0000..` and
+   `nomination:p1:b0000..` for `> 64` units) using full-fit-first adaptive card
+   projection (`<= 8192` raw and JSON-encoded bytes per card with UTF-8 head/tail
+   truncation when needed inside the `<= 144 KiB` frame budget with `8 KiB`
+   fixed reserve). Scan report counters remain in
+   `scan_runs.report`, batch state (`nomination_state`, `nomination_reason`,
+   `prepared_output_json`) is persisted on `maintenance_intents`, and per-unit
+   nomination coverage is recorded in `job_items.detail` (`nomination_coverage`,
+   `visited_nomination_batches`, `nominated_candidates`,
+   `nomination_abstained`). Each batch admits one child `job.kind =
+   "maintenance"` intent (`item_id = batch_id`, `mode = "semantic_nomination"`,
+   `batch_item_ids`, `card_payload_digest`) that counts toward parent
+   `effective_max_attempts`, `provider_attempts`, and run wall-clock budget.
+   Saved-result continuation (`PV01`) and `outcome_unknown` holds apply
+   identically to nomination children without re-dispatching `Execute`, and any
+   child cancellation or stop-confirmation error propagates before terminal
+   invalidation. Stage 2 (`mergeNominatedShortlist`) orders: (1) deterministic
+   structural anchors (`authored_reference`, `source_path_overlap`), (2)
+   validated model-nominated candidates (`semantic_nomination`, with signal
+   `detail` prefixed `unverified_card_routing_hint: ` as an unverified
+   card-based routing hint), and (3) deterministic lexical candidates for any
+   remaining slots up to the shared `K <= 6` (`maxShortlistCandidates = 6`)
+   cap, falling back to deterministic ranking when nomination is skipped or
+   abstained and appending up to `6` (`maxShortlistCandidates`) same-page
+   sibling regions (`same_page_sibling`) only when a region unit's shortlist
+   would otherwise be empty.

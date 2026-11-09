@@ -299,3 +299,55 @@ selected mutation project; fresh capture requires it and the current selection
 to match. Already accepted generation capture still uses its frozen job authority
 with current epoch/binding/source-policy guards, independently of bearer expiry.
 Changing a remembered selection does not reinterpret an old capture or receipt.
+
+## Maintenance candidate source admission and multi-project guard (TASK-008-02)
+
+When a scan worker admits a child `job.kind = "maintenance"` job via
+`CaptureMaintenanceAndAdmit` (`internal/application/source/capture.go`), it uses
+the internal `/maintenance-source-captures` actor target (`CheckCaptureActor`)
+under the scan run's captured principal (`owner` or `workflow`) and narrowed
+`CredentialScope`. For each version in the maintenance evaluation (the focal
+unit's version and each shortlisted candidate unit's version with cited source
+evidence), `collectUnitSourceSelections` and `CaptureMaintenanceAndAdmit` either
+reuse pre-captured `selected_snapshot` reads from the scan target set or perform
+a bounded capture under current project/source/provider disclosure rules
+(`provider_ids` must include the selected provider when `source_access != "none"`),
+binding `current`-mode Git captures to the exact `ResolvedRevision` recorded at
+scan admission and failing closed (`source_unavailable` /
+`source_capture_required`) when a `files` target was unavailable at scan
+admission (`B01`).
+
+Because a scan and its candidate shortlist can span multiple versions and
+authorized projects, `MaintenanceIntent.ReadBindings` (`internal/domain/scan.go`)
+records a `MaintenanceReadBinding` (`read_id`, `project_id`, `version_id`,
+`target_set_id`) per admitted read and preserves prior step bindings across
+multi-step captures (`B01`). During provider dispatch and streaming,
+`AttachSourceInputs` and `GuardSourceInput`
+(`internal/application/storage/provider_guard.go`) resolve each `read_id`
+against `MaintenanceReadTarget`'s exact target-set/project/version coordinates
+and the captured read's source identity so current project,
+version, source, and provider disclosure checks are enforced against the exact
+owning project and version of that read rather than assuming a single project or
+version on the job row.
+
+In SQLite, `maintenance_source_contexts` is a query-local CTE within
+`sourceJobDependencies` in `internal/adapters/sqlite/source_capture.go`.
+It derives version context from invocation explanations, retained
+`$.source_read_ids` and in-progress `$.captures`; it is not a schema revision 21
+view. Lifecycle/purge queries also inspect `$.shortlist.candidates` and
+`$.cards` directly. For `Mode == "semantic_nomination"`, `AuthorizeMaintenance`
+(`internal/application/storage/provider_guard.go`) rejects any source-read
+bindings (`EE-SN-S01`), strictly decodes `Invocation.Prompt` with
+`DisallowUnknownFields` and exact canonical JSON + `card_payload_digest` and
+stored projected-card equality (`EE-SN-P01`), verifies every batch item remains
+`stage == "inspect"` and `state IN ("pending", "running")` when not
+`reconciling`, and validates current project/version/Trash/purge authority
+across all batch cards (`N1`). When a document is trashed or manually purged,
+`fenceScanDocument`, `PurgeStep`, and `redactPurgedScanRecords` cancel and fence
+matching nomination batches (`$.cards`), release prepared child result object
+pins before `purge_candidates` selection (`PV02`), and replace purged
+`maintenance_intents` payloads with minimal decoder-safe tombstones preserving
+`job_id`, `scan_job_id`, `item_id`, `batch_id`, `mode`, and terminal reason
+(`N4`).
+These dependencies let object GC, snapshot retention, Trash and manual purge
+track the retained source and candidate contexts of maintenance work.
