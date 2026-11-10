@@ -83,39 +83,144 @@ type transport struct {
 	waitDone      chan struct{}
 	cleanupReason string
 	signal        func(int, syscall.Signal) error
+	owned         ownedNativeProcess
+	setupErrors   *setupErrorClassifier
 }
 
+type ownedNativeProcess struct {
+	PID      int  `json:"pid"`
+	PGID     *int `json:"pgid"`
+	UID      *int `json:"uid"`
+	Observed bool `json:"observed"`
+}
+
+// Native diagnostics are never retained as text. Only fatal setup lines select
+// these finite classes; harmless PATH-alias warnings cannot establish a cause.
+type setupErrorClassifier struct {
+	mu           sync.Mutex
+	prefix, tail string
+	class        string
+}
+
+func (w *setupErrorClassifier) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, b := range p {
+		if b == '\n' {
+			w.prefix, w.tail = "", ""
+			continue
+		}
+		if len(w.prefix) < 16 {
+			w.prefix += string(b)
+		}
+		w.tail += string(b)
+		if len(w.tail) > 256 {
+			w.tail = w.tail[len(w.tail)-256:]
+		}
+		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(w.prefix)), "error:") {
+			continue
+		}
+		s := strings.ToLower(w.tail)
+		switch {
+		case strings.Contains(s, "permission") && strings.Contains(s, "profile") && strings.Contains(s, "required"):
+			w.class = "permission_profile_required"
+		case strings.Contains(s, "operation not permitted"):
+			w.class = "operation_not_permitted"
+		case strings.Contains(s, "permission denied"):
+			w.class = "permission_denied"
+		case strings.Contains(s, "config") && (w.class == "" || w.class == "setup_error"):
+			w.class = "configuration_error"
+		case w.class == "":
+			w.class = "setup_error"
+		}
+	}
+	return len(p), nil
+}
+
+func (w *setupErrorClassifier) Class() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.class
+}
+
+func observeOwnedProcess(pid int) ownedNativeProcess {
+	fact := ownedNativeProcess{PID: pid}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, "/bin/ps", "-p", strconv.Itoa(pid), "-o", "pid=,pgid=,uid=,stat=")
+	command.Env = []string{"PATH=/usr/bin:/bin", "LC_ALL=C"}
+	command.Stderr = io.Discard
+	raw, err := command.Output()
+	fields := strings.Fields(string(raw))
+	if err != nil || len(fields) != 4 {
+		return fact
+	}
+	observedPID, p := strconv.Atoi(fields[0])
+	group, g := strconv.Atoi(fields[1])
+	uid, u := strconv.Atoi(fields[2])
+	if p == nil && g == nil && u == nil && observedPID == pid && uid == os.Geteuid() {
+		fact.PGID, fact.UID, fact.Observed = &group, &uid, true
+	}
+	return fact
+}
+
+type initializationFailure struct {
+	cause         error
+	exitCode      *int
+	localClosed   bool
+	cleanupReason string
+	owned         ownedNativeProcess
+	errorClass    string
+}
+
+func (e *initializationFailure) Error() string { return "native initialization failed" }
+func (e *initializationFailure) Unwrap() error { return e.cause }
+
 func start(ctx context.Context, binary string) (*transport, error) {
+	return startPrepared(ctx, binary, nil)
+}
+
+func startPrepared(ctx context.Context, binary string, retain func(ownedNativeProcess) error) (*transport, error) {
 	cmd := exec.Command(binary, "app-server", "--stdio")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = subscriptionEnvironment()
-	discard, e := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
-	if e != nil {
-		return nil, errTransport
-	}
-	defer discard.Close()
-	cmd.Stderr = discard
+	setupErrors := &setupErrorClassifier{}
+	cmd.Stderr = setupErrors
 	in, e := cmd.StdinPipe()
 	if e != nil {
-		return nil, errTransport
+		return nil, errors.Join(errTransport, e)
 	}
 	out, e := cmd.StdoutPipe()
 	if e != nil {
 		in.Close()
-		return nil, errTransport
+		return nil, errors.Join(errTransport, e)
 	}
 	if e = cmd.Start(); e != nil {
 		in.Close()
 		out.Close()
-		return nil, errTransport
+		return nil, errors.Join(errTransport, e)
 	}
-	t := &transport{cmd: cmd, in: in, out: out, pending: map[string]chan envelope{}, done: make(chan struct{}), turns: make(chan completed, 8), signal: syscall.Kill}
+	t := &transport{cmd: cmd, in: in, out: out, pending: map[string]chan envelope{}, done: make(chan struct{}), turns: make(chan completed, 8), signal: syscall.Kill, owned: observeOwnedProcess(cmd.Process.Pid), setupErrors: setupErrors}
 	go t.read()
+	failed := func(cause error) (*transport, error) {
+		cleanup := t.close()
+		fact := &initializationFailure{cause: errors.Join(cause, cleanup), localClosed: cleanup == nil, cleanupReason: t.cleanupReason, owned: t.owned, errorClass: setupErrors.Class()}
+		if state := t.cmd.ProcessState; state != nil && state.Exited() {
+			code := state.ExitCode()
+			fact.exitCode = &code
+		}
+		return nil, fact
+	}
+	if retain != nil {
+		if e = retain(t.owned); e != nil {
+			return failed(e)
+		}
+	}
 	if e = t.call(ctx, "initialize", map[string]any{"clientInfo": map[string]string{"name": "haeryong", "version": "1"}}, nil); e != nil {
-		return nil, errors.Join(e, t.close())
+		return failed(e)
 	}
 	if e = t.send(map[string]any{"jsonrpc": "2.0", "method": "initialized"}); e != nil {
-		return nil, errors.Join(e, t.close())
+		return failed(e)
 	}
 	return t, nil
 }

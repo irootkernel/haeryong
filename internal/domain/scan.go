@@ -415,6 +415,8 @@ type PreparedMaintenanceNominationPayload struct {
 }
 
 type MaintenanceIntent struct {
+	FullCoverageSetID   string                      `json:"full_coverage_set_id,omitempty"`
+	CoverageSetID       string                      `json:"coverage_set_id,omitempty"`
 	JobID               string                      `json:"job_id"`
 	ScanJobID           string                      `json:"scan_job_id"`
 	ItemID              string                      `json:"item_id"`

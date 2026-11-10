@@ -18,6 +18,8 @@ import { DownloadPanel } from "./download-panel.tsx";
 import { GenerationControl } from "./generation-control.tsx";
 import { ImportControl } from "./import-control.tsx";
 
+const freshnessLabels: Record<string,string> = {not_assessed:"미평가",reassessment_needed:"재평가 필요",aligned_within_scope:"확인 범위 내 일치",outdated_against_target:"선택 대상과 불일치",unable_to_verify:"확인 불가"};
+
 interface LibraryScreenProps {
   controller: ShellController;
 }
@@ -339,6 +341,7 @@ export function LibraryScreen({ controller }: LibraryScreenProps) {
                   <div>
                     <strong>{document.title}</strong>{featureEnabled(features,"review") && document.review_state && <span> · 내 검토: {{unreviewed:"미검토",reviewing:"검토 중",reviewed:"검토 완료"}[document.review_state]}{document.updated_since_review ? " · 검토한 이후 업데이트됨" : ""}</span>}
                     <span className="hint"> · 갱신 {document.updated_at}</span>
+                    <span data-testid="library-freshness"> · 소스 상태: {document.freshness ? (freshnessLabels[document.freshness.status] ?? document.freshness.status) : "미평가"}{document.freshness && ` · ${document.freshness.coverage.assessed}/${document.freshness.coverage.eligible}`}</span>
                   </div>
                   <div className="form-row">
                     {document.latest_version_id ? (

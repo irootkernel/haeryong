@@ -280,3 +280,32 @@ Reader keeps the existing full-height native Files/Context dialogs and tablet ov
 ## Multi-device reconciliation and conflict UI (TASK-007-04)
 
 Mounted screens (including `GenerationControl` and `DraftControl`) refresh via `controller.passiveClient` (`Haeryong-Passive-Read: 1` / native `passive: true`) on SSE/native invalidation hints, `visibilitychange` return and `resync.required` barrier sweeps, gated by `readGeneration` and active-action guards so pre-barrier reads cannot overwrite post-barrier state or local form/override/journal state. `ReviewControl`, `RevisitControl`, `NotesPanel` (including note creation, body edit, explicit reattachment and deletion) and `ReaderScreen` (`reader-preference`, `reading-position` and per-page `page-position`) preserve unsaved local intent and display side-by-side local vs server conflict comparison on `412`/`409` or when a queued local edit conflicts with a newer peer revision discovered after receipt-first recovery (`GET /api/v1/operations/{id}` followed by a fresh resource `GET`). Each conflict card offers explicit **서버 상태 불러오기** (reload server revision) and **현재 서버 버전 기준으로 내 변경 다시 적용** (overwrite current server revision with a new `Idempotency-Key` and current `ETag`). See [multi-device reconciliation evidence](../testing/multi-device-reconciliation.md).
+
+### Current Task03 freshness consumers
+
+The canonical Library row now receives the server's nullable freshness summary
+for its exact latest explanation version, with assessed/eligible counts separate
+from My review and Revisit. This adds no new page or speculative filter. The
+existing Evidence summary, history and unit list consume produced page/region
+records as well as their previously labelled controlled presentation fixtures.
+Keep the original capture time, assessment time, target and contribution scope
+inspectable; incomplete units and their reasons do not disappear. Browser/native
+observations of actual saved production results are separate evidence from
+supplied-record presentation and from real provider/source execution.
+
+The existing Reader Evidence panel can inspect the canonical whole-version
+assessment while leaving the selected page open, or return to its current
+page/region scope. Each scope has a separate selection key and query lifetime;
+late results cannot migrate between them. This exposes the full fixed unit set
+without adding a new page or changing personal Review. An absent units locator
+stays an absent locator and never produces invented rows or derived coverage.
+
+Each stored semantic history entry expands to its exact assessment, version,
+target, scope, configuration/permission revisions and recorded times. Its
+selected membership coverage and contributing assessment coverage are shown
+separately. Produced units expose their stored outcome, discrepancy, reason,
+rationale and full citation source/location/provenance fields as escaped text;
+null, missing and empty values remain distinguishable. Unknown legacy detail is
+reported as unavailable instead of inferred from the summary label. Expanding
+saved detail performs no new source read or model work. Authored evidence stays
+separate from these produced records.

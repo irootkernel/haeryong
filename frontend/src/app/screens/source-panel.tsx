@@ -13,8 +13,8 @@ import type { ShellController } from "../../client/controller.ts";
 import { featureEnabled } from "./library-data.ts";
 import { evidenceAvailability, evidenceExcerpt, coverageReason } from "./source-presentation.ts";
 import type { VerificationAction } from "./source-queries.ts";
-import type { VersionView } from "../../client/types.ts";
-import { bindRegionEvidence, compareWithOverlay, deriveCoverageSummary, regionsOfPage, toggledOpen, type MetadataState, type SuppliedEvidenceRecord, type SuppliedMetadata, type SuppliedSourceRecord } from "./evidence-view.ts";
+import type { AssessmentRecord, VersionView } from "../../client/types.ts";
+import { assessmentDetailUnits, renderAssessmentText, bindRegionEvidence, compareWithOverlay, deriveCoverageSummary, regionsOfPage, toggledOpen, type MetadataState, type SuppliedEvidenceRecord, type SuppliedMetadata, type SuppliedSourceRecord } from "./evidence-view.ts";
 import { SourceQueries, type SourceQuerySnapshot } from "./source-queries.ts";
 import { useReviewInvalidation } from "./review-refresh.ts";
 
@@ -79,7 +79,21 @@ export function SourcePanel(props: SourcePanelProps) {
   // of a new [version,page,region,context] selection — the JSON array form
   // preserves arbitrary Unicode IDs unambiguously. All local state lives
   // inside the keyed inner component; nothing outside the panel resets.
-  return <SourcePanelSelection key={JSON.stringify([props.versionId, props.pagePath, props.regionId, props.contextKey])} {...props} />;
+  return <SourcePanelScope key={JSON.stringify([props.versionId, props.pagePath, props.regionId, props.contextKey])} {...props} />;
+}
+
+function SourcePanelScope(props: SourcePanelProps) {
+  const [wholeVersion, setWholeVersion] = useState(false);
+  const whole = wholeVersion || props.pagePath === null;
+  // Inspect the existing canonical version scope without closing the Reader's
+  // selected page. Scope changes get their own query/late-response boundary.
+  return <>
+    <div className="form-row" aria-label="평가 범위">
+      <button type="button" aria-pressed={!whole} disabled={props.pagePath === null} onClick={() => setWholeVersion(false)}>현재 페이지/영역 평가</button>
+      <button type="button" aria-pressed={whole} onClick={() => setWholeVersion(true)}>버전 전체 평가</button>
+    </div>
+    <SourcePanelSelection key={JSON.stringify([whole, props.versionId, props.pagePath, props.regionId, props.contextKey])} {...props} pagePath={whole ? null : props.pagePath} regionId={whole ? null : props.regionId} />
+  </>;
 }
 
 function SourcePanelSelection(props: SourcePanelProps) {
@@ -189,11 +203,35 @@ function SourcePanelSelection(props: SourcePanelProps) {
       {snap.assessments.incompatibleApplicable && <p className="muted">반환된 적용 가능 요약이 선택된 범위와 일치하지 않아 선택된 집합으로 채택하지 않습니다 — 이력 행은 검사 가능합니다.</p>}
       {snap.assessments.history.items.length > 0 && <div>
         <h4>평가 이력</h4>
-        <ul>{snap.assessments.history.items.map((item) => <li key={item.assessment_id}><span className="muted-code">{item.assessment_id.slice(0, 8)}…</span> · {scopeText(item.scope)} · 대상 {item.target_set_id ?? "없음"}{typeof item.state === "string" ? ` · ${item.state}` : ""}</li>)}</ul>
+        <p className="muted">아래는 원본 작성 근거와 별도로 저장된 의미 평가 이력입니다. 각 기여의 범위와 대상을 확인하세요. 이력의 바이트 인용은 판단의 정확성을 보장하지 않습니다.</p>
+        <div className="semantic-assessment-history" aria-label="저장된 의미 평가 상세">
+          {snap.assessments.history.items.map((item) => <SemanticAssessment key={item.assessment_id} item={item} versionId={versionId} membershipCoverageId={applicable?.coverage.coverage_set_id ?? null} />)}
+        </div>
       </div>}
       {!snap.assessments.history.complete && snap.assessments.history.items.length > 0 && <p className="muted">이력 열거가 완료되지 않았습니다(커서 남음/실패) — 집계하지 않습니다.</p>}
     </div>
   </section>;
+}
+
+function SemanticAssessment({ item, versionId, membershipCoverageId }: { item: AssessmentRecord; versionId: string; membershipCoverageId: string | null }) {
+  const units = assessmentDetailUnits(item, versionId);
+  const fields = ["assessment_id", "version_id", "coverage_set_id", "target_set_id", "scope", "state", "origin", "config_revision", "permissions_revision", "assessed_at", "created_at"] as const;
+  return <details className="semantic-assessment" data-assessment-id={item.assessment_id} data-version-id={item.version_id} data-target-set-id={item.target_set_id ?? ""} data-contribution-coverage-set-id={item.coverage_set_id ?? ""} data-membership-coverage-set-id={membershipCoverageId ?? ""}>
+    <summary><span className="muted-code">{item.assessment_id.slice(0, 8)}…</span> · {scopeText(item.scope)} · 대상 {item.target_set_id ?? "없음"}{typeof item.state === "string" ? ` · ${item.state}` : ""}</summary>
+    <p>저장된 평가 기여 — 선택된 전체 membership과 기여 coverage는 서로 다를 수 있습니다.</p>
+    <dl className="semantic-assessment-provenance">{fields.map((field) => <div key={field}><dt>{field}</dt><dd data-field={field}>{renderAssessmentText(item[field])}</dd></div>)}</dl>
+    {units === null ? <p className="muted semantic-details-unavailable">이 기록에 표시 가능한 의미 상세가 없거나 범위/형식이 일치하지 않습니다. 원본 이력 식별자와 상태는 유지됩니다.</p> : <div className="semantic-unit-details">
+      {units.map((unit) => <article className="semantic-unit" key={JSON.stringify([unit.kind, unit.page_path, unit.region_id])} data-kind={unit.kind} data-page-path={unit.page_path ?? ""} data-region-id={unit.region_id ?? ""}>
+        <h5>{scopeText(unit)}</h5>
+        <dl>{(["kind", "page_path", "region_id", "outcome", "discrepancy", "reason", "rationale"] as const).map((field) => <div key={field}><dt>{field}</dt><dd data-field={field} data-empty={unit[field] === ""}>{unit[field] === "" ? "빈 기록(없음)" : renderAssessmentText(unit[field])}</dd></div>)}</dl>
+        <h6>이 판단에 저장된 출처 인용</h6>
+        {unit.citations.length === 0 && <p className="muted">저장된 출처 인용 없음</p>}
+        <ol className="semantic-citations">{unit.citations.map((citation, index) => <li className="semantic-citation" key={index} data-citation-index={index}>
+          <dl>{(["basis", "read_id", "verification_id", "input_origin", "target_set_id", "bytes_sha256", "source", "location", "package_evidence_ref"] as const).map((field) => <div key={field}><dt>{field}</dt><dd data-field={field}>{renderAssessmentText(citation[field])}</dd></div>)}</dl>
+        </li>)}</ol>
+      </article>)}
+    </div>}
+  </details>;
 }
 
 function findSource(metadata: SuppliedMetadata, evidence: SuppliedEvidenceRecord): SuppliedSourceRecord | null {

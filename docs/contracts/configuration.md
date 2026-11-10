@@ -272,3 +272,15 @@ proxy routes separately under owner authority; preserve unrelated routes.
 
 See [private ingress evidence](../testing/private-ingress.md) for executed scope
 and the distinction between same-host web proof and physical-device qualification.
+
+## Implemented freshness policy (TASK-008-03)
+
+The existing `maintenance.auto_apply.freshness_assessment` policy selects the
+freshness-only producer: `disabled` admits no freshness model work, `propose`
+keeps a finding without publishing assessments, and `auto` publishes validated
+exact-target contributions. It does not authorize content publication or source
+edits. The captured policy and current effective project/library policy are
+restricted together at admission and application; later relaxation cannot widen
+an accepted run. Current provider/source permission and lifecycle fences still
+apply to saved-result continuation. No new owner setting or author metadata is
+required for ordinary imports.

@@ -1882,6 +1882,10 @@ func (w *Worker) collectUnitSourceSelections(
 	cv domain.ScanCapturedVersion,
 	pagePath, regionID string,
 ) ([]source.CaptureSelection, []string, []domain.MaintenanceReadBinding, []domain.MaintenanceLimitation) {
+	return w.collectUnitSourceSelectionsWithAliases(tx, run, cv, pagePath, regionID, nil, false)
+}
+
+func (w *Worker) collectUnitSourceSelectionsWithAliases(tx app.WriteTx, run domain.ScanRun, cv domain.ScanCapturedVersion, pagePath, regionID string, sourceAliases map[string]string, includeCaptureContext bool) ([]source.CaptureSelection, []string, []domain.MaintenanceReadBinding, []domain.MaintenanceLimitation) {
 	cfg, err := tx.Configuration()
 	if err != nil {
 		return nil, nil, nil, nil
@@ -1910,6 +1914,10 @@ func (w *Worker) collectUnitSourceSelections(
 	aliasByVersionSource := map[string]string{}
 	if vSources, vsErr := tx.VersionSources(cv.VersionID); vsErr == nil {
 		for _, vs := range vSources {
+			if mapped := sourceAliases[vs.ID]; mapped != "" {
+				aliasByVersionSource[vs.ID] = mapped
+				continue
+			}
 			if _, ok := targetBySource[vs.ID]; ok {
 				aliasByVersionSource[vs.ID] = vs.ID
 				continue
@@ -2010,9 +2018,22 @@ func (w *Worker) collectUnitSourceSelections(
 	boundReadsBySourcePath := map[string]boundReadInfo{}
 	var allBoundReads []boundReadInfo
 	hasCompletedCapture := false
+	var explicitContext *source.CaptureRequest
+	invalidExplicitContext := false
 	if cv.TargetSetID != "" {
 		if sc, found, err := tx.SourceCaptureByTargetSet(cv.TargetSetID); err == nil && found && sc.State == "completed" {
 			hasCompletedCapture = true
+			// Only freshness may include additional paths from an explicitly
+			// selected, completed version-bound capture. Implicit captures and
+			// span-only verification never expand the cited-file selection.
+			if includeCaptureContext && cv.SelectionSource == "target_set" {
+				var selected source.CaptureRequest
+				if sc.ProjectID != cv.ProjectID || json.Unmarshal(sc.Selection, &selected) != nil || selected.VersionID != cv.VersionID {
+					invalidExplicitContext = true
+				} else {
+					explicitContext = &selected
+				}
+			}
 			afterRead := ""
 			for {
 				reads, rErr := tx.SourceCaptureReads(sc.ID, afterRead, 64)
@@ -2150,6 +2171,29 @@ func (w *Worker) collectUnitSourceSelections(
 			})
 		}
 		return true
+	}
+	if invalidExplicitContext {
+		addLim("source_unavailable", "captured_context_mismatch", cv.TargetSetID)
+	}
+	if explicitContext != nil {
+		for _, selected := range explicitContext.Selections {
+			target, ok := targetBySource[selected.SourceID]
+			for _, requested := range selected.Paths {
+				info, found := boundReadsBySourcePath[selected.SourceID+"\x00"+requested.Path]
+				if !ok || !found || info.availability != "available" || info.hash == "" {
+					addLim("source_unavailable", "captured_read_unavailable", selected.SourceID+":"+requested.Path)
+					continue
+				}
+				if target.Kind == "git" && (target.ResolvedRevision == "" || info.exactRev != target.ResolvedRevision) {
+					addLim("source_unavailable", "captured_revision_mismatch", selected.SourceID+":"+requested.Path)
+					continue
+				}
+				if pathsBySource[selected.SourceID] == nil {
+					pathsBySource[selected.SourceID] = map[string]bool{}
+				}
+				pathsBySource[selected.SourceID][requested.Path] = true
+			}
+		}
 	}
 
 	// If no evidence paths were declared on the unit, check if a completed capture is bound to cv.TargetSetID.
@@ -3077,6 +3121,9 @@ func isModuleManifestPath(cleanPath string) bool {
 // source objects outside the SQLite writer, computing exact dependency facts without
 // truncation or writer-transaction object I/O.
 func (w *Worker) PrepareMaintenance(ctx context.Context, attempt domain.ProviderAttempt) error {
+	if handled, err := w.prepareFreshness(ctx, attempt); handled || err != nil {
+		return err
+	}
 	var a domain.ProviderAttempt
 	var obj domain.Object
 	var intent domain.MaintenanceIntent
@@ -4081,6 +4128,9 @@ func (w *Worker) ApplyMaintenance(tx app.WriteTx, attempt domain.ProviderAttempt
 	intent, err := tx.MaintenanceIntent(j.ID)
 	if err != nil {
 		return err
+	}
+	if intent.Mode == domain.MaintenanceModeFreshness {
+		return w.applyFreshness(tx, a, intent)
 	}
 	if intent.PreparedAttemptID != a.ID || len(intent.PreparedOutputJSON) == 0 {
 		return domain.ErrReconciliation

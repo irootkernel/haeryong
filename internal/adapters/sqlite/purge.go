@@ -213,6 +213,7 @@ var purgeDeletes = []struct{ table, where string }{
 	{"review_events", `version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?)`},
 	{"revisit_flags", `document_id=?`},
 	{"resource_revisions", `resource_kind IN('reading_position','page_position','reader_preference') AND EXISTS(SELECT 1 FROM purged_versions v CROSS JOIN auth_owner o WHERE v.document_id=? AND (resource_id=o.principal_id||'/'||v.version_id OR substr(resource_id,1,length(o.principal_id)+length(v.version_id)+2)=o.principal_id||'/'||v.version_id||'/'))`},
+	{"assessment_trigger_resolutions", `assessment_id IN(SELECT assessment_id FROM assessments WHERE version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?))`},
 	{"assessment_units", `coverage_set_id IN(SELECT coverage_set_id FROM coverage_sets WHERE version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?))`},
 	{"required_units", `coverage_set_id IN(SELECT coverage_set_id FROM coverage_sets WHERE version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?))`},
 	{"assessments", `version_id IN(SELECT version_id FROM purged_versions WHERE document_id=?)`},

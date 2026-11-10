@@ -5,13 +5,59 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"haeryong.local/haeryong/internal/domain"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+var _ = It("C03START retains actual owned initialization and cleanup facts without account or inference calls", Label("integration"), func() {
+	evidence := os.Getenv("HAERYONG_PROVIDER_LIVE_EVIDENCE")
+	binary := os.Getenv("HAERYONG_PROVIDER_LIVE_BINARY")
+	Expect(filepath.IsAbs(evidence) && filepath.IsAbs(binary)).To(BeTrue())
+	physical, err := filepath.EvalSymlinks(evidence)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(physical).To(Equal(evidence))
+	info, err := os.Stat(evidence)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(info.Mode().Perm() & 0077).To(BeZero())
+	cwd := filepath.Join(evidence, "cwd")
+	Expect(os.Mkdir(cwd, 0700)).To(Succeed())
+	previous, err := os.Getwd()
+	Expect(err).NotTo(HaveOccurred())
+	Expect(os.Chdir(cwd)).To(Succeed())
+	defer os.Chdir(previous)
+	d := New(nil, nil, evidence)
+	a := domain.ProviderAttempt{ID: "aa3cff4d-5eb7-4210-a56a-e6570a5504a1"}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	t, startErr := startPrepared(ctx, binary, func(fact ownedNativeProcess) error {
+		return d.retainPreparation(a, "preparation-process-", fact)
+	})
+	if startErr != nil {
+		var failure *initializationFailure
+		out := map[string]any{"initialized": false, "local_closed": !errors.Is(startErr, errCleanup), "inference_calls": 0}
+		if errors.As(startErr, &failure) {
+			out["native_process"], out["native_error_class"] = failure.owned, failure.errorClass
+			out["native_exit_code"], out["cleanup_reason"] = failure.exitCode, failure.cleanupReason
+		}
+		Expect(d.retainPreparation(a, "preparation-startup-", out)).To(Succeed())
+		Fail("Native initialization unavailable; inspect content-free private preparation facts")
+	}
+	cleanup := t.close()
+	fact := map[string]any{"initialized": true, "native_process": t.owned, "local_closed": cleanup == nil, "cleanup_reason": t.cleanupReason, "inference_calls": 0, "native_error_class": t.setupErrors.Class()}
+	if t.cmd.ProcessState != nil && t.cmd.ProcessState.Exited() {
+		fact["native_exit_code"] = t.cmd.ProcessState.ExitCode()
+	}
+	Expect(d.retainPreparation(a, "preparation-startup-", fact)).To(Succeed())
+	Expect(t.owned.Observed).To(BeTrue(), "Owned process inventory unavailable")
+	Expect(cleanup == nil).To(BeTrue(), "Owned group cleanup unverified")
+})
 
 var _ = It("C03ROUTE inspects only credential-free route predicates without inference", Label("integration"), func() {
 	evidence := os.Getenv("HAERYONG_PROVIDER_LIVE_EVIDENCE")

@@ -44,7 +44,7 @@ const sourceJobDependencies = sourceReadDependencies + `, generation_source_cont
  UNION SELECT DISTINCT m.job_id,c.version_id FROM maintenance_intents m,json_each(m.value,'$.source_read_ids') r
  JOIN source_read_contexts c ON c.read_id=r.value
  UNION SELECT DISTINCT m.job_id,coalesce(nullif(json_extract(step.value,'$.version_id'),''),ctx.version_id) FROM maintenance_intents m JOIN jobs j ON j.job_id=m.job_id,json_each(m.value,'$.captures') step JOIN source_captures capture ON capture.operation_id=json_extract(step.value,'$.operation_id') AND capture.principal_id=json_extract(j.scope,'$.principal_id') AND capture.project_id=json_extract(step.value,'$.project_id') LEFT JOIN json_each(capture.requested_selection,'$._retained_read_ids') r LEFT JOIN source_read_contexts ctx ON ctx.read_id=r.value WHERE capture.state='capturing' AND coalesce(nullif(json_extract(step.value,'$.version_id'),''),ctx.version_id,'')<>''
-), source_job_contexts(job_id,version_id) AS (
+), source_job_contexts(job_id,version_id) AS MATERIALIZED (
  SELECT i.job_id,c.version_id FROM job_inputs i JOIN source_read_contexts c ON c.read_id=i.read_id
  UNION SELECT job_id,version_id FROM generation_source_contexts
  UNION SELECT job_id,version_id FROM question_source_contexts
@@ -257,8 +257,9 @@ func (t *writeTx) AttachSourceInputs(jobID string, reads []string) error {
 		if j.Permissions[expectedProject] != current.Project.PermissionsRevision {
 			return domain.ErrPrecondition
 		}
+		sharedFreshness := j.Kind == "maintenance" && scope.Invocation != nil && scope.Invocation.Maintenance != nil && scope.Invocation.Maintenance.Mode == domain.MaintenanceModeFreshness
 		var pinned int
-		if e = t.tx.QueryRowContext(t.ctx, `SELECT (SELECT count(*) FROM object_pins WHERE pin_id=? AND owner_kind='source_capture' AND owner_id=? AND content_hash=?)+(SELECT count(*) FROM object_pins WHERE pin_id=? AND owner_kind='job_input' AND owner_id=? AND content_hash=?)+(SELECT count(*) FROM object_references WHERE owner_kind='selected_snapshot' AND owner_id=? AND content_hash=? AND ?='selected_snapshot')`, "source-capture:"+c.ID+":"+id, c.ID, r.Hash, "job-input:"+jobID+":"+id, jobID, r.Hash, id, r.Hash, r.RetentionMode).Scan(&pinned); e != nil {
+		if e = t.tx.QueryRowContext(t.ctx, `SELECT (SELECT count(*) FROM object_pins WHERE pin_id=? AND owner_kind='source_capture' AND owner_id=? AND content_hash=?)+(SELECT count(*) FROM object_pins WHERE pin_id=? AND owner_kind='job_input' AND owner_id=? AND content_hash=?)+(SELECT count(*) FROM object_references WHERE owner_kind='selected_snapshot' AND owner_id=? AND content_hash=? AND ?='selected_snapshot')+(SELECT count(*) FROM object_pins WHERE pin_id=? AND owner_kind='job' AND owner_id=? AND content_hash=? AND ?=1)`, "source-capture:"+c.ID+":"+id, c.ID, r.Hash, "job-input:"+jobID+":"+id, jobID, r.Hash, id, r.Hash, r.RetentionMode, "job-source:"+j.ParentID+":"+id, j.ParentID, r.Hash, sharedFreshness).Scan(&pinned); e != nil {
 			return e
 		}
 		if pinned == 0 {

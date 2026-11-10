@@ -1,11 +1,17 @@
 """Actual native ReaderMode regression: reused pinned beta28 harness, typed ReaderService, fixed static origin, real tagged production daemon/auth/import/storage."""
-import argparse,importlib.util,json,os,pathlib,shutil,subprocess,tempfile,time,urllib.parse,urllib.error,urllib.request,hashlib,signal,sys
+import argparse,importlib.util,json,os,pathlib,re,shutil,subprocess,tempfile,time,urllib.parse,urllib.error,urllib.request,hashlib,signal,sys
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--scratch-root',type=pathlib.Path,help='Explicit existing private physical parent for this driver')
 parser.add_argument('--receipt',type=pathlib.Path,required=True)
 parser.add_argument('--provider-binary',type=pathlib.Path,help='Explicit existing pinned provider binary for providers-only zero-inference stage')
 parser.add_argument('--stages',default='selfcheck,app,seed,restart,crash,evidence,search,references')
+parser.add_argument('--existing-records',type=pathlib.Path,help='Explicit saved-record campaign manifest; requires evidence-only')
+parser.add_argument('--saved-record-subset',action='store_true',help='Observe available saved cases; retain missing campaign obligations explicitly')
+parser.add_argument('--saved-browser-cli',type=pathlib.Path,help=argparse.SUPPRESS)
 args=parser.parse_args()
+assert not args.saved_browser_cli or args.existing_records,'saved browser requires explicit manifest'
+assert not args.saved_record_subset or args.existing_records,'subset requires explicit saved manifest'
+assert not args.existing_records or args.stages=='evidence','saved campaign selects evidence only'
 STAGES=set(args.stages.split(','))
 ALL_STAGES={'selfcheck','app','seed','restart','crash','evidence','search','references'}
 assert sys.platform=='darwin','this check requires the existing native macOS Wails harness'
@@ -18,7 +24,7 @@ assert not (STAGES&{'seed','restart','crash','search','corpus','reference-corpus
 # Versions/evidence/references launch the same compiled App themselves and
 # consume only the common daemon/session setup. The unrelated app smoke opens
 # a CDN-dependent page; T5's no-network selection must not open that page.
-assert not (STAGES&{'evidence','references'} and not STAGES&{'app','versions'}),'these stages require app or versions setup'
+assert not (STAGES&{'evidence','references'} and not STAGES&{'app','versions'} and not args.existing_records),'these stages require app or versions setup'
 REQUESTED_STAGES=set(STAGES)
 OFFLINE_CORPUS=os.environ.get('HAERYONG_NATIVE_CORPUS_OFFLINE')=='1'
 if OFFLINE_CORPUS:
@@ -45,6 +51,8 @@ def fingerprints():
                  +[p for p in (REPO/'desktop').rglob('*') if p.is_file()]
                  +[REPO/'spikes/viewer/desktop/main.go',REPO/'spikes/viewer/desktop/reader_mode.go',REPO/'spikes/viewer/desktop/go.mod',REPO/'spikes/viewer/desktop/go.sum']
                  +[REPO/'frontend/native.html',REPO/'frontend/vite.native.config.ts',REPO/'frontend/src/native-main.tsx',REPO/'frontend/src/client/native-bridge.ts',REPO/'frontend/src/client/native-wire.ts',REPO/'frontend/src/client/native.ts',REPO/'spikes/viewer/check_reader_native.py',REPO/'spikes/viewer/reference_native.py',REPO/'spikes/viewer/reference_corpus_native.py',REPO/'spikes/viewer/reference_corpus_probe.js',REPO/'tests/manual/search_corpus_support.py',REPO/'spikes/viewer/reference_probe.js',REPO/'tests/manual/reference_support.py'])
+    if args.existing_records:
+        paths += [REPO/'internal/adapters/http/auth/browser/check_reader_evidence.py', *sorted((REPO/'frontend/src').rglob('*.ts')), *sorted((REPO/'frontend/src').rglob('*.tsx'))]
     if 'providers' in STAGES:
         paths += [REPO/'spikes/viewer/provider_probe.js',REPO/'frontend/src/app/screens/provider.tsx']
     if 'sources' in STAGES:
@@ -89,7 +97,10 @@ product=None;runs=[]
 def launch(args,close_after,base=None):
     log=work/f'native-{len(runs)}.log'
     handle=log.open('w')
-    process=subprocess.Popen([str(work/'native'),*args,'--base',base or product.endpoint,'--state',str(state),'--reader-dist',str(work/'dist-native'),'--close-after',close_after],stdout=handle,stderr=handle,env=env)
+    settings=json.loads(globals()['args'].existing_records.read_text()) if globals()['args'].existing_records else None
+    binary=pathlib.Path(settings['native_binary']).resolve(strict=True) if settings else work/'native'
+    dist=pathlib.Path(settings['native_dist']).resolve(strict=True) if settings else work/'dist-native'
+    process=subprocess.Popen([str(binary),*args,'--base',base or product.endpoint,'--state',str(state),'--reader-dist',str(dist),'--close-after',close_after],stdout=handle,stderr=handle,env=env)
     runs.append((process,handle))
     return process
 before=fingerprints()
@@ -99,6 +110,567 @@ def assert_inputs_unchanged(stage):
              for path in sorted(before.keys()|current.keys()) if before.get(path)!=current.get(path)}
     if changes:proof.setdefault('input_changes',{})[stage]=changes
     assert not changes,f'inputs changed during {stage}; no stable-candidate proof'
+
+def run_saved_records():
+    """Existing-profile reads only; limit=1 is a labelled transport projection."""
+    import threading,socket
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    cfg = json.loads(args.existing_records.read_text())
+    semantic_details = cfg.get('semantic_details') is True
+    if semantic_details:
+        # Persist actual prepared bytes before semantic/preflight assertions,
+        # including failures. The owning controller binds build provenance.
+        proof['prepared_inputs']={path:hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+                                  for path in cfg.get('prepared_inputs',{})}
+        assert proof['prepared_inputs'] and proof['prepared_inputs']==cfg['prepared_inputs'],'prepared RG3 input binding required'
+    endpoint = cfg['endpoint'].rstrip('/')
+    parsed = urllib.parse.urlsplit(endpoint)
+    assert parsed.scheme == 'http' and parsed.hostname == '127.0.0.1' and parsed.port and not parsed.path and not parsed.query and not parsed.fragment and parsed.username is None
+    credential = pathlib.Path(cfg['owner_token_file']).resolve(strict=True)
+    assert credential.stat().st_mode & 0o777 == 0o600, 'credential must be mode 0600'
+    token = credential.read_text().strip()
+    assert token and '\n' not in token and '\r' not in token, 'invalid credential'
+    cases = cfg['cases']
+    assert cases, 'saved cases required'
+    proof.update(scope='Saved production-record UI reads; controlled limit=1/fault/response ordering; no producer execution',
+                 full_qualification=False, manifest_sha256=hashlib.sha256(args.existing_records.read_bytes()).hexdigest(),
+                 gaps=[], requests=[], pagination={}, supplied_daemon_owned=False)
+    def check(condition, name):
+        if not condition:proof['failure']=name
+        assert condition, name
+    def require(condition, name):
+        if not condition and args.saved_record_subset:proof['gaps'].append(name)
+        else:check(condition,name)
+    canonical=lambda rows:sorted(json.dumps(r,sort_keys=True) for r in rows)
+    def query(path, values):
+        return path + ('?' + urllib.parse.urlencode({k:v for k,v in values.items() if v is not None}) if values else '')
+    def get(path, envelope=True):
+        request = urllib.request.Request(endpoint+path, headers={'Authorization':'Bearer '+token, 'Origin':endpoint})
+        with urllib.request.urlopen(request, timeout=30) as response:
+            value=json.load(response)
+            return value['data'] if envelope else value
+    def enumerate_rows(path):
+        rows=[]; cursor=None; seen=set()
+        while True:
+            url=urllib.parse.urlsplit(path); q=dict(urllib.parse.parse_qsl(url.query));
+            if '/assessments' in url.path:q['limit']='1'
+            if cursor is not None:q['cursor']=cursor
+            page=get(query(url.path,q)); rows.extend(page['items']); cursor=page['next_cursor']
+            if cursor is None:return rows
+            check(cursor not in seen,'repeated genuine cursor'); seen.add(cursor)
+    def scope_query(c):
+        s=c['scope']
+        return {} if s['kind']=='version' else {'scope_kind':s['kind'],'page_path':s['page_path'],'region_id':s['region_id']}
+    def history_path(c, target=None):
+        return query('/api/v1/versions/'+c['version_id']+'/assessments',scope_query(c)|({'target_set_id':target} if target else {}))
+    def snapshot(c):
+        v='/api/v1/versions/'+c['version_id']
+        d=get('/api/v1/documents/'+c['document_id'])
+        return {'document':{k:d.get(k) for k in ('lifecycle','revision','latest_version_id','review_state','reviewed_at','updated_since_review')},
+                'review':get(v+'/review'),'review_history':enumerate_rows(v+'/review/history'),'version':get(v)}
+    projections=[c for c in cases if c.get('query_target_set_id') is not None]
+    check(not projections or cfg.get('read_only_target_projection') is True,'explicit read-only target projection opt-in required')
+    check(len({(c['version_id'],json.dumps(c['scope'],sort_keys=True)) for c in cases})==len(cases) or not projections,
+          'projected selections must be unique; use separate manifests for old/new of the same scope')
+    for c in projections:
+        check(c['query_target_set_id']==c['expected']['applicable']['target_set_id'],'projection must select the genuine expected target')
+    proof['query_projection']={'enabled':bool(projections),'scope':'read-only explicit-target public GET query projection; unchanged upstream payloads; no product target picker/default retarget',
+                               'selections':[{'version_id':c['version_id'],'scope':c['scope'],'target_set_id':c['query_target_set_id']} for c in projections]}
+    snapshots=[]; defaults=[]; outcomes=set(); kinds=set(); regions=[]; separated=False
+    for c in cases:
+        s=c['scope']; kinds.add(s['kind'])
+        if s['kind']=='region':regions.append((c['version_id'],s['page_path'],s['region_id']))
+        defaults.append(get(history_path(c)))
+        selected_path=history_path(c,c.get('query_target_set_id'))
+        first=get(selected_path); a=first['applicable']; expected=c['expected']
+        check(a == expected['applicable'],'saved applicable differs from independent expected record')
+        check(a is not None and a['scope']==s,'saved scope mismatch')
+        separated |= a['captured_at'] is not None and a['assessed_at'] is not None and a['captured_at'] != a['assessed_at']
+        history=enumerate_rows(selected_path)
+        check(sorted(r['assessment_id'] for r in history)==sorted(expected['history_ids']),'saved history IDs')
+        if semantic_details:
+            check(canonical(history)==canonical(expected['history']),'saved complete semantic history differs from retained oracle')
+            check(get('/api/v1/versions/'+c['version_id']+'/metadata?kind=supplied',False)==expected['authored_metadata'],'saved authored metadata oracle')
+        check(len({x[:8] for x in expected['history_ids']})==len(expected['history_ids']),'history display prefix collision')
+        units_url=a['coverage']['units_url']
+        u=urllib.parse.urlsplit(units_url or '')
+        if units_url is None:
+            check(a['coverage']['coverage_set_id'] is None and a['coverage']['eligible']==0 and expected['units']==[],'honest no-target absence')
+            units=[]
+        else:
+            check(not u.netloc and u.path=='/api/v1/versions/'+c['version_id']+'/assessments/coverage','fixed local units_url required')
+            uq=urllib.parse.parse_qs(u.query)
+            check(set(uq)<= {'coverage_set_id','attempt_run_id'} and uq.get('coverage_set_id')==[a['coverage']['coverage_set_id']],'coverage locator')
+            units=enumerate_rows(units_url)
+        check(canonical(units)==canonical(expected['units']),'saved fixed units differ from oracle')
+        check(len({(r['kind'],r['page_path'],r['region_id']) for r in units})==len(units),'duplicate fixed tuple')
+        check(a['coverage']['eligible']==len(units),'producer fixed denominator')
+        outcomes.update(r['outcome'] for r in units)
+        c['history_path']=history_path(c); c['selected_history_path']=selected_path; c['units_url']=units_url
+        c['route']='/documents/'+c['document_id']+'/versions/'+c['version_id']
+        reader_page=c.get('reader_page_path',s['page_path'])
+        check('reader_page_path' not in c or s['kind']=='version','separate Reader page selects only a whole-version Evidence case')
+        if reader_page is not None:c['route']+='?'+urllib.parse.urlencode({'page':reader_page})
+        listed=enumerate_rows(query('/api/v1/documents',{'project_id':c['project_id'],**({'lifecycle':c['library_lifecycle']} if c.get('library_lifecycle','all')!='all' else {})}))
+        document=next((d for d in listed if d['document_id']==c['document_id']),None)
+        check(document is not None,'saved Library document absent')
+        check(all(document.get(k)==v for k,v in c['library_expected'].items()),'independent Library expected record')
+        check({'freshness','review_state','latest_version_id','lifecycle','updated_since_review'}<=set(c['library_expected']),'Library oracle fields required')
+        snapshots.append(snapshot(c))
+    require({'partial','blocked','not_checked'}<=outcomes,'saved partial/blocked/not_checked cases required')
+    require({'version','page','region'}<=kinds and separated,'saved scopes/distinct timestamps required')
+    require(any(v==v2 and p!=p2 and r==r2 for v,p,r in regions for v2,p2,r2 in regions),'same-name cross-page region cases required')
+    late=cfg.get('late'); lc=cases[late['case_index']] if late else None
+    require(late is not None,'same-scope old/new target records required')
+    if late:
+        check(lc['scope']['kind']!='region','late case must use stable page/version route')
+        old=get(history_path(lc,late['older_target_set_id']))
+        check(old['applicable'] == late['older_applicable'] and old['applicable'] is not None and old['applicable']['scope']==lc['scope'] and
+              old['applicable']['target_set_id']==late['older_target_set_id'] and
+              late['older_target_set_id']!=lc['expected']['applicable']['target_set_id'],'genuine older target required')
+        if semantic_details:
+            check(canonical(enumerate_rows(history_path(lc,late['older_target_set_id'])))==canonical(late['older_history']),'genuine complete older semantic history')
+    lock=threading.Lock(); release=threading.Event(); delivered=threading.Event(); started=threading.Event()
+    control={'arm':False,'old':None,'faults':{},'errors':[]}; streams=set(); stopping=threading.Event()
+    class Proxy(BaseHTTPRequestHandler):
+        def log_message(self,*unused):pass
+        def send(self,status,body,headers=()):
+            self.send_response(status)
+            for k,v in headers:
+                if k.lower() not in ('content-length','transfer-encoding','connection'):self.send_header(k,v)
+            self.send_header('Content-Length',str(len(body)));self.end_headers()
+            if self.command!='HEAD':self.wfile.write(body);self.wfile.flush()
+        def forward(self):
+            u=urllib.parse.urlsplit(self.path); q=dict(urllib.parse.parse_qsl(u.query))
+            assessment=u.path.endswith('/assessments'); coverage=u.path.endswith('/assessments/coverage')
+            if self.command not in ('GET','HEAD') and not (
+                self.command=='POST' and '/render-sessions' in u.path or
+                self.command=='PUT' and u.path.endswith(('/reading-position','/page-position'))):
+                control['errors'].append('unexpected mutation route');self.send(403,b'');return
+            if assessment or coverage:q['limit']='1'
+            incoming_target=q.get('target_set_id')
+            selected=next((c for c in cases if assessment and u.path==urllib.parse.urlsplit(c['history_path']).path and
+                           (q.get('scope_kind','version'),q.get('page_path'),q.get('region_id'))==
+                           (c['scope']['kind'],c['scope']['page_path'],c['scope']['region_id'])),None)
+            race=lc is not None and selected is lc
+            if race and incoming_target==lc['expected']['applicable']['target_set_id'] and started.is_set():
+                release.set();check(delivered.wait(20),'held old response did not drain')
+            with lock:
+                held=race and incoming_target is None and not q.get('cursor') and control['arm']
+                if held:control['arm']=False
+            if held:
+                started.set();check(release.wait(45),'late barrier timed out')
+                try:self.send(200,control['old'],[('Content-Type','application/json')])
+                finally:delivered.set()
+                return
+            # Keep explicit probe reads (including the old/new late barriers)
+            # exact. Only the selected UI's target-absent GET is projected.
+            if self.command=='GET' and selected is not None and incoming_target is None and selected.get('query_target_set_id') is not None:
+                q['target_set_id']=selected['query_target_set_id']
+            path=query(u.path,q)
+            body=self.rfile.read(int(self.headers.get('Content-Length') or 0)) or None
+            headers={k:v for k,v in self.headers.items() if k.lower() not in ('host','origin','authorization','content-length','connection','accept-encoding')}
+            headers.update(Origin=endpoint,Authorization='Bearer '+token,Connection='close')
+            # The existing local liveness route rejects a supplied Origin;
+            # product routes still receive their exact guarded service origin.
+            if u.path=='/health/live':headers.pop('Origin',None)
+            request=urllib.request.Request(endpoint+path,data=body,headers=headers,method=self.command)
+            try:response=urllib.request.urlopen(request,timeout=30)
+            except urllib.error.HTTPError as error:response=error
+            if u.path=='/api/v1/events' and response.status==200:
+                with lock:streams.add(response)
+                try:
+                    self.send_response(200)
+                    self.send_header('Content-Type','text/event-stream');self.send_header('Connection','close');self.end_headers()
+                    while True:
+                        try:chunk=response.read1(4096)
+                        except (AttributeError,ValueError,OSError) as error:
+                            if not stopping.is_set() or response.fp is not None:raise
+                            proof.setdefault('closed_event_stream_reads',[]).append(type(error).__name__)
+                            break
+                        if not chunk:break
+                        self.wfile.write(chunk);self.wfile.flush()
+                finally:
+                    response.close()
+                    with lock:streams.discard(response)
+                return
+            with response:
+                data=response.read();status=response.status; fields=response.getheaders()
+            if semantic_details and self.command=='POST':
+                render=re.fullmatch(r'/api/v1/versions/([^/]+)/render-sessions(?:/([^/]+)/(close|renew))?',u.path)
+                if render:
+                    event={'version_id':render[1],'session_id':render[2],'operation':render[3] or 'open','path':u.path,'status':status}
+                    if event['operation']=='open' and status in (200,201):
+                        opened=json.loads(data)['data'];event['session_id']=opened['session_id']
+                        check(opened['version_id']==render[1],'render HTTP version identity')
+                    with lock:proof.setdefault('render_http_events',[]).append(event)
+            if assessment or coverage:
+                with lock:
+                    proof['requests'].append({'path':u.path,'query':q,'status':status})
+                    kind='coverage' if coverage else 'history'
+                    fault=control['faults'].get(kind)
+                    selected_units=coverage and any(c['expected']['applicable']['coverage']['coverage_set_id']==q.get('coverage_set_id') for c in cases)
+                    if q.get('cursor') and status==200 and fault is None and (selected is not None or selected_units):
+                        control['faults'][kind]={'path':path,'attempts':1}
+                        self.send(500,b'{"error":{"code":"SAVED_CURSOR_FAULT","retryable":true}}',[('Content-Type','application/json')]);return
+                    if fault and fault['path']==path:fault['attempts']+=1
+                    if race and incoming_target==late['older_target_set_id'] and not q.get('cursor') and status==200:
+                        control['old']=data;control['arm']=True
+                        proof['older_response_sha256']=hashlib.sha256(data).hexdigest()
+            self.send(status,data,fields)
+        def handle_request(self):
+            try:self.forward()
+            except (BrokenPipeError,ConnectionResetError):pass
+            except Exception as error:
+                # Record only the failing driver stage/class, never response
+                # bodies, credentials or imported/source content.
+                import traceback
+                control['errors'].append({'class':type(error).__name__,'path':urllib.parse.urlsplit(self.path).path,
+                                          'frames':[{'function':f.name,'line':f.lineno} for f in traceback.extract_tb(error.__traceback__)]})
+                try:self.send(502,b'')
+                except (BrokenPipeError,ConnectionResetError):pass
+        do_GET=do_HEAD=do_POST=do_PUT=do_PATCH=do_DELETE=handle_request
+    class SavedRecordServer(ThreadingHTTPServer):
+        # Match the existing native reference harness's Darwin listen policy.
+        request_queue_size = socket.SOMAXCONN
+    server=SavedRecordServer(('127.0.0.1',0),Proxy);server.daemon_threads=True
+    origin='http://127.0.0.1:'+str(server.server_port)
+    thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+    probe_config={'cases':cases,'late':late,'semantic_details':semantic_details}
+    script=r"""
+(async()=>{
+const C=CONFIG,rows=[];let last='startup',pageError=false;
+const check=(ok,name)=>{last=name;if(!ok)throw Error(name);};
+const log=name=>rows.push({name,status:'pass'});
+window.addEventListener('error',()=>{pageError=true});window.addEventListener('unhandledrejection',()=>{pageError=true});
+const wait=async f=>{const end=Date.now()+30000;while(Date.now()<end){if(await f())return;await new Promise(r=>setTimeout(r,100));}throw Error(last);};
+const settle=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+const native=typeof window.haeryongNativeCall==='function';
+const get=async(path,operation,payload)=>{
+ if(native){const r=await window.haeryongNativeCall(701100,[{Operation:operation,Payload:payload}]);check(r.ok,'saved.native-read');return r.value;}
+ const r=await fetch(path,{headers:{Authorization:'Bearer saved-record-probe'}});check(r.ok,'saved.http-read');return (await r.json()).data;
+};
+const navigate=async path=>{history.pushState({haeryongReaderContext:crypto.randomUUID()},'',path);dispatchEvent(new PopStateEvent('popstate'));await settle();};
+const button=(name,root=document)=>[...root.querySelectorAll('button')].find(b=>b.textContent===name);
+const block=()=>document.querySelector('.assessment-block');
+const scope=s=>s.kind==='version'?'버전 전체':s.kind==='page'?'페이지 '+s.page_path:'영역 '+s.region_id+'('+s.page_path+')';
+const labels={assessed:'평가됨',partial:'부분',blocked:'차단',not_checked:'미확인'};
+const status={aligned_within_scope:'범위 내 정렬',outdated_against_target:'대비 구식',reassessment_needed:'재평가 필요',unable_to_verify:'확인 불가',not_assessed:'미평가'};
+const stable=v=>v!==null&&typeof v==='object'?Array.isArray(v)?v.map(stable):Object.fromEntries(Object.keys(v).sort().map(k=>[k,stable(v[k])])):v;
+const same=(a,b)=>JSON.stringify(stable(a))===JSON.stringify(stable(b));
+function semanticField(dl,name,value,unit=false){
+ const dd=dl.querySelector(':scope > div > dd[data-field="'+name+'"]');
+ check(!!dd,'saved.semantic-field');
+ if(unit&&value===''){
+  check(dd.dataset.empty==='true'&&dd.textContent==='빈 기록(없음)'&&dd.childElementCount===0,'saved.semantic-empty');return;
+ }
+ const span=dd.querySelector(':scope > span.semantic-detail-value');
+ const kind=value===null?'null':value===undefined?'missing':typeof value;
+ check(!!span&&dd.children.length===1&&span.childElementCount===0&&span.dataset.valueKind===kind,'saved.semantic-safe-text-kind');
+ if(value!==null&&typeof value==='object'){
+  let parsed;try{parsed=JSON.parse(span.textContent);}catch{check(false,'saved.semantic-json');}
+  check(same(parsed,value),'saved.semantic-json-fields');
+ }else check(span.textContent===(value===null?'없음(null)':value===undefined?'기록 없음':String(value)),'saved.semantic-full-text');
+}
+async function semanticDetails(c,partial=false){
+ if(!C.semantic_details)return;
+ const history=block()?.querySelector('.semantic-assessment-history'),expected=c.expected.history;
+ check(!!history,'saved.semantic-container');
+ const nodes=[...history.querySelectorAll(':scope > details.semantic-assessment')];
+ check(!partial||nodes.length>0&&nodes.length<expected.length,'saved.semantic-partial-history');
+ const records=partial?expected.slice(0,nodes.length):expected;
+ check(same(nodes.map(n=>n.dataset.assessmentId).sort(),records.map(r=>r.assessment_id).sort()),'saved.semantic-exact-history-set');
+ const panel=block().closest('.source-panel');
+ await wait(()=>panel.querySelectorAll('.version-evidence li.evidence-row').length===c.expected.authored_metadata.evidence.length);
+ const authored=panel.querySelector('.version-evidence');
+ const authoredRows=authored?[...authored.querySelectorAll('li.evidence-row')]:[];
+ check(authoredRows.length===c.expected.authored_metadata.evidence.length&&!history.querySelector('.evidence-row')&&!authored?.querySelector('.semantic-assessment'),'saved.semantic-authored-separation');
+ check(history.parentElement.textContent.includes('원본 작성 근거와 별도로 저장된 의미 평가 이력'),'saved.semantic-distinct-label');
+ for(const e of c.expected.authored_metadata.evidence)check(authoredRows.some(n=>n.querySelector(':scope > button')?.textContent.startsWith(e.id+' · ')),'saved.semantic-authored-identity');
+ for(const record of records){
+  const node=nodes.find(n=>n.dataset.assessmentId===record.assessment_id);
+  check(node.dataset.versionId===record.version_id&&node.dataset.targetSetId===(record.target_set_id??'')&&
+        node.dataset.contributionCoverageSetId===(record.coverage_set_id??'')&&
+        node.dataset.membershipCoverageSetId===(c.expected.applicable.coverage.coverage_set_id??''),'saved.semantic-provenance-binding');
+  if(!node.open)node.querySelector(':scope > summary').click();await settle();
+  check(node.open&&!node.querySelector('.semantic-details-unavailable'),'saved.semantic-disclosure');
+  const provenance=node.querySelector(':scope > dl.semantic-assessment-provenance');
+  check(!!provenance,'saved.semantic-provenance');
+  for(const f of ['assessment_id','version_id','coverage_set_id','target_set_id','scope','state','origin','config_revision','permissions_revision','assessed_at','created_at'])semanticField(provenance,f,record[f]);
+  const units=[...node.querySelectorAll(':scope > .semantic-unit-details > article.semantic-unit')];
+  check(units.length===record.evidence.units.length,'saved.semantic-unit-count');
+  for(const unit of record.evidence.units){
+   const matches=units.filter(n=>n.dataset.kind===unit.kind&&n.dataset.pagePath===(unit.page_path??'')&&n.dataset.regionId===(unit.region_id??''));
+   check(matches.length===1,'saved.semantic-exact-tuple');const n=matches[0],dl=n.querySelector(':scope > dl');
+   for(const f of ['kind','page_path','region_id','outcome','discrepancy','reason','rationale'])semanticField(dl,f,unit[f],true);
+   const citations=[...n.querySelectorAll(':scope > ol.semantic-citations > li.semantic-citation')];
+   check(citations.length===unit.citations.length,'saved.semantic-citation-count');
+   unit.citations.forEach((citation,index)=>{
+    const entry=citations[index];check(entry.dataset.citationIndex===String(index),'saved.semantic-citation-order');
+    for(const f of ['basis','read_id','verification_id','input_origin','target_set_id','bytes_sha256','source','location','package_evidence_ref'])semanticField(entry.querySelector(':scope > dl'),f,citation[f]);
+   });
+  }
+ }
+ log(partial?'saved.semantic-retained-before-history-retry':'saved.semantic-details.'+C.cases.indexOf(c));
+}
+async function selectEvidence(c){
+ last='saved.evidence-ready';
+ await wait(()=>{const b=button('근거 패널');if(!b)return false;if(b.getAttribute('aria-expanded')!=='true')b.click();return !!block();});
+ if(c.scope.kind==='version'){
+  const b=button('버전 전체 평가');check(!!b,'saved.whole-version-selection');if(b.getAttribute('aria-pressed')!=='true')b.click();await settle();
+ }
+ if(c.scope.kind==='region'){
+  await wait(()=>[...document.querySelectorAll('.region-outline button')].some(b=>b.textContent===c.region_label));
+  const b=[...document.querySelectorAll('.region-outline button')].find(b=>b.textContent===c.region_label);if(b.getAttribute('aria-current')!=='true')b.click();
+ }
+}
+async function evidence(c){
+ await selectEvidence(c);
+ const e=c.expected,a=e.applicable,u=e.units,counts={assessed:0,partial:0,blocked:0,not_checked:0};
+ u.forEach(r=>counts[r.outcome]++);
+ if(a.coverage.units_url===null){
+  await wait(()=>block()?.textContent.includes('범위 '+scope(c.scope))&&block()?.textContent.includes('커버리지 단위 집합이 없습니다'));
+  check(!block().textContent.includes('단위 파생:'),'saved.no-invented-no-target-units');
+  check(block().textContent.includes('대상 집합 없음')&&block().textContent.includes('캡처 없음')&&block().textContent.includes('기록된 배지: '+status[a.status]),'saved.no-target-status');
+  log('saved.no-target.'+C.cases.indexOf(c));return;
+ }
+ last='saved.selected-scope-ready';
+ await wait(async()=>{
+  const b=block();if(!b)return false;
+  const h=button('실패한 지점부터 다시 불러오기',b),v=button('커버리지 다시 불러오기',b);
+  if(h||v){
+   check(b.querySelectorAll('li').length>0,'saved.cursor-retained-rows');
+   check(!b.textContent.includes('단위 파생:'),'saved.no-premature-derived-counts');
+   if(C.semantic_details&&v){
+    const retained=v.parentElement.previousElementSibling;
+    check(retained?.tagName==='UL'&&retained.children.length>0&&retained.children.length<u.length,'saved.coverage-partial-fixed-units');
+    for(const li of retained.children)check(u.some(r=>li.textContent.includes(scope(r)+' · '+labels[r.outcome])),'saved.coverage-retained-tuple');
+   }
+   await semanticDetails(c,!!h);
+   log(h?'saved.history-failure-retains-rows':'saved.coverage-failure-retains-rows');(h||v).click();return false;
+  }
+  return b.textContent.includes('범위 '+scope(c.scope))&&b.textContent.includes('단위 파생:');
+ });
+ let b=block(),text=b.textContent;
+ check(text.includes('대상 집합 '+(a.target_set_id??'없음'))&&text.includes('캡처 '+(a.captured_at??'없음'))&&text.includes('평가 시각 '+(a.assessed_at??'없음')),'saved.target-and-times');
+ check(text.includes('범위 '+scope(c.scope)),'saved.exact-scope');
+ check(text.includes('평가됨 '+counts.assessed+'/'+u.length)&&text.includes('부분 '+counts.partial)&&text.includes('차단 '+counts.blocked)&&text.includes('미확인 '+counts.not_checked),'saved.fixed-denominator');
+ check(text.includes('기록된 배지: '+status[a.status])&&text.includes('파생 상태 '+status[e.derived_status]),'saved.status');
+ for(const id of e.history_ids)check(text.includes(id.slice(0,8)+'…'),'saved.history-identity');
+ const toggle=button('단위/사유 펼치기/접기',b);check(!!toggle,'saved.units-disclosure');
+ if(toggle.getAttribute('aria-expanded')!=='true')toggle.click();
+ await settle();const ul=toggle.nextElementSibling;
+ check(ul?.tagName==='UL'&&ul.children.length===u.length,'saved.all-required-units-visible');
+ for(const r of u){
+  const matches=[...ul.children].filter(li=>li.textContent.includes(scope(r)+' · '+labels[r.outcome]));
+  check(matches.length===1,'saved.unit-tuple');
+  const t=matches[0].textContent;
+  check((r.reason==null||t.includes('사유 '+r.reason))&&t.includes(r.assessment_id==null?'기여 없음':'기여 '+r.assessment_id.slice(0,8)+'…'),'saved.unit-reason-link');
+  if(r.target_set_id!=null)check(t.includes('대상 '+r.target_set_id.slice(0,8)+'…'),'saved.unit-target');
+  check(t.includes('불일치 있음')===(r.discrepancy===true||(typeof r.discrepancy==='string'&&r.discrepancy!=='')),'saved.unit-discrepancy');
+ }
+ await semanticDetails(c);
+ log('saved.evidence.'+C.cases.indexOf(c));
+}
+try{
+ await wait(()=>document.querySelector('.service-state[data-state="verified"]'));
+ if(native)check(window.__haeryongNativeTransport==='HAEYONG_NATIVE_TRANSPORT_BOUND','saved.native-transport');
+ for(const c of C.cases){
+  await navigate(c.route);await evidence(c);
+  if(c.scope.kind!=='version'||c.reader_page_path!=null){
+   last='saved.actual-render-frame';
+   // Form POST targets the existing about:blank iframe; its src attribute
+   // does not describe the loaded child. The trusted App removes its status
+   // only after the guarded viewer channel becomes ready.
+   await wait(()=>{
+    const viewer=document.querySelector('section.reader-content');
+    return !!viewer?.querySelector('iframe.reader-frame')
+      && !viewer.querySelector('[role="status"]')
+      && !viewer.querySelector('[role="alert"]');
+   });
+   log('saved.actual-render-frame');
+  }
+  await navigate('/library?'+new URLSearchParams({project_id:c.project_id,lifecycle:c.library_lifecycle??'all'}));
+  last='saved.library-row';
+  await wait(()=>{
+   const row=document.querySelector('[data-testid="library-document"][data-document="'+c.document_id+'"]');
+   if(row)return true;const more=button('더 불러오기');if(more&&!more.disabled)more.click();return false;
+  });
+  const row=document.querySelector('[data-testid="library-document"][data-document="'+c.document_id+'"]'),e=c.library_expected,f=e.freshness;
+  const fl={not_assessed:'미평가',reassessment_needed:'재평가 필요',aligned_within_scope:'확인 범위 내 일치',outdated_against_target:'선택 대상과 불일치',unable_to_verify:'확인 불가'};
+  check(row.querySelector('[data-testid="library-freshness"]').textContent.trim()==='· 소스 상태: '+(f?fl[f.status]+' · '+f.coverage.assessed+'/'+f.coverage.eligible:'미평가'),'saved.library-freshness');
+  check(e.review_state?row.textContent.includes('내 검토: '+{unreviewed:'미검토',reviewing:'검토 중',reviewed:'검토 완료'}[e.review_state]):!row.textContent.includes('내 검토:'),'saved.library-independent-review');
+  check(row.textContent.includes('검토한 이후 업데이트됨')===Boolean(e.updated_since_review),'saved.library-review-update-state');
+  check(row.querySelector('[data-testid="library-read"]').getAttribute('href')==='/documents/'+c.document_id+'/versions/'+e.latest_version_id,'saved.library-latest-version');
+  log('saved.library.'+C.cases.indexOf(c));
+ }
+ if(C.late){
+ const c=C.cases[C.late.case_index],a=c.expected.applicable;
+ await navigate(c.route);await evidence(c);
+ const params={version_id:c.version_id,...(c.scope.kind==='version'?{}:{scope_kind:c.scope.kind,page_path:c.scope.page_path}),target_set_id:C.late.older_target_set_id};
+ const url=c.history_path+(c.history_path.includes('?')?'&':'?')+'target_set_id=';
+ const old=await get(url+encodeURIComponent(params.target_set_id),'versionAssessments',params);
+ check(old.applicable?.target_set_id===params.target_set_id,'saved.genuine-older-target');
+ await navigate(c.route);await selectEvidence(c);last='saved.held-old-request';await wait(()=>block()?.textContent.includes('평가 이력/요약을 확인하는 중'));await settle();
+ await navigate(c.route);await evidence(c);
+ await get(url+encodeURIComponent(a.target_set_id),'versionAssessments',{...params,target_set_id:a.target_set_id});await settle();
+ check(block().textContent.includes('대상 집합 '+a.target_set_id)&&block().textContent.includes('캡처 '+a.captured_at)&&block().textContent.includes('평가 시각 '+a.assessed_at),'saved.late-old-does-not-replace-new');
+ await semanticDetails(c);
+ log('saved.same-scope-late-target');
+ }
+ if(C.semantic_details&&!native){
+  await navigate('/library?'+new URLSearchParams({project_id:C.cases[0].project_id,lifecycle:'all'}));
+  last='saved.browser-reader-disposed';await wait(()=>!document.querySelector('iframe.reader-frame'));log(last);
+ }
+}catch(error){
+ const b=block(),t=b?.textContent??'',whole=button('버전 전체 평가');
+ rows.push({name:'saved.failure.'+last,status:'fail',diagnostic:{
+  whole_button_present:!!whole,whole_pressed:whole?.getAttribute('aria-pressed')==='true',
+  source_panel_count:document.querySelectorAll('.source-panel').length,
+  renderer_frame_count:document.querySelectorAll('iframe.reader-frame').length,
+  version_scope_visible:t.includes('범위 버전 전체'),page_scope_visible:t.includes('범위 페이지 '),
+  loading:t.includes('평가 이력/요약을 확인하는 중'),
+  foreign_applicable:t.includes('반환된 적용 가능 요약이 선택된 범위와 일치하지'),
+  history_retry:!!button('실패한 지점부터 다시 불러오기',b??document),
+  coverage_retry:!!button('커버리지 다시 불러오기',b??document),
+  history_error:(b?.querySelector('.banner p')?.textContent??'').replace(/^평가 이력 페이지를 확인하지 못했습니다: /,'').split(' — 이미 열거된 ')[0].replace(/https?:\/\/\S+/g,'<location>').slice(0,180)
+ }});
+}
+rows.push({name:'page.error',status:pageError?'fail':'pass'},{name:'page.done',status:'pass'});
+if(native)await window.haeryongNativeCall(701101,[{Rows:rows}]);
+return rows;
+})()
+"""
+    script=script.replace('CONFIG',json.dumps(probe_config,ensure_ascii=False),1)
+    browser_open=False; socket_dir=None
+    try:
+        if args.saved_browser_cli:
+            def browser(command,result=False):
+                p=subprocess.run([str(args.saved_browser_cli.resolve(strict=True)),'--session='+work.name,*command],
+                                 cwd=work,env=env,capture_output=True,text=True,timeout=240)
+                if command[0]=='open':
+                    # Startup precedes credential injection and imported-page
+                    # loading. Preserve its actual cause before classifying it.
+                    for stream,value in (('stdout',p.stdout),('stderr',p.stderr)):
+                        diagnostic_path=work/('browser-startup-'+stream+'.txt')
+                        diagnostic_path.write_text(value);diagnostic_path.chmod(0o600)
+                if p.returncode!=0 or '### Error' in p.stdout:
+                    diagnostic={'stage':command[0],'exit_code':p.returncode}
+                    match=re.search(r'(?:npm (?:ERR!|error) code|\bError:)\s*([A-Za-z_][A-Za-z_0-9-]{0,40})',p.stderr)
+                    if match:diagnostic['error_class']=match.group(1)
+                    if command[0]=='open':
+                        lines=p.stdout.splitlines();start=next((i for i,line in enumerate(lines) if line.startswith('### Error')),None)
+                        if start is not None and start+1<len(lines):
+                            diagnostic['startup_message']=re.sub(r'https?://\S+|/(?:private|Users|Volumes|Applications)/\S+','<location>',lines[start+1])[:240]
+                    proof['browser_failure']=diagnostic
+                check(p.returncode==0 and '### Error' not in p.stdout,'saved browser command failed (diagnostic withheld)')
+                if result:
+                    marker='### Result'
+                    check(marker in p.stdout,'saved browser result missing')
+                    return json.JSONDecoder().raw_decode(p.stdout.split(marker,1)[1].lstrip())[0]
+            socket_dir=pathlib.Path(tempfile.mkdtemp(prefix='hes-',dir='/tmp')).resolve()
+            env.update(PLAYWRIGHT_DAEMON_SOCKETS_DIR=str(socket_dir),PWTEST_SOCKETS_DIR=str(socket_dir),PLAYWRIGHT_DAEMON_SESSION_DIR=str(work/'registry'))
+            browser(['open',origin+'/health/live','--browser','chrome','--profile',str(work/'browser-profile')]);browser_open=True
+            browser(['run-code',"async page=>{await page.evaluate(()=>localStorage.setItem('haeryong.owner-session.v1','saved-record-probe'));return true;}"],True)
+            browser(['run-code','async page=>{await page.goto('+json.dumps(origin+cases[0]['route'])+');return true;}'],True)
+            rows=browser(['run-code','async page=>await page.evaluate('+json.dumps(script)+')'],True)
+        else:
+            native=pathlib.Path(cfg['native_binary']).resolve(strict=True)
+            dist=pathlib.Path(cfg['native_dist']).resolve(strict=True)
+            check(dist.is_dir(),'prepared native dist missing')
+            prepared={p:hashlib.sha256(p.read_bytes()).hexdigest() for p in [native,*sorted(p for p in dist.rglob('*') if p.is_file())]}
+            credential_output=state/'native-session';credential_output.write_text(token+'\n');credential_output.chmod(0o600)
+            probe=work/'probe-saved-evidence.js';probe.write_text(script)
+            process=launch(['--reader','--reader-port','9271','--reader-path',cases[0]['route'],'--reader-probe',str(probe),'--reader-close-on-done'],'240s',base=origin)
+            rows=final_report(process.pid,230);check(rows is not None,'saved native final report missing')
+            proof['cases']=rows
+            check(process.wait(timeout=30)==0,'saved native exit')
+            observed=receipts(process.pid) or []
+            closes=next((r['rows'] for r in observed if r['event']=='windowClose'),None)
+            opened={(r['version_id'],r['session_id']) for r in observed if r['event']=='renderSessionOpen'}
+            explicit={(r['version_id'],r['session_id']) for r in observed if r['event']=='renderSessionClose'}
+            network=json.loads((state/f'native-network-observations-{process.pid}.json').read_text())
+            confirmed=set()
+            for version_id,session_id in opened:
+                path=f'/api/v1/versions/{version_id}/render-sessions/{session_id}/close'
+                http204=any(r.get('method')=='POST' and r.get('path')==path and r.get('status')==204 for r in network)
+                window204=any(r.get('version_id')==version_id and r.get('session_id')==session_id and r.get('status')==204 for r in (closes or []))
+                if http204 and ((version_id,session_id) in explicit or window204):
+                    confirmed.add((version_id,session_id))
+            proof['native_close_facts']={'window_close_rows':closes,'render_session_open_count':len(opened),
+                'confirmed_closed_count':len(confirmed),'unclosed':sorted(opened-confirmed)}
+            check(all(r['status']=='pass' for r in rows),'saved native probe assertion failed')
+            check(bool(opened) and closes is not None and all(r.get('status')==204 for r in closes)
+                  and confirmed==opened,'saved native actual render closes')
+            check(set(prepared)=={native,*[p for p in dist.rglob('*') if p.is_file()]} and all(hashlib.sha256(p.read_bytes()).hexdigest()==digest for p,digest in prepared.items()),'prepared native outputs changed')
+            proof['native_binary_sha256']=prepared[native]
+            proof['native_dist_sha256']={str(p.relative_to(dist)):hashlib.sha256(p.read_bytes()).hexdigest() for p in dist.rglob('*') if p.is_file()}
+        proof['cases']=rows
+        check(all(r['status']=='pass' for r in rows),'saved UI assertion failed')
+        if semantic_details and args.saved_browser_cli:
+            def browser_closed():
+                with lock:events=list(proof.get('render_http_events',[]))
+                opened={(r['version_id'],r['session_id']) for r in events if r['operation']=='open' and r['status'] in (200,201)}
+                closed={(r['version_id'],r['session_id']) for r in events if r['operation']=='close' and r['status']==204}
+                return {'opened':sorted(opened),'closed':sorted(closed),'unclosed':sorted(opened-closed)} if opened and opened<=closed else None
+            proof['browser_close_facts']=wait_for(browser_closed,10)
+            check(proof['browser_close_facts'] is not None,'saved browser real render HTTP204 closes')
+        require(started.is_set() and delivered.is_set(),'same-scope genuine late response not delivered')
+        for kind in ('history','coverage'):
+            fault=control['faults'].get(kind)
+            if not fault or fault['attempts']<2:
+                proof['gaps'].append('Required '+kind+' later-cursor failure/retry missing even with public limit=1; select saved records with at least two matching rows.')
+        if not args.saved_record_subset:check(not proof['gaps'],'mandatory saved pagination proof missing')
+        check(not control['errors'],'owned proxy error')
+        check([snapshot(c) for c in cases]==snapshots,'Review/lifecycle/provenance changed during read campaign')
+        check([get(history_path(c)) for c in cases]==defaults,'unprojected default target/history changed during campaign')
+        for c in cases:
+            check(get(c['selected_history_path'])['applicable']==c['expected']['applicable'],'applicable changed during campaign')
+            if c['units_url'] is not None:check(canonical(enumerate_rows(c['units_url']))==canonical(c['expected']['units']),'fixed units changed during campaign')
+            final_history=enumerate_rows(c['selected_history_path'])
+            check(sorted(r['assessment_id'] for r in final_history)==sorted(c['expected']['history_ids']),'history changed during campaign')
+            if semantic_details:
+                check(canonical(final_history)==canonical(c['expected']['history']),'semantic history changed during campaign')
+                check(get('/api/v1/versions/'+c['version_id']+'/metadata?kind=supplied',False)==c['expected']['authored_metadata'],'authored metadata changed during campaign')
+        if semantic_details:check(all(hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()==sha for path,sha in proof['prepared_inputs'].items()),'prepared RG3 inputs changed')
+        check(hashlib.sha256(args.existing_records.read_bytes()).hexdigest()==proof['manifest_sha256'],'saved manifest changed')
+        assert_inputs_unchanged('saved-record observations')
+        proof['pagination']=control['faults'];proof['inputs']=before;proof['selected_complete']=True;proof['complete']=not proof['gaps']
+    finally:
+        release.set()
+        stopping.set()
+        cleanup=[]
+        if browser_open:
+            try:browser(['close'])
+            except Exception as error:cleanup.append(type(error).__name__)
+        for process,handle in runs:
+            try:
+                if process.poll() is None:process.kill();process.wait(timeout=10)
+            except Exception as error:cleanup.append(type(error).__name__)
+            finally:handle.close()
+        with lock:active=list(streams)
+        for response in active:
+            try:response.close()
+            except Exception as error:cleanup.append(type(error).__name__)
+        server.shutdown();server.server_close()
+        if socket_dir is not None:shutil.rmtree(socket_dir)
+        proof['proxy_errors']=control['errors'];proof['pagination']=control['faults'];proof['cleanup_errors']=cleanup
+        proof['complete']=proof['complete'] and not cleanup and not control['errors']
+        proof['selected_complete']=proof.get('selected_complete',False) and not cleanup and not control['errors']
+        check(not cleanup,'owned saved-campaign cleanup failed')
+
+if args.existing_records:
+    try:
+        run_saved_records()
+    except BaseException as error:
+        proof['failure_type']=type(error).__name__
+        raise
+    finally:
+        proof['inputs_unchanged']=fingerprints()==before
+        proof['complete']=proof['complete'] and proof['inputs_unchanged']
+        RECEIPT.write_text(json.dumps(proof,ensure_ascii=False,indent=2)+'\n')
+        if not os.environ.get('H3N_RETAIN'):shutil.rmtree(work)
+    raise SystemExit(0 if proof['complete'] or args.saved_record_subset and proof.get('selected_complete',False) and proof['inputs_unchanged'] else 1)
 try:
     subprocess.run(['go','build','-tags','haeryong_test_state','-o',str(work/'haeryong'),'./cmd/haeryong'],cwd=REPO,env=env,capture_output=True,check=True,timeout=180)
     subprocess.run(['go','-C','spikes/viewer/desktop','build','-o',str(work/'native'),'.'],cwd=REPO,env=env,capture_output=True,check=True,timeout=240)

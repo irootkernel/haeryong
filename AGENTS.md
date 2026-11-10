@@ -511,3 +511,18 @@ and CO product review establish the bounded delivery. All five native Goal
 criteria are satisfied, and CO accepted the exact member under Master delegation.
 The normal completion commit and native finalization follow; Tasks03–06 and
 Master overall Epic acceptance remain future.
+
+TASK-008-03 adds exact-target freshness-only assessment at SQLite revision 22,
+fixed per-unit history/coverage, guarded complete-file source context and canonical
+document/Library/Evidence freshness separate from Review. The
+[freshness record](docs/testing/region-freshness.md) preserves original source,
+provider, semantic, browser/native and cleanup qualifications, including failed
+cohorts and five historical unknown native drains. Task02 prompt/schema/ranking
+and accepted quality remain applicable when unchanged.
+The full common remains failed on a stale public E2E null expectation; all 1,423
+Go and 256 other Python passes compose with the corrected complete testcase and
+current documentation checks on unchanged product inputs. No fresh aggregate
+pass is claimed. Independent current judgments and criterion composition support
+the bounded delivery, accepted by CO under Master delegation. The normal commit
+and native finalization precede Task04. Task04 overlays, Task05 decisions/undo,
+Task06 drafts/assembled exit and Master overall Epic acceptance remain future.

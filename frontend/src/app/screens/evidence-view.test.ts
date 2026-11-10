@@ -5,12 +5,53 @@
 // page-local region tuples and selection/request-generation guards.
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { ApplicableFreshness, CoverageUnit } from "../../client/types.ts";
+import { renderToStaticMarkup } from "react-dom/server";
+import type { ApplicableFreshness, AssessmentRecord, CoverageUnit } from "../../client/types.ts";
 import {
   acceptRegionFocusResult, acceptRegionSelection, compareWithOverlay, coverageUnitsParams, deriveCoverageSummary, deriveStatus,
   enumerationComplete, initialEnumeration, mergeEnumerationPage, parseSuppliedMetadata,
-  regionRequestStale, regionSelectionMatches, SelectionQueryGuard, toggledOpen, verifyMetadataBytes,
+  regionRequestStale, regionSelectionMatches, SelectionQueryGuard, toggledOpen, verifyMetadataBytes, assessmentDetailUnits, renderAssessmentText,
 } from "./evidence-view.ts";
+
+const storedAssessment = (): AssessmentRecord => ({
+  assessment_id: "assessment", version_id: "version", target_set_id: "target", coverage_set_id: "contribution-set",
+  scope: { kind: "page", page_path: "a.html", region_id: null }, assessed_at: "2026-11-01T00:00:01Z",
+  evidence: { units: [{ kind: "page", page_path: "a.html", region_id: null, outcome: "partial", discrepancy: "caller changed <img src=x onerror=alert(1)>", reason: "another claim unexamined", rationale: "Full public rationale </dd><script>alert(1)</script>", citations: [{ basis: "observed_input", read_id: "read", verification_id: null, input_origin: "daemon_supplied", target_set_id: "target", bytes_sha256: "a".repeat(64), source: { kind: "git", repo_id: "repo", object_format: "sha1", exact_revision: "b".repeat(40) }, location: { path: "caller.go", line_start: 2, line_end: 3 } }] }] },
+});
+
+test("stored semantic details preserve full text/citation provenance and reject foreign tuple/target or legacy shapes", () => {
+  const item = storedAssessment();
+  const details = assessmentDetailUnits(item, "version");
+  assert.equal(details?.[0].discrepancy, "caller changed <img src=x onerror=alert(1)>");
+  assert.equal(details?.[0].rationale, "Full public rationale </dd><script>alert(1)</script>");
+  assert.deepEqual(details?.[0].citations[0].location, { path: "caller.go", line_start: 2, line_end: 3 });
+  assert.equal(details?.[0].citations[0].verification_id, null);
+  assert.equal(assessmentDetailUnits(item, "different-version"), null);
+  assert.equal(assessmentDetailUnits({ ...item, scope: { kind: "region", page_path: "a.html", region_id: "same" } }, "version"), null);
+  assert.equal(assessmentDetailUnits({ ...item, scope: { kind: "page", page_path: "b.html", region_id: null } }, "version"), null);
+  assert.equal(assessmentDetailUnits({ ...item, target_set_id: "other-target" }, "version"), null);
+  assert.equal(assessmentDetailUnits({ ...item, evidence: {} }, "version"), null);
+  assert.equal(assessmentDetailUnits({ ...item, evidence: { units: [{ kind: { toString: null } }] } }, "version"), null);
+  const posthoc = storedAssessment();
+  const raw = (posthoc.evidence as { units: Array<{ citations: Array<Record<string, unknown>> }> }).units[0].citations[0];
+  Object.assign(raw, { basis: "posthoc_verified", read_id: null, input_origin: null, verification_id: "verification" });
+  assert.equal(assessmentDetailUnits(posthoc, "version")?.[0].citations[0].basis, "posthoc_verified");
+  raw.input_origin = "daemon_supplied";
+  assert.equal(assessmentDetailUnits(posthoc, "version"), null);
+});
+
+test("the semantic detail renderer escapes actual hostile strings and keeps null, missing, zero and JSON distinct", () => {
+  const details = assessmentDetailUnits(storedAssessment(), "version")!;
+  const html = renderToStaticMarkup(renderAssessmentText(details[0].rationale));
+  assert.ok(html.includes("&lt;script&gt;alert(1)&lt;/script&gt;"));
+  assert.ok(!html.includes("<script>"));
+  const source = renderToStaticMarkup(renderAssessmentText({ path: "<img src=x onerror=alert(1)>" }));
+  assert.ok(!source.includes("<img"));
+  assert.ok(source.includes("&lt;img"));
+  assert.ok(renderToStaticMarkup(renderAssessmentText(null)).includes('data-value-kind="null"'));
+  assert.ok(renderToStaticMarkup(renderAssessmentText(undefined)).includes('data-value-kind="missing"'));
+  assert.ok(renderToStaticMarkup(renderAssessmentText(0)).endsWith(">0</span>"));
+});
 
 const unit = (over: Partial<CoverageUnit>): CoverageUnit => ({
   kind: "version", page_path: null, region_id: null, outcome: "assessed", reason: null,
@@ -272,9 +313,11 @@ test("recorded unable_to_verify outranks an all-assessed list as completed-cover
   assert.equal(status, "unable_to_verify");
 });
 
-test("registry precedence: discrepancy, then reassessment trigger, then blocked units", () => {
+test("registry precedence preserves the latest availability-blocked attempt exception", () => {
   const withDiscrepancy = deriveCoverageSummary([unit({ discrepancy: true, outcome: "blocked" })]);
-  assert.equal(deriveStatus(withDiscrepancy, { overlay: fresh({ reassessment_required: true, status: "unable_to_verify" }), targetSetId: "t1" }), "outdated_against_target");
+  assert.equal(deriveStatus(withDiscrepancy, { overlay: fresh({ reassessment_required: true, status: "unable_to_verify" }), targetSetId: "t1" }), "unable_to_verify");
+  assert.equal(withDiscrepancy.discrepancyUnits, 1, "unavailable status retains the recorded discrepancy");
+  assert.equal(deriveStatus(withDiscrepancy, { overlay: fresh({ reassessment_required: true }), targetSetId: "t1" }), "outdated_against_target");
   const withTrigger = deriveCoverageSummary([unit({ outcome: "blocked", reason: "거부" })]);
   assert.equal(deriveStatus(withTrigger, { overlay: fresh({ reassessment_required: true }), targetSetId: "t1" }), "reassessment_needed");
   const blocked = deriveCoverageSummary([unit({ outcome: "blocked", reason: "거부" })]);

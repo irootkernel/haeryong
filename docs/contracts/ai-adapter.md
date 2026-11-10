@@ -416,3 +416,40 @@ evaluation; their presence does not establish useful model behavior:
    nominations merged into Stage-2 candidate shortlists carry signal `kind =
    "semantic_nomination"` with `detail` prefixed `unverified_card_routing_hint: `
    to distinguish card-level routing hints from Stage-2 inspected evidence.
+
+## Freshness-only maintenance consumer (TASK-008-03)
+
+The existing pinned transport accepts internal maintenance mode
+`freshness_assessment`, independent of semantic nomination and relationship/topic
+verification. It streams complete immutable explanation bytes for one fixed
+required unit and complete selected source files at one exact target. Original
+cited spans remain authored context. It does not repeat nomination, retrieve
+all pairs, emit content drafts or change the established Task02 prompt/schema,
+ranking or candidate budget.
+
+The closed result is `{units:[...]}`. Each required tuple occurs exactly once
+with `kind`, nullable `page_path`/`region_id`, `outcome`, `discrepancy`, `reason`,
+`rationale` and typed project-source `citations`. Outcomes are assessed, partial,
+blocked and not_checked. A discrepancy can coexist with partial coverage;
+complete alignment requires every material claim of the stated unit examined.
+Assessed units and discrepancies require actual supporting citations. Missing
+keys, unknown fields, duplicate/foreign tuples, false input observations and
+mismatched exact targets fail validation. Missing/partial source limitations
+cannot be upgraded to assessed by a model-written state label.
+
+Preparation reads a saved complete output outside the writer. Its durable input
+fingerprint, tuple scope, citations and current authority are rechecked before
+application. Saved-result continuation reuses that output without Execute.
+Policy `auto` publishes a semantic contribution; `propose` records a finding
+without changing applicable freshness or clearing a trigger. Task04 overlay
+presentation, Task05 owner decisions/undo and Task06 drafts/assembled exit keep
+their existing ownership.
+
+Current Task03 runtime preparation privately retains actually observed owned
+native PID/PGID/UID before its initialize request. Setup failure facts contain
+only stage, finite error class, available normal exit and original cleanup facts.
+Native stderr is consumed in memory by a finite fatal-setup classifier and is
+never retained as text; PATH-alias warnings alone do not establish a failure
+cause. These records are neither public transport/source observations nor a
+replacement for the existing owned-group drain oracle. Failed/unverified old
+cleanup remains historical after a later positive route observation.

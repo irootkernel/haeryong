@@ -231,3 +231,16 @@ Updated machine/model/test digests record this explicit extension; pure fixtures
 do not prove proxy reachability, real browser rendering or device qualification.
 The production and web proof belongs to
 [private ingress evidence](../../docs/testing/private-ingress.md).
+
+## Scoped freshness selection (TASK-008-03)
+
+This additive selected-contract revision permits all four produced coverage
+outcomes, immutable semantic history fields and an optional nullable document
+`freshness` projection. Review remains independent. The existing source fixture
+group checks exact contribution identity fields, unknown outcome/field rejection,
+published origin and document projection/null shapes. The four affected embedded
+configuration definitions are byte-for-byte equivalent as parsed JSON to the
+machine authority. Runtime schema 1.0/APIv1 and the manifest digest domain are
+unchanged; the selected schema/test digests record this explicit revision.
+Production capture, fixed membership, continuation and application policy are
+tested separately; these pure shapes do not establish real-provider or UI proof.

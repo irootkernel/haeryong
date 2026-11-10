@@ -3247,6 +3247,16 @@
               "type": "null"
             }
           ]
+        },
+        "freshness": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/observation_applicable"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -4618,6 +4628,9 @@
         },
         "outcome": {
           "enum": [
+            "assessed",
+            "partial",
+            "blocked",
             "not_checked"
           ]
         },
@@ -4633,10 +4646,25 @@
           ]
         },
         "discrepancy": {
-          "type": "null"
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "assessment_id": {
-          "type": "null"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "target_set_id": {
           "anyOf": [
@@ -4647,6 +4675,9 @@
               "type": "null"
             }
           ]
+        },
+        "coverage_set_id": {
+          "$ref": "#/$defs/id"
         }
       },
       "required": [
@@ -4724,8 +4755,10 @@
         "status": {
           "enum": [
             "not_assessed",
-            "unable_to_verify",
-            "reassessment_needed"
+            "reassessment_needed",
+            "aligned_within_scope",
+            "outdated_against_target",
+            "unable_to_verify"
           ]
         },
         "coverage": {
@@ -4931,6 +4964,31 @@
         "state": {
           "type": "string",
           "minLength": 1
+        },
+        "coverage_set_id": {
+          "$ref": "#/$defs/id"
+        },
+        "evidence": {
+          "type": "object"
+        },
+        "config_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "permissions_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "origin": {
+          "enum": [
+            "ai"
+          ]
+        },
+        "assessed_at": {
+          "$ref": "#/$defs/time"
+        },
+        "created_at": {
+          "$ref": "#/$defs/time"
         }
       },
       "required": [

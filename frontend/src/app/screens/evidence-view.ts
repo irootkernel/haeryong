@@ -3,7 +3,8 @@
 // here performs IO; the SourcePanel owns queries, cursors and selection
 // guards, and every displayed count/status derives only from the enumerated
 // fixed required-unit records (zero/unknown is never aligned).
-import type { ApplicableFreshness, CoverageUnit, ListPage } from "../../client/types.ts";
+import { createElement } from "react";
+import type { ApplicableFreshness, AssessmentDetailUnit, AssessmentRecord, CoverageUnit, ListPage } from "../../client/types.ts";
 
 export interface SuppliedSourceRecord {
   id: string;
@@ -46,6 +47,40 @@ export interface SuppliedMetadata {
 }
 
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+
+/** Public stored strings/JSON are always text, never HTML, Markdown or links. */
+export function renderAssessmentText(value: unknown) {
+  const kind = value === null ? "null" : value === undefined ? "missing" : typeof value;
+  const text = value === null ? "없음(null)" : value === undefined ? "기록 없음" : typeof value === "object" ? JSON.stringify(value) : String(value);
+  return createElement("span", { className: "semantic-detail-value", "data-value-kind": kind, style: { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } }, text);
+}
+
+/** Read only the known stored freshness shape, preserving exact record scope. */
+export function assessmentDetailUnits(item: AssessmentRecord, versionId: string): AssessmentDetailUnit[] | null {
+  if (item.version_id !== versionId || !record(item.evidence) || !Array.isArray(item.evidence.units) || item.evidence.units.length === 0) return null;
+  const units: AssessmentDetailUnit[] = [];
+  const seen = new Set<string>();
+  const nullableString = (v: unknown) => v === null || typeof v === "string";
+  for (const value of item.evidence.units) {
+    if (!record(value) || typeof value.kind !== "string" || !["version", "page", "region"].includes(value.kind) || !nullableString(value.page_path) || !nullableString(value.region_id)) return null;
+    if (value.kind === "version" ? value.page_path !== null || value.region_id !== null : typeof value.page_path !== "string" || value.page_path === "" || (value.kind === "page" ? value.region_id !== null : typeof value.region_id !== "string" || value.region_id === "")) return null;
+    if (item.scope.kind === "page" && (value.kind !== "page" || value.page_path !== item.scope.page_path) || item.scope.kind === "region" && (value.kind !== "region" || value.page_path !== item.scope.page_path || value.region_id !== item.scope.region_id)) return null;
+    const key = JSON.stringify([value.kind, value.page_path, value.region_id]);
+    if (seen.has(key)) return null;
+    seen.add(key);
+    if (typeof value.outcome !== "string" || !["assessed", "partial", "blocked", "not_checked"].includes(value.outcome) || typeof value.discrepancy !== "string" || typeof value.reason !== "string" || typeof value.rationale !== "string" || !Array.isArray(value.citations)) return null;
+    for (const c of value.citations) {
+      if (!record(c) || typeof c.target_set_id !== "string" || c.target_set_id === "" || c.target_set_id !== item.target_set_id || typeof c.bytes_sha256 !== "string" || !record(c.source) || !record(c.location)) return null;
+      if (c.basis === "observed_input") {
+        if (typeof c.read_id !== "string" || c.read_id === "" || c.verification_id !== null || c.input_origin !== "daemon_supplied" && c.input_origin !== "native_observed") return null;
+      } else if (c.basis === "posthoc_verified") {
+        if (c.read_id !== null || c.input_origin !== null || typeof c.verification_id !== "string" || c.verification_id === "") return null;
+      } else return null;
+    }
+    units.push(value as unknown as AssessmentDetailUnit);
+  }
+  return units;
+}
 
 /**
  * Defensive parse of the verified supplied-metadata bytes. Malformed optional
@@ -318,7 +353,9 @@ export interface StatusTarget {
 
 /**
  * Registry aggregation over the enumerated units with the selected target's
- * own facts: an evidenced discrepancy outranks everything; an outstanding
+ * own facts: the latest matching availability-blocked attempt exception wins
+ * while retaining prior discrepancy/counts/triggers. Otherwise an evidenced
+ * discrepancy outranks the ordinary states; an outstanding
  * reassessment trigger outranks blocked units; a recorded overlay
  * unable_to_verify keeps verification unavailable even when every unit is
  * assessed — completed coverage plus verification unavailable, never derived
@@ -334,9 +371,9 @@ export interface StatusTarget {
  */
 export function deriveStatus(summary: CoverageSummary, target: StatusTarget): DerivedStatus {
   if (summary.eligible === 0) return "not_assessed";
-  if (summary.discrepancyUnits > 0) return "outdated_against_target";
   const overlayCompatible = target.overlay !== null && scopeMatchesSelection(target.overlay.scope, target.scope);
   if (overlayCompatible && target.overlay !== null && target.overlay.status === "unable_to_verify") return "unable_to_verify";
+  if (summary.discrepancyUnits > 0) return "outdated_against_target";
   if (overlayCompatible && target.overlay !== null && target.overlay.reassessment_required) return "reassessment_needed";
   if (summary.blocked > 0) return "unable_to_verify";
   const targetAvailable = overlayCompatible && target.overlay !== null && target.overlay.target_set_id !== null && target.overlay.captured_at !== null && (target.targetSetId === null || target.overlay.target_set_id === target.targetSetId);

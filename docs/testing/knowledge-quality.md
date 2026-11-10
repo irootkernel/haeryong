@@ -126,6 +126,104 @@ Alongside the existing worksheet, record observed real-use facts when available:
 
 ## Source-change and semantic assessment corpus
 
+### TASK-008-03 frozen predeclaration
+
+This specification precedes Task03 provider execution and tuning. It binds the
+approved complete eight-file Mulgae/Gaori explanation inventory at the Task03
+base `a9d3ae990366282c80ce096b94b730643226dc2e`, Mulgae source
+`cef337cf927b820316f42a41f1441fbc653203f8`, and Gaori source
+`393af5999bbbb30b5d11e2a17a2325c8cf1833b7`. Materialization uses only immutable
+Git/manifest bytes in disposable private copies, never the sample working tree.
+Fixture commit IDs and hashes are recorded before their provider submission.
+Controlled descendants are test mutations, not natural-release history.
+
+The general production selector reads complete cited files and captured
+observation `dependency_scope` paths at one exact authorized target. Original
+cited spans remain separate. No special caller lines, expected verdicts or
+case IDs enter product selection. In particular I must acquire the complete
+Gaori `internal/cli/cli.go` through this rule, including its caller and callee,
+with actual per-attempt byte-delivery provenance. Historical receipts are not
+expanded into new observations. The present delegated Coordinator grant covers
+these selected files at the approved bases and explicit controlled descendants,
+with the same remembered provider/account and enforced runtime restrictions.
+
+After the corrected original baseline retained legitimate partial coverage,
+the Coordinator approved optional preparation of twenty additional finite full files at
+the same A identities: fourteen Mulgae caller/composition/publication helpers and
+six Gaori process/configuration/safety files. Their exact path/hash inventory is
+frozen in the private context manifest before any further model submission.
+The existing explicit completed same-version capture carries this selected
+context; it does not fabricate observation dependencies for unchanged files or
+expand implicit/default selection. The original eight explanation files, four
+page units, claims, expected outcomes and stopping rule below remain unchanged.
+Their essentiality to the original qualified claims was not established. They
+are not selected for the next original-four-page baseline proposal, which uses
+the original fourteen source files and eight explanation files. Preparation is
+not a new model execution grant or a successful baseline.
+
+The general freshness instructions now explicitly assess material claims at
+their stated conditional, documented-contract, historical or abstraction scope,
+including explicit evidence limits. Documented contracts do not assert observed
+execution, and illustrations do not assert that their preconditions held.
+Material caller/configuration/dependency gaps still require specific incomplete
+outcomes. This clarification changes no output shape, validator, expected
+outcome, corpus identity or prior result; actual quality remains due.
+
+| Case | Frozen change/input and required observable |
+| --- | --- |
+| Baseline | Unchanged approved source and original qualified claims: actual complete page-unit evaluation and scoped alignment. Full input alone does not prove full semantic coverage. |
+| D | Delete Mulgae `SourceFromRecovery`'s `if attempt.State == domain.AttemptSucceeded` refusal block (original lines 31-33). M03 must have an evidenced discrepancy against D; do not infer universal replay success. |
+| I | Change only Gaori `executeRunContext`'s `materializeArtifacts` final argument from `materializationExecutedCommand` to `materializationSummarizedRaw` (original line 485). Callee 577-587 stays identical. Under the explanation's safe-materialization/extraction-error assumptions G02/G03 must expose the changed `internal_error/4/degraded` result. |
+| U | Append only `// Controlled freshness fixture: no behavior change.` to Gaori `cli.go`. Its structural direct-change trigger is not an outdated verdict. Full matching assessment must support scoped alignment. |
+| Historical | Keep pinned A and its original truth separate from explicit D/I comparisons; neither original bytes nor A assessment is overwritten. |
+| Missing/denied | Controlled profile access fault: unable_to_verify, actual reasons and unchanged denominator; no verified empty target or alignment. |
+| Partial | Stop after a first committed page result before the next admission in fresh isolated state. Preserve every unfinished tuple/reason; complete is false and the unchanged, trigger-free whole scope remains not_assessed. |
+| Thematic | Original Gaori G12 -> Mulgae M11 analogy never propagates Mulgae D's discrepancy or implementation dependency into Gaori. This is familiar regression evidence. |
+| Offline configuration | Explicit synthetic `CanRetry(failures,cfg) { return failures < cfg.MaxAttempts }` and unchanged loader; `policy.json` changes max_attempts 3 to 1. At failures=1 the claim that a retry is allowed changes true to false. This cross-file indirect fixture is offline only and creates no additional live cohort. |
+
+The full-version denominator is every HTML page: two required pages for each
+project/version/target. Exact region checks are separate and cannot complete a
+page by adding region counts. Exclusions, partial results, unavailable input and
+budget exhaustion never shrink membership. Each case starts without an earlier
+applicable contribution that could silently fill its missing work, except an
+explicitly declared history/precedence regression. The disposable real cohort
+uses freshness auto; a separate same-target propose regression verifies no
+published/applicable change. Production owner configuration remains untouched.
+
+The same-name cross-page fixture adds only optional supplied region bindings for
+the existing `main` element in each original Gaori HTML page. Each binding keeps
+that page's original evidence links; HTML, source claims and source bytes do not
+change. Each selected region is one fixed tuple, and the other page cannot
+inherit its contribution. An explicit completed same-version capture of the
+original authorized source paths may supply the bounded full context. Region
+contributions never sum into page/version completion. This controlled metadata
+binding is labelled separately from original author metadata.
+
+D and I with available fully inspected inputs require an evidenced discrepancy.
+Abstention is reported separately and also counts as a missed required change
+and a failed case. Required caller acquisition failure is blocked acquisition,
+not a successful abstention. False outdated claims, missed changes, abstentions,
+blocked acquisition and assessed/partial/blocked/not_checked coverage are separate
+counters by evidence class; there is no averaged replacement for a required
+outcome and no new numeric score or quality budget. Baseline partial coverage is
+honest product behavior but does not pass the required full-coverage proof.
+
+The path-level observer labels D, I and U direct and records triggers on their
+actual cited anchors. I proves semantic caller impact, not structural cross-file
+indirect discovery. The offline config fixture is indirect/unexamined dependency
+scope without an observer direct-change trigger. A semantic assessment clears
+only covered triggers of its own target. If full-file acquisition creates C2,
+the earlier observation C and its trigger remain separate history; no transfer
+or clearance across capture IDs is inferred. The latest matching availability-
+blocked attempt exception still takes precedence over discrepancy/trigger state.
+
+Real provider/source integration, controlled-source changes, synthetic offline
+faults, browser/native observations and physical-device evidence remain distinct.
+The known corpus and author familiarity are disclosed; no blinded or statistical
+accuracy claim is made. A failed required result remains failed. Any further
+bounded repair states its work and stopping condition before another acquisition;
+no easier case substitution, indefinite tuning or unapproved source expansion.
+
 EPIC-004 records cheap source-change observations. It does not claim to perform EPIC-008's semantic maintenance. Preserve the observation target, comparison base, inspected path/dependency coverage and unavailable inputs.
 
 | Case | Required outcome |

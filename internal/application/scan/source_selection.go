@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1559,4 +1560,95 @@ func gitResolveRef(ctx context.Context, rootPath, ref string) (string, error) {
 		return "", errors.New("invalid_revision")
 	}
 	return resolved, nil
+}
+
+// resolveAdmissionIntents repairs no imported provenance: it reads the existing
+// immutable manifest and re-prepares only the in-memory admission selection.
+func (s *Service) resolveAdmissionIntents(ctx context.Context, token string, req domain.ScanRequest, snap *admissionSnapshot) error {
+	if s.Bytes == nil {
+		return nil
+	}
+	for i := range snap.Entries {
+		entry := &snap.Entries[i]
+		if entry.Version == nil || entry.PreparedSource == nil || entry.Version.ManifestSHA == "" {
+			continue
+		}
+		var obj domain.Object
+		e := s.Store.Write(ctx, func(tx app.WriteTx) error {
+			current, e := s.Auth.AuthenticateWrite(ctx, tx, token)
+			if e != nil {
+				return e
+			}
+			if e = verifyAdmissionUnchanged(tx, current, *snap); e != nil {
+				return e
+			}
+			obj, e = tx.Object(entry.Version.ManifestSHA)
+			if errors.Is(e, domain.ErrNotFound) {
+				return nil
+			}
+			return e
+		})
+		if e != nil {
+			return e
+		}
+		if obj.Hash == "" {
+			continue
+		}
+		var intent *string
+		e = s.Bytes.Read(ctx, obj, domain.Pin{Kind: "scan_prepare", OwnerID: entry.Version.ID + ":manifest"}, func(r io.ReadSeeker) error {
+			var manifest struct {
+				Version struct {
+					SourceIntent *string `json:"source_intent"`
+				} `json:"version"`
+			}
+			if e := json.NewDecoder(r).Decode(&manifest); e != nil {
+				return e
+			}
+			intent = manifest.Version.SourceIntent
+			return nil
+		})
+		if e != nil {
+			return e
+		}
+		if intent != nil && *intent != "historical" && *intent != "moving_target" {
+			return domain.ErrContentIntegrity
+		}
+		if intent == nil {
+			continue
+		}
+		old := entry.PreparedSource.SourceIntent
+		if old != nil && *old == *intent {
+			continue
+		}
+		v := *entry.Version
+		v.Metadata, _ = json.Marshal(map[string]any{"source_intent": *intent})
+		e = s.Store.Write(ctx, func(tx app.WriteTx) error {
+			current, e := s.Auth.AuthenticateWrite(ctx, tx, token)
+			if e != nil {
+				return e
+			}
+			if e = verifyAdmissionUnchanged(tx, current, *snap); e != nil {
+				return e
+			}
+			cfg, e := tx.Configuration()
+			if e != nil {
+				return e
+			}
+			mayRead := current.Scope.Kind == "owner"
+			for _, a := range current.Scope.Actions {
+				mayRead = mayRead || a == "source.read"
+			}
+			prepared, e := prepareVersionSourceInput(tx, current, cfg, entry.ProjectID, v, req, mayRead)
+			if e != nil {
+				return e
+			}
+			prepared.OnProbe = s.OnSourceProbe
+			entry.PreparedSource = &prepared
+			return nil
+		})
+		if e != nil {
+			return e
+		}
+	}
+	return nil
 }

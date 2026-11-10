@@ -385,3 +385,9 @@ func validateAnswer(tx app.WriteTx, q domain.Question, a domain.ProviderAttempt,
 	}
 	return nil
 }
+
+// ValidateSourceCitations applies the shared citation union to another read-only
+// consumer using the same exact attempt and immutable version authority.
+func ValidateSourceCitations(tx app.WriteTx, owner, version string, a domain.ProviderAttempt, citations []domain.QuestionCitation) error {
+	return validateAnswer(tx, domain.Question{OwnerID: owner, VersionID: version}, a, domain.AnswerEnvelope{State: "partial", Citations: citations})
+}

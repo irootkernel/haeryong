@@ -79,6 +79,12 @@ func (w *Worker) stepInspectAndRepair(ctx context.Context, j domain.Job) error {
 				item = activeRunning[0]
 				hasItem = true
 			} else {
+				// Complete the separately owned freshness phase before parent settlement.
+				if pending, e := w.stepFreshness(tx, curJob, &run); e != nil {
+					return e
+				} else if pending {
+					return tx.UpdateScanRun(run)
+				}
 				// All items are terminal; complete the scan run unless an unresolved maintenance attempt remains.
 				settledInTx = true
 				if curJob.ProviderAttempts != nil && curJob.ProviderAttempts.Unknown > 0 {

@@ -140,7 +140,7 @@ func (t *writeTx) ObservationsByOperation(principalID, operationID string) ([]do
 }
 
 func (t *writeTx) TriggersByTargetSet(versionID, targetSetID string) ([]domain.ReassessmentTrigger, error) {
-	rows, err := t.tx.QueryContext(t.ctx, "SELECT trigger_id,run_id,version_id,target_set_id,source_id,anchor_kind,page_path,region_id,reason,changed_paths_json,observation_id,observed_at,created_at FROM reassessment_triggers WHERE version_id=? AND target_set_id=? ORDER BY anchor_kind,page_path,region_id,trigger_id", versionID, targetSetID)
+	rows, err := t.tx.QueryContext(t.ctx, "SELECT trigger_id,run_id,version_id,target_set_id,source_id,anchor_kind,page_path,region_id,reason,changed_paths_json,observation_id,observed_at,created_at FROM reassessment_triggers WHERE version_id=? AND target_set_id=? AND NOT EXISTS(SELECT 1 FROM assessment_trigger_resolutions x WHERE x.trigger_id=reassessment_triggers.trigger_id) ORDER BY anchor_kind,page_path,region_id,trigger_id", versionID, targetSetID)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +216,7 @@ func (t *writeTx) TargetSetByID(id string) (domain.TargetSet, error) {
 // W3b L14).
 func (t *writeTx) VersionCapture(versionID, targetSetID string) (domain.TargetSet, error) {
 	var ts domain.TargetSet
-	err := t.tx.QueryRowContext(t.ctx, "SELECT target_set_id,project_id,requested_selection,targets_json,captured_at FROM captured_target_sets WHERE target_set_id=? AND (EXISTS(SELECT 1 FROM citation_verifications v WHERE v.target_set_id=? AND v.version_id=?) OR EXISTS(SELECT 1 FROM observation_runs r WHERE r.target_set_id=? AND r.version_id=? AND EXISTS(SELECT 1 FROM source_observations o WHERE o.run_id=r.run_id)))", targetSetID, targetSetID, versionID, targetSetID, versionID).Scan(&ts.ID, &ts.ProjectID, &ts.RequestedSelection, &ts.TargetsJSON, &ts.CapturedAt)
+	err := t.tx.QueryRowContext(t.ctx, "SELECT target_set_id,project_id,requested_selection,targets_json,captured_at FROM captured_target_sets WHERE target_set_id=? AND (EXISTS(SELECT 1 FROM citation_verifications v WHERE v.target_set_id=? AND v.version_id=?) OR EXISTS(SELECT 1 FROM observation_runs r WHERE r.target_set_id=? AND r.version_id=? AND EXISTS(SELECT 1 FROM source_observations o WHERE o.run_id=r.run_id)) OR EXISTS(SELECT 1 FROM coverage_sets c JOIN source_captures sc ON sc.target_set_id=c.target_set_id WHERE c.version_id=? AND c.target_set_id=captured_target_sets.target_set_id AND c.origin LIKE 'freshness:%' AND sc.state='completed'))", targetSetID, targetSetID, versionID, targetSetID, versionID, versionID).Scan(&ts.ID, &ts.ProjectID, &ts.RequestedSelection, &ts.TargetsJSON, &ts.CapturedAt)
 	return ts, notFound(err)
 }
 

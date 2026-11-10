@@ -143,6 +143,13 @@ var _ = It("C03W4 initialization disclosure audit and frame failures retain trut
 			fixtureMode = mode
 		}
 		d, a, inputs, s := fixture(fixtureMode)
+		if mode == "initialize_error" {
+			// The retained preparation fact uses the production attempt namespace.
+			a.ID = "d48b0885-cb81-4686-bbb9-16277036c315"
+			for i := range inputs {
+				inputs[i].AttemptID = a.ID
+			}
+		}
 		switch mode {
 		case "disclosure":
 			s.tx.failGuardAt = 3
@@ -156,6 +163,28 @@ var _ = It("C03W4 initialization disclosure audit and frame failures retain trut
 		Expect(out.RequestID).To(BeEmpty())
 		Expect(out.SessionID).To(BeEmpty())
 		Expect(out.CleanupError).NotTo(HaveOccurred())
+		if mode == "initialize_error" {
+			Expect(out.Reason).To(Equal("initialize_failed"))
+			Expect(out.LocalClosed).To(BeTrue())
+			raw, readErr := os.ReadFile(filepath.Join(d.Scratch, "preparation-failure-"+a.ID+".json"))
+			Expect(readErr).NotTo(HaveOccurred())
+			var fact preparationFailure
+			Expect(json.Unmarshal(raw, &fact)).To(Succeed())
+			Expect(fact.Stage).To(Equal("native_start"))
+			Expect(fact.ErrorClass).To(Equal("transport"))
+			Expect(fact.LocalClosed).To(BeTrue())
+			Expect(fact.NativeErrorClass).To(Equal("operation_not_permitted"))
+			Expect(fact.NativeProcess).NotTo(BeNil())
+			Expect(fact.NativeProcess.Observed).To(BeTrue())
+			Expect(fact.NativeProcess.PID).To(BeNumerically(">", 0))
+			Expect(fact.NativeProcess.PGID).To(HaveValue(Equal(fact.NativeProcess.PID)))
+			Expect(fact.NativeProcess.UID).To(HaveValue(Equal(os.Geteuid())))
+			// Exit facts are recorded only when the owned native process made
+			// an actual normal exit status available; signals remain null.
+			if fact.NativeExitCode != nil {
+				Expect(*fact.NativeExitCode).To(BeNumerically(">=", 0))
+			}
+		}
 		if mode == "audit" || mode == "frame" {
 			Expect(out.Transport).NotTo(BeNil())
 			Expect(out.Transport.CleanupState).To(Equal("drained"))

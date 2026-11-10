@@ -147,6 +147,12 @@ func (s *Service) StartScan(ctx context.Context, token, key string, rawBody []by
 			return domain.Response{}, err
 		}
 
+		// The immutable normalized manifest is authoritative for source intent.
+		// Older imports did not project it into the small version summary.
+		// Read explanation metadata outside the writer before choosing a family.
+		if err := s.resolveAdmissionIntents(ctx, token, req, &snap); err != nil {
+			return domain.Response{}, err
+		}
 		// Phase 2: Resolve source targets once before dispatch outside the SQLite lock.
 		decisions := map[string]VersionSourceDecision{}
 		newTargetSets := map[string]*domain.TargetSet{}
@@ -346,6 +352,15 @@ func (s *Service) StartScan(ctx context.Context, token, key string, rawBody []by
 			}
 			if err := tx.CreateScanRun(run, roster); err != nil {
 				return domain.Response{}, err
+			}
+			if run.EffectivePolicy.AutoApply.FreshnessAssessment != "disabled" {
+				for _, cv := range roster {
+					if cv.VersionID != "" && cv.TargetSetID != "" && cv.ExclusionReason == "" {
+						if _, _, err := freshnessMembership(tx, run, cv); err != nil {
+							return domain.Response{}, err
+						}
+					}
+				}
 			}
 			body, _ := json.Marshal(map[string]any{
 				"operation_id":  key,

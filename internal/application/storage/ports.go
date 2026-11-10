@@ -30,6 +30,7 @@ type Store interface {
 // Each callback is a short serialized write transaction. Files are streamed and
 // synced before entry; only atomic publication/directory sync may run inside it.
 type WriteTx interface {
+	AssessmentTx
 	ScanTx
 	SourceCaptureTx
 	ProviderTx
@@ -227,6 +228,19 @@ type WriteTx interface {
 	// AppendEvent appends one transactional-outbox event inside the caller's
 	// transaction (the sqlite adapter's appendEvent).
 	AppendEvent(resourceKind, id, kind string, revision int64, body []byte) error
+}
+
+// AssessmentTx keeps fixed membership and immutable published contributions
+// separate from the scan's candidate work ledger.
+type AssessmentTx interface {
+	PutAssessment(domain.Assessment, []domain.AssessmentUnit) error
+	AssessmentsByVersion(string, string, string, int) ([]domain.Assessment, error)
+	CoverageSetsByVersion(string, string) ([]domain.CoverageSet, error)
+	LatestAssessmentUnit(string, string, domain.RequiredUnit) (domain.AssessmentUnit, bool, error)
+	ClearAssessmentTriggers(domain.Assessment) error
+	FreshnessIntent(string, string) (domain.MaintenanceIntent, bool, error)
+	BindFreshnessCoverage(*domain.MaintenanceIntent, string) error
+	SetFreshnessUnitReason(string, domain.RequiredUnit, string) error
 }
 
 type ScanTx interface {

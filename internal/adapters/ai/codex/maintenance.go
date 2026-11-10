@@ -17,7 +17,7 @@ func (d *Driver) prepareMaintenance(a domain.ProviderAttempt, inv *domain.Provid
 	if inv.Generation != nil || inv.Question != nil || inv.PromptRef != nil || strings.TrimSpace(inv.Prompt) == "" || len(inv.Maintenance.Explanations) == 0 {
 		return false, domain.ErrInvalidTarget
 	}
-	if inv.Maintenance.Mode != "" && inv.Maintenance.Mode != domain.MaintenanceModeSemanticNomination {
+	if inv.Maintenance.Mode != "" && inv.Maintenance.Mode != domain.MaintenanceModeSemanticNomination && inv.Maintenance.Mode != domain.MaintenanceModeFreshness {
 		return false, domain.ErrInvalidTarget
 	}
 	if inv.Maintenance.Mode == domain.MaintenanceModeSemanticNomination {
@@ -90,6 +90,9 @@ func (d *Driver) maintenanceNominationFrame(w io.Writer, m domain.MaintenanceInv
 func (d *Driver) maintenanceFrame(ctx context.Context, w io.Writer, a domain.ProviderAttempt, m domain.MaintenanceInvocation) error {
 	if m.Mode == domain.MaintenanceModeSemanticNomination {
 		return d.maintenanceNominationFrame(w, m)
+	}
+	if m.Mode == domain.MaintenanceModeFreshness {
+		return d.freshnessFrame(ctx, w, a, m)
 	}
 	schemaSpec := map[string]any{
 		"type":                 "object",

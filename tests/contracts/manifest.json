@@ -61,13 +61,13 @@
     },
     {
       "path": "tests/contracts/schema.json",
-      "bytes": 228719,
-      "sha256": "78e3cfa0478c8cc9dce4bbc2c1eeebcc00b8f345c1984436a1cec10fed0b3b7b"
+      "bytes": 229964,
+      "sha256": "d97a2a06d91b6984dbd80c704586b8d5ca1f1226a153d395869a5c434db0ad4e"
     },
     {
       "path": "tests/contracts/test_contracts.py",
-      "bytes": 72551,
-      "sha256": "e096ebc73042398928cf8bf04416e4cd331e1d206cdab4f726a93bc41d3fca12"
+      "bytes": 74496,
+      "sha256": "7dd82bebd912cb6b450717aae723f5fbd725a271c0a15f860758ef2d3b6c86dd"
     },
     {
       "path": "tests/contracts/conftest.py",

@@ -160,6 +160,8 @@ func (s *Service) Assessments(ctx context.Context, token, versionID string, q As
 		return nil, err
 	}
 	var applicable any
+	items := []map[string]any{}
+	var next *string
 	err = s.read(ctx, token, "/api/v1/versions/"+versionID+"/assessments", func(tx app.WriteTx) error {
 		record, authErr := s.Auth.AuthenticateWrite(ctx, tx, token)
 		if authErr != nil {
@@ -170,12 +172,48 @@ func (s *Service) Assessments(ctx context.Context, token, versionID string, q As
 			return elErr
 		}
 		applicable, err = s.composeApplicable(tx, el, q, sourceIntent)
-		return err
+		if err != nil {
+			return err
+		}
+		c, n, _, e := s.cursorStart(ctx, token, tx, "assessments:"+versionID+":"+q.TargetSetID+":"+q.kind()+":"+q.PagePath+":"+q.RegionID, q.Options, el.ProjectID)
+		if e != nil {
+			return e
+		}
+		// Walk storage pages until the filtered public page is full. Filtering
+		// must neither cap history nor advance the cursor beyond the last row
+		// actually delivered to this consumer.
+		scanTime, scanID := c.Key, c.After
+		for {
+			rows, e := tx.AssessmentsByVersion(versionID, scanTime, scanID, 64)
+			if e != nil {
+				return e
+			}
+			if len(rows) == 0 {
+				break
+			}
+			for _, a := range rows {
+				scanTime, scanID = a.AssessedAt, a.ID
+				if (q.TargetSetID != "" && a.TargetSetID != q.TargetSetID) || !assessmentHistoryInScope(decodeStoredScope(a.ScopeJSON), q) {
+					continue
+				}
+				if len(items) == n {
+					next = cursorNext(c)
+					return nil
+				}
+				var v map[string]any
+				b, _ := json.Marshal(a)
+				_ = json.Unmarshal(b, &v)
+				v["created_at"] = a.AssessedAt
+				items = append(items, v)
+				c.Key, c.After = a.AssessedAt, a.ID
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"items": []map[string]any{}, "next_cursor": nil, "applicable": applicable}, nil
+	return map[string]any{"items": items, "next_cursor": next, "applicable": applicable}, nil
 }
 
 // manifestSourceIntent reads the version's declared source_intent from its
@@ -277,7 +315,7 @@ func noCaptureApplicable(q AssessmentQuery, sourceIntent any) map[string]any {
 // family composes the latest attempt A with the latest valid capture C; the
 // pinned family selects verification-created captures of exactly the
 // version's effective pinned selection.
-func (s *Service) composeApplicable(tx app.WriteTx, el appsource.Eligibility, q AssessmentQuery, sourceIntent any) (any, error) {
+func (s *Service) composeObservedApplicable(tx app.WriteTx, el appsource.Eligibility, q AssessmentQuery, sourceIntent any) (any, error) {
 	// Step 6a: the requested scope must project onto the version.
 	switch q.kind() {
 	case "page":
@@ -659,6 +697,22 @@ func (s *Service) AssessmentCoverage(ctx context.Context, token, versionID, cove
 		if err != nil {
 			return err
 		}
+		failedAcquisition, acquisitionBlocked, err := failedFreshnessAcquisition(tx, set)
+		if err != nil {
+			return err
+		}
+		capturedMembership := strings.HasPrefix(set.Origin, "freshness:")
+		uncaptured := false
+		if capturedMembership {
+			if _, e := tx.VersionCapture(versionID, set.TargetSetID); errors.Is(e, domain.ErrNotFound) {
+				_, uncaptured, err = capturedFreshnessMembership(tx, set)
+				if err != nil {
+					return err
+				}
+			} else if e != nil {
+				return e
+			}
+		}
 		for i, unit := range rows {
 			if i == limit {
 				last := rows[i-1]
@@ -680,7 +734,49 @@ func (s *Service) AssessmentCoverage(ctx context.Context, token, versionID, cove
 					reason = failed
 				}
 			}
-			out.Items = append(out.Items, unitView(unit, reason))
+			if strings.HasPrefix(set.Origin, "freshness:") {
+				if job, e := tx.Job(strings.TrimPrefix(set.Origin, "freshness:")); e == nil {
+					if job.CancelRequested || job.State == "cancelled" {
+						reason = "scan_cancelled_before_unit_assessment"
+					} else if job.State == "failed" {
+						reason = "scan_failed_before_unit_assessment"
+					}
+				} else if !errors.Is(e, domain.ErrNotFound) {
+					return e
+				}
+			}
+			view := unitView(unit, reason)
+			if uncaptured {
+				view["target_set_id"] = nil
+			}
+			if acquisitionBlocked {
+				view["target_set_id"] = nil
+				view["reason"] = "source_capture_unavailable_before_unit_assessment"
+				if unit.Kind == failedAcquisition.UnitKind && unit.PagePath == failedAcquisition.PagePath && unit.RegionID == failedAcquisition.RegionID {
+					for _, l := range failedAcquisition.Limitations {
+						if l.Kind == "source_unavailable" || l.Kind == "source_disclosure_restricted" {
+							view["reason"] = l.Reason
+							break
+						}
+					}
+				}
+			}
+			if contribution, ok, e := tx.LatestAssessmentUnit(versionID, set.TargetSetID, unit); e != nil {
+				return e
+			} else if ok {
+				view["outcome"] = contribution.Outcome
+				view["reason"] = nullable(contribution.Reason)
+				view["discrepancy"] = nullable(contribution.Discrepancy)
+				view["assessment_id"] = contribution.AssessmentID
+				view["coverage_set_id"] = contribution.CoverageSetID
+				if capturedMembership && unit.Reason != "" && unit.Reason != "not_yet_assessed" {
+					view["reason"] = unit.Reason
+				}
+				if len(overlay) > 0 && reason != unit.Reason {
+					view["reason"] = nullable(reason)
+				}
+			}
+			out.Items = append(out.Items, view)
 		}
 		return nil
 	})
@@ -788,4 +884,11 @@ func versionUnitRepos(tx app.WriteTx, versionID string) (unitRepos, error) {
 		out.regions[key] = append(out.regions[key], repo)
 	}
 	return out, nil
+}
+
+func assessmentHistoryInScope(scope storedScope, q AssessmentQuery) bool {
+	if q.kind() == "version" {
+		return true
+	}
+	return scopeMatchesRequest(scope, q)
 }

@@ -29,6 +29,7 @@ type Project struct {
 	ETag                string `json:"etag"`
 }
 type Document struct {
+	Freshness any `json:"freshness"`
 	domain.ReviewSummary
 	Revisit         *bool   `json:"revisit"`
 	ID              string  `json:"document_id"`

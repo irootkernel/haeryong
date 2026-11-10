@@ -401,6 +401,18 @@ func (s *Service) CaptureMaintenanceAndAdmit(ctx context.Context, jobID string, 
 		} else {
 			scope.TargetSetID = ""
 		}
+		if curIntent.Mode == domain.MaintenanceModeFreshness {
+			if len(distinctTargetSets) != 1 {
+				return domain.ErrInvalidTarget
+			}
+			if e = tx.BindFreshnessCoverage(&curIntent, scope.TargetSetID); e != nil {
+				return e
+			}
+			scope.Invocation.Maintenance.CoverageSetID = curIntent.CoverageSetID
+			if e = tx.UpdateMaintenanceIntent(curIntent); e != nil {
+				return e
+			}
+		}
 		scope.RequestSHA, e = identity(scope.PrincipalID, scope.Target, *scope.Invocation, allReads)
 		if e != nil {
 			return e
@@ -411,7 +423,19 @@ func (s *Service) CaptureMaintenanceAndAdmit(ctx context.Context, jobID string, 
 		if e = tx.AdmitMaintenanceCapture(j, curIntent); e != nil {
 			return e
 		}
-		return tx.AttachSourceInputs(j.ID, scope.ReadIDs)
+		if e = tx.AttachSourceInputs(j.ID, scope.ReadIDs); e != nil {
+			return e
+		}
+		if curIntent.Mode == domain.MaintenanceModeFreshness {
+			// Hold the shared exact capture for the scan's remaining fixed
+			// units. These are job pins, released by ordinary scan settlement.
+			for _, read := range allReads {
+				if e = tx.AcquirePin(domain.Pin{ID: "job-source:" + curIntent.ScanJobID + ":" + read.ID, Kind: "job", OwnerID: curIntent.ScanJobID, Hash: read.BytesSHA}); e != nil {
+					return e
+				}
+			}
+		}
+		return nil
 	})
 	if admitErr != nil {
 		if errors.Is(admitErr, domain.ErrStaleWorker) {

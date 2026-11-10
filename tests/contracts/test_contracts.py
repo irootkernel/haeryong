@@ -168,11 +168,34 @@ class TestContracts:
         unit = {'kind': 'page', 'page_path': 'a.html', 'region_id': None, 'outcome': 'not_checked', 'reason': 'missing_source', 'discrepancy': None, 'assessment_id': None, 'target_set_id': B}
         c.validate('observation_coverage_page', {'items': [unit], 'next_cursor': 'next'})
         c.validate('observation_coverage_unit_row', {**unit, 'target_set_id': None})
-        self.error('INVALID_ENUM', c.validate, 'observation_coverage_unit_row', {**unit, 'outcome': 'assessed'})
+        # TASK-008-03 selects produced outcomes and exact contribution identity;
+        # an unattempted row still has explicit null contribution/target fields.
+        for outcome in ('assessed', 'partial', 'blocked', 'not_checked'):
+            c.validate('observation_coverage_unit_row', {**unit, 'outcome': outcome,
+                       'assessment_id': D, 'coverage_set_id': P,
+                       'discrepancy': 'Changed caller behavior' if outcome == 'assessed' else None})
+        self.error('INVALID_ENUM', c.validate, 'observation_coverage_unit_row', {**unit, 'outcome': 'complete'})
+        for bad in ({**unit, 'assessment_id': ''}, {**unit, 'coverage_set_id': None},
+                    {**unit, 'discrepancy': ''}, {**unit, 'private_input': 'forbidden'}):
+            self.error('INVALID_REQUEST', c.validate, 'observation_coverage_unit_row', bad)
+        contribution = {'assessment_id': D, 'version_id': V, 'target_set_id': B,
+                        'coverage_set_id': P, 'scope': {'kind': 'page', 'page_path': 'a.html', 'region_id': None},
+                        'state': 'aligned_within_scope', 'evidence': {'units': []},
+                        'config_revision': 1, 'permissions_revision': 2, 'origin': 'ai',
+                        'assessed_at': '2026-11-09T01:00:00Z'}
+        c.validate('assessment_history_row', contribution)
+        self.error('INVALID_ENUM', c.validate, 'assessment_history_row', {**contribution, 'origin': 'capture'})
         coverage = {'coverage_set_id': P, 'unit_kind': 'page', 'eligible': 1, 'assessed': 0, 'complete': False, 'units_url': '/api/v1/versions/' + V + '/assessments/coverage?coverage_set_id=' + P + '&attempt_run_id=' + R}
         applicable = {'source_intent': 'moving_target', 'target_set_id': B, 'captured_at': '2026-10-21T00:00:00Z', 'scope': {'kind': 'version', 'page_path': None, 'region_id': None}, 'status': 'unable_to_verify', 'coverage': coverage, 'assessed_at': None, 'reassessment_required': True}
         page = {'items': [], 'next_cursor': None, 'applicable': applicable}
         c.validate('observation_assessments_page', page)
+        document = {'document_id': D, 'project_id': P, 'title': 'ordinary', 'lifecycle': 'active',
+                    'latest_version_id': V, 'revision': 1, 'updated_at': '2026-10-21T00:00:00Z',
+                    'versions_url': '/api/v1/documents/' + D + '/versions', 'etag': '"document"',
+                    'review_state': 'reviewed'}
+        c.validate('query_document', {**document, 'freshness': applicable})
+        c.validate('query_document', {**document, 'freshness': None})
+        self.error('INVALID_REQUEST', c.validate, 'query_document', {**document, 'freshness': {}})
         c.validate('observation_assessments_page', {**page, 'applicable': None})
         self.error('INVALID_REQUEST', c.validate, 'observation_assessments_page', {'items': [], 'applicable': applicable})
         self.error('INVALID_REQUEST', c.validate, 'observation_applicable', {**applicable, 'scope': {**applicable['scope'], 'declared': True}})

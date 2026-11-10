@@ -248,6 +248,13 @@ func (s *Service) Documents(ctx context.Context, token string, o Options) (List[
 		}
 		return nil
 	})
+	if err == nil {
+		for i := range out.Items {
+			if err = s.documentFreshness(ctx, token, &out.Items[i]); err != nil {
+				break
+			}
+		}
+	}
 	return out, err
 }
 func (s *Service) Document(ctx context.Context, token, id string) (Document, error) {
@@ -259,6 +266,9 @@ func (s *Service) Document(ctx context.Context, token, id string) (Document, err
 		}
 		return err
 	})
+	if err == nil {
+		err = s.documentFreshness(ctx, token, &out)
+	}
 	return out, err
 }
 func (s *Service) Versions(ctx context.Context, token, id string, o Options) (List[Version], error) {

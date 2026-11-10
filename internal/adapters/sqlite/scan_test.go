@@ -892,7 +892,8 @@ var _ = It("T-008-01-01 freezes captured scan denominator across post-capture ve
 	Expect(srMultiQueuedPre.Denominator.TotalUnits).To(Equal(12))
 	Expect(srMultiQueuedPre.Report.Structural.Skipped).To(Equal(6))
 	Expect(srMultiQueuedPre.Report.Structural.Excluded).To(Equal(6))
-	Expect(srMultiQueuedPre.Report.Semantic.Skipped).To(Equal(6))
+	Expect(srMultiQueuedPre.Report.Semantic.Eligible).To(Equal(2))
+	Expect(srMultiQueuedPre.Report.Semantic.Skipped).To(Equal(2))
 	Expect(srMultiQueuedPre.RequestedScope.PagePath).To(Equal("page.html"))
 	Expect(srMultiQueuedPre.RequestedScope.DocumentIDs).To(Equal([]string{verMultiHealthy.DocumentID}))
 	Expect(string(jMultiQueuedPre.Result)).To(ContainSubstring("sources/healthy-keep.txt"))
@@ -3015,6 +3016,7 @@ func RunBackoffCoordinator() error {
 		maint["content_generation"] = "propose"
 		autoApply, _ := maint["auto_apply"].(map[string]any)
 		Expect(autoApply).NotTo(BeNil())
+		autoApply["freshness_assessment"] = "disabled"
 		autoApply["related_explanation"] = "propose"
 		autoApply["topic_assignment"] = "propose"
 
@@ -3671,7 +3673,7 @@ func RunBackoffCoordinator() error {
 	Expect(mig21State.Ready).To(BeTrue())
 	mig21Health, err := upgradedMig21.Health(ctx)
 	Expect(err).NotTo(HaveOccurred())
-	Expect(mig21Health.Library.SchemaRevision).To(Equal(21))
+	Expect(mig21Health.Library.SchemaRevision).To(Equal(SchemaRevision))
 	Expect(upgradedMig21.validateTables(ctx, SchemaRevision)).To(Succeed())
 	for n := 1; n <= 21; n++ {
 		var cs string
@@ -3778,6 +3780,7 @@ var _ = It("enforces B01..B12 batch-1 invariants across git drift, region-scoped
 		maint["max_run_seconds"] = 1800
 		maint["content_generation"] = "propose"
 		autoApply, _ := maint["auto_apply"].(map[string]any)
+		autoApply["freshness_assessment"] = "disabled"
 		autoApply["related_explanation"] = "propose"
 		autoApply["topic_assignment"] = "propose"
 
@@ -4235,6 +4238,7 @@ var _ = It("enforces B08 worker budget/revocation settlement after completed chi
 		maint["max_run_seconds"] = 60
 		maint["content_generation"] = "propose"
 		autoApply, _ := maint["auto_apply"].(map[string]any)
+		autoApply["freshness_assessment"] = "disabled"
 		autoApply["related_explanation"] = "propose"
 		autoApply["topic_assignment"] = "propose"
 
@@ -4619,6 +4623,7 @@ var _ = It("verifies TASK-008-02 quality repair QR1..QR5: 24-region acquisition 
 		maint["content_generation"] = "propose"
 		autoApply, _ := maint["auto_apply"].(map[string]any)
 		Expect(autoApply).NotTo(BeNil())
+		autoApply["freshness_assessment"] = "disabled"
 		autoApply["related_explanation"] = "propose"
 		autoApply["topic_assignment"] = "propose"
 
@@ -5108,6 +5113,7 @@ var _ = It("enforces two-stage semantic nomination prephase worker order (B), Au
 		maint["max_run_seconds"] = 120
 		maint["content_generation"] = "propose"
 		autoApply, _ := maint["auto_apply"].(map[string]any)
+		autoApply["freshness_assessment"] = "disabled"
 		autoApply["related_explanation"] = "propose"
 		autoApply["topic_assignment"] = "propose"
 
@@ -5630,6 +5636,7 @@ var _ = It("enforces two-stage semantic nomination prephase worker order (B), Au
 			maint["max_run_seconds"] = 120
 			maint["content_generation"] = "propose"
 			autoApply, _ := maint["auto_apply"].(map[string]any)
+			autoApply["freshness_assessment"] = "disabled"
 			autoApply["related_explanation"] = "propose"
 			autoApply["topic_assignment"] = "propose"
 
@@ -6018,6 +6025,7 @@ var _ = It("enforces two-stage semantic nomination prephase worker order (B), Au
 			maint["max_run_seconds"] = 120
 			maint["content_generation"] = "propose"
 			autoApply, _ := maint["auto_apply"].(map[string]any)
+			autoApply["freshness_assessment"] = "disabled"
 			autoApply["related_explanation"] = "propose"
 			autoApply["topic_assignment"] = "propose"
 

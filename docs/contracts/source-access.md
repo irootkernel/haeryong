@@ -351,3 +351,45 @@ pins before `purge_candidates` selection (`PV02`), and replace purged
 (`N4`).
 These dependencies let object GC, snapshot retention, Trash and manual purge
 track the retained source and candidate contexts of maintenance work.
+
+## Freshness context selection (TASK-008-03)
+
+Freshness uses the service-validated unit/evidence links and captured source
+selection. Imported source aliases resolve through the unique approved mapping;
+an author alias is not a disclosure authority. At one exact selected target,
+read each cited file completely through the existing guarded source reader.
+Retain original cited spans separately. Also include captured observation
+`dependency_scope` paths only for the same version, source identity and exact
+resolved revision. This is existing observation data, not a new author field.
+An explicitly selected completed, same-version managed capture also supplies
+all its selected complete file paths. Only the `target_set` selection opts into
+this context; implicit/default selection does not collect ambient captures.
+Each file still needs the exact source/revision, a ready retained object and
+current source/provider authority. Missing context remains an explicit
+limitation; original cited spans and fixed explanation units stay unchanged.
+No source-specific caller line, expected verdict, code graph, all-pairs relation
+or universal project scan participates in selection.
+
+Full cited files make callers and configuration visible when present; unchanged
+cited lines alone do not establish unchanged behavior. Unexamined changed
+dependencies, unavailable retained snapshots and actual provider limits remain
+explicit incomplete/blocked inputs. Large files stream normally without a silent
+prefix or a new artificial context quota. Source capture, actual per-attempt
+input observation, later verification and semantic support retain distinct
+identities and times. One never retroactively establishes another.
+
+Freshness children share a scan-owned exact capture. Temporary parent job pins
+keep its authorized bytes available until the remaining fixed units settle;
+ordinary completion/cancellation releases those pins. This does not change
+`reference_only` into permanent snapshot retention. Every new admission and
+application rechecks current source/provider permission, lifecycle, selected
+identity and the captured authority fence.
+
+The freshness frame supplies a closed observed-input citation candidate using the
+existing QuestionCitation union, with explicit null members. This is a request
+for later service validation, not an input-observation fact. Complete imported
+non-HTML support files remain explanation context; other required HTML units
+are not supplied by a page attempt. Missing/denied source acquisition creates
+no semantic contribution or successful empty target. Its fixed units retain
+not_checked and actual acquisition/unattempted reasons; applicable availability
+and the job blocked-work report stay separate from published assessment counts.

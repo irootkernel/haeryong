@@ -59,9 +59,9 @@ export function countLabel(accumulation: DocumentAccumulation): CountLabel {
 }
 
 /**
- * Home priority sections stay truthful no-data states while the review and
- * freshness APIs do not exist; updated_at ordering never implies review
- * priority or "needs attention".
+ * Home priority sections remain separate from the canonical per-document
+ * freshness summary; updated_at ordering never implies semantic alignment
+ * or review priority.
  */
 export interface HomeSections {
   continueReading: DocumentView[];

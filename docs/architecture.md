@@ -184,3 +184,21 @@ Current operation/payload guards remain storage-owned and are rechecked outside
 short transactions during streamed consumers. The [adapter record](testing/provider-adapter.md)
 qualifies actual fixture, controlled failures, native/browser evidence and the
 remaining generation/Q&A/whole-Epic gates.
+
+## Scoped freshness production (TASK-008-03)
+
+The scan worker's independent freshness stage captures a non-overlapping fixed
+unit set, then schedules one guarded maintenance child per unit. Children share
+one exact full-file source capture per version. Original author evidence,
+observation target/time, actual provider input and later semantic assessment
+remain separate. Temporary parent job pins keep shared input bytes available
+until ordinary scan settlement, without changing configured retention policy.
+
+The application validates typed results and applies the stricter captured/current
+policy. SQLite revision 22 publishes immutable assessment/unit rows and
+assessment-bound trigger resolutions. Queries select the newest matching
+published contribution for each exact version/target/unit tuple; they neither
+sum region checks into a page nor reuse an older target for a newer one.
+Document/Library freshness reuses this projection independently of personal
+Review. Immutable manifest reads supply historical intent; source/proxy/provider
+operations never occur inside a summary GET.

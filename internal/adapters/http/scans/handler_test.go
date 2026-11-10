@@ -22,23 +22,26 @@ import (
 
 type fakeScanStore struct {
 	app.Store
-	mu          sync.Mutex
-	authState   domain.AuthState
-	libraryID   string
-	config      domain.Configuration
-	sessions    map[string]domain.Session
-	sessionHash map[string]string
-	credentials map[string]domain.ScopedCredential
-	principals  map[string]domain.WorkflowPrincipal
-	scopes      map[string]domain.ScopeState
-	documents   map[string]domain.Document
-	versions    map[string]domain.Version
-	receipts    map[string]domain.Receipt
-	jobs        map[string]domain.Job
-	runs        map[string]domain.ScanRun
-	rosters     map[string][]domain.ScanCapturedVersion
-	targetSets  map[string]domain.TargetSet
-	findings    map[string][]domain.Finding
+	mu            sync.Mutex
+	authState     domain.AuthState
+	libraryID     string
+	config        domain.Configuration
+	sessions      map[string]domain.Session
+	sessionHash   map[string]string
+	credentials   map[string]domain.ScopedCredential
+	principals    map[string]domain.WorkflowPrincipal
+	scopes        map[string]domain.ScopeState
+	documents     map[string]domain.Document
+	versions      map[string]domain.Version
+	receipts      map[string]domain.Receipt
+	jobs          map[string]domain.Job
+	runs          map[string]domain.ScanRun
+	rosters       map[string][]domain.ScanCapturedVersion
+	targetSets    map[string]domain.TargetSet
+	findings      map[string][]domain.Finding
+	pages         map[string][]domain.Page
+	coverageSets  map[string]domain.CoverageSet
+	requiredUnits map[string]map[string]domain.RequiredUnit
 }
 
 func newFakeScanStore() *fakeScanStore {
@@ -109,12 +112,15 @@ func newFakeScanStore() *fakeScanStore {
 				ManifestSHA:  "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 			},
 		},
-		receipts:   map[string]domain.Receipt{},
-		jobs:       map[string]domain.Job{},
-		runs:       map[string]domain.ScanRun{},
-		rosters:    map[string][]domain.ScanCapturedVersion{},
-		targetSets: map[string]domain.TargetSet{},
-		findings:   map[string][]domain.Finding{},
+		receipts:      map[string]domain.Receipt{},
+		jobs:          map[string]domain.Job{},
+		runs:          map[string]domain.ScanRun{},
+		rosters:       map[string][]domain.ScanCapturedVersion{},
+		targetSets:    map[string]domain.TargetSet{},
+		findings:      map[string][]domain.Finding{},
+		pages:         map[string][]domain.Page{verID: {{VersionID: verID, Path: "page.html"}}},
+		coverageSets:  map[string]domain.CoverageSet{},
+		requiredUnits: map[string]map[string]domain.RequiredUnit{},
 	}
 }
 
@@ -307,6 +313,88 @@ func (t *fakeScanTx) PublishedVersion(id string) (domain.Version, error) {
 func (t *fakeScanTx) CountVersionInventory(versionID, contentSetID, pathPrefix, regionID string) (int, int, int, int, error) {
 	return 1, 0, 1, 0, nil
 }
+func (t *fakeScanTx) VersionPages(versionID string) ([]domain.Page, error) {
+	if _, ok := t.store.versions[versionID]; !ok {
+		return nil, domain.ErrNotFound
+	}
+	out := append([]domain.Page{}, t.store.pages[versionID]...)
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out, nil
+}
+func (t *fakeScanTx) CoverageSetsByVersion(versionID, targetID string) ([]domain.CoverageSet, error) {
+	out := []domain.CoverageSet{}
+	for _, set := range t.store.coverageSets {
+		if set.VersionID == versionID && (targetID == "" || set.TargetSetID == targetID) {
+			out = append(out, set)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CapturedAt == out[j].CapturedAt {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].CapturedAt < out[j].CapturedAt
+	})
+	return out, nil
+}
+func (t *fakeScanTx) TargetSetByID(id string) (domain.TargetSet, error) {
+	set, ok := t.store.targetSets[id]
+	if !ok {
+		return domain.TargetSet{}, domain.ErrNotFound
+	}
+	return set, nil
+}
+func (t *fakeScanTx) PutCoverageSet(set domain.CoverageSet) error {
+	if _, ok := t.store.versions[set.VersionID]; !ok {
+		return domain.ErrNotFound
+	}
+	if _, err := t.TargetSetByID(set.TargetSetID); err != nil {
+		return err
+	}
+	if _, exists := t.store.coverageSets[set.ID]; exists {
+		return domain.ErrConflict
+	}
+	t.store.coverageSets[set.ID] = set
+	return nil
+}
+func (t *fakeScanTx) PutRequiredUnit(unit domain.RequiredUnit) error {
+	set, ok := t.store.coverageSets[unit.CoverageSetID]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	if set.TargetSetID != unit.TargetSetID {
+		return domain.ErrInvalidTarget
+	}
+	if t.store.requiredUnits[set.ID] == nil {
+		t.store.requiredUnits[set.ID] = map[string]domain.RequiredUnit{}
+	}
+	key := unit.Kind + "\x00" + unit.PagePath + "\x00" + unit.RegionID
+	if _, exists := t.store.requiredUnits[set.ID][key]; exists {
+		return domain.ErrConflict
+	}
+	t.store.requiredUnits[set.ID][key] = unit
+	return nil
+}
+func (t *fakeScanTx) RequiredUnits(setID, afterKind, afterPage, afterRegion string, limit int) ([]domain.RequiredUnit, error) {
+	after := afterKind + "\x00" + afterPage + "\x00" + afterRegion
+	keys := []string{}
+	for key := range t.store.requiredUnits[setID] {
+		if key > after {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	if limit <= 0 {
+		limit = 256
+	}
+	if len(keys) > limit {
+		keys = keys[:limit]
+	}
+	out := []domain.RequiredUnit{}
+	for _, key := range keys {
+		out = append(out, t.store.requiredUnits[setID][key])
+	}
+	return out, nil
+}
 func (t *fakeScanTx) VersionSources(versionID string) ([]domain.Source, error) {
 	return nil, nil
 }
@@ -475,6 +563,28 @@ func (t *fakeScanTx) JobFindings(filter domain.FindingFilter, afterCreatedAt, af
 	return out, nil
 }
 
+func expectScanFreshnessMembership(store *fakeScanStore, jobID string) string {
+	GinkgoHelper()
+	var id string
+	Expect(store.Write(context.Background(), func(tx app.WriteTx) error {
+		Expect(store.rosters[jobID]).To(HaveLen(1))
+		cv := store.rosters[jobID][0]
+		sets, err := tx.CoverageSetsByVersion(cv.VersionID, cv.TargetSetID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(sets).To(HaveLen(1))
+		Expect(sets[0].Origin).To(Equal("freshness:" + jobID))
+		Expect(sets[0].TargetSetID).NotTo(BeEmpty())
+		Expect(store.coverageSets).To(HaveLen(1))
+		Expect(store.requiredUnits).To(HaveLen(1))
+		units, err := app.AllRequiredUnits(tx, sets[0].ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(units).To(Equal([]domain.RequiredUnit{{CoverageSetID: sets[0].ID, TargetSetID: cv.TargetSetID, Kind: "page", PagePath: "page.html", Reason: "not_yet_assessed"}}))
+		id = sets[0].ID
+		return nil
+	})).To(Succeed())
+	return id
+}
+
 var _ = It("handles POST /api/v1/scans receipts, coalescing, unknown-field rejection, and premature finding_id 503", Label("integration"), func() {
 	store := newFakeScanStore()
 	ownerToken, err := sec.Secret()
@@ -536,6 +646,21 @@ var _ = It("handles POST /api/v1/scans receipts, coalescing, unknown-field rejec
 	Expect(env2.Data.OperationID).To(Equal(key2))
 	Expect(env2.Data.JobID).NotTo(BeEmpty())
 	Expect(env2.Data.Coalesced).To(BeFalse())
+	membership := expectScanFreshnessMembership(store, env2.Data.JobID)
+
+	// Receipt replay must return the same admission without another fixed set.
+	replay := httptest.NewRequest(http.MethodPost, "/api/v1/scans", bytes.NewBufferString(`{"project_id":"11111111-1111-4111-8111-111111111111","depth":"change_focused"}`))
+	replay.Header.Set("Authorization", "Bearer "+ownerToken)
+	replay.Header.Set("Content-Type", "application/json")
+	replay.Header.Set("Idempotency-Key", key2)
+	replayResponse := httptest.NewRecorder()
+	h.ServeHTTP(replayResponse, replay)
+	Expect(replayResponse.Code).To(Equal(http.StatusAccepted))
+	var originalEnvelope, replayEnvelope map[string]any
+	Expect(json.Unmarshal(rec2.Body.Bytes(), &originalEnvelope)).To(Succeed())
+	Expect(json.Unmarshal(replayResponse.Body.Bytes(), &replayEnvelope)).To(Succeed())
+	Expect(replayEnvelope["data"]).To(Equal(originalEnvelope["data"]))
+	Expect(expectScanFreshnessMembership(store, env2.Data.JobID)).To(Equal(membership))
 
 	// 4. Equivalent fresh-key request coalesces onto the active scan job
 	key3 := "cccccccc-3333-4333-8333-333333333333"
@@ -557,6 +682,7 @@ var _ = It("handles POST /api/v1/scans receipts, coalescing, unknown-field rejec
 	Expect(env3.Data.OperationID).To(Equal(key3))
 	Expect(env3.Data.JobID).To(Equal(env2.Data.JobID))
 	Expect(env3.Data.Coalesced).To(BeTrue())
+	Expect(expectScanFreshnessMembership(store, env3.Data.JobID)).To(Equal(membership))
 })
 
 var _ = It("allows derived workflow scan.request on POST /api/v1/scans while keeping GET /api/v1/jobs/{id}/findings owner-only", Label("integration"), func() {
@@ -591,6 +717,7 @@ var _ = It("allows derived workflow scan.request on POST /api/v1/scans while kee
 	Expect(json.Unmarshal(recScan.Body.Bytes(), &scanData)).To(Succeed())
 	jobID := scanData.Data.JobID
 	Expect(jobID).NotTo(BeEmpty())
+	expectScanFreshnessMembership(store, jobID)
 
 	// Seed a finding on that job
 	f1 := domain.Finding{

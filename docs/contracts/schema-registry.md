@@ -1393,3 +1393,48 @@ include:
   `nomination_batch_id`, `nomination_status`) while keeping the public HTTP/CLI
   API and SQLite schema at revision 21 (`maintenance_intents_by_scan_item`
   indexes `item_id = batch_id` for nomination batches).
+
+## Produced scoped freshness (TASK-008-03)
+
+The API/package schema remains v1/1.0. SQLite revision 22 adds the immutable
+`assessment_trigger_resolutions` relation and assessment lookup indexes. The
+existing `assessments`, `assessment_units`, `coverage_sets` and `required_units`
+remain the semantic authorities; findings are candidates until policy permits
+publication. A resolution references its actual assessment and never deletes a
+source observation or its historical trigger.
+
+A freshness scan fixes the entire requested denominator before its first model
+submission. Whole-version HTML membership is every page; no HTML means one
+whole-version unit. Page and region requests retain their exact tuples. Each
+child evaluates one required unit, records its own scope and shares one exact
+source capture with the other units of that scan/version. A full-scope coverage
+set projects those published contributions without an invented aggregate
+assessment row. An interrupted run retains its unattempted members and actual
+reason. Storage cursor page sizes never limit required membership.
+
+The Task03 producer also makes a completed, version-bound managed source capture
+eligible for its own published freshness history and fixed coverage. This extends
+the earlier verification-only pinned read boundary: default pinned selection
+still requires the exact effective source identities and declared revisions or
+retained snapshots, and current selection requires the matching authorized
+source family. Observation/current and historical/pinned families cannot replace
+one another. An explicit target selects only its own capture. Full-file capture
+C2 does not inherit or clear observation C's triggers. The existing latest
+matching availability-blocked attempt exception remains in force.
+
+`GET /versions/{id}/assessments` returns real immutable history. Version history
+includes the actual narrower contribution scopes; scope filters select the
+applicable fixed set and page/region history. History cursors remain bound to the
+principal, version, exact target and filters. The per-unit response can include
+`coverage_set_id` identifying the selected contribution's originating set,
+separately from the requested fixed set. `assessment_id` stays null when no
+matching published contribution exists. Partial/blocked/not_checked outcomes and
+reasons remain visible. `assessed_at` is the newest actually applicable tuple's
+assessment time, never a later unrelated region's time or `captured_at`.
+
+Canonical document summaries add nullable `freshness`, the same applicable
+projection for the exact latest explanation version. HTTP, CLI, browser and
+native clients share it; it does not alter personal Review/Revisit. Reading a
+summary performs no project-source read, observation, provider call or dispatch.
+The existing immutable normalized manifest supplies historical intent, including
+for imports whose old compact metadata projection omitted it.

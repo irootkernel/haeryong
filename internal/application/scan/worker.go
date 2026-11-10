@@ -209,6 +209,9 @@ func (w *Worker) exhaustRunBudget(tx app.WriteTx, j domain.Job, run domain.ScanR
 	run.ElapsedMs = elapsedMs
 	run.Stage = "complete"
 	run.Report.BudgetExhausted = true
+	if err := markFreshnessUnattempted(tx, run, "", "run_budget_exhausted"); err != nil {
+		return err
+	}
 	run.Report.Semantic.Complete = false
 	run.UpdatedAt = nowStr
 	if err := tx.UpdateScanRun(run); err != nil {

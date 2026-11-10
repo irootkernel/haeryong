@@ -239,7 +239,58 @@ func (s *Service) reviewedDocument(ctx context.Context, tx app.WriteTx, token st
 			return out, err
 		}
 	}
+
 	out.ETag = ""
 	out.ETag = validator(out)
 	return out, nil
+}
+
+// Freshness shares the exact assessments selector, including historical intent
+// of old imports. Immutable object reads stay outside the document-list writer.
+func (s *Service) documentFreshness(ctx context.Context, token string, out *Document) error {
+	if out.LatestVersionID != nil {
+		// Ordinary no-source documents have no freshness context to compose.
+		// Do not turn listing them into reads of their whole result manifests.
+		hasContext := false
+		if e := s.read(ctx, token, "/api/v1/documents/"+out.ID, func(tx app.WriteTx) error {
+			rows, e := tx.VersionEvidence(*out.LatestVersionID)
+			if e != nil {
+				return e
+			}
+			if len(rows) > 0 {
+				hasContext = true
+				return nil
+			}
+			runs, e := tx.ObservationRunsByVersion(*out.LatestVersionID)
+			if e != nil {
+				return e
+			}
+			if len(runs) > 0 {
+				hasContext = true
+				return nil
+			}
+			sets, e := tx.CoverageSetsByVersion(*out.LatestVersionID, "")
+			if e != nil {
+				return e
+			}
+			hasContext = len(sets) > 0
+			return nil
+		}); e != nil {
+			return e
+		}
+		if !hasContext {
+			out.Freshness = nil
+			out.ETag = ""
+			out.ETag = validator(*out)
+			return nil
+		}
+		view, e := s.Assessments(ctx, token, *out.LatestVersionID, AssessmentQuery{})
+		if e != nil {
+			return e
+		}
+		out.Freshness = view["applicable"]
+	}
+	out.ETag = ""
+	out.ETag = validator(*out)
+	return nil
 }

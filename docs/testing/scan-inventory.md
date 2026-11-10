@@ -246,3 +246,15 @@ separate affected documentation checks; the normal commit and native finalizatio
 precede Task03.
 Semantic freshness remains with TASK-008-03; `semantic.assessed = 0` and
 `semantic.complete = false` are preserved.
+
+## Task03 freshness continuation
+
+The independent freshness stage now follows the existing scan inventory and
+candidate stages. It fixes complete required membership and schedules one exact
+unit at a time against a shared captured target. Semantic work counts are distinct
+from inspected relationships and from published applicable contributions; a
+propose-only result changes neither applicable freshness nor source triggers.
+The [freshness record](region-freshness.md) owns current verification and the
+[quality declaration](knowledge-quality.md#task-008-03-frozen-predeclaration)
+owns expected outcomes. Earlier Task01/02 receipts and their original source0,
+cleanup, model and quality qualifications remain unchanged.

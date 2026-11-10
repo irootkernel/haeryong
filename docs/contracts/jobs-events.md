@@ -893,3 +893,42 @@ per active semantic unit:
    abstained and appending up to `6` (`maxShortlistCandidates`) same-page
    sibling regions (`same_page_sibling`) only when a region unit's shortlist
    would otherwise be empty.
+
+## Fixed-unit freshness work (TASK-008-03)
+
+Scan admission persists the fixed required tuples for every eligible captured
+version before any freshness provider admission or later budget/fence stop.
+After structural/candidate work, the independent freshness stage commits one
+maintenance child per unit, sequentially sharing one exact source capture per
+selected version. It never redispatches Task02
+relationship/topic nomination. Each child has its own captured inputs, provider
+attempt and immutable result; resume of a saved result performs no new Execute.
+Scan-owned temporary source pins survive an earlier child's completion and are
+released by normal scan completion/cancellation.
+
+`result.semantic.eligible` is the full captured required-unit denominator.
+`assessed` counts actually completed full-unit semantic work, including a
+validated proposal; `complete` requires every required unit assessed and no
+budget/unrecorded exclusion. Candidate inspections never count as freshness.
+Applicable query coverage separately counts only published contributions, so a
+propose run may finish work while its applicable view stays unassessed.
+`result.outdated_units` counts distinct required version/kind/page/region tuples
+with a validated saved freshness discrepancy, including proposed or partial
+work. Recomputing the report does not increment it again. It is a job-work
+counter, not a count of currently published/applicable outdated versions.
+Partial, blocked and unattempted units retain their reasons. An interruption
+cannot turn completed structural work into complete semantic alignment.
+Budget, provider-unavailable and target/lifecycle fences record their actual
+unattempted reason on the captured membership, including later versions that
+never acquired a child. Membership alone is neither a source capture nor a
+semantic contribution. In a genuine no-observation/no-capture view, the public
+target and capture/assessment times remain null while permitted unit enumeration
+remains available. An existing observation/capture composition keeps its selected
+target, time, status, reassessment flag and attempt-bound units locator; an older
+unattempted scan cannot mask a newer observation. The scan's fixed membership
+and reasons remain separately enumerable by their existing coverage-set locator.
+Current authority and lifecycle masking still apply. Purge removes
+private coverage/targets and leaves the existing redacted scan roster; settling
+that scan must not recreate purged evidence or invent a successful target.
+`assessment.published` uses the existing authenticated outbox; no status/list
+request initiates source IO or model work.

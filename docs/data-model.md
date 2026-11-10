@@ -814,3 +814,27 @@ version fencing/redaction, `B03`, `B07`) include `maintenance_intents` and
 `findings` so active execution pins, retained source snapshots, and candidate
 references are protected during execution and scrubbed (`{"purged":true}`) or
 deleted on manual target purge without leaking denied or trashed targets.
+
+## Schema revision 22 scoped freshness (TASK-008-03)
+
+Migration 22 adds `assessment_trigger_resolutions(trigger_id PRIMARY KEY,
+assessment_id)` with foreign keys to the existing triggers and assessments,
+plus version/time and exact-unit lookup indexes. Earlier migration checksums
+remain unchanged. The existing assessment and coverage tables now have an
+actual guarded producer. A published contribution contains the complete fixed
+membership of its own exact scope and target; a proposed finding is not one.
+Latest matching contributions retain their original assessment/coverage IDs.
+Only fully assessed matching units clear covered triggers at the same target.
+The latest availability-blocked attempt exception retains prior discrepancy,
+coverage and trigger history while reporting current inability to verify.
+
+Freshness maintenance intents carry their unit coverage set and the full-scope
+fixed set separately. Each child assesses one actual page/region/version unit;
+the full set projects these contributions without storing an invented aggregate
+assessment. Source capture C2 and observation C retain separate target IDs and
+triggers. Scan-owned temporary source pins protect the shared exact capture
+between children and are released by ordinary parent completion/cancellation.
+Manual purge removes trigger resolutions before their referenced records.
+Provider attempts, delivered-input observations and saved results remain in
+their existing ledgers; semantic publication does not manufacture those facts.
+See [scoped freshness evidence](testing/region-freshness.md).

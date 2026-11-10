@@ -131,6 +131,7 @@ for line in sys.stdin:
  r=json.loads(line);method=r['method'];result={}
  with open(sys.argv[0]+'.trace','a') as trace:trace.write(json.dumps({'method':method,'pid':os.getpid(),'items_view':r.get('params',{}).get('itemsView')})+'\n')
  if method=='initialize' and mode=='initialize_error':
+  sys.stderr.write('WARNING: PATH alias permission denied\nError: operation not permitted during controlled setup\n');sys.stderr.flush()
   send({'jsonrpc':'2.0','id':r['id'],'error':{'code':-32603}});continue
  if method=='initialize':result={'userAgent':'codex','codexHome':'PRIVATE_PATH','platformFamily':'unix','platformOs':'macos'}
  elif method=='initialized':

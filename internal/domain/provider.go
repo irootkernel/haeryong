@@ -79,6 +79,7 @@ type MaintenanceExplanation struct {
 }
 
 type MaintenanceInvocation struct {
+	CoverageSetID     string                   `json:"coverage_set_id,omitempty"`
 	Mode              string                   `json:"mode,omitempty"`
 	ScanJobID         string                   `json:"scan_job_id,omitempty"`
 	ItemID            string                   `json:"item_id,omitempty"`

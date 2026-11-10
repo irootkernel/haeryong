@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -291,11 +292,11 @@ func (d *Driver) execute(ctx context.Context, setupTimeout time.Duration, a doma
 	out = work.ProviderOutcome{Reason: "provider_unavailable", LocalClosed: true}
 	inv, e := d.invocation(ctx, a)
 	if e != nil {
-		return out, e
+		return out, errors.Join(e, d.recordPreparationFailure(a, "invocation", e, out))
 	}
 	inputs, e = d.orderedInputs(ctx, a, inputs)
 	if e != nil {
-		return out, e
+		return out, errors.Join(e, d.recordPreparationFailure(a, "ordered_inputs", e, out))
 	}
 	setupCtx, setupCancel := context.WithTimeout(ctx, setupTimeout)
 	defer setupCancel()
@@ -331,13 +332,25 @@ func (d *Driver) execute(ctx context.Context, setupTimeout time.Duration, a doma
 		return out, nil
 	}
 	out.LocalClosed = false
-	t, e := start(setupCtx, binary)
+	var retainProcess func(ownedNativeProcess) error
+	if inv.Maintenance != nil && inv.Maintenance.Mode == domain.MaintenanceModeFreshness {
+		retainProcess = func(fact ownedNativeProcess) error {
+			return d.retainPreparation(a, "preparation-process-", fact)
+		}
+	}
+	t, e := startPrepared(setupCtx, binary, retainProcess)
 	if e != nil {
+		out.Reason = "initialize_failed"
 		out.LocalClosed = !errors.Is(e, errCleanup)
 		if errors.Is(e, errCleanup) {
 			out.CleanupError = errCleanup
 		}
-		return out, e
+		var fact *initializationFailure
+		if errors.As(e, &fact) {
+			out.LocalClosed = fact.localClosed
+			out.LocalCleanupReason = fact.cleanupReason
+		}
+		return out, errors.Join(e, d.recordPreparationFailure(a, "native_start", e, out))
 	}
 	var metadata *domain.ProviderTransport
 	backendState := ""
@@ -862,4 +875,64 @@ func loadTurn(ctx context.Context, t *transport, threadID, turnID string, guard 
 		seen[*page.Next] = true
 		cursor = *page.Next
 	}
+}
+
+// This private diagnostic records only a failing stage and error class. It is
+// not a complete native transport audit, input observation or provider identity.
+type preparationFailure struct {
+	Stage            string              `json:"stage"`
+	ErrorClass       string              `json:"error_class"`
+	NativeExitCode   *int                `json:"native_exit_code"`
+	LocalClosed      bool                `json:"local_closed"`
+	CleanupReason    string              `json:"cleanup_reason"`
+	NativeProcess    *ownedNativeProcess `json:"native_process,omitempty"`
+	NativeErrorClass string              `json:"native_error_class,omitempty"`
+}
+
+func (d *Driver) recordPreparationFailure(a domain.ProviderAttempt, stage string, cause error, out work.ProviderOutcome) error {
+	fact := preparationFailure{Stage: stage, ErrorClass: "unclassified", LocalClosed: out.LocalClosed, CleanupReason: out.LocalCleanupReason}
+	switch {
+	case errors.Is(cause, domain.ErrInvalidTarget):
+		fact.ErrorClass = "invalid_target"
+	case errors.Is(cause, domain.ErrContentIntegrity):
+		fact.ErrorClass = "content_integrity"
+	case errors.Is(cause, domain.ErrDenied):
+		fact.ErrorClass = "denied"
+	case errors.Is(cause, context.Canceled):
+		fact.ErrorClass = "cancelled"
+	case errors.Is(cause, context.DeadlineExceeded):
+		fact.ErrorClass = "deadline_exceeded"
+	case errors.Is(cause, errTransport):
+		fact.ErrorClass = "transport"
+	}
+	var pathErr *os.PathError
+	if errors.As(cause, &pathErr) {
+		fact.ErrorClass = "path_error"
+	}
+	if errors.Is(cause, syscall.EPERM) || errors.Is(cause, syscall.EACCES) {
+		fact.ErrorClass = "permission_denied"
+	}
+	var init *initializationFailure
+	if errors.As(cause, &init) {
+		fact.NativeExitCode = init.exitCode
+		fact.NativeProcess = &init.owned
+		fact.NativeErrorClass = init.errorClass
+	}
+	return d.retainPreparation(a, "preparation-failure-", fact)
+}
+
+func (d *Driver) retainPreparation(a domain.ProviderAttempt, prefix string, fact any) error {
+	path, e := d.attemptCWD(a, prefix)
+	if e != nil {
+		return e
+	}
+	file, e := os.OpenFile(path+".json", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if errors.Is(e, os.ErrExist) {
+		return nil
+	}
+	if e != nil {
+		return e
+	}
+	writeErr := json.NewEncoder(file).Encode(fact)
+	return errors.Join(writeErr, file.Close())
 }

@@ -384,7 +384,7 @@ func AuthorizeMaintenance(tx WriteTx, j domain.Job, scope domain.ProviderScope, 
 	if m.ScanJobID != j.ParentID || m.ItemID == "" || m.ItemID != scope.Invocation.Maintenance.ItemID {
 		return domain.ErrInvalidTarget
 	}
-	if m.Mode != scope.Invocation.Maintenance.Mode || (m.Mode != "" && m.Mode != domain.MaintenanceModeSemanticNomination) {
+	if m.Mode != scope.Invocation.Maintenance.Mode || (m.Mode != "" && m.Mode != domain.MaintenanceModeSemanticNomination && m.Mode != domain.MaintenanceModeFreshness) {
 		return domain.ErrInvalidTarget
 	}
 	if attemptID != "" && !m.AdmissionReady {
@@ -512,6 +512,13 @@ func AuthorizeMaintenance(tx WriteTx, j domain.Job, scope domain.ProviderScope, 
 				}
 			}
 		}
+	} else if m.Mode == domain.MaintenanceModeFreshness {
+		if parent.CancelRequested || (parent.State != "running" && parent.State != "queued" && attemptState != "reconciling") {
+			return domain.ErrStaleWorker
+		}
+		if m.CoverageSetID == "" || m.CoverageSetID != scope.Invocation.Maintenance.CoverageSetID {
+			return domain.ErrInvalidTarget
+		}
 	} else if attemptState == "reconciling" {
 		if parent.State != "running" && parent.State != "queued" && parent.State != "interrupted" && parent.State != "paused" && parent.State != "reconciling" && parent.State != "cancelling" {
 			return domain.ErrStaleWorker
@@ -541,17 +548,35 @@ func AuthorizeMaintenance(tx WriteTx, j domain.Job, scope domain.ProviderScope, 
 	}
 	var cfgParsed struct {
 		Maintenance struct {
-			MaxProviderAttemptsPerRun int `json:"max_provider_attempts_per_run"`
+			AutoApply                 map[string]string `json:"auto_apply"`
+			MaxProviderAttemptsPerRun int               `json:"max_provider_attempts_per_run"`
 		} `json:"maintenance"`
 		Projects map[string]struct {
 			ProviderID  *string `json:"provider_id"`
 			Maintenance *struct {
-				MaxProviderAttemptsPerRun *int `json:"max_provider_attempts_per_run"`
+				AutoApply                 map[string]string `json:"auto_apply"`
+				MaxProviderAttemptsPerRun *int              `json:"max_provider_attempts_per_run"`
 			} `json:"maintenance"`
 		} `json:"projects"`
 	}
 	if json.Unmarshal(cfg.Value, &cfgParsed) != nil {
 		return domain.ErrDenied
+	}
+	if m.Mode == domain.MaintenanceModeFreshness {
+		if run.EffectivePolicy.AutoApply.FreshnessAssessment == "disabled" {
+			return domain.ErrDenied
+		}
+		for _, pid := range run.RequestedScope.ProjectIDs {
+			mode := cfgParsed.Maintenance.AutoApply["freshness_assessment"]
+			if p, ok := cfgParsed.Projects[pid]; ok && p.Maintenance != nil {
+				if v := p.Maintenance.AutoApply["freshness_assessment"]; v != "" {
+					mode = v
+				}
+			}
+			if mode == "disabled" {
+				return domain.ErrDenied
+			}
+		}
 	}
 	maxAttempts := run.EffectivePolicy.MaxProviderAttemptsPerRun
 	if cfgParsed.Maintenance.MaxProviderAttemptsPerRun > 0 && (maxAttempts <= 0 || cfgParsed.Maintenance.MaxProviderAttemptsPerRun < maxAttempts) {

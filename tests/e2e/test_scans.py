@@ -397,10 +397,105 @@ def test_scans_T00801_managed_files_captures_and_crash_restart_recovery(product,
         + mid_report["structural"]["failed"]
         + mid_report["structural"]["blocked"]
     ) == expected_total_units
-    assert mid_report["semantic"]["skipped"] == 1
+    # Task03 counts the fixed full-version page units, rather than Task01's
+    # earlier one-version placeholder for unimplemented semantic work.
+    assert mid_report["semantic"]["eligible"] == page_count
+    assert mid_report["semantic"]["skipped"] == page_count
 
     assert product.data("GET", f"/api/v1/jobs/{job_a}", client=owner)["state"] == "completed"
     assert product.data("GET", f"/api/v1/jobs/{job_b}", client=owner)["state"] == "completed"
     assert isinstance(
         product.data("GET", f"/api/v1/jobs/{job_a}/findings", client=owner)["items"], list
     )
+
+
+def test_scans_T00803_unknown_fixed_scope_remains_readable_and_independent_of_review(product, owner, tmp_path):
+    """Actual public no-source behavior; no model/fabricated assessment records."""
+    from urllib.parse import urlencode
+
+    def assert_unknown_units(freshness, expected_units):
+        assert freshness["status"] == "not_assessed"
+        assert freshness["target_set_id"] is None
+        assert freshness["captured_at"] is None
+        assert freshness["assessed_at"] is None
+        assert freshness["reassessment_required"] is False
+        assert freshness["scope"] == {"kind": "version", "page_path": None, "region_id": None}
+        coverage = freshness["coverage"]
+        assert coverage["coverage_set_id"]
+        assert coverage["unit_kind"] == expected_units[0][0]
+        assert coverage["eligible"] == len(expected_units)
+        assert coverage["assessed"] == 0
+        assert coverage["complete"] is False
+        assert coverage["units_url"]
+        units, cursor, seen = [], None, set()
+        while True:
+            params = {"limit": 1}
+            if cursor is not None:
+                assert cursor not in seen
+                seen.add(cursor)
+                params["cursor"] = cursor
+            url = coverage["units_url"]
+            page = product.data("GET", url + ("&" if "?" in url else "?") + urlencode(params), client=owner)
+            units.extend(page["items"])
+            cursor = page["next_cursor"]
+            if cursor is None:
+                break
+        assert len(units) == len(expected_units)
+        assert {(unit["kind"], unit["page_path"], unit["region_id"]) for unit in units} == set(expected_units)
+        for unit in units:
+            assert unit["outcome"] == "not_checked"
+            assert unit["reason"] == "provider_unavailable"
+            assert unit["assessment_id"] is None
+            assert unit["target_set_id"] is None
+            assert unit["discrepancy"] is None
+
+    package = tmp_path / "ordinary"
+    (package / "nested").mkdir(parents=True)
+    (package / "a.html").write_text("<h1>Ordinary page A</h1><p>No author metadata.</p>")
+    (package / "nested" / "b.html").write_text("<h1>Ordinary page B</h1>")
+    (package / "attachment.bin").write_bytes(b"\x00ordinary attachment\xff")
+    _, _, imported = product.import_tree(owner, package)
+    version, document = imported["version_id"], imported["document_id"]
+    accepted = product.cli(["scan", "--version", version, "--depth", "full-scope"], client=owner)["data"]["result"]
+    report = product.job(owner, accepted["job_id"])
+    CONTRACT.validate("scan_report", report)
+    assert report["captured"]["pages"] == 2
+    assert report["captured"]["regions"] == 0
+    assert report["semantic"]["eligible"] == 2
+    assert report["semantic"]["assessed"] == 0
+    assert report["semantic"]["complete"] is False
+    assert report["semantic"]["status"] != "aligned_within_scope"
+    assert report["provider_attempts"] == 0
+    assert report["inspected_candidate_relations"] == 0
+    assert {row["path"] for row in product.files(owner, version)} == {"a.html", "nested", "nested/b.html", "attachment.bin"}
+    before = product.data("GET", f"/api/v1/documents/{document}", client=owner)
+    CONTRACT.validate("query_document", before)
+    assert_unknown_units(before["freshness"], [("page", "a.html", None), ("page", "nested/b.html", None)])
+    history = product.cli(["assessments", "list", "--version", version], client=owner)["data"]
+    assert history["items"] == [] and history["next_cursor"] is None
+    assert history["applicable"] == before["freshness"]
+    # Personal Review changes neither source evidence nor unknown freshness.
+    product.data("PUT", f"/api/v1/versions/{version}/review", client=owner,
+                 body={"action": "complete", "state": "reviewed"},
+                 headers={"Idempotency-Key": operation(), "If-None-Match": "*"})
+    after = product.data("GET", f"/api/v1/documents/{document}", client=owner)
+    assert after["freshness"] == before["freshness"]
+    assert after["etag"] != before["etag"]
+    assert product.data("GET", f"/api/v1/versions/{version}/review", client=owner)["value"]["state"] == "reviewed"
+    assert product.data("GET", f"/api/v1/versions/{version}/assessments", client=owner)["items"] == []
+
+    # An ordinary result without any HTML has one whole-version required unit.
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    (plain / "notes.txt").write_text("A complete ordinary result without HTML.")
+    _, _, second = product.import_tree(owner, plain)
+    run = product.cli(["scan", "--version", second["version_id"], "--depth", "full-scope"], client=owner)["data"]["result"]
+    result = product.job(owner, run["job_id"])
+    assert result["captured"]["pages"] == 0
+    assert result["semantic"]["eligible"] == 1
+    assert result["semantic"]["assessed"] == 0 and result["semantic"]["complete"] is False
+    assert result["provider_attempts"] == 0
+    assert product.files(owner, second["version_id"])[0]["path"] == "notes.txt"
+    plain_history = product.data("GET", f"/api/v1/versions/{second['version_id']}/assessments", client=owner)
+    assert plain_history["items"] == [] and plain_history["next_cursor"] is None
+    assert_unknown_units(plain_history["applicable"], [("version", None, None)])

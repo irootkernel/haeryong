@@ -933,7 +933,7 @@ func (t *writeTx) refreshScanReportCounts(run *domain.ScanRun) error {
 		run.Report.Semantic.Status = "not_assessed"
 		run.Report.Semantic.Reason = "semantic_assessment_not_run"
 	}
-	return nil
+	return t.refreshFreshnessCounts(run)
 }
 
 const findingColumns = `finding_id,job_id,project_id,document_id,version_id,page_path,region_id,kind,origin,target_set_id,evidence_json,evidence_fingerprint,rationale,uncertainty,proposal_json,status,approval_required,reason,config_revision,permissions_revision,applied_ref_json,decided_by,decided_at,revision,created_at,updated_at`

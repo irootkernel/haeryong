@@ -327,6 +327,7 @@ export type ReviewFilter = "reviewing" | "updated_since_review";
 export interface DocumentFilter { projectId?: string; lifecycle?: string; cursor?: string; revisit?: "true"|"false"; review?: ReviewFilter }
 
 export interface DocumentView {
+  freshness?: ApplicableFreshness | null;
   document_id: string;
   project_id: string;
   title: string;
@@ -660,7 +661,27 @@ export interface AssessmentRecord {
   scope: { kind: string; page_path: string | null; region_id: string | null };
   target_set_id: string | null;
   state?: string;
+  coverage_set_id?: string;
+  assessed_at?: string;
+  created_at?: string;
+  origin?: string;
+  config_revision?: number;
+  permissions_revision?: number;
+  evidence?: unknown;
   [key: string]: unknown;
+}
+
+/** Stored public semantic evidence, distinct from later enriched Ask citations. */
+export type AssessmentCitation = Pick<QuestionCitation, "basis" | "read_id" | "verification_id" | "input_origin" | "target_set_id" | "source" | "location" | "bytes_sha256" | "package_evidence_ref">;
+export interface AssessmentDetailUnit {
+  kind: "version" | "page" | "region";
+  page_path: string | null;
+  region_id: string | null;
+  outcome: "assessed" | "partial" | "blocked" | "not_checked";
+  discrepancy: string;
+  reason: string;
+  rationale: string;
+  citations: AssessmentCitation[];
 }
 
 /**
@@ -668,6 +689,8 @@ export interface AssessmentRecord {
  * Counts and aggregate status derive ONLY from these records.
  */
 export interface CoverageUnit {
+  /** Originating published contribution set, distinct from selected membership. */
+  coverage_set_id?: string;
   kind: string;
   page_path: string | null;
   region_id: string | null;
