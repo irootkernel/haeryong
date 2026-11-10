@@ -32,6 +32,31 @@ def test_provider_summary_accounts_older_uncertainty_without_native_identity():
 
 
 def test_scan_request_accepted_report_and_findings_page_shapes():
+    # TASK-008-04 additive management read projection; approval actor is not origin.
+    u = "11111111-1111-4111-8111-111111111111"
+    effect = dict(availability="available",overlay_id=u,semantic_key="key",finding_id=u,job_id=u,
+                  kind="related_explanation",origin="ai",evidence_basis="thematic_analogy",
+                  evidence_fingerprint="fingerprint",rationale="Specific comparison",uncertainty="source_unverified",
+                  decision_actor="owner",etag='"overlay-r2"',created_at="now",updated_at="now",
+                  target_set_id=None,evidence=[],decision="accepted",pinned=False,
+                  captured_config_revision=1,applied_config_revision=2,permissions_revision=1,revision=2,
+                  relation_type="related",mechanism_key="mechanism",target=None)
+    effect["from"] = dict(document_id=u,version_id=u,page_path="page.html",region_id=None)
+    c.validate("management_page",dict(items=[effect],next_cursor=None))
+    unavailable = {key:effect[key] for key in ("overlay_id","kind","from","origin","decision","revision","etag")}
+    unavailable["availability"] = "unavailable"
+    c.validate("management_page", dict(items=[unavailable], next_cursor=None))
+    for key, value in (("target",effect["from"]),("rationale","private"),("evidence",[]),
+                       ("finding_id",u),("job_id",u),("evidence_basis","source_verified"),
+                       ("decision_actor","owner"),("semantic_key","private-digest")):
+        with pytest.raises(c.ContractError):
+            c.validate("management_effect", {**unavailable,key:value})
+    for basis in ("explanation_text","source_verified","legacy_unknown"):
+        c.validate("management_effect", {**effect,"kind":"topic_assignment","evidence_basis":basis})
+    for invalid in ({**effect,"origin":"owner"},{**effect,"decision":"published"},{**effect,"revision":0}):
+        with pytest.raises(c.ContractError):
+            c.validate("management_effect",invalid)
+
     u1 = "11111111-1111-4111-8111-111111111111"
     u2 = "22222222-2222-4222-8222-222222222222"
     c.validate("scan_request", {"scope": "selected_projects", "project_ids": [u1],

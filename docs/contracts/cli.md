@@ -558,3 +558,20 @@ the owner (`--limit` `1..200`); `haeryong findings approve` and
 `haeryong findings reject` exit `5` (`UNAVAILABLE` envelope code with
 `FEATURE_NOT_READY: findings approve|reject` message) until TASK-008-05.
 See [scan inventory evidence](../testing/scan-inventory.md).
+
+## Task04 management reads
+
+`haeryong related list --version ID [--path PATH --region REGION]
+[--cursor CURSOR --limit N]` reads separate applied AI relations.
+`haeryong topics list [--document ID --version ID --path PATH --region REGION]
+[--cursor CURSOR --limit N]` reads owner topic assignments. Page requires version;
+region requires page; limit is 1..200. Paths and opaque cursors preserve exact
+characters. Findings list remains the proposal read, with captured evidence and
+status. Topic set, finding decisions and overlay undo retain Task05 ownership.
+Existing config read/plan/commit handles category settings; neither reads nor mode
+changes produce a new document or provider operation.
+Related rows share the closed available/unavailable DTO: unavailable includes only
+the opaque overlay ID, authorized focal anchor, AI origin, decision and revision/
+validator, without hidden target/evidence details or a distinguishing cause.
+Topic finding/effect legacy missing basis reads as legacy_unknown; new records
+carry explanation_text or source_verified from established evidence.

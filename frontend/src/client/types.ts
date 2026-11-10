@@ -933,6 +933,26 @@ export interface QuestionView {
  answers?:ListPage<AnswerView>;
 }
 
+export interface ManagementAnchor {document_id:string;version_id:string;page_path:string|null;region_id:string|null}
+export type ManagementEffect = ManagementAvailableEffect | ManagementUnavailableEffect;
+export interface ManagementUnavailableEffect {
+ availability:"unavailable";overlay_id:string;kind:"related_explanation";from:ManagementAnchor;origin:"ai";
+ decision:"accepted"|"rejected"|"undone";revision:number;etag:string;
+}
+export type TopicEvidenceBasis = "explanation_text" | "source_verified" | "legacy_unknown";
+export type ManagementAvailableEffect = ManagementAvailableFields & (
+ {kind:"related_explanation";evidence_basis:string} |
+ {kind:"topic_assignment";evidence_basis:TopicEvidenceBasis}
+);
+interface ManagementAvailableFields {
+ availability:"available";
+ overlay_id:string;semantic_key:string;finding_id:string;job_id:string;
+ from:ManagementAnchor;target:ManagementAnchor|null;relation_type?:string;mechanism_key?:string;topic_id?:string;topic?:string;
+ origin:"ai";evidence:unknown;rationale:string;uncertainty:string;evidence_fingerprint:string;
+ target_set_id:string|null;captured_config_revision:number;applied_config_revision:number;permissions_revision:number;
+ decision:"accepted"|"rejected"|"undone";decision_actor:string;pinned:boolean;revision:number;etag:string;created_at:string;updated_at:string;
+}
+export interface ManagementFilter {document_id?:string;version_id?:string;page_path?:string;region_id?:string;cursor?:string;limit?:number}
 export type ScanDepth = "change_focused" | "full_scope" | "deep_semantic";
 export type FindingKind = "backlink_index_repair" | "related_explanation" | "topic_assignment" | "freshness_assessment" | "new_version_proposal" | "new_document_proposal";
 export type FindingStatus = "proposed" | "applied" | "rejected" | "stale" | "blocked" | "undone";
@@ -1107,6 +1127,9 @@ export interface HaeryongClient {
   abandonUpload(uploadId: string, operationId: string): Promise<DecisionResult>;
   importPublish(request: ImportPublishRequest, operationId: string): Promise<DecisionResult>;
   // Jobs and archive export
+  jobsList?():Promise<ListPage<JobView>>;
+  versionRelated?(versionId:string,filter?:ManagementFilter):Promise<ListPage<ManagementEffect>>;
+  topicAssignmentsList?(filter?:ManagementFilter):Promise<ListPage<ManagementEffect>>;
   jobGet(jobId: string): Promise<JobView>;
   jobResume(jobId:string,decision:"reconcile_only"|"continue"|"retry",expectedGeneration:number,etag:string,operationId:string):Promise<unknown>;
   jobCancel(jobId: string, operationId: string): Promise<DecisionResult>;

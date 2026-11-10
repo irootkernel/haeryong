@@ -7,7 +7,15 @@ parser.add_argument('--receipt',type=pathlib.Path,required=True)
 parser.add_argument('--screenshot',type=pathlib.Path,help='Optional private rendered evidence panel screenshot')
 parser.add_argument('--existing-records',type=pathlib.Path,help='Read saved production records from an existing profile; no build/init/provider')
 parser.add_argument('--saved-record-subset',action='store_true',help='Observe available saved cases without claiming missing campaign obligations')
+parser.add_argument('--maintenance-records',type=pathlib.Path,help='Explicit Task04 saved-record Maintenance observer; requires separate runtime release')
 args=parser.parse_args()
+if args.maintenance_records:
+ assert not args.existing_records and not args.saved_record_subset and args.screenshot is None,'Maintenance mode cannot run the old evidence campaign'
+ command=[sys.executable,'-B',str(pathlib.Path(__file__).resolve().parents[5]/'spikes/viewer/check_reader_native.py'),
+          '--stages','maintenance','--maintenance-records',str(args.maintenance_records.resolve(strict=True)),
+          '--receipt',str(args.receipt.resolve()),'--scratch-root',str(args.receipt.resolve().parent),
+          '--saved-browser-cli',str(args.browser_cli.resolve(strict=True))]
+ raise SystemExit(subprocess.run(command).returncode)
 if args.existing_records:
  command=[sys.executable,'-B',str(pathlib.Path(__file__).resolve().parents[5]/'spikes/viewer/check_reader_native.py'),
           '--stages','evidence','--existing-records',str(args.existing_records.resolve(strict=True)),

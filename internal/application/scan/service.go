@@ -1108,6 +1108,15 @@ func (s *Service) ListJobFindings(ctx context.Context, token string, filter doma
 					reachedPageLimit = true
 					break
 				}
+				// Legacy missing basis is a read projection, never a history rewrite.
+				if item.Kind == "topic_assignment" {
+					var proposal map[string]any
+					if json.Unmarshal(item.Proposal, &proposal) == nil && proposal != nil {
+						basis, _ := proposal["evidence_basis"].(string)
+						proposal["evidence_basis"] = domain.TopicEvidenceBasis(basis)
+						item.Proposal, _ = json.Marshal(proposal)
+					}
+				}
 				out.Items = append(out.Items, item)
 			}
 			if reachedPageLimit || len(rows) < f.Limit {

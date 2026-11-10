@@ -859,6 +859,9 @@ func purgeStage(i domain.PurgeIntent) string {
 }
 
 func (t *writeTx) redactPurgedScanRecords(documentID string) error {
+	if err := t.purgeManagement(documentID); err != nil {
+		return err
+	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 
 	var candidateTS []string

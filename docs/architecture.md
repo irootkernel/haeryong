@@ -202,3 +202,14 @@ sum region checks into a page nor reuse an older target for a newer one.
 Document/Library freshness reuses this projection independently of personal
 Review. Immutable manifest reads supply historical intent; source/proxy/provider
 operations never occur inside a summary GET.
+
+## Task04 management materialization
+
+The existing guarded maintenance result transaction materializes eligible
+relation/topic metadata through typed storage ports. It does not introduce a
+provider consumer or scheduler. The application intersects captured/current
+policy before the separate management repository creates or reuses an active
+exact-key effect. The query service supplies closed authenticated reads to HTTP,
+CLI and native/shared clients. Existing assessment/coverage selection remains the
+freshness authority; findings alone are candidates. See the
+[management record](testing/management-overlays.md) for current checks and limits.

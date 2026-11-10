@@ -39,9 +39,13 @@ func (s *Store) validateMaintenanceDeclarations(ctx context.Context) error {
 
 func (s *Store) validateDDL(ctx context.Context, ddl, label string) error {
 	normalize := func(v string) string { return strings.TrimSuffix(strings.Join(strings.Fields(v), " "), ";") }
-	for _, m := range regexp.MustCompile(`(?s)CREATE (TABLE|INDEX) ([a-z_]+).*?;`).FindAllStringSubmatch(ddl, -1) {
+	for _, m := range regexp.MustCompile(`(?s)CREATE (TABLE|(?:UNIQUE )?INDEX) ([a-z_]+).*?;`).FindAllStringSubmatch(ddl, -1) {
+		kind := strings.ToLower(m[1])
+		if strings.HasSuffix(kind, "index") {
+			kind = "index"
+		}
 		var actual string
-		if e := s.db.QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE type=? AND name=?`, strings.ToLower(m[1]), m[2]).Scan(&actual); e != nil {
+		if e := s.db.QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE type=? AND name=?`, kind, m[2]).Scan(&actual); e != nil {
 			return errors.New("missing " + label + " schema declaration")
 		}
 		if normalize(actual) != normalize(m[0]) {

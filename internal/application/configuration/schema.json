@@ -7531,6 +7531,236 @@
         "confirmed"
       ],
       "additionalProperties": false
+    },
+    "management_anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "document_id",
+        "version_id",
+        "page_path",
+        "region_id"
+      ],
+      "properties": {
+        "document_id": {
+          "$ref": "#/$defs/id"
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "page_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "region_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "management_effect": {
+      "oneOf": [
+        {"$ref": "#/$defs/management_available_effect"},
+        {"$ref": "#/$defs/management_unavailable_effect"}
+      ]
+    },
+    "management_unavailable_effect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["availability", "overlay_id", "kind", "from", "origin", "decision", "revision", "etag"],
+      "properties": {
+        "availability": {"enum": ["unavailable"]},
+        "overlay_id": {"type": "string"},
+        "kind": {"enum": ["related_explanation"]},
+        "from": {"$ref": "#/$defs/management_anchor"},
+        "origin": {"enum": ["ai"]},
+        "decision": {"enum": ["accepted", "rejected", "undone"]},
+        "revision": {"type": "integer", "minimum": 1},
+        "etag": {"type": "string"}
+      }
+    },
+    "management_available_effect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "availability",
+        "overlay_id",
+        "semantic_key",
+        "finding_id",
+        "job_id",
+        "evidence_basis",
+        "evidence_fingerprint",
+        "rationale",
+        "uncertainty",
+        "decision_actor",
+        "etag",
+        "created_at",
+        "updated_at",
+        "kind",
+        "origin",
+        "from",
+        "target",
+        "target_set_id",
+        "evidence",
+        "decision",
+        "pinned",
+        "captured_config_revision",
+        "applied_config_revision",
+        "permissions_revision",
+        "revision"
+      ],
+      "properties": {
+        "availability": {"enum": ["available"]},
+        "overlay_id": {
+          "type": "string"
+        },
+        "semantic_key": {
+          "type": "string"
+        },
+        "finding_id": {
+          "type": "string"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "evidence_basis": {
+          "type": "string"
+        },
+        "evidence_fingerprint": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "uncertainty": {
+          "type": "string"
+        },
+        "decision_actor": {
+          "type": "string"
+        },
+        "etag": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "related_explanation",
+            "topic_assignment"
+          ]
+        },
+        "origin": {
+          "enum": [
+            "ai"
+          ]
+        },
+        "from": {
+          "$ref": "#/$defs/management_anchor"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/management_anchor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target_set_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence": {
+          "type": "array"
+        },
+        "decision": {
+          "enum": [
+            "accepted",
+            "rejected",
+            "undone"
+          ]
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "captured_config_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "applied_config_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "permissions_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "relation_type": {
+          "type": "string"
+        },
+        "mechanism_key": {
+          "type": "string"
+        },
+        "topic_id": {
+          "type": "string"
+        },
+        "topic": {
+          "type": "string"
+        }
+      }
+    },
+    "management_page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/management_effect"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
     }
   },
   "error_http": {

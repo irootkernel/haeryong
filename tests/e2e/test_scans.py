@@ -499,3 +499,60 @@ def test_scans_T00803_unknown_fixed_scope_remains_readable_and_independent_of_re
     plain_history = product.data("GET", f"/api/v1/versions/{second['version_id']}/assessments", client=owner)
     assert plain_history["items"] == [] and plain_history["next_cursor"] is None
     assert_unknown_units(plain_history["applicable"], [("version", None, None)])
+
+def test_scans_T00804_public_management_modes_regionless_and_unpublished_boundaries(product, owner, tmp_path):
+    from urllib.parse import urlencode
+    package = tmp_path / "ordinary-management"
+    package.mkdir()
+    original = b"<!doctype html><html><body><h1>Regionless original</h1></body></html>"
+    (package / "plain.html").write_bytes(original)
+    _, _, imported = product.import_tree(owner, package)
+    version, document = imported["version_id"], imported["document_id"]
+    before = product.data("GET", f"/api/v1/versions/{version}", client=owner)
+    references = product.data("GET", f"/api/v1/versions/{version}/references", client=owner)
+    config = product.data("GET", "/api/v1/configuration", client=owner)
+    changes = {"maintenance": {"auto_apply": {"related_explanation": "auto", "topic_assignment": "propose", "freshness_assessment": "disabled"}, "content_generation": "propose"}}
+    plan = product.data("POST", "/api/v1/configuration/plans", client=owner,
+                        body={"scope": {"kind": "library"}, "expected_config_revision": config["config_revision"], "changes": changes},
+                        headers={"Idempotency-Key": operation()})
+    product.data("POST", f'/api/v1/configuration/plans/{plan["plan_id"]}/commit', client=owner,
+                 body={"expected_config_revision": plan["base_config_revision"], "confirmed": True},
+                 headers={"Idempotency-Key": plan["plan_id"]})
+    effective = product.data("GET", "/api/v1/configuration", client=owner)
+    assert effective["configuration"]["maintenance"]["auto_apply"]["related_explanation"] == "auto"
+    capabilities = product.data("GET", "/api/v1/capabilities", client=owner)
+    assert capabilities["features"]["management_overlays"] is True
+    # Maintenance requires the boolean capability before using its public jobs
+    # consumer. Advertising the feature must neither hide those reads nor start work.
+    assert capabilities["features"]["scans"] is True
+    for route, args in [
+        (f"/api/v1/versions/{version}/related", ["related", "list", "--version", version]),
+        ("/api/v1/topic-assignments?" + urlencode({"version_id": version}), ["topics", "list", "--version", version]),
+    ]:
+        listed = product.data("GET", route, client=owner)
+        assert listed == {"items": [], "next_cursor": None}
+        assert product.cli(args, client=owner)["data"] == listed
+        status, _, headers = product.request("HEAD", route, client=owner)
+        assert status == 200 and any(key.lower() == "etag" and value for key, value in headers.items())
+    for query in ({"region_id": "main"}, {"page_path": "plain.html", "limit": "0"}, {"limit": "1", "cursor": "not-an-owned-cursor"}):
+        status, _, _ = product.request("GET", f"/api/v1/versions/{version}/related?" + urlencode(query), client=owner)
+        assert status == 400
+    # Reading/mode configuration creates neither source/provider work nor publication.
+    assert product.data("GET", f"/api/v1/versions/{version}", client=owner) == before
+    assert product.data("GET", f"/api/v1/versions/{version}/references", client=owner) == references
+    status, body, _ = product.request("GET", f"/api/v1/versions/{version}/file?path=plain.html", client=owner, raw=True)
+    assert status == 200 and body == original
+    assert product.data("GET", "/api/v1/drafts", client=owner)["items"] == []
+    jobs = product.data("GET", "/api/v1/jobs", client=owner)["items"]
+    assert jobs  # Maintenance's named jobsList consumer can read normal import/index jobs.
+    assert not any(job["kind"] in ("scan", "maintenance", "generation") for job in jobs)
+    invalid = {"maintenance": {"content_generation": "auto"}}
+    status, _, _ = product.request("POST", "/api/v1/configuration/plans", client=owner,
+                                    body={"scope": {"kind": "library"}, "expected_config_revision": effective["config_revision"], "changes": invalid},
+                                    headers={"Idempotency-Key": operation()})
+    assert status == 400
+    product.stop()
+    product.start()
+    assert product.data("GET", "/api/v1/configuration", client=owner)["config_revision"] == effective["config_revision"]
+    assert product.data("GET", "/api/v1/capabilities", client=owner)["features"]["scans"] is True
+    assert product.cli(["related", "list", "--version", version], client=owner)["data"]["items"] == []

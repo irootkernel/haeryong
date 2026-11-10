@@ -1,3 +1,5 @@
+import {ActionPolicySettings} from "./screens/action-policy.tsx";
+import {MaintenanceScreen} from "./screens/maintenance.tsx";
 import { ProviderScreen } from "./screens/provider.tsx";
 import { BackupScreen } from "./screens/backup.tsx";
 import { SessionsScreen } from "./screens/sessions.tsx";
@@ -111,98 +113,29 @@ function Banner({ state, controller }: { state: ShellState; controller: ShellCon
   return cleanup || authBanner;
 }
 
-function PlaceholderScreen({ screen, controller }: { screen: ScreenId; controller: ShellController }) {
-  const isMaintenance = screen === "maintenance" || screen === "job";
-  const verified = controller.state.phase === "verified";
-  return (
-    <section className="panel" data-placeholder-screen={screen}>
-      <h1>{SCREEN_TITLES[screen]}</h1>
-      {isMaintenance ? (
-        <>
-          <p data-maintenance-unavailable>
-            자동·수동 정비 스캔과 점검 보고서 기능은 현재 제공되지 않습니다.
-          </p>
-          <p className="placeholder-note">
-            {verified
-              ? "이 안내 화면은 정비 기능 미제공 상태를 나타내며, AI 제공자 계정 상태나 서비스 연결 이상이 아닙니다. 아래에서 홈이나 서재로 이동해 문서를 읽고 관리할 수 있습니다."
-              : "현재 서비스 연결이 확인되지 않았습니다. 상단 안내에서 연결을 다시 확인하거나 연결 화면으로 이동할 수 있습니다."}
-          </p>
-          <div className="form-row">
-            <button type="button" data-maintenance-scan-disabled disabled>
-              정비 스캔 실행 (제공되지 않음)
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <p>이 화면은 아직 구현되지 않았습니다.</p>
-          <p className="placeholder-note">
-            아래에서 다른 화면으로 이동하거나, 연결 화면에서 연결 상태를 확인할 수 있습니다.
-          </p>
-        </>
-      )}
-      <div className="form-row">
-        <button type="button" className="primary" onClick={() => navigate("/")}>
-          홈으로
-        </button>
-        {isMaintenance && (
-          <>
-            <a
-              className="action-link"
-              href="/library"
-              onClick={(event) => {
-                if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-                event.preventDefault();
-                navigate("/library");
-              }}
-            >
-              서재 열기
-            </a>
-            <a
-              className="action-link"
-              href="/settings/ai"
-              onClick={(event) => {
-                if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-                event.preventDefault();
-                navigate("/settings/ai");
-              }}
-            >
-              AI 제공자
-            </a>
-          </>
-        )}
-        {screen === "settings" && (
-          <>
-            <a
-              className="action-link"
-              href="/settings/sessions"
-              onClick={(event) => {
-                if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-                event.preventDefault();
-                navigate("/settings/sessions");
-              }}
-            >
-              세션 및 보안 정책
-            </a>
-            <a
-              className="action-link"
-              href="/settings/ai"
-              onClick={(event) => {
-                if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-                event.preventDefault();
-                navigate("/settings/ai");
-              }}
-            >
-              AI 제공자
-            </a>
-          </>
-        )}
-        <button type="button" onClick={() => navigate("/connect")}>
-          연결 화면
-        </button>
-      </div>
-    </section>
-  );
+function PlaceholderScreen({ screen }: { screen: ScreenId; controller: ShellController }) {
+  return <section className="panel" data-placeholder-screen={screen}>
+    <h1>{SCREEN_TITLES[screen]}</h1>
+    <p>이 화면은 아직 구현되지 않았습니다.</p>
+    <div className="form-row">
+      <button type="button" className="primary" onClick={() => navigate("/")}>홈으로</button>
+      {screen === "settings" && <>
+        <a className="action-link" href="/settings/maintenance" onClick={event => {
+          if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          event.preventDefault(); navigate("/settings/maintenance");
+        }}>정비 적용 정책</a>
+        <a className="action-link" href="/settings/sessions" onClick={event => {
+          if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          event.preventDefault(); navigate("/settings/sessions");
+        }}>세션 및 보안 정책</a>
+        <a className="action-link" href="/settings/ai" onClick={event => {
+          if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          event.preventDefault(); navigate("/settings/ai");
+        }}>AI 제공자</a>
+      </>}
+      <button type="button" onClick={() => navigate("/connect")}>연결 화면</button>
+    </div>
+  </section>;
 }
 
 /** Reader route binding: decodes the once-encoded page/query/fragment. */
@@ -321,12 +254,15 @@ export function App({ controller }: { controller: ShellController }) {
             <VersionsScreen key={route.path + ":" + history.state?.haeryongReaderContext} controller={controller} documentId={route.path.split("/")[2]!} />
           ) : screen === "reader" && route.path ? (
             <ReaderRoute controller={controller} path={route.path} />
+          ) : screen === "maintenance" || screen === "job" ? (
+            <MaintenanceScreen controller={controller} jobId={screen === "job" ? route.path.split("/")[3] : undefined} />
           ) : screen === "projects" || screen === "project" || (screen === "settings" && route.section === "projects" && !new URLSearchParams(location.search).has("project")) ? (
             <ProjectsScreen controller={controller} />
           ) : screen === "sources" ? (
             <SourcesScreen key={route.path.split("/")[2]} controller={controller} projectId={route.path.split("/")[2]!} />
           ) : screen === "settings" && route.section === "projects" ? (
             <SourceSettings key={new URLSearchParams(location.search).get("project")} controller={controller} projectId={new URLSearchParams(location.search).get("project")!} />
+          ) : screen === "settings" && route.section === "maintenance" ? (<ActionPolicySettings key={new URLSearchParams(location.search).get("project")??"library"} controller={controller} projectId={new URLSearchParams(location.search).get("project")??undefined}/>
           ) : screen === "settings" && route.section === "ai" ? (<ProviderScreen controller={controller} initialProbeAllowed={!providerWasDisconnected.current} />
           ) : screen === "settings" && route.section === "sessions" ? (
             <SessionsScreen controller={controller} />

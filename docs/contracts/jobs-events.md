@@ -932,3 +932,20 @@ private coverage/targets and leaves the existing redacted scan roster; settling
 that scan must not recreate purged evidence or invent a successful target.
 `assessment.published` uses the existing authenticated outbox; no status/list
 request initiates source IO or model work.
+
+## Task04 effect application and audit
+
+Eligible relation/topic auto results append one separate effect, immutable
+revision history, finding applied_ref and finding-effect linkage inside the
+existing guarded writer transaction. Global active-key uniqueness covers both
+exact anchor tuples/type/mechanism or topic/exact target. Equivalent new findings
+reuse the effect without changing its original actor/origin/revision/decision or
+emitting another overlay.changed/topic_assignment.changed event. Same-job
+terminal findings retain their actual status and linkage. Different mechanisms
+stay distinct. Proposed content never becomes a published document or draft.
+
+New effect notifications use the finding resource with safe identifiers and
+revision only. Batch replay and final socket delivery recheck current owner and
+all originating/target/evidence version visibility, masking hidden IDs as library
+invalidation. Task05 retains owner decisions/undo and must settle all linked
+findings, not only the one selected by the owner.

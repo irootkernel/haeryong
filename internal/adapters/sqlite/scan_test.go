@@ -3420,6 +3420,17 @@ func RunBackoffCoordinator() error {
 				Expect(json.Unmarshal(fd.Proposal, &prop)).To(Succeed())
 				Expect(prop["topic"]).NotTo(Equal("distributed-deadlock-detector"))
 				if prop["topic"] == "retry-backoff" {
+					Expect(prop["evidence_basis"]).To(Equal("source_verified"))
+					var actual []domain.FindingEvidence
+					Expect(json.Unmarshal(fd.Evidence, &actual)).To(Succeed())
+					verified := false
+					for _, ev := range actual {
+						if ev.Kind == "project_source" && ev.Basis == "observed_input" && ev.ReadID != "" && ev.SnapshotSHA256 != "" {
+							verified = true
+						}
+					}
+					Expect(verified).To(BeTrue(), "canonical source basis requires established retained read evidence")
+					Expect(prop["origin_unit"]).NotTo(BeNil())
 					sawValidTopic = true
 				}
 			case "new_version_proposal", "new_document_proposal":

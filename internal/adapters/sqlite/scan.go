@@ -910,6 +910,10 @@ func (t *writeTx) refreshScanReportCounts(run *domain.ScanRun) error {
 	run.Report.EnumerationComplete = run.EnumerationComplete
 	run.Report.Structural = st
 	run.Report.Findings = fSummary
+	// Content proposals and structural findings are not management overlays.
+	if err := t.tx.QueryRowContext(t.ctx, `SELECT coalesce(sum(status='applied'),0),coalesce(sum(status='proposed'),0),coalesce(sum(status='rejected'),0) FROM findings WHERE job_id=? AND kind IN ('related_explanation','topic_assignment','freshness_assessment')`, run.JobID).Scan(&run.Report.Overlays.Applied, &run.Report.Overlays.Proposed, &run.Report.Overlays.Rejected); err != nil {
+		return err
+	}
 	run.Report.IncompleteReferenceRepairs = incompleteRepairs
 	run.Report.RescanRecommended = len(incompleteRepairs) > 0
 	run.Report.Semantic.Eligible = eligible

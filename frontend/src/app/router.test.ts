@@ -152,3 +152,10 @@ test("T5 automatic return retains the existing exact SourceSettings project quer
   assert.equal(safeReturn("/library?" + query), "/");
   assert.equal(safeReturn("/settings/projects?project=unknown"), "/");
 });
+
+ test("T00804 login return preserves exact project maintenance settings", () => {
+ const target = "/settings/maintenance?project=11111111-1111-4111-8111-111111111111";
+ assert.equal(safeReturn(target), target);
+ assert.equal(safeReturn(target + "&project=22222222-2222-4222-8222-222222222222"), "/");
+ assert.equal(safeReturn("/settings/maintenance?project=unknown"), "/");
+ });

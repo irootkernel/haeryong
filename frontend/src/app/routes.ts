@@ -116,7 +116,7 @@ export function safeReturn(value: string | null): string {
     ]);
     for (const [key, entry] of url.searchParams) {
       if (key === "project") {
-        if (path !== "/settings/projects" || !new RegExp(`^${UUID}$`).test(entry) || url.searchParams.getAll(key).length !== 1) return "/";
+        if (!["/settings/projects", "/settings/maintenance"].includes(path) || !new RegExp(`^${UUID}$`).test(entry) || url.searchParams.getAll(key).length !== 1) return "/";
         continue;
       }
       if (key === "from_version" || key === "to_version") {

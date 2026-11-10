@@ -526,3 +526,24 @@ pass is claimed. Independent current judgments and criterion composition support
 the bounded delivery, accepted by CO under Master delegation. The normal commit
 and native finalization precede Task04. Task04 overlays, Task05 decisions/undo,
 Task06 drafts/assembled exit and Master overall Epic acceptance remain future.
+
+
+TASK-008-04 adds schema23 separate origin-labelled relation/topic repositories,
+global active-effect key reuse and finding-effect revision links, guarded
+category application, closed management reads and shared Maintenance/Reader/
+settings consumers. [Management evidence](docs/testing/management-overlays.md)
+retains the nonempty authored-preservation execution, nondisclosing unavailable
+AI links and canonical/legacy topic-basis corrections. Optional decisions export
+remains unavailable. The original canonical common remains FAILED with 1,692
+passes and one RF06 failure; current coverage composes the exact five-name
+test-only correction and one whole-container race/persistence pass with the
+unchanged members and current documentation evidence, never an aggregate pass.
+Bounded browser/native observations retain the browser aggregate failure,
+late Close 404, unknown pre-browser canonical baseline and ReaderMode-only scope.
+Original source14+8/original16-call, partial/invalid and cleanup qualifications
+remain unchanged; no model regrading, installed or physical-device proof is added.
+Delegated Coordinator member acceptance establishes the bounded Task04 delivery.
+Its normal completion commit and native finalization precede Task05; this record
+does not start Task05. Task05 decisions/pins/undo must reconcile all linked
+findings; Task06 retains drafts/full report/run-level membership discovery.
+Overall Epic/Stage B and Master acceptance remain future.

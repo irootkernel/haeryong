@@ -1,3 +1,4 @@
+import type {ManagementEffect,ManagementFilter} from "./types.ts";
 import type {ScanRequest,ScanAccepted,FindingView,JobFindingsFilter,FindingKind,FindingStatus,QuestionRequest,QuestionAccepted,QuestionView,AnswerView,RetainedSourceRead,GenerationRequest,GenerationAccepted,DraftView,DraftPatch} from "./types.ts";
 import { providerStatus as verifiedProviderStatus } from "./provider-status.ts";
 // Narrow native transport boundary. The desktop companion (TASK-003-05) binds
@@ -151,6 +152,9 @@ export interface NativePort {
   call(operation:"retainedSourceReads",payload:{project_id:string;source_id:string;cursor?:string}):Promise<ListPage<RetainedSourceRead>>;
   call(operation:"generationStart",payload:{request:GenerationRequest;operation_id:string}):Promise<DecisionResult>;
   call(operation:"scanStart",payload:{request:ScanRequest;operation_id:string}):Promise<DecisionResult>;
+  call(operation:"jobsList",payload:Record<string,never>):Promise<ListPage<JobView>>;
+  call(operation:"versionRelated",payload:ManagementFilter & {version_id:string}):Promise<ListPage<ManagementEffect>>;
+  call(operation:"topicAssignmentsList",payload:ManagementFilter):Promise<ListPage<ManagementEffect>>;
   call(operation:"jobFindingsList",payload:{job_id:string;kind?:FindingKind;status?:FindingStatus;cursor?:string;limit?:number}):Promise<ListPage<FindingView>>;
   call(operation:"draftList",payload:{project_id?:string;cursor?:string}):Promise<ListPage<DraftView>>;
   call(operation:"draftGet",payload:{draft_id:string}):Promise<DraftView>;
@@ -255,7 +259,7 @@ export interface NativePort {
 }
 
 export const NATIVE_OPERATIONS = [
- "scanStart","jobFindingsList",
+ "versionRelated","topicAssignmentsList","jobsList","scanStart","jobFindingsList",
  "questionStart","questionList","questionGet","questionAnswers","answerGet","questionTextStream","questionContextStream","answerBodyStream","answerCitationStream",
  "retainedSourceReads","generationStart","draftList","draftGet","draftHistory","draftPatch","draftPublish",
   "lifecyclePlan", "lifecyclePlanGet", "lifecyclePlanCommit", "trashList",
@@ -348,7 +352,7 @@ export const NATIVE_PASSIVE_READ_OPERATIONS = new Set<string>([
   "listUploads", "uploadDetail", "uploadEntries", "uploadRanges", "uploadPins",
   "jobGet", "verifyContextFresh", "packageStream", "fileStream",
   "draftList", "draftGet", "draftHistory",
-  "jobFindingsList",
+  "versionRelated","topicAssignmentsList","jobsList","jobFindingsList",
   "questionList", "questionGet", "questionAnswers", "answerGet",
   "questionTextStream", "questionContextStream", "answerBodyStream", "answerCitationStream",
 ]);
@@ -617,6 +621,9 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
 
   generationStart(request:GenerationRequest,key:string):Promise<GenerationAccepted>{const era=this.#era;return sourceWrite<GenerationAccepted>(key,()=>this.#fresh(this.#port.call("generationStart",{request,operation_id:key}),era),id=>{if(era!==this.#era)throw new StaleResponseError();return this.operation(id);},true);}
   scanStart(request:ScanRequest,key:string):Promise<ScanAccepted>{const era=this.#era;return sourceWrite<ScanAccepted>(key,()=>this.#fresh(this.#port.call("scanStart",{request,operation_id:key}),era),id=>{if(era!==this.#era)throw new StaleResponseError();return this.operation(id);},true);}
+  jobsList():Promise<ListPage<JobView>>{return this.#fresh(this.#port.call("jobsList",{}),this.#era);}
+  versionRelated(versionId:string,filter:ManagementFilter={}):Promise<ListPage<ManagementEffect>>{return this.#fresh(this.#port.call("versionRelated",{...filter,version_id:versionId}),this.#era);}
+  topicAssignmentsList(filter:ManagementFilter={}):Promise<ListPage<ManagementEffect>>{return this.#fresh(this.#port.call("topicAssignmentsList",{...filter}),this.#era);}
   jobFindingsList(jobId:string,filter:JobFindingsFilter={}):Promise<ListPage<FindingView>>{return this.#fresh(this.#port.call("jobFindingsList",{job_id:jobId,...(filter.kind?{kind:filter.kind}:{}),...(filter.status?{status:filter.status}:{}),...(filter.cursor?{cursor:filter.cursor}:{}),...(filter.limit!==undefined?{limit:filter.limit}:{})}),this.#era);}
   questionStart(versionId:string,request:QuestionRequest,key:string):Promise<QuestionAccepted>{const era=this.#era;return sourceWrite<QuestionAccepted>(key,()=>this.#fresh(this.#port.call("questionStart",{version_id:versionId,request,operation_id:key}),era),id=>{if(era!==this.#era)throw new StaleResponseError();return this.operation(id);},true);}
   questionList(versionId:string,cursor?:string):Promise<ListPage<QuestionView>>{return this.#fresh(this.#port.call("questionList",{version_id:versionId,cursor}),this.#era);}

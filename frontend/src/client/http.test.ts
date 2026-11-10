@@ -828,3 +828,26 @@ test("Task08-01 scanStart and jobFindingsList round-trip closed DTOs, operation 
     restore();
   }
 });
+
+test("T00804 management reads preserve exact query and passive authority without dispatching mutations", async () => {
+ const calls: {url:string;method:string|undefined;passive:string|null}[]=[];
+ const restore=stubFetch(async (input,init)=>{
+  calls.push({url:String(input),method:init?.method,passive:new Headers(init?.headers).get("Haeryong-Passive-Read")});
+  return new Response(JSON.stringify({data:{items:[],next_cursor:null}}),{status:200});
+ });
+ try{
+  const client=new HttpHaeryongClient();
+  const filter={page_path:"nested/검토 %2F #?.html",region_id:"main",cursor:"opaque/+%",limit:1};
+  await client.versionRelated("version",filter);
+  await client.passive().topicAssignmentsList!({...filter,version_id:"version"});
+  await client.jobsList();
+  assert.equal(calls.length,3);
+  const url=new URL(calls[0]!.url,"http://local");
+  assert.equal(url.pathname,"/api/v1/versions/version/related");
+  assert.equal(url.searchParams.get("page_path"),filter.page_path);
+  assert.equal(url.searchParams.get("region_id"),"main");
+  assert.equal(url.searchParams.get("cursor"),filter.cursor);
+  assert.equal(calls[1]!.passive,"1");
+  assert.ok(calls.every(c=>c.method==="GET"));
+ }finally{restore()}
+});

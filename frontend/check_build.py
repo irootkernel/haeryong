@@ -107,7 +107,11 @@ def run(command, timeout):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--regenerate", action="store_true", help="rebuild internal/webassets/dist and its manifest")
+    parser.add_argument("--prepared-output-dir", type=Path, help="retain verification browser/native bundles in a new absolute private directory")
     args = parser.parse_args()
+
+    if args.prepared_output_dir and (args.regenerate or not args.prepared_output_dir.is_absolute() or args.prepared_output_dir.exists()):
+        parser.error("--prepared-output-dir requires verification and a new absolute directory")
 
     if not (FRONTEND / "node_modules" / ".bin" / "vite").exists():
         raise SystemExit(
@@ -116,7 +120,7 @@ def main():
         )
 
     run([str(FRONTEND / "node_modules" / ".bin" / "tsc"), "--noEmit"], 300)
-    run(["node", "--test", "src/app/screens/security-policy.test.ts", "src/client/questions-review.test.ts", "src/app/screens/backup-state.test.ts", "src/client/lifecycle.test.ts", "src/client/annotations.test.ts", "src/app/screens/notes-operations.test.ts", "src/app/screens/safe-markdown.test.ts", "src/client/review.test.ts", "src/app/screens/review-operations.test.ts", "src/app/screens/review-summary.test.ts", "src/app/screens/versions-data.test.ts", "src/app/screens/links-navigation.test.ts", "src/client/backlinks.test.ts", "src/client/references.test.ts", "src/client/generation-recovery.test.ts", "src/app/screens/reader-navigation.test.ts", "src/client/search.test.ts", "src/app/screens/search-state.test.ts", "src/client/controller.test.ts", "src/client/native.test.ts", "src/client/http.test.ts", "src/client/transfer.test.ts", "src/client/download.test.ts", "src/client/native-fs.test.ts", "src/app/reader-context.test.ts", "src/app/router.test.ts", "src/app/screens/library.test.ts", "src/viewer/snapshot.test.ts", "src/viewer/context-transfer.test.ts", "src/viewer/channel.test.ts", "src/viewer/loader.test.ts", "src/app/screens/personal-cas.test.ts", "src/app/screens/personal-operations.test.ts", "src/app/screens/evidence-view.test.ts", "src/app/screens/source-queries.test.ts", "src/app/screens/source-configuration.test.ts", "src/app/screens/source-presentation.test.ts", "src/viewer/render-session.test.ts", "src/client/native-wire.test.ts"], 180)
+    run(["node", "--test", "src/app/screens/maintenance-state.test.ts", "src/app/screens/management-links-row.test.ts", "src/app/screens/management-presentation.test.ts", "src/app/screens/action-policy-state.test.ts", "src/app/screens/security-policy.test.ts", "src/client/questions-review.test.ts", "src/app/screens/backup-state.test.ts", "src/client/lifecycle.test.ts", "src/client/annotations.test.ts", "src/app/screens/notes-operations.test.ts", "src/app/screens/safe-markdown.test.ts", "src/client/review.test.ts", "src/app/screens/review-operations.test.ts", "src/app/screens/review-summary.test.ts", "src/app/screens/versions-data.test.ts", "src/app/screens/links-navigation.test.ts", "src/client/backlinks.test.ts", "src/client/references.test.ts", "src/client/generation-recovery.test.ts", "src/app/screens/reader-navigation.test.ts", "src/client/search.test.ts", "src/app/screens/search-state.test.ts", "src/client/controller.test.ts", "src/client/native.test.ts", "src/client/http.test.ts", "src/client/transfer.test.ts", "src/client/download.test.ts", "src/client/native-fs.test.ts", "src/app/reader-context.test.ts", "src/app/router.test.ts", "src/app/screens/library.test.ts", "src/viewer/snapshot.test.ts", "src/viewer/context-transfer.test.ts", "src/viewer/channel.test.ts", "src/viewer/loader.test.ts", "src/app/screens/personal-cas.test.ts", "src/app/screens/personal-operations.test.ts", "src/app/screens/evidence-view.test.ts", "src/app/screens/source-queries.test.ts", "src/app/screens/source-configuration.test.ts", "src/app/screens/source-presentation.test.ts", "src/viewer/render-session.test.ts", "src/client/native-wire.test.ts"], 180)
 
     keep_scratch = None
     try:
@@ -127,7 +131,11 @@ def main():
             (DIST / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
             print(f"regenerated {DIST} ({len(manifest['files'])} files, inputs {manifest['inputs_digest'][:12]})")
             return 0
-        keep_scratch = Path(tempfile.mkdtemp(prefix="haeryong-task01-build-", dir=scratch_root()))
+        if args.prepared_output_dir:
+            args.prepared_output_dir.mkdir(mode=0o700)
+            keep_scratch = args.prepared_output_dir
+        else:
+            keep_scratch = Path(tempfile.mkdtemp(prefix="haeryong-task01-build-", dir=scratch_root()))
         browser = keep_scratch / "dist"
         native = keep_scratch / "dist-native"
         run([str(FRONTEND / "node_modules" / ".bin" / "vite"), "build", "--outDir", str(browser), "--emptyOutDir"], 300)
@@ -184,9 +192,11 @@ def main():
             if manifest["files"][name] != committed["files"][name]:
                 raise SystemExit(f"dist content drifted for {name}; regenerate dist with matching sources")
         print(f"verified {len(manifest['files'])} committed dist files; inputs digest {manifest['inputs_digest'][:12]}")
+        if args.prepared_output_dir:
+            print(f"retained browser/native preparation: {keep_scratch}")
         return 0
     finally:
-        if keep_scratch is not None and keep_scratch.exists():
+        if keep_scratch is not None and keep_scratch.exists() and not args.prepared_output_dir:
             shutil.rmtree(keep_scratch, ignore_errors=True)
 
 

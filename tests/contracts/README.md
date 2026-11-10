@@ -244,3 +244,13 @@ machine authority. Runtime schema 1.0/APIv1 and the manifest digest domain are
 unchanged; the selected schema/test digests record this explicit revision.
 Production capture, fixed membership, continuation and application policy are
 tested separately; these pure shapes do not establish real-provider or UI proof.
+
+
+TASK-008-04 adds selected closed management anchor/effect/page definitions and
+extends the existing registered scan contract test with approval-actor/origin and
+invalid-state checks. The closed available/unavailable union rejects hidden
+identity/payload fields on unavailable rows; topic new/legacy basis remains
+explicit. These are schema checks, not lifecycle privacy or semantic proof.
+APIv1/package1.0 and the original semantic producer remain
+unchanged. The selected manifest records the exact changed schema/test bytes;
+pure fixture success does not establish application or corpus quality passage.

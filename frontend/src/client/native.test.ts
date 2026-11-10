@@ -630,3 +630,22 @@ test("Task08-01 native scanStart and jobFindingsList forward closed operations, 
   client.invalidate();
   await assert.rejects(pending, StaleResponseError);
 });
+
+test("T00804 native management uses only named passive reads and discards retired era", async () => {
+ const fake=port();
+ for(const op of ["versionRelated","topicAssignmentsList","jobsList"])fake.handlers.set(op,()=>({items:[],next_cursor:null}));
+ const client=new NativeHaeryongClient(fake as unknown as NativePort);
+ await client.versionRelated("version",{page_path:"a.html",region_id:"main",limit:1});
+ await client.passive().topicAssignmentsList!({version_id:"version",page_path:"b.html",region_id:"main"});
+ await client.jobsList();
+ assert.deepEqual(fake.calls,[
+ ["versionRelated",{page_path:"a.html",region_id:"main",limit:1,version_id:"version"}],
+ ["topicAssignmentsList",{version_id:"version",page_path:"b.html",region_id:"main",passive:true}],
+ ["jobsList",{}]]);
+ let release!:(v:unknown)=>void;
+ fake.handlers.set("versionRelated",()=>new Promise(resolve=>{release=resolve}));
+ const pending=client.versionRelated("version");
+ client.invalidate();
+ release({items:[],next_cursor:null});
+ await assert.rejects(pending,StaleResponseError);
+});

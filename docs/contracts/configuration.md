@@ -284,3 +284,14 @@ restricted together at admission and application; later relaxation cannot widen
 an accepted run. Current provider/source permission and lifecycle fences still
 apply to saved-result continuation. No new owner setting or author metadata is
 required for ordinary imports.
+
+## Task04 relation/topic policy application
+
+The existing per-category disabled/propose/auto matrix now connects to separate
+relation/topic effect repositories. Both captured and current library/project
+restrictions apply before creating or reusing an effect. Relaxation cannot widen
+an accepted run. Current owner-state/lifecycle/source guards still apply to reuse.
+Shared Settings/Maintenance uses the existing revisioned impact plan and explicit
+confirmation; conflicts preserve local inputs. Content remains disabled/propose/
+draft without automatic publication; finding-to-draft production remains Task06.
+No new setting, disclosure grant or scheduling engine is introduced.

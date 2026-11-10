@@ -584,6 +584,10 @@ func (s *Service) Events(ctx context.Context, token, epoch string, after int64) 
 				}
 			}
 
+			if event.ResourceKind == "finding" {
+				out[i] = visibleFindingEvent(tx, record, event)
+				continue
+			}
 			if event.ResourceKind == "job" {
 				job, err := tx.Job(event.ResourceID)
 				if err == nil {
@@ -973,6 +977,10 @@ func (s *Service) FilterEvent(ctx context.Context, token string, event domain.Ev
 			}
 		}
 		target := ""
+		if event.ResourceKind == "finding" {
+			event = visibleFindingEvent(tx, record, event)
+			return nil
+		}
 		if event.ResourceKind == "job" {
 			job, err := tx.Job(event.ResourceID)
 			if err == nil {

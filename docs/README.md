@@ -465,3 +465,21 @@ independent judgments and criterion composition support the bounded delivery and
 CO's exact delegated member acceptance. The normal completion commit and native
 finalization precede Task04; Tasks04–06 and overall Epic acceptance retain their
 ordered owners. No fresh aggregate pass or physical-device proof is claimed.
+
+
+[Task04 management overlay evidence](testing/management-overlays.md) records the
+current schema23/repository, guarded category application, closed management reads,
+shared finding/enrichment consumers, focused proof and four completed selected
+saved-record browser/native components with their controlled/partial and cleanup
+qualifications. Four first source/result views produced the Result-C01 correction
+batch: nonempty authored preservation execution, nondisclosing unavailable links
+and canonical/legacy topic basis. Its bounded controlled browser/native correction
+evidence and four delta source views are complete, with the browser aggregate
+failure, late Close 404 and unknown pre-browser canonical baseline preserved.
+The full canonical run retained 1,692 passes and one RF06 failure; an exact
+test-only correction then passed the whole RF06 race/persistence container.
+Current coverage is composed under Coordinator policy, never a relabelled
+aggregate pass. Delegated Coordinator member acceptance establishes this
+bounded Task04 delivery with those qualifications intact. Its normal completion
+commit and native finalization follow; Task05 is not started by this record.
+Task05/06 and overall Epic/Stage B acceptance retain their ordered owners.

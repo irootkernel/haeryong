@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"encoding/json"
+	"errors"
 	"time"
 
 	"haeryong.local/haeryong/internal/domain"
@@ -42,7 +43,15 @@ func (t *writeTx) LifecycleImpact(document string) ([]domain.LifecycleItem, erro
 		}
 		out = append(out, i)
 	}
-	return out, rows.Err()
+	if err = errors.Join(rows.Err(), rows.Close()); err != nil {
+		return nil, err
+	}
+	effects, err := t.managementImpact(document)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, effects...)
+	return out, nil
 }
 func (t *writeTx) PutLifecyclePlan(p domain.LifecyclePlan, items []domain.LifecycleItem) error {
 	if err := t.exec(`INSERT INTO lifecycle_plans VALUES(?,?,?,?,?,?,?,?,?,?,?)`, p.ID, p.OwnerID, p.DocumentID, p.Operation, p.State, p.ExpectedRevision, p.ConfigRevision, p.PermissionsRevision, p.ExpiresAt, p.Digest, jsonBytes(p)); err != nil {

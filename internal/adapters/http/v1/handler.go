@@ -133,6 +133,9 @@ func (h *Handler) Handles(r *http.Request) bool {
 	if len(p) == 3 && p[0] == "versions" && (p[2] == "reading-position" || p[2] == "reader-preference" || p[2] == "page-position") {
 		return r.Method == "GET" || r.Method == "HEAD" || r.Method == "PUT"
 	}
+	if managementRoute(p) {
+		return r.Method == "GET" || r.Method == "HEAD"
+	}
 	if r.Method != "GET" && r.Method != "HEAD" {
 		return false
 	}
@@ -208,6 +211,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if !h.Handles(r) {
 		failure(w, r, domain.ErrNotFound)
+		return
+	}
+	if managementRoute(p) {
+		h.management(w, r, token, p)
 		return
 	}
 	if lifecycleRoute(p) {

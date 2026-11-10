@@ -25,7 +25,7 @@ var ctx = context.Background()
 func scratch(t GinkgoTInterface) string {
 	GinkgoHelper()
 	parent := os.TempDir()
-	if runtime.GOOS == "darwin" {
+	if runtime.GOOS == "darwin" && os.Getenv("TMPDIR") == "" {
 		mounts, err := exec.Command("mount").Output()
 		if err == nil && bytes.Contains(mounts, []byte(" on /Volumes/RootKernel (")) && syscall.Access("/Volumes/RootKernel", 2) == nil {
 			parent = "/Volumes/RootKernel/tmp"

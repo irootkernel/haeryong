@@ -1,3 +1,4 @@
+import type {ManagementEffect,ManagementFilter} from "./types.ts";
 import type {ScanRequest,ScanAccepted,FindingView,JobFindingsFilter,QuestionRequest,QuestionAccepted,QuestionView,AnswerView,RetainedSourceRead,GenerationRequest,GenerationAccepted,DraftView,DraftPatch} from "./types.ts";
 import { providerStatus as verifiedProviderStatus } from "./provider-status.ts";
 import type { ProviderStatus, LifecyclePlanRequest,LifecycleCommitRequest,LifecyclePlanView,LifecycleResult,LifecyclePageRequest,TrashRequest,TrashItem, AnnotationCreate, AnnotationPatch, AnnotationView, AnnotationStream, RevisitView, ReviewView, ReviewRequest, ReviewCondition, ReviewEvent, DocumentFilter,
@@ -216,6 +217,9 @@ export class HttpHaeryongClient implements HaeryongClient {
 
   generationStart(request:GenerationRequest,key:string):Promise<GenerationAccepted>{return this.#sourceWrite("/api/v1/generations",request,key,true);}
   scanStart(request:ScanRequest,key:string):Promise<ScanAccepted>{return this.#sourceWrite("/api/v1/scans",request,key,true);}
+  jobsList():Promise<ListPage<JobView>>{return this.#request("GET","/api/v1/jobs");}
+  versionRelated(versionId:string,filter:ManagementFilter={}):Promise<ListPage<ManagementEffect>>{return this.#request("GET",this.#collection("/api/v1/versions/"+encodeURIComponent(versionId)+"/related",{page_path:filter.page_path,region_id:filter.region_id,cursor:filter.cursor,limit:filter.limit===undefined?undefined:String(filter.limit)}));}
+  topicAssignmentsList(filter:ManagementFilter={}):Promise<ListPage<ManagementEffect>>{return this.#request("GET",this.#collection("/api/v1/topic-assignments",{document_id:filter.document_id,version_id:filter.version_id,page_path:filter.page_path,region_id:filter.region_id,cursor:filter.cursor,limit:filter.limit===undefined?undefined:String(filter.limit)}));}
   jobFindingsList(jobId:string,filter:JobFindingsFilter={}):Promise<ListPage<FindingView>>{return this.#request("GET",this.#collection(`/api/v1/jobs/${encodeURIComponent(jobId)}/findings`,{kind:filter.kind,status:filter.status,cursor:filter.cursor,limit:filter.limit===undefined?undefined:String(filter.limit)}));}
   questionStart(id:string,request:QuestionRequest,key:string):Promise<QuestionAccepted>{return this.#sourceWrite(`/api/v1/versions/${encodeURIComponent(id)}/questions`,request,key,true);}
   questionList(id:string,cursor?:string):Promise<ListPage<QuestionView>>{return this.#request("GET",this.#collection(`/api/v1/versions/${encodeURIComponent(id)}/questions`,{cursor}));}

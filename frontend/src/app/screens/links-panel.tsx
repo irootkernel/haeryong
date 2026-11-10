@@ -1,3 +1,4 @@
+import {ManagementLinks} from "./management-links.tsx";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ShellController } from "../../client/controller.ts";
 import type { BacklinkPage, ReferencePage, ReferenceView } from "../../client/types.ts";
@@ -137,6 +138,6 @@ export function LinksPanel({ controller, versionId, pagePath, regionId, onNaviga
         </>}
       </>}
     </section>
-    <section aria-label="Suggestions"><h3>Suggestions</h3><p>제안이 없습니다. AI 관련 제안은 아직 제공하지 않습니다.</p></section>
+    <ManagementLinks controller={controller} versionId={versionId} pagePath={scope==="version"?null:pagePath} regionId={scope==="region"?regionId:null} onNavigate={onNavigate}/>
   </section>;
 }

@@ -309,3 +309,25 @@ null, missing and empty values remain distinguishable. Unknown legacy detail is
 reported as unavailable instead of inferred from the summary label. Expanding
 saved detail performs no new source read or model work. Authored evidence stays
 separate from these produced records.
+
+## Task04 Maintenance and enrichment delivery
+
+Maintenance and the exact-job route consume visible scan jobs and paginated typed
+findings. Freshness candidates are labelled separately from published applicable
+history; their stored scope, targets/times/coverage and reassessment facts remain
+explicit. Relationships/topics show AI origin independently from authorization.
+Content proposals are unpublished, with future decision/reassessment/draft/undo
+actions unavailable under their Task05/06 owners. This is the current finding
+consumer, not Task06's full report or whole-StageB qualification.
+
+Reader Links preserves authored references/backlinks and adds a separate AI
+management section with exact target navigation, rationale/evidence and topic
+scope. A currently authorized focal link with hidden/Trash/purged target or
+evidence shows a non-clickable nondisclosing unavailable row, without target,
+evidence, rationale, raw details or distinguishing cause. Focal authority loss
+clears it. Topic basis is explicit: explanation_text, source_verified, or legacy
+basis not recorded/unknown; a legacy read never invents source verification.
+Approval actor never removes AI origin. Settings/Maintenance uses current
+revisioned configuration preview/confirmation with category modes, preserved
+conflicting inputs and uncertain-request reconciliation. No scheduler is enabled.
+Actual UI evidence remains qualified in [management evidence](../testing/management-overlays.md).

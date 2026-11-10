@@ -1146,3 +1146,34 @@ single-target scans whose document is in Trash or purged (`404 NOT_FOUND`) and
 hides workflow scan jobs when the workflow principal's project/version scope no
 longer covers all active captured targets. See
 [scan inventory evidence](../testing/scan-inventory.md).
+
+## Management read delivery (TASK-008-04)
+
+GET/HEAD `/api/v1/versions/{id}/related` now returns a `management_page`
+of visible applied relations. Optional `page_path`, `region_id`, `cursor`
+and `limit` select exact scope; region requires page. GET/HEAD
+`/api/v1/topic-assignments` is owner-only with additional exact
+`document_id`/`version_id` filters; page requires version. Limit defaults to
+50 and accepts 1..200. Cursor binding includes principal/scope, runtime, filters
+and page size; every page rechecks current focal/endpoint/evidence visibility.
+Available items carry `availability=available`. A visible focal relation whose
+target or evidence is inaccessible, in Trash or purged instead returns the same
+closed `availability=unavailable` row: overlay_id, kind=related_explanation,
+authorized from anchor, origin=ai, decision, revision and etag only. It has no
+target/evidence identity, label, rationale, actor, finding/job ID, semantic digest
+or raw detail. No reason distinguishes permission loss from deletion. Focal
+authority loss still removes all rows/refuses an exact scoped read.
+Responses have collection ETag and individual effect ETags. HEAD returns no body.
+Unknown/duplicate/empty controls fail; cursors authorize no access.
+
+`features.management_overlays` advertises these implemented reads. Effects
+retain original AI origin after authorization; actor/revision/decision are
+separate fields. New topic proposal/effect evidence_basis is explanation_text or
+source_verified, selected from the established focal evidence; captured source
+availability alone is not source verification. Missing/noncanonical legacy
+topic basis is projected as legacy_unknown on both finding and effect reads,
+without rewriting stored proposals/effects/history or inventing verification.
+Proposals remain in job findings, never authored references.
+Owner topic mutation, finding decisions/undo and finding-bound reassessment stay
+unavailable until Task05; finding-bound generation/draft flow stays Task06.
+The earlier /related unavailable statement describes its historical checkpoint.

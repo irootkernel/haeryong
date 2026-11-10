@@ -4369,6 +4369,16 @@ func (w *Worker) ApplyMaintenance(tx app.WriteTx, attempt domain.ProviderAttempt
 			return err
 		}
 		if exists {
+			// An applied or historical finding is immutable under repeated delivery.
+			if existing.Status != "proposed" {
+				if existing.Status == "applied" && (kind == "related_explanation" || kind == "topic_assignment") {
+					if err := tx.ValidateManagementFinding(existing); err != nil {
+						return err
+					}
+				}
+				findingIDs = append(findingIDs, existing.ID)
+				return nil
+			}
 			existing.Evidence = evBytes
 			existing.Proposal = propBytes
 			existing.Rationale = rationale
@@ -4379,7 +4389,11 @@ func (w *Worker) ApplyMaintenance(tx app.WriteTx, attempt domain.ProviderAttempt
 			existing.Revision++
 			existing.UpdatedAt = nowStr
 			existing.ETag = domain.FindingETag(existing)
-			if err := tx.PutFinding(existing); err != nil {
+			mode := relMode
+			if kind == "topic_assignment" {
+				mode = topicMode
+			}
+			if err := storeManagementFinding(tx, &existing, mode, cfg.Revision, nowStr); err != nil {
 				return err
 			}
 			findingIDs = append(findingIDs, existing.ID)
@@ -4412,7 +4426,11 @@ func (w *Worker) ApplyMaintenance(tx app.WriteTx, attempt domain.ProviderAttempt
 			UpdatedAt:              nowStr,
 		}
 		f.ETag = domain.FindingETag(f)
-		if err := tx.PutFinding(f); err != nil {
+		mode := relMode
+		if kind == "topic_assignment" {
+			mode = topicMode
+		}
+		if err := storeManagementFinding(tx, &f, mode, cfg.Revision, nowStr); err != nil {
 			return err
 		}
 		findingIDs = append(findingIDs, f.ID)
@@ -4858,7 +4876,19 @@ func (w *Worker) ApplyMaintenance(tx app.WriteTx, attempt domain.ProviderAttempt
 		}
 		evList := []domain.FindingEvidence{focalEv}
 		evList = append(evList, focalVerifiedEv...)
+		// This discriminator describes the already established grounding. It does
+		// not change topic admission, source input, ranking or historical output.
+		basis := "explanation_text"
+		if focalHasVerifiedSrc {
+			basis = "source_verified"
+		}
 		proposal := map[string]any{
+			"evidence_basis": basis,
+			"origin_unit": map[string]any{
+				"project_id": curItem.ProjectID, "document_id": focalDoc.ID,
+				"version_id": curItem.VersionID, "page_path": curItem.PagePath,
+				"region_id": curItem.RegionID,
+			},
 			"action":                "assign_topic",
 			"topic":                 normTopic,
 			"version_id":            curItem.VersionID,

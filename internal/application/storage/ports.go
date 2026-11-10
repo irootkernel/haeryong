@@ -244,6 +244,11 @@ type AssessmentTx interface {
 }
 
 type ScanTx interface {
+	PutManagementEffect(domain.ManagementEffect) (domain.ManagementEffect, bool, error)
+	ReviseManagementEffect(domain.ManagementEffect, int64) error
+	ManagementEffects(domain.ManagementFilter, string, int) ([]domain.ManagementEffect, error)
+	LinkManagementFinding(domain.Finding, domain.ManagementEffect) error
+	ValidateManagementFinding(domain.Finding) error
 	ActiveCoalescedScan(scopeHash string) (domain.Job, bool, error)
 	CreateScanRun(run domain.ScanRun, versions []domain.ScanCapturedVersion) error
 	ScanRun(jobID string) (domain.ScanRun, error)

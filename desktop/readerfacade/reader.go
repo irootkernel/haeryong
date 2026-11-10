@@ -605,7 +605,7 @@ func passiveAllowedOperation(operation string) bool {
 		"revisitGet", "reviewGet", "reviewHistory", "personalGet",
 		"listUploads", "uploadDetail", "uploadEntries", "uploadRanges", "uploadPins",
 		"jobGet", "verifyContextFresh", "packageStream", "fileStream",
-		"draftList", "draftGet", "draftHistory", "jobFindingsList",
+		"draftList", "draftGet", "draftHistory", "jobFindingsList", "jobsList", "versionRelated", "topicAssignmentsList",
 		"questionList", "questionGet", "questionAnswers", "answerGet",
 		"questionTextStream", "questionContextStream", "answerBodyStream", "answerCitationStream":
 		return true
@@ -862,6 +862,8 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 			s.receipt("revokeOwnSession", map[string]any{"status": result.status})
 		}
 		return result.value, result.werr
+	case "jobsList", "versionRelated", "topicAssignmentsList":
+		return s.managementOperation(operation, payload, auth)
 	case "generationStart", "draftList", "draftGet", "draftHistory", "draftPatch", "draftPublish", "jobResume", "scanStart", "jobFindingsList":
 		return s.generationOperation(operation, payload, auth)
 	case "questionStart", "questionList", "questionGet", "questionAnswers", "answerGet", "questionTextStream", "questionContextStream", "answerBodyStream", "answerCitationStream":

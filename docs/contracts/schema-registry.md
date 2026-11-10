@@ -1438,3 +1438,36 @@ native clients share it; it does not alter personal Review/Revisit. Reading a
 summary performs no project-source read, observation, provider call or dispatch.
 The existing immutable normalized manifest supplies historical intent, including
 for imports whose old compact metadata projection omitted it.
+
+## Management overlay views (TASK-008-04)
+
+APIv1/package1.0 remain unchanged; physical SQLite advances to revision23.
+The additive selected machine definitions `management_anchor`,
+`management_effect` and `management_page` are in tests/contracts/schema.json.
+An anchor names exact document/version/page/nullable-region. A page contains
+items and nullable next_cursor. The closed effect union discriminates availability.
+An available effect contains availability=available, overlay_id, kind, semantic_key,
+originating finding/job, from/target anchors, relation_type/mechanism_key or
+normalized topic identity, permanent origin=ai, evidence basis/fingerprint and
+rationale/evidence/uncertainty, target_set_id, captured/applied configuration,
+permissions_revision, decision/decision_actor/pinned, revision/etag and times.
+An unavailable relation contains only availability=unavailable, overlay_id,
+kind=related_explanation, currently authorized from anchor, origin=ai, decision,
+revision and etag. It carries no target/evidence IDs, labels, rationale or raw
+details, nor a reason distinguishing hidden/Trash/purged dependencies. Losing
+focal authority hides even that row. Purge scrubs sensitive relation payload,
+history and finding linkage; only this minimal focal marker survives. Focal
+purge removes the marker. Existing migration23 bytes/DDL stay unchanged.
+New topic proposals include their canonical evidence_basis and origin_unit.
+New effects require explanation_text or source_verified; source_verified follows
+established complete focal source evidence, not capture availability. Reads of
+missing/noncanonical legacy topic basis say legacy_unknown without rewriting
+stored records/history or treating it as new semantic evidence.
+No approval state changes authorship. Active relation/topic semantic keys are
+unique across findings and runs; multiple findings retain the same effect ID and
+linked revision. Task05 must reconcile every linked finding on reversal.
+
+Closed native reads are `versionRelated`, `topicAssignmentsList` and
+`jobsList`; passive refresh uses existing passive=true/authority-era rules.
+No generic native HTTP/SQL operation is introduced. Existing finding and scoped
+assessment projections retain their own identities and publication meaning.

@@ -8,7 +8,14 @@ parser.add_argument('--stages',default='selfcheck,app,seed,restart,crash,evidenc
 parser.add_argument('--existing-records',type=pathlib.Path,help='Explicit saved-record campaign manifest; requires evidence-only')
 parser.add_argument('--saved-record-subset',action='store_true',help='Observe available saved cases; retain missing campaign obligations explicitly')
 parser.add_argument('--saved-browser-cli',type=pathlib.Path,help=argparse.SUPPRESS)
+parser.add_argument('--maintenance-records',type=pathlib.Path,help='Explicit Task04 saved-record Maintenance observer; requires separate runtime release')
 args=parser.parse_args()
+if args.maintenance_records:
+ assert args.stages=='maintenance' and not args.existing_records and not args.saved_record_subset and args.provider_binary is None,'Maintenance is an exclusive explicitly released saved-record mode'
+ module=pathlib.Path(__file__).resolve().with_name('maintenance_saved.py')
+ spec=importlib.util.spec_from_file_location('maintenance_saved',module)
+ observer=importlib.util.module_from_spec(spec);spec.loader.exec_module(observer)
+ raise SystemExit(observer.run(args.maintenance_records,args.receipt,args.scratch_root or args.receipt.resolve().parent,args.saved_browser_cli))
 assert not args.saved_browser_cli or args.existing_records,'saved browser requires explicit manifest'
 assert not args.saved_record_subset or args.existing_records,'subset requires explicit saved manifest'
 assert not args.existing_records or args.stages=='evidence','saved campaign selects evidence only'

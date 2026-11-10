@@ -838,3 +838,27 @@ Manual purge removes trigger resolutions before their referenced records.
 Provider attempts, delivered-input observations and saved results remain in
 their existing ledgers; semantic publication does not manufacture those facts.
 See [scoped freshness evidence](testing/region-freshness.md).
+
+## Management records (TASK-008-04, schema revision 23)
+
+Separate relation/topic tables store typed exact anchors, semantic key, immutable
+AI origin, rationale/evidence/uncertainty, finding/job provenance, captured and
+applied configuration, permission generation, decision actor and revision.
+`management_effect_history` retains metadata revisions;
+`finding_effects` retains every finding-to-effect ID/kind/revision binding.
+Active semantic-key unique indexes prevent duplicate effects across findings,
+runs and concurrent children. Reuse changes no existing effect actor/revision.
+Findings remain proposals; prior proposed rows are not migrated into effects.
+The repository revision seam preserves origin and immutable fields; Task05 owns
+its guarded owner-facing decision/undo service and all-linked reversal rules.
+
+Current reads check focal, endpoint and evidence authority. An inaccessible,
+Trash or purged dependency leaves only a nondisclosing unavailable relation for
+an authorized focal scope. Purge removes target/evidence payload, the old semantic
+digest, history and finding linkage, retaining the closed minimal focal marker
+in the existing relation table; focal purge removes it. Topic dependencies still
+require full visibility. New topic effects require canonical explanation_text or
+source_verified basis; legacy missing basis remains unknown in read projections
+without changing stored semantic history. Lifecycle impact, coherent backup and
+protected restore include these records and minimal markers. Optional decisions export stays unavailable. Payload, authored
+references and Review stay independent. See [management evidence](testing/management-overlays.md).

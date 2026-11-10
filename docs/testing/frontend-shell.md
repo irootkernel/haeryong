@@ -53,3 +53,7 @@ Commands are reproducible from the repository; rows below executed on the C4 can
 - Viewport matrix (390×844/844×390/820×1180/1440×900), measured contrast, full responsive/reader flows and the complete keyboard/screen-reader path belong to TASK-003-06.
 - Complete pairing/device UX, localization framework and dark-mode manual toggle remain TASK-007-02; hashed-asset immutable caching remains a deliberate non-goal (uniform `no-store`).
 - The fault proxy and fixture alias model the documented private-proxy forwarding path on loopback; they are not private ingress, physical-device or remote proof. Fixture `GET /api/v1/status` returns the auth domain identity shape; full daemon status wiring is covered by the root E2E daemon checks, not this harness.
+
+## Retained current UI preparation
+
+For an authorized UI campaign, `frontend/check_build.py --prepared-output-dir /absolute/new/private/directory` performs the same canonical verification and retains its browser/native outputs for exact binding and reuse. The path must be absolute and absent; it cannot be combined with `--regenerate`. Failed output is also retained for diagnosis. Ordinary validation still cleans its scratch output. This option changes no source fingerprint, byte comparison, bridge exclusion or native-entry verification. The caller owns retention and cleanup.

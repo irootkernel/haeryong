@@ -151,3 +151,19 @@ Actual Tailscale browser reading, large display context, exact Notes and whole-v
 ## Multi-device reconciliation and conflict flows (TASK-007-04)
 
 Reconnect and background event invalidation use `Last-Event-ID` cursor continuity (`stream_epoch:sequence`) and an awaitable `resync.required` barrier that runs passive `GET`/`HEAD` refreshes (`Haeryong-Passive-Read: 1` / native `passive: true`) without advancing session `last_seen_at`. Uncertain mutations query `GET /api/v1/operations/{id}` first and follow a `completed` receipt with a fresh passive resource `GET` rather than treating the receipt snapshot as current resource state; queued local mutations compare `K`'s receipt against the current server `ETag` and surface an explicit conflict if a peer modified the resource after `K`. Stale `412`/`409` writes across Review, Revisit, Notes (edit/reattach/delete) and independent personal reader resources (`reader-preference`, `reading-position`, `page-position`) retain unsaved local state and present explicit reload-server vs apply-local-against-current-ETag actions. See [multi-device reconciliation evidence](../testing/multi-device-reconciliation.md).
+
+## Task04 management reading and policy edits
+
+Open Maintenance, select an existing scan, inspect typed paginated findings and
+open the exact affected Reader target. This read flow starts no source capture or
+provider work. Reader authored links remain separate from AI relationships/topics.
+A scoped/partial candidate never becomes whole-version applied freshness.
+Unavailable AI links are inert nondisclosing rows while focal authority exists;
+no target/evidence details or deleted-versus-denied cause are shown. Topic basis
+stays explicit and legacy missing basis stays unknown without rewriting history.
+
+Settings/Maintenance reads one effective configuration revision, previews the
+selected category changes, shows exact impact and requires explicit confirmation.
+A stale plan preserves local intent; an uncertain request is reconciled by its
+original identity before another mutation. Task05 owner decisions and Task06
+finding-to-draft/publication remain separately unavailable actions.

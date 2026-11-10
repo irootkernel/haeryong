@@ -119,6 +119,10 @@ func validateCommandFlags(opt options) error {
 		if verb == "rebuild" {
 			add("operation-id")
 		}
+	case "related", "topics":
+		if verb == "list" {
+			add("document version path region cursor limit")
+		}
 	case "references":
 		if verb == "list" {
 			add("version cursor limit")
@@ -235,6 +239,11 @@ func validateCommandFlags(opt options) error {
 	}
 	if args[0] == "backlinks" || args[0] == "indexes" {
 		if _, err := connectedCLIPath(opt); err != nil {
+			return err
+		}
+	}
+	if args[0] == "related" || args[0] == "topics" {
+		if _, err := managementCLIPath(opt); err != nil {
 			return err
 		}
 	}
