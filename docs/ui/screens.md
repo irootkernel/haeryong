@@ -331,3 +331,14 @@ Approval actor never removes AI origin. Settings/Maintenance uses current
 revisioned configuration preview/confirmation with category modes, preserved
 conflicting inputs and uncertain-request reconciliation. No scheduler is enabled.
 Actual UI evidence remains qualified in [management evidence](../testing/management-overlays.md).
+
+## Task05 owner Maintenance actions
+
+Known finding kinds expose only their legal approve/reject actions. Current
+authorized relation/topic effects expose Undo and supported Topic PUT controls;
+current undone or unavailable effects have no direct reenable controls. Explicit
+reassessment confirms origin revision, exact document/version/page/region, depth
+and source selection. Saved request/key/old ETag survive409/412 until deliberate
+review; GET receipt recovery never automatically repeats a mutation. Authority/
+selection changes clear protected late results. Repair pending is not applied;
+content draft/publication remains Task06. See [scoped decision evidence](../testing/finding-decisions.md).

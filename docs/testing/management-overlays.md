@@ -346,3 +346,11 @@ current composed coverage described above. Delegated Coordinator member acceptan
 establishes this bounded Task04 delivery without converting either failed run to
 an aggregate pass. Its normal completion commit and native finalization follow;
 Task05/06 and whole-Epic acceptance remain separate, ordered obligations.
+
+## Task05 candidate integration
+
+The historical Task04 results and failures above retain their exact source
+qualification. [Finding decisions](finding-decisions.md) adds owner mutation,
+all-linked current revisions, durable reject/Undo memory and explicit new-result
+reassessment. Current shared action/UI/common gates remain separate; earlier
+read-only/native observations do not prove these new writes.

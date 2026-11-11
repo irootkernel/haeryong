@@ -862,6 +862,8 @@ func (s *ReaderService) invoke(operation string, payload json.RawMessage) (any, 
 			s.receipt("revokeOwnSession", map[string]any{"status": result.status})
 		}
 		return result.value, result.werr
+	case "findingDecision", "topicAssignmentSet", "overlayUndo":
+		return s.findingDecisionOperation(operation, payload, auth)
 	case "jobsList", "versionRelated", "topicAssignmentsList":
 		return s.managementOperation(operation, payload, auth)
 	case "generationStart", "draftList", "draftGet", "draftHistory", "draftPatch", "draftPublish", "jobResume", "scanStart", "jobFindingsList":

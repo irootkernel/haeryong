@@ -167,3 +167,13 @@ selected category changes, shows exact impact and requires explicit confirmation
 A stale plan preserves local intent; an uncertain request is reconciled by its
 original identity before another mutation. Task05 owner decisions and Task06
 finding-to-draft/publication remain separately unavailable actions.
+
+## Task05 decision and reassessment recovery
+
+An owner chooses a saved finding or current effect and submits its individual
+validator with one operation key. A lost reply recovers the same GET receipt;
+current state is then refreshed separately. Conflicts preserve input and require
+explicit review. Current Undo is disclosed; only a NEW explicitly scoped
+reassessment proposal and a separate current guarded approve may supersede it.
+The original finding remains terminal. Direct Topic PUT on undone is refused.
+No flow changes Review or publishes content. See [decision evidence](../testing/finding-decisions.md).

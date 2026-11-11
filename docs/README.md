@@ -483,3 +483,15 @@ aggregate pass. Delegated Coordinator member acceptance establishes this
 bounded Task04 delivery with those qualifications intact. Its normal completion
 commit and native finalization follow; Task05 is not started by this record.
 Task05/06 and overall Epic/Stage B acceptance retain their ordered owners.
+
+TASK-008-05 implements guarded owner finding decisions, Topic PUT, all-linked
+Undo memory and exact owner-only finding-bound reassessment at schema24.
+[Finding decision evidence](testing/finding-decisions.md) records the corrected
+source, passing current common with 1,464 mandatory Go tuples exactly once and
+259 Python cases, and the separate affected documentation check. Controlled
+browser/native, GET-only poststate, original negative and cleanup qualifications
+remain distinct; the raw native aggregate remains failed. Final independent
+criterion composition and Coordinator delegated member acceptance establish this
+bounded Task05 delivery. No commit or native finalization is recorded here.
+Task06 drafts/full report/assembled exit and overall Epic/Stage B acceptance
+retain their ordered owners.

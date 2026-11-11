@@ -156,7 +156,8 @@ export class MaintenanceState {
   optionsLoading = false;
   scanBusy = false;
   scanError: string | null = null;
-  accepted: (Pick<ScanAccepted, "operation_id" | "job_id" | "job"> & Partial<Pick<ScanAccepted, "coalesced">>) | null = null;
+  // Recovery may separately hydrate the current job after reading its receipt.
+  accepted: (Pick<ScanAccepted, "operation_id" | "job_id"> & Partial<Omit<ScanAccepted, "operation_id" | "job_id">> & { job?: JobView }) | null = null;
   unconfirmedOperation: string | null = null;
   filter: Pick<JobFindingsFilter, "kind" | "status"> = {};
   accessLost = false;

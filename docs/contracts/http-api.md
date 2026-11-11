@@ -1119,10 +1119,9 @@ closed `ScanRequest` shape (`scope`, `project_id`, `project_ids`, `document_id`,
 in `change_focused` | `full_scope` | `deep_semantic` with hyphenated aliases,
 `source_mode`, `target_set_id`, `sources`, `finding_id`,
 `expected_finding_revision`) with duplicate-key and unknown-field rejection
-(`400 INVALID_REQUEST`, including forbidden `max_files_inspect` caps). Premature
-finding-reassessment selectors (`finding_id` or `expected_finding_revision`)
-return `503 FEATURE_NOT_READY`; finding decision mutations remain owned by
-TASK-008-05.
+(`400 INVALID_REQUEST`, including forbidden `max_files_inspect` caps). TASK-008-05
+implements owner-only finding-bound reassessment as specified below; unbound
+workflow scan.request admission remains unchanged.
 
 Admission captures the authorized document/version roster (`ORDER BY document_id COLLATE BINARY`,
 excluding pre-existing trashed documents as `document_trashed` in
@@ -1174,6 +1173,47 @@ availability alone is not source verification. Missing/noncanonical legacy
 topic basis is projected as legacy_unknown on both finding and effect reads,
 without rewriting stored proposals/effects/history or inventing verification.
 Proposals remain in job findings, never authored references.
-Owner topic mutation, finding decisions/undo and finding-bound reassessment stay
-unavailable until Task05; finding-bound generation/draft flow stays Task06.
+TASK-008-05 adds the owner mutations below; finding-bound generation/draft flow
+stays TASK-008-06.
 The earlier /related unavailable statement describes its historical checkpoint.
+
+## Owner finding decisions (TASK-008-05)
+
+All three routes require current owner authority, Idempotency-Key and the
+individual strong If-Match (428 if absent, 412 if stale). Closed application/json
+bodies reject duplicate/unknown controls. IDs of findings are opaque strings.
+
+| Route | Body | Result |
+|---|---|---|
+| POST /findings/{id}/decisions | {decision: approve or reject} | 200 completed; deterministic repair admission 202 repair_pending |
+| PUT /topic-assignments/{id} | {pinned: boolean, decision: accepted or rejected} | 200 completed |
+| POST /overlays/{id}/undo | {} | 200 completed |
+
+Success data is {operation_id,state,finding,effect,job_id}; absent objects/job
+are null. Finding reads may add current authorized effect (with its own ETag)
+and owner_decision {action,revision}. Historical applied_ref does not authorize
+a current mutation. A separate owner approval linking a new finding advances the
+current effect validator and existing active link revisions atomically; an old
+Undo or Topic PUT returns412 without modifying the post-approval state. Unrelated
+saved semantic keys remain independently actionable. Approval and rejected-topic
+reactivation recheck captured/current policy and every actual version dependency's
+captured/current project permission generation inside the final writer.
+Current undone Topic PUT is409 INVALID_TRANSITION, reason
+undone_requires_reassessment_approve; pinned+rejected is400. Historical finding
+transitions, owner/policy/version conflicts and unverified retained proof are
+refused without force. Content approval remains503 FEATURE_NOT_READY with
+finding_draft_owned_by_task06. Other safe failures use the existing error schema.
+
+Exact authorized receipt replay precedes old precondition reevaluation. Same-key
+different intent conflicts. Applicable stale/blocked refusals commit a failed
+receipt with the finding status; authentication/precondition failures do not.
+GET /operations/{id} recovers the original result under current authority.
+
+Finding-bound POST /scans requires paired finding_id/expected_finding_revision,
+explicit document_id/version_id/depth/source_mode and exact page/region when
+scoped. Either selector enforces owner-only before lookup/revision/replay.
+Only the same document and deliberately selected existing version/anchors are
+allowed; no implicit successor or path-prefix widening. Origin pair, captured
+owner generations and exact normalized scope participate in coalescing; unbound
+requests cannot absorb the origin. Admission rechecks authority/origin revision
+after retained source preparation. See [finding decision evidence](../testing/finding-decisions.md).

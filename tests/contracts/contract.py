@@ -228,6 +228,12 @@ def validate(name, value, code='INVALID_REQUEST'):
             if data < rule.get('minimum', data) or data > rule.get('maximum', data):
                 fail(code, at, 'number outside typed range')
     walk(SCHEMA['$defs'][name], value, '')
+    if name == 'topic_assignment_change' and value['pinned'] and value['decision'] == 'rejected':
+        fail(code, '/pinned', 'rejected assignments cannot remain pinned')
+    if name == 'scan_request' and ('finding_id' in value or 'expected_finding_revision' in value):
+        for field in ('finding_id', 'expected_finding_revision', 'document_id', 'version_id', 'depth', 'source_mode'):
+            if field not in value:
+                fail(code, '/' + field, 'finding-bound reassessment requires explicit controls')
     if name in ('reference_from_view', 'reference_exact_target', 'backlink_scope', 'backlink_endpoint'):
         if value['region_id'] is not None and value['page_path'] is None:
             fail(code, '/page_path', 'region requires exact page')

@@ -459,3 +459,12 @@ acceptance. This factual/lifecycle overlay is checked separately from the
 product-input verification composition. The normal completion commit and native
 finalization precede Task04; no commit, subsequent Task execution or Master
 overall Epic acceptance is recorded here.
+
+## Task05 retained contribution approval
+
+[Finding decisions](finding-decisions.md) adds explicit approval of the original
+validated saved contribution without another Execute or source capture. Fixed
+required units, retained preparation/input digest and citations are revalidated;
+original target, assessed time and scope remain unchanged. A different target's
+published contribution does not appear in the old exact target filter. The
+original Task03 semantic/partial/unknown evidence above is not regraded.

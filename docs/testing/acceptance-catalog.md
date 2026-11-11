@@ -168,7 +168,7 @@ D-09 makes one selected result directory, with any number of HTML pages and supp
 **Original acceptance requirement:** A rejected suggestion is not repeatedly reintroduced without new evidence. User-pinned metadata and review history survive scanning. Metadata rollback does not overwrite later user edits. A scan cannot restore or newly expose trashed material.
 
 **Primary work:** [TASK-008-05](../tasks/EPIC-008/TASK-008-05.md)  
-**Status:** not_run
+**Status:** not_run (whole scenario); [scoped offline contribution](finding-decisions.md) covers rejection/Undo, pin/conflict and all-linked rollback. Actual selected consumers/current common remain due.
 
 - **Given:** Rejected suggestion, pinned classification, Reviewed record and trashed target.
 - **When:** Repeat scan with same evidence and attempt undo after a user edit.
@@ -179,6 +179,7 @@ D-09 makes one selected result directory, with any number of HTML pages and supp
 **Original acceptance requirement:** Change or delete a document while an AI assessment is running. The old result cannot be applied as a check of the replacement. Retries and duplicate results do not create repeated edges, versions, or conflicting management actions.
 
 **Primary work:** [TASK-006-01](../tasks/EPIC-006/TASK-006-01.md); [TASK-008-05](../tasks/EPIC-008/TASK-008-05.md)  
+**Task05 scoped contribution:** [Decision checks](finding-decisions.md) cover duplicates, obsolete classification, coalescing and policy-race refusal; whole scenario remains not_run.
 **Early / additional work:** [TASK-002-02](../tasks/EPIC-002/TASK-002-02.md); [TASK-002-04](../tasks/EPIC-002/TASK-002-04.md); [TASK-002-06](../tasks/EPIC-002/TASK-002-06.md). Early/additional contribution; full scenario still requires its primary production evidence.
 **Status:** not_run
 
@@ -265,7 +266,7 @@ D-09 makes one selected result directory, with any number of HTML pages and supp
 **Original acceptance requirement:** Restrict automatic application or revoke access while a scan is running. Further affected calls or mutations stop or require approval. Expanding policy does not silently expand an existing job. Retain the captured policy revision and report the difference.
 
 **Primary work:** [TASK-009-04](../tasks/EPIC-009/TASK-009-04.md)  
-**Status:** not_run
+**Status:** not_run (full scheduled scenario); [Task05 contribution](finding-decisions.md) retains captured/current apply and repair restrictions without passing full M12.
 
 - **Given:** Running scan with captured policy and allowed source.
 - **When:** Revoke source/narrow auto-apply, then later broaden policy.

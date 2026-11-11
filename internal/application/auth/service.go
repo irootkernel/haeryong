@@ -1198,6 +1198,9 @@ func visibleContextTarget(tx app.WriteTx, target string, strict bool) error {
 }
 
 func visibleRequest(tx app.WriteTx, r domain.Request) error {
+	if err := visibleDecisionRequest(tx, r); err != nil {
+		return err
+	}
 	if err := visibleContextTarget(tx, r.Target, true); err != nil {
 		return err
 	}

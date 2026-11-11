@@ -39,7 +39,7 @@ function harness(active: Partial<HaeryongClient> = {}, passive: Partial<Haeryong
     jobGet: async id => job(id), jobFindingsList: async () => ({ items: [], next_cursor: null }),
     listProjects: async () => ({ items: [], next_cursor: null }),
     configurationView: async () => ({ config_revision: 4, etag: "config", configuration: { projects: {} } }),
-    scanStart: async (_request, operation_id) => { calls++; return { job_id: "scan", operation_id, job: job(), coalesced: true }; },
+    scanStart: async (_request, operation_id) => { calls++; return { job_id: "scan", operation_id, job_url: "/api/v1/jobs/scan", target_set_id: null, coalesced: true }; },
     versionAssessments: async () => ({ items: [], next_cursor: null, applicable: null }),
   };
   const client = { ...base, ...active } as HaeryongClient;

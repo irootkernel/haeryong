@@ -213,3 +213,12 @@ exact-key effect. The query service supplies closed authenticated reads to HTTP,
 CLI and native/shared clients. Existing assessment/coverage selection remains the
 freshness authority; findings alone are candidates. See the
 [management record](testing/management-overlays.md) for current checks and limits.
+
+## Owner decisions at schema24
+
+Finding decisions reuse the serialized receipt writer and canonical management
+records. Retained immutable objects are pinned and verified outside that writer;
+final current source/policy/lifecycle/owner-generation and individual revision
+checks precede atomic effect/all-linked finding/decision-memory/audit/receipt
+writes. Read DTOs and inert unavailable markers are never mutation records.
+See [finding decisions](testing/finding-decisions.md).

@@ -46,7 +46,7 @@ def test_scans_T00801_public_api_cli_lost_response_and_findings_flow(product, ow
     assert files_list["sub/alias.bin"]["link_target"] == "../outside-dangling-target.bin"
     assert files_list["sub/raw.bin"]["kind"] == "file"
 
-    # 1. Premature finding reassessment returns 503 FEATURE_NOT_READY
+    # 1. Finding reassessment requires both selectors; partial selectors return 400 INVALID_REQUEST
     for body in (
         {"finding_id": str(uuid.uuid4())},
         {"expected_finding_revision": 1},
@@ -58,8 +58,8 @@ def test_scans_T00801_public_api_cli_lost_response_and_findings_flow(product, ow
             body=body,
             headers={"Idempotency-Key": operation()},
         )
-        assert status == 503
-        assert err_payload["error"]["code"] == "FEATURE_NOT_READY"
+        assert status == 400
+        assert err_payload["error"]["code"] == "INVALID_REQUEST"
 
     # 2. CLI scan submission with dropped 202 acknowledgement recovers pending operation_id via GET /api/v1/operations/{id}
     with Proxy(
@@ -135,7 +135,7 @@ def test_scans_T00801_public_api_cli_lost_response_and_findings_flow(product, ow
     )
     assert not_mod_status == 304
 
-    # 4. CLI findings list with canonical filters (including TASK-008-02 candidate discovery kinds) and premature approve/reject refusal
+    # 4. CLI findings list with canonical filters (including TASK-008-02 candidate discovery kinds) and missing-finding approve/reject refusal
     assert report["inspected_candidate_relations"] == 0
     assert report["provider_attempts"] == 0
     for f_kind in (
@@ -154,8 +154,8 @@ def test_scans_T00801_public_api_cli_lost_response_and_findings_flow(product, ow
         assert str(tmp_path) not in json.dumps(findings_page)
 
     dummy_id = str(uuid.uuid4())
-    product.cli(["findings", "approve", dummy_id, "--if-match", f'"finding-{dummy_id}-r1"'], client=owner, code=5)
-    product.cli(["findings", "reject", dummy_id, "--if-match", f'"finding-{dummy_id}-r1"'], client=owner, code=5)
+    product.cli(["findings", "approve", dummy_id, "--if-match", f'"finding-{dummy_id}-r1"'], client=owner, code=3)
+    product.cli(["findings", "reject", dummy_id, "--if-match", f'"finding-{dummy_id}-r1"'], client=owner, code=3)
 
     # 5. Moving the single targeted document to Trash hides the single-target scan job, findings, and receipt until Restore
     doc_rev = product.data("GET", f"/api/v1/documents/{document_id}", client=owner)["revision"]

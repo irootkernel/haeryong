@@ -25,7 +25,7 @@ func isProductCommand(opt options) bool {
 		return true
 	}
 	switch opt.command[0] {
-	case "related", "topics", "scan", "findings", "providers", "lifecycle", "trash", "revisit", "review", "backlinks", "indexes", "references", "search", "import", "package", "uploads", "documents", "files", "operations", "jobs", "config", "projects", "events", "sources", "evidence", "assessments":
+	case "overlays", "related", "topics", "scan", "findings", "providers", "lifecycle", "trash", "revisit", "review", "backlinks", "indexes", "references", "search", "import", "package", "uploads", "documents", "files", "operations", "jobs", "config", "projects", "events", "sources", "evidence", "assessments":
 		return true
 	case "doctor", "status":
 		if opt.flags["credential"] != "" || opt.flags["client-dir"] != "" {
@@ -163,7 +163,12 @@ func productCommand(ctx context.Context, opt options, emit func(any) error) erro
 			return call("POST", path, map[string]string{"kind": opt.flags["kind"]})
 		}
 		return call("GET", path, nil)
+	case "overlays":
+		return findingActionCLI(ctx, api, state, opt, emit)
 	case "related", "topics":
+		if args[0] == "topics" && len(args) > 1 && args[1] == "set" {
+			return findingActionCLI(ctx, api, state, opt, emit)
+		}
 		path, err := managementCLIPath(opt)
 		if err != nil {
 			return err

@@ -41,18 +41,22 @@ type ScanSourceSelector struct {
 }
 
 type ScanRequestedScope struct {
-	Scope       string               `json:"scope"`
-	ProjectIDs  []string             `json:"project_ids"`
-	DocumentID  string               `json:"document_id,omitempty"`
-	DocumentIDs []string             `json:"document_ids,omitempty"`
-	VersionID   string               `json:"version_id,omitempty"`
-	PathPrefix  string               `json:"path_prefix,omitempty"`
-	PagePath    string               `json:"page_path,omitempty"`
-	RegionID    string               `json:"region_id,omitempty"`
-	Depth       string               `json:"depth"`
-	SourceMode  string               `json:"source_mode,omitempty"`
-	TargetSetID string               `json:"target_set_id,omitempty"`
-	Sources     []ScanSourceSelector `json:"sources,omitempty"`
+	OwnerRevisions          map[string]int64     `json:"owner_decision_revisions,omitempty"`
+	OwnerBasisCaptured      bool                 `json:"owner_basis_captured,omitempty"`
+	FindingID               string               `json:"finding_id,omitempty"`
+	ExpectedFindingRevision *int64               `json:"expected_finding_revision,omitempty"`
+	Scope                   string               `json:"scope"`
+	ProjectIDs              []string             `json:"project_ids"`
+	DocumentID              string               `json:"document_id,omitempty"`
+	DocumentIDs             []string             `json:"document_ids,omitempty"`
+	VersionID               string               `json:"version_id,omitempty"`
+	PathPrefix              string               `json:"path_prefix,omitempty"`
+	PagePath                string               `json:"page_path,omitempty"`
+	RegionID                string               `json:"region_id,omitempty"`
+	Depth                   string               `json:"depth"`
+	SourceMode              string               `json:"source_mode,omitempty"`
+	TargetSetID             string               `json:"target_set_id,omitempty"`
+	Sources                 []ScanSourceSelector `json:"sources,omitempty"`
 }
 
 type ScanSourceTarget struct {
@@ -236,33 +240,35 @@ type JobItem struct {
 }
 
 type Finding struct {
-	ID                     string          `json:"finding_id"`
-	JobID                  string          `json:"job_id"`
-	Kind                   string          `json:"kind"`
-	Origin                 string          `json:"origin"`
-	ProjectID              string          `json:"project_id"`
-	DocumentID             *string         `json:"document_id"`
-	VersionID              *string         `json:"version_id"`
-	PagePath               *string         `json:"page_path"`
-	RegionID               *string         `json:"region_id"`
-	TargetSetID            *string         `json:"target_set_id"`
-	Evidence               json.RawMessage `json:"evidence"`
-	EvidenceFingerprint    string          `json:"evidence_fingerprint"`
-	Rationale              string          `json:"rationale"`
-	Uncertainty            string          `json:"uncertainty"`
-	CapturedConfigRevision int64           `json:"captured_config_revision"`
-	PermissionsRevision    int64           `json:"permissions_revision"`
-	Proposal               json.RawMessage `json:"proposal"`
-	Status                 string          `json:"status"`
-	ApprovalRequired       bool            `json:"approval_required"`
-	Reason                 string          `json:"reason,omitempty"`
-	AppliedRef             json.RawMessage `json:"applied_ref"`
-	DecidedBy              *string         `json:"decided_by,omitempty"`
-	DecidedAt              *string         `json:"decided_at,omitempty"`
-	Revision               int64           `json:"revision"`
-	ETag                   string          `json:"etag"`
-	CreatedAt              string          `json:"created_at"`
-	UpdatedAt              string          `json:"updated_at"`
+	Effect                 *ManagementEffect  `json:"effect,omitempty"`
+	OwnerDecision          *OwnerDecisionView `json:"owner_decision,omitempty"`
+	ID                     string             `json:"finding_id"`
+	JobID                  string             `json:"job_id"`
+	Kind                   string             `json:"kind"`
+	Origin                 string             `json:"origin"`
+	ProjectID              string             `json:"project_id"`
+	DocumentID             *string            `json:"document_id"`
+	VersionID              *string            `json:"version_id"`
+	PagePath               *string            `json:"page_path"`
+	RegionID               *string            `json:"region_id"`
+	TargetSetID            *string            `json:"target_set_id"`
+	Evidence               json.RawMessage    `json:"evidence"`
+	EvidenceFingerprint    string             `json:"evidence_fingerprint"`
+	Rationale              string             `json:"rationale"`
+	Uncertainty            string             `json:"uncertainty"`
+	CapturedConfigRevision int64              `json:"captured_config_revision"`
+	PermissionsRevision    int64              `json:"permissions_revision"`
+	Proposal               json.RawMessage    `json:"proposal"`
+	Status                 string             `json:"status"`
+	ApprovalRequired       bool               `json:"approval_required"`
+	Reason                 string             `json:"reason,omitempty"`
+	AppliedRef             json.RawMessage    `json:"applied_ref"`
+	DecidedBy              *string            `json:"decided_by,omitempty"`
+	DecidedAt              *string            `json:"decided_at,omitempty"`
+	Revision               int64              `json:"revision"`
+	ETag                   string             `json:"etag"`
+	CreatedAt              string             `json:"created_at"`
+	UpdatedAt              string             `json:"updated_at"`
 }
 
 func FindingETag(f Finding) string {

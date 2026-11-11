@@ -119,7 +119,14 @@ func validateCommandFlags(opt options) error {
 		if verb == "rebuild" {
 			add("operation-id")
 		}
+	case "overlays":
+		if verb == "undo" {
+			add("if-match operation-id")
+		}
 	case "related", "topics":
+		if verb == "set" && args[0] == "topics" {
+			add("pinned decision if-match operation-id")
+		}
 		if verb == "list" {
 			add("document version path region cursor limit")
 		}
@@ -213,7 +220,7 @@ func validateCommandFlags(opt options) error {
 	case "events":
 		add("cursor")
 	case "scan":
-		add("project all-allowed-projects document version path region depth source-mode target-set capture operation-id")
+		add("finding expected-finding-revision project all-allowed-projects document version path region depth source-mode target-set capture operation-id")
 	case "findings":
 		switch verb {
 		case "list":
@@ -242,7 +249,12 @@ func validateCommandFlags(opt options) error {
 			return err
 		}
 	}
-	if args[0] == "related" || args[0] == "topics" {
+	if args[0] == "overlays" || args[0] == "topics" && verb == "set" {
+		if _, _, _, err := findingActionInput(opt); err != nil {
+			return err
+		}
+	}
+	if args[0] == "related" || args[0] == "topics" && verb == "list" {
 		if _, err := managementCLIPath(opt); err != nil {
 			return err
 		}

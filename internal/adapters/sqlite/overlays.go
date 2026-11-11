@@ -36,7 +36,7 @@ func (t *writeTx) PutManagementEffect(m domain.ManagementEffect) (domain.Managem
 	m.SemanticKey = m.Key()
 	m.ETag = m.Validator()
 	var raw []byte
-	e = t.tx.QueryRowContext(t.ctx, `SELECT value FROM `+table+` WHERE semantic_key=? AND (decision='accepted' OR pinned=1 OR decision='rejected') ORDER BY CASE WHEN pinned=1 OR decision='rejected' THEN 0 ELSE 1 END,effect_id LIMIT 1`, m.SemanticKey).Scan(&raw)
+	e = t.tx.QueryRowContext(t.ctx, `SELECT value FROM `+table+` WHERE semantic_key=? AND (decision IN ('accepted','rejected','undone') OR pinned=1) ORDER BY CASE WHEN pinned=1 OR decision='rejected' THEN 0 ELSE 1 END,effect_id LIMIT 1`, m.SemanticKey).Scan(&raw)
 	if e == nil {
 		var old domain.ManagementEffect
 		if e = json.Unmarshal(raw, &old); e != nil {
@@ -78,7 +78,7 @@ func (t *writeTx) LinkManagementFinding(f domain.Finding, m domain.ManagementEff
 	if id != m.ID || kind != m.Kind || revision != m.Revision {
 		return domain.ErrConflict
 	}
-	return nil
+	return t.SaveManagementLink(domain.FindingEffectLink{FindingID: f.ID, EffectID: m.ID, EffectRevision: m.Revision, FindingRevision: f.Revision, Active: true})
 }
 
 func (t *writeTx) ValidateManagementFinding(f domain.Finding) error {
@@ -185,10 +185,13 @@ func (t *writeTx) ManagementEffects(f domain.ManagementFilter, after string, lim
 // Purge scrubs every sensitive payload/history/link referring to the removed
 // version. A surviving focal relation retains only a nondisclosing marker.
 func (t *writeTx) purgeManagement(document string) error {
+	if e := t.purgeFindingDecisions(document); e != nil {
+		return e
+	}
 	for _, table := range []string{"overlay_relations", "topic_assignments"} {
 		where := `json_extract(value,'$.from.document_id')=? OR json_extract(value,'$.target.document_id')=? OR EXISTS(SELECT 1 FROM json_each(json_extract(` + table + `.value,'$.evidence')) ev WHERE json_extract(ev.value,'$.version_id') IN(SELECT version_id FROM purged_versions WHERE document_id=?))`
 		args := []any{document, document, document}
-		for _, prefix := range []string{`DELETE FROM finding_effects WHERE effect_id IN(SELECT effect_id FROM `, `DELETE FROM management_effect_history WHERE effect_id IN(SELECT effect_id FROM `} {
+		for _, prefix := range []string{`DELETE FROM management_link_states WHERE effect_id IN(SELECT effect_id FROM `, `DELETE FROM finding_effects WHERE effect_id IN(SELECT effect_id FROM `, `DELETE FROM management_effect_history WHERE effect_id IN(SELECT effect_id FROM `} {
 			if e := t.exec(prefix+table+` WHERE `+where+`)`, args...); e != nil {
 				return e
 			}

@@ -324,6 +324,11 @@ func (t *writeTx) FinishJob(id string, generation int64, failure string, apply f
 			return err
 		}
 	}
+	if j.Kind == "derived_index" {
+		if err := t.completeOwnerRepair(id); err != nil {
+			return err
+		}
+	}
 	if err := t.exec("UPDATE jobs SET state='completed',revision=revision+1 WHERE job_id=?", id); err != nil {
 		return err
 	}

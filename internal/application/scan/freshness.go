@@ -823,6 +823,25 @@ func (w *Worker) applyFreshness(tx app.WriteTx, a domain.ProviderAttempt, m doma
 		return err
 	}
 	status := "proposed"
+	proposal, _ := json.Marshal(aRecord)
+	candidate := domain.Finding{ID: fid, JobID: parent.ID, ProjectID: m.ProjectID, DocumentID: freshPtr(m.DocumentID), VersionID: freshPtr(m.VersionID), Kind: "freshness_assessment", Origin: "ai", TargetSetID: freshPtr(set.TargetSetID), Evidence: evidence, Proposal: proposal}
+	basis, err := captureDecisionBasis(tx, candidate)
+	if err != nil {
+		return err
+	}
+	decision, found, err := tx.FindingDecision(basis.Key)
+	if err != nil {
+		return err
+	}
+	reason := ""
+	if found && (decision.Action == "reject" || decision.Action == "undo") {
+		mode = "propose"
+		reason = "owner_decision_requires_approval"
+		if decision.Material == basis.Material {
+			status = "rejected"
+			reason = "owner_decision_suppressed"
+		}
+	}
 	var applied json.RawMessage
 	if mode == "auto" {
 		if err = tx.PutAssessment(aRecord, units); err != nil {
@@ -837,12 +856,15 @@ func (w *Worker) applyFreshness(tx app.WriteTx, a domain.ProviderAttempt, m doma
 		status = "applied"
 		applied, _ = json.Marshal(map[string]any{"assessment_id": id, "coverage_set_id": set.ID})
 	}
-	proposal, _ := json.Marshal(aRecord)
 	f := domain.Finding{ID: fid, JobID: parent.ID, ProjectID: m.ProjectID, DocumentID: freshPtr(m.DocumentID), VersionID: freshPtr(m.VersionID), Kind: "freshness_assessment", Origin: "ai", TargetSetID: freshPtr(set.TargetSetID), Evidence: evidence, EvidenceFingerprint: m.JobID, Rationale: "Exact-target scoped freshness assessment", Proposal: proposal, Status: status, ApprovalRequired: mode != "auto", AppliedRef: applied, CapturedConfigRevision: cfg.Revision, PermissionsRevision: run.PermissionsRevisions[m.ProjectID], Revision: 1, CreatedAt: now, UpdatedAt: now}
+	f.Reason = reason
+	if status == "rejected" {
+		f.ApprovalRequired = false
+	}
 	if err = tx.PutFinding(f); err != nil {
 		return err
 	}
-	return nil
+	return tx.SaveFindingDecisionBasis(basis)
 }
 
 func freshPtr(s string) *string { return &s }

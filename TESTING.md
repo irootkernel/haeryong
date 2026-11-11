@@ -272,3 +272,16 @@ second device, provider behavior or a whole-product acceptance gate.
 
 None. Canonical frameworks apply to the enrolled root layers. Excluded spikes
 retain their separate historical identity; they are not newly enrolled layers.
+
+## Task05 focused decision checks
+
+The persistence-labelled T00805 specs exercise owner decisions, all-linked Undo,
+rollback, pin/classification conflicts, preparation policy races, origin-aware
+coalescing and actual deterministic repair completion/restriction. Existing
+RF06/SC10 selections include every schema24 table and meaningful historical
+empty-table assertions. HTTP/CLI loopback and Go-native facade selections remain
+separate from actual GUI proof. The two new frontend action specs are registered
+in package.json and check_build.py. The opt-in maintenance_saved.py and
+maintenance_task05_probe.js require exact CO-bound controlled cases, immutable
+consumer binaries/prepared bundles and a separate runtime grant; ordinary
+checks do not run them. See [finding decisions](docs/testing/finding-decisions.md).

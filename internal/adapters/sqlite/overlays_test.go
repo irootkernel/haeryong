@@ -153,7 +153,7 @@ var _ = It("T00804 global active semantic key reuses two-run and concurrent-chil
 		}
 	}
 	f.restart()
-	Expect(f.s.validateTables(ctx, 23)).To(Succeed())
+	Expect(f.s.validateTables(ctx, SchemaRevision)).To(Succeed())
 	var n int
 	Expect(f.s.db.QueryRow("SELECT count(*) FROM management_effect_history").Scan(&n)).To(Succeed())
 	Expect(n).To(Equal(3))
@@ -334,7 +334,7 @@ var _ = It("T00804 populated schema22 upgrades additively and missing active-key
 		Expect(e).NotTo(HaveOccurred())
 	}
 	Expect(objects.Close()).To(Succeed())
-	_, e = s.db.Exec("DROP TABLE finding_effects;DROP TABLE management_effect_history;DROP TABLE topic_assignments;DROP TABLE overlay_relations;DROP TABLE topics;DELETE FROM schema_migrations WHERE revision=23;UPDATE libraries SET schema_revision=22;PRAGMA user_version=22")
+	_, e = s.db.Exec(dropDecisionSchema + "DELETE FROM schema_migrations WHERE revision=24;DROP TABLE finding_effects;DROP TABLE management_effect_history;DROP TABLE topic_assignments;DROP TABLE overlay_relations;DROP TABLE topics;DELETE FROM schema_migrations WHERE revision=23;UPDATE libraries SET schema_revision=22;PRAGMA user_version=22")
 	Expect(e).NotTo(HaveOccurred())
 	f.restart()
 	after, e := f.s.Version(ctx, a)
@@ -345,9 +345,9 @@ var _ = It("T00804 populated schema22 upgrades additively and missing active-key
 	Expect(paths).NotTo(BeEmpty())
 	_, e = f.s.db.Exec("DROP INDEX overlay_relations_active_key")
 	Expect(e).NotTo(HaveOccurred())
-	Expect(f.s.validateTables(ctx, 23)).To(MatchError("missing management overlays schema declaration"))
+	Expect(f.s.validateTables(ctx, SchemaRevision)).To(MatchError("missing management overlays schema declaration"))
 	// Restore only this test's DDL before its owned cleanup.
 	_, e = f.s.db.Exec("CREATE UNIQUE INDEX overlay_relations_active_key ON overlay_relations(semantic_key) WHERE decision='accepted'")
 	Expect(e).NotTo(HaveOccurred())
-	Expect(f.s.validateTables(ctx, 23)).To(Succeed())
+	Expect(f.s.validateTables(ctx, SchemaRevision)).To(Succeed())
 })

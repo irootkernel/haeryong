@@ -84,6 +84,9 @@ func (t *writeTx) enqueueReferences(version string, revision int64, rebuild bool
 	return id, t.ReferenceProgress(id, "inventory", "", 0, 0)
 }
 func (t *writeTx) referenceAuthority(j domain.Job, w domain.DerivedWork) error {
+	if e := t.ownerRepairAuthority(j.ID); e != nil {
+		return e
+	}
 	if w.WorkKind != "references" {
 		return domain.ErrTransition
 	}
@@ -188,8 +191,10 @@ func (t *writeTx) ResumeReferences(id string, generation int64) error {
 	}
 	return t.jobUpdated(id)
 }
-func (t *writeTx) CompleteReferences(id string) error { return t.setReferencesState(id, "ready") }
-func (t *writeTx) FailReferences(id string) error     { return t.setReferencesState(id, "failed") }
+func (t *writeTx) CompleteReferences(id string) error {
+	return t.setReferencesState(id, "ready")
+}
+func (t *writeTx) FailReferences(id string) error { return t.setReferencesState(id, "failed") }
 func (t *writeTx) setReferencesState(id, state string) error {
 	w, err := t.DerivedWork(id)
 	if err != nil {

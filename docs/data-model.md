@@ -862,3 +862,31 @@ source_verified basis; legacy missing basis remains unknown in read projections
 without changing stored semantic history. Lifecycle impact, coherent backup and
 protected restore include these records and minimal markers. Optional decisions export stays unavailable. Payload, authored
 references and Review stay independent. See [management evidence](testing/management-overlays.md).
+
+## Owner decision memory (TASK-008-05, schema revision 24)
+
+The additive management_decisions and management_decision_history tables retain
+current scoped choice and immutable revisions, algorithm/material digest, exact
+version dependencies, owner actor/time and previous linked application refs.
+finding_decision_bases fixes each proposal's original exact semantic-key owner
+revision (kind, source/target anchors and topic/mechanism), not a sum over every
+decision mentioning the same version. Current decision material may contain all
+actually reversed active linked applications; immutable original effect provenance
+does not replace their material. New manual effects retain distinct capture and
+final applied configuration revisions and an owner-approved finding reason;
+unchanged canonical-effect reuse retains its original provenance.
+management_link_states fixes current active status and finding revision
+beside finding_effects. No synthetic legacy owner choice is backfilled.
+Old migration bytes/DDL remain unchanged. Strict known-table, historical RF06/
+SC10 and empty-table oracles include all four new tables.
+
+Scan requested_scope durably carries origin finding/revision and captured owner
+semantic-key revisions. Final admission and candidate application compare the
+relevant exact decision revision; unrelated keys never impose a blanket
+version/category ban. All actual dependency project permission generations
+are compared independently in the final application transaction. Undo,
+Topic PUT and owner decision/history/link/receipt writes are atomic; historical
+terminal records remain separate from current effect state. Coherent backups
+include the new tables; purge removes dependent decision/history/bases/current
+links and scrubs origin/scope associations. Inert unavailable markers cannot be
+reaccepted. See [finding decision evidence](testing/finding-decisions.md).

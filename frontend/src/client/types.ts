@@ -983,12 +983,22 @@ export interface ScanRequest {
   finding_id?: string;
   expected_finding_revision?: number;
 }
+/** Public admission receipt; the current JobView is obtained by a separate read. */
 export interface ScanAccepted {
   operation_id: string;
   job_id: string;
+  job_url: string;
   coalesced: boolean;
-  job: JobView;
+  target_set_id: string | null;
 }
+export interface FindingActionResult {
+  operation_id: string;
+  state: "completed" | "repair_pending";
+  finding: FindingView | null;
+  effect: ManagementEffect | null;
+  job_id: string | null;
+}
+export interface TopicAssignmentChange { pinned: boolean; decision: "accepted" | "rejected" }
 export interface FindingView {
   finding_id: string;
   job_id: string;
@@ -1010,6 +1020,8 @@ export interface FindingView {
   status: FindingStatus;
   approval_required: boolean;
   reason?: string;
+  effect?: ManagementEffect;
+  owner_decision?: { action: "approve" | "reject" | "undo"; revision: number };
   applied_ref: unknown;
   decided_by?: string | null;
   decided_at?: string | null;
@@ -1028,6 +1040,9 @@ export interface JobFindingsFilter {
 export interface HaeryongClient {
   /** Read-only view that suppresses session idle-window renewal while preserving current authority checks. */
   passive?(): HaeryongClient;
+  findingDecision?(id: string, decision: "approve" | "reject", etag: string, key: string): Promise<FindingActionResult>;
+  topicAssignmentSet?(id: string, body: TopicAssignmentChange, etag: string, key: string): Promise<FindingActionResult>;
+  overlayUndo?(id: string, etag: string, key: string): Promise<FindingActionResult>;
   scanStart?(request: ScanRequest, operationId: string): Promise<ScanAccepted>;
   jobFindingsList?(jobId: string, filter?: JobFindingsFilter): Promise<ListPage<FindingView>>;
   consumeContext(binding:{version_id:string;page_path:string|null;render_instance_id:string|null},uploadId:string,operationId:string):Promise<DecisionResult>;

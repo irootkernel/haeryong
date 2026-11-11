@@ -132,9 +132,13 @@ var _ = DescribeTable("T00804 guarded production maintenance pipeline applies on
 		if focal == b {
 			target = a
 		}
+		topics := []map[string]any{{"topic": "checkpoint-recovery", "rationale": "The focal checkpoint journal recovery explanation explicitly restores durable retry state before restarting a worker.", "uncertainty": "source_unverified"}}
+		if mode == "propose" && !restrict {
+			topics = append(topics, map[string]any{"topic": "journal-recovery", "rationale": "The focal explanation records retry state in a durable journal for recovery before worker restart.", "uncertainty": "source_unverified"}, map[string]any{"topic": "retry-state", "rationale": "The focal explanation explicitly preserves durable retry state before the worker restarts.", "uncertainty": "source_unverified"})
+		}
 		return string(jsonBytes(map[string]any{
 			"relations":    []map[string]any{{"target_version_id": target, "target_page_path": "page.html", "target_region_id": "", "relation_type": "conceptual_analogy", "rationale": "Both checkpoint recovery explanations compare durable journal retry-state restoration before a worker restart; this is a conceptual comparison, not a code dependency.", "uncertainty": "source_unverified"}},
-			"topics":       []map[string]any{{"topic": "checkpoint-recovery", "rationale": "The focal checkpoint journal recovery explanation explicitly restores durable retry state before restarting a worker.", "uncertainty": "source_unverified"}},
+			"topics":       topics,
 			"content_gaps": []map[string]any{}, "limitations": []map[string]any{},
 		})), nil
 	}}
@@ -196,8 +200,8 @@ var _ = DescribeTable("T00804 guarded production maintenance pipeline applies on
 		}
 	}
 	core := scan.New(s, auth, f.bytes, nil)
-	run := func() string {
-		job := startScanJob(core, owner.Token, domain.ScanRequest{ProjectID: project, Depth: "deep_semantic"})
+	runRequest := func(request domain.ScanRequest) string {
+		job := startScanJob(core, owner.Token, request)
 		for turn := 0; turn < 100; turn++ {
 			j, e := s.Job(ctx, job)
 			Expect(e).NotTo(HaveOccurred())
@@ -219,6 +223,7 @@ var _ = DescribeTable("T00804 guarded production maintenance pipeline applies on
 		Fail("Task04 pipeline did not complete")
 		return ""
 	}
+	run := func() string { return runRequest(domain.ScanRequest{ProjectID: project, Depth: "deep_semantic"}) }
 	first := run()
 	Expect(s.Write(ctx, func(tx app.WriteTx) error {
 		findings, e := tx.JobFindings(domain.FindingFilter{JobID: first, Limit: 200}, "", "")
@@ -295,6 +300,168 @@ var _ = DescribeTable("T00804 guarded production maintenance pipeline applies on
 		if mode != "disabled" {
 			Expect(proposed).To(BeNumerically(">", 0))
 		}
+	}
+	if mode == "propose" && !restrict {
+		// Same production scan captured all siblings before ANY owner mutation.
+		var topics []domain.Finding
+		var relation domain.Finding
+		Expect(s.Write(ctx, func(tx app.WriteTx) error {
+			findings, e := tx.JobFindings(domain.FindingFilter{JobID: first, Limit: 200}, "", "")
+			if e != nil {
+				return e
+			}
+			for _, saved := range findings {
+				if saved.VersionID == nil || *saved.VersionID != a || saved.Status != "proposed" {
+					continue
+				}
+				if saved.Kind == "topic_assignment" {
+					topics = append(topics, saved)
+				}
+				if saved.Kind == "related_explanation" {
+					relation = saved
+				}
+			}
+			return nil
+		})).To(Succeed())
+		Expect(len(topics)).To(BeNumerically(">=", 3))
+		Expect(relation.ID).NotTo(BeEmpty())
+		calls := driver.executeCalls
+		approve := func(saved domain.Finding) {
+			response, e := core.FindingAction(ctx, owner.Token, f.id(), saved.ID, domain.FindingETag(saved), "approve", []byte(`{"decision":"approve"}`))
+			Expect(e).NotTo(HaveOccurred())
+			Expect(response.Status).To(Equal(200), string(response.Body))
+		}
+		approve(topics[0])
+		rejected, e := core.FindingAction(ctx, owner.Token, f.id(), topics[2].ID, domain.FindingETag(topics[2]), "reject", []byte(`{"decision":"reject"}`))
+		Expect(e).NotTo(HaveOccurred())
+		Expect(rejected.Status).To(Equal(200))
+		approve(topics[1])
+		approve(relation)
+		Expect(driver.executeCalls).To(Equal(calls))
+	}
+	// Task05's actual guarded producer must honor an Undo across later scans.
+	if mode == "auto" && !restrict {
+		var chosen domain.ManagementEffect
+		Expect(s.Write(ctx, func(tx app.WriteTx) error {
+			rows, e := tx.ManagementEffects(domain.ManagementFilter{Kind: "topic_assignment"}, "", 200)
+			if e != nil {
+				return e
+			}
+			Expect(rows).NotTo(BeEmpty())
+			chosen = rows[0]
+			return nil
+		})).To(Succeed())
+		undoKey := f.id()
+		response, e := core.EffectAction(ctx, owner.Token, undoKey, chosen.ID, chosen.Validator(), nil, "undone", []byte("{}"))
+		Expect(e).NotTo(HaveOccurred())
+		var result domain.FindingActionResult
+		Expect(json.Unmarshal(response.Body, &result)).To(Succeed())
+		Expect(result.Effect.Decision).To(Equal("undone"))
+		third := run()
+		Expect(s.Write(ctx, func(tx app.WriteTx) error {
+			saved, e := tx.ManagementEffect(chosen.ID)
+			if e != nil {
+				return e
+			}
+			Expect(saved.Decision).To(Equal("undone"))
+			findings, e := tx.JobFindings(domain.FindingFilter{JobID: third, Limit: 200}, "", "")
+			if e != nil {
+				return e
+			}
+			suppressed := false
+			for _, f := range findings {
+				if f.Kind == "topic_assignment" && f.VersionID != nil && *f.VersionID == chosen.From.VersionID {
+					Expect(f.Status).To(Equal("rejected"))
+					Expect(f.Reason).To(Equal("owner_decision_suppressed"))
+					suppressed = true
+				}
+			}
+			Expect(suppressed).To(BeTrue())
+			links, e := tx.ManagementLinkedFindings(chosen.ID)
+			if e != nil {
+				return e
+			}
+			Expect(len(links)).To(BeNumerically(">=", 2))
+			for _, l := range links {
+				Expect(l.Active).To(BeFalse())
+			}
+			return nil
+		})).To(Succeed())
+		replay, e := core.EffectAction(ctx, owner.Token, undoKey, chosen.ID, chosen.Validator(), nil, "undone", []byte("{}"))
+		Expect(e).NotTo(HaveOccurred())
+		Expect(replay.Body).To(Equal(response.Body))
+		// C01: actual StartScan admission -> ordinary retained-output producer ->
+		// NEW equivalent approval-required finding -> separate current Undo CAS.
+		var origin domain.Finding
+		Expect(s.Write(ctx, func(tx app.WriteTx) error { var e error; origin, e = tx.Finding(chosen.FindingID); return e })).To(Succeed())
+		request := domain.ScanRequest{Scope: "selected_projects", ProjectIDs: []string{project}, DocumentID: chosen.From.DocumentID, VersionID: chosen.From.VersionID, Depth: "deep_semantic", SourceMode: "pinned", FindingID: origin.ID, ExpectedFindingRevision: &origin.Revision}
+		if chosen.From.PagePath != nil {
+			request.PagePath = *chosen.From.PagePath
+		}
+		if chosen.From.RegionID != nil {
+			request.RegionID = *chosen.From.RegionID
+		}
+		reassessed := runRequest(request)
+		var fresh domain.Finding
+		Expect(s.Write(ctx, func(tx app.WriteTx) error {
+			run, e := tx.ScanRun(reassessed)
+			if e != nil {
+				return e
+			}
+			Expect(run.RequestedScope.FindingID).To(Equal(origin.ID))
+			findings, e := tx.JobFindings(domain.FindingFilter{JobID: reassessed, Kind: "topic_assignment", Limit: 200}, "", "")
+			if e != nil {
+				return e
+			}
+			for _, candidate := range findings {
+				key, _, e := scan.DecisionIdentity(tx, candidate)
+				if e != nil {
+					return e
+				}
+				if key == chosen.Key() {
+					fresh = candidate
+				}
+			}
+			Expect(fresh.ID).NotTo(BeEmpty())
+			Expect(fresh.ID).NotTo(Equal(origin.ID))
+			Expect(fresh.Status).To(Equal("proposed"))
+			Expect(fresh.ApprovalRequired).To(BeTrue())
+			basis, exists, e := tx.FindingDecisionBasis(fresh.ID)
+			if e != nil {
+				return e
+			}
+			Expect(exists).To(BeTrue())
+			Expect(basis.Reassessment).To(BeTrue())
+			memory, _, e := tx.FindingDecision(basis.Key)
+			if e != nil {
+				return e
+			}
+			Expect(memory.Action).To(Equal("undo"))
+			Expect(memory.Revision).To(Equal(basis.OwnerRevision))
+			Expect(memory.Material).To(Equal(basis.Material))
+			effect, e := tx.ManagementEffect(chosen.ID)
+			Expect(effect.Decision).To(Equal("undone"))
+			return e
+		})).To(Succeed())
+		calls := driver.executeCalls
+		accepted, e := core.FindingAction(ctx, owner.Token, f.id(), fresh.ID, domain.FindingETag(fresh), "approve", []byte(`{"decision":"approve"}`))
+		Expect(e).NotTo(HaveOccurred())
+		Expect(accepted.Status).To(Equal(200))
+		Expect(actionResult(accepted).Effect.ID).To(Equal(chosen.ID))
+		Expect(driver.executeCalls).To(Equal(calls))
+		Expect(s.Write(ctx, func(tx app.WriteTx) error {
+			old, e := tx.Finding(origin.ID)
+			Expect(old.Status).To(Equal("undone"))
+			return e
+		})).To(Succeed())
+		replay, e = core.EffectAction(ctx, owner.Token, undoKey, chosen.ID, chosen.Validator(), nil, "undone", []byte("{}"))
+		Expect(e).NotTo(HaveOccurred())
+		Expect(replay.Body).To(Equal(response.Body))
+		Expect(s.Write(ctx, func(tx app.WriteTx) error {
+			effect, e := tx.ManagementEffect(chosen.ID)
+			Expect(effect.Decision).To(Equal("accepted"))
+			return e
+		})).To(Succeed())
 	}
 	// Every actual auto application above, including the second run's reuse,
 	// preserves the nonempty authored graph, physical objects and public bytes.

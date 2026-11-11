@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -31,6 +30,16 @@ func scanCLIInput(opt options) (map[string]any, error) {
 		return nil, invalid("canonical operation ID required")
 	}
 	body := map[string]any{}
+	if id := opt.flags["finding"]; id != "" {
+		n, e := strconv.ParseInt(opt.flags["expected-finding-revision"], 10, 64)
+		if e != nil || n < 1 || opt.flags["version"] == "" || opt.flags["document"] == "" || opt.flags["depth"] == "" || opt.flags["source-mode"] == "" {
+			return nil, invalid("finding reassessment requires expected revision and explicit document/version/depth/source-mode")
+		}
+		body["finding_id"] = id
+		body["expected_finding_revision"] = n
+	} else if opt.flags["expected-finding-revision"] != "" {
+		return nil, invalid("--finding is required")
+	}
 	if opt.flags["all-allowed-projects"] == "true" {
 		body["scope"] = "all_allowed_projects"
 	}
@@ -55,7 +64,11 @@ func scanCLIInput(opt options) (map[string]any, error) {
 		body["version_id"] = v
 	}
 	if v := opt.flags["path"]; v != "" {
-		body["path_prefix"] = v
+		if opt.flags["finding"] != "" {
+			body["page_path"] = v
+		} else {
+			body["path_prefix"] = v
+		}
 	}
 	if v := opt.flags["region"]; v != "" {
 		body["region_id"] = v
@@ -85,7 +98,8 @@ func scanCLIInput(opt options) (map[string]any, error) {
 func findingsCLIInput(opt options) (string, error) {
 	args := opt.command
 	if len(args) >= 2 && (args[1] == "approve" || args[1] == "reject") {
-		return "", commandError{5, fmt.Errorf("FEATURE_NOT_READY: findings %s", args[1])}
+		_, path, _, e := findingActionInput(opt)
+		return path, e
 	}
 	if len(args) != 2 || args[1] != "list" {
 		return "", invalid("use findings list --job ID [--kind KIND] [--status STATUS] [--cursor CURSOR] [--limit N]")
@@ -146,6 +160,9 @@ func scanCLI(ctx context.Context, api *client.Client, state *clientstate.Store, 
 			return err
 		}
 		return nil
+	}
+	if len(opt.command) > 1 && (opt.command[1] == "approve" || opt.command[1] == "reject") {
+		return findingActionCLI(ctx, api, state, opt, emit)
 	}
 	route, err := findingsCLIInput(opt)
 	if err != nil {

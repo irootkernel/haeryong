@@ -35,6 +35,9 @@ func storeManagementFinding(tx app.WriteTx, f *domain.Finding, mode string, conf
 		return domain.ErrInvalidTarget
 	}
 	m := domain.ManagementEffect{ID: id, Kind: f.Kind, FindingID: f.ID, JobID: f.JobID, From: domain.ManagementAnchor{DocumentID: *f.DocumentID, VersionID: *f.VersionID, PagePath: f.PagePath, RegionID: f.RegionID}, Origin: f.Origin, EvidenceBasis: p.EvidenceBasis, Evidence: f.Evidence, EvidenceFingerprint: f.EvidenceFingerprint, Rationale: f.Rationale, Uncertainty: f.Uncertainty, TargetSetID: f.TargetSetID, CapturedConfigRevision: f.CapturedConfigRevision, AppliedConfigRevision: config, PermissionsRevision: f.PermissionsRevision, Decision: "accepted", DecisionActor: "auto", Revision: 1, CreatedAt: now, UpdatedAt: now}
+	if f.DecidedBy != nil {
+		m.DecisionActor = *f.DecidedBy
+	}
 	if f.Kind == "related_explanation" {
 		m.Target = &domain.ManagementAnchor{DocumentID: p.TargetDocumentID, VersionID: p.TargetVersionID, PagePath: nullableStr(p.TargetPagePath), RegionID: nullableStr(p.TargetRegionID)}
 		m.RelationType = p.RelationType
@@ -55,11 +58,16 @@ func storeManagementFinding(tx app.WriteTx, f *domain.Finding, mode string, conf
 	f.Status = "applied"
 	f.ApprovalRequired = false
 	f.Reason = "policy_auto_applied"
+	if f.DecidedBy != nil && *f.DecidedBy != "auto" {
+		f.Reason = "owner_approved"
+	}
 	if !created {
 		f.Reason = "already_applied"
 	}
 	f.AppliedRef, _ = json.Marshal(map[string]any{"overlay_id": effect.ID, "kind": effect.Kind, "revision": effect.Revision})
-	f.DecidedBy = freshPtr("auto")
+	if f.DecidedBy == nil {
+		f.DecidedBy = freshPtr("auto")
+	}
 	f.DecidedAt = freshPtr(now)
 	if err = tx.PutFinding(*f); err != nil {
 		return err

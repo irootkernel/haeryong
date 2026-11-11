@@ -24,6 +24,10 @@ func frontendInputs(root string) ([]string, error) {
 		if err != nil {
 			return err
 		}
+		// Keep Git-ignored .omc agent state out of application provenance.
+		if entry.IsDir() && entry.Name() == ".omc" {
+			return filepath.SkipDir
+		}
 		if !entry.IsDir() {
 			files = append(files, path)
 		}

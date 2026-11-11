@@ -1,4 +1,4 @@
-import type {ManagementEffect,ManagementFilter} from "./types.ts";
+import type {FindingActionResult,TopicAssignmentChange,ManagementEffect,ManagementFilter} from "./types.ts";
 import type {ScanRequest,ScanAccepted,FindingView,JobFindingsFilter,QuestionRequest,QuestionAccepted,QuestionView,AnswerView,RetainedSourceRead,GenerationRequest,GenerationAccepted,DraftView,DraftPatch} from "./types.ts";
 import { providerStatus as verifiedProviderStatus } from "./provider-status.ts";
 import type { ProviderStatus, LifecyclePlanRequest,LifecycleCommitRequest,LifecyclePlanView,LifecycleResult,LifecyclePageRequest,TrashRequest,TrashItem, AnnotationCreate, AnnotationPatch, AnnotationView, AnnotationStream, RevisitView, ReviewView, ReviewRequest, ReviewCondition, ReviewEvent, DocumentFilter,
@@ -215,6 +215,24 @@ export class HttpHaeryongClient implements HaeryongClient {
 
   retainedSourceReads(projectId:string,sourceId:string,cursor?:string):Promise<ListPage<RetainedSourceRead>> {return this.#request("GET",this.#collection(`/api/v1/projects/${encodeURIComponent(projectId)}/source-reads`,{source_id:sourceId,cursor}));}
 
+  findingDecision(id:string,decision:"approve"|"reject",etag:string,key:string):Promise<FindingActionResult>{
+    return this.#findingWrite("POST",`/api/v1/findings/${encodeURIComponent(id)}/decisions`,{decision},etag,key);
+  }
+  topicAssignmentSet(id:string,body:TopicAssignmentChange,etag:string,key:string):Promise<FindingActionResult>{
+    return this.#findingWrite("PUT",`/api/v1/topic-assignments/${encodeURIComponent(id)}`,body,etag,key);
+  }
+  overlayUndo(id:string,etag:string,key:string):Promise<FindingActionResult>{
+    return this.#findingWrite("POST",`/api/v1/overlays/${encodeURIComponent(id)}/undo`,{},etag,key);
+  }
+  #findingWrite(method:string,path:string,body:unknown,etag:string,key:string):Promise<FindingActionResult>{
+    const era=this.#era;
+    return sourceWrite<FindingActionResult>(key,async()=>{
+      const r=await this.#exchange(method,path,body,{"Idempotency-Key":key,"If-Match":etag});
+      const queued=r.status===202;
+      const result=r.data as Partial<FindingActionResult>;
+      return {kind:queued&&!(result.operation_id===key&&result.state==="repair_pending")?"accepted":"committed",body:r.data};
+    },id=>{if(era!==this.#era)throw new StaleResponseError();return this.operation(id);},true);
+  }
   generationStart(request:GenerationRequest,key:string):Promise<GenerationAccepted>{return this.#sourceWrite("/api/v1/generations",request,key,true);}
   scanStart(request:ScanRequest,key:string):Promise<ScanAccepted>{return this.#sourceWrite("/api/v1/scans",request,key,true);}
   jobsList():Promise<ListPage<JobView>>{return this.#request("GET","/api/v1/jobs");}

@@ -324,6 +324,16 @@ func (t *writeTx) PurgeStep(id string, generation int64, limit int) (bool, error
 	if active > 0 {
 		return false, nil
 	}
+	// Resolve receipt ownership before scan/management, annotation and context
+	// identities are redacted or detached. The existing cursor bounds each turn.
+	if !i.ReceiptsMinimized {
+		done, e := t.minimizePurgeReceipts(&i)
+		if e != nil {
+			return false, e
+		}
+		i.ReceiptsMinimized = done
+		return false, t.savePurge(i)
+	}
 	if err = t.redactPurgedScanRecords(i.DocumentID); err != nil {
 		return false, err
 	}
@@ -353,15 +363,6 @@ func (t *writeTx) PurgeStep(id string, generation int64, limit int) (bool, error
 	}
 	if !errors.Is(notFound(err), domain.ErrNotFound) {
 		return false, err
-	}
-	// Resolve receipt ownership while annotation/context identities still exist.
-	if !i.ReceiptsMinimized {
-		done, e := t.minimizePurgeReceipts(&i)
-		if e != nil {
-			return false, e
-		}
-		i.ReceiptsMinimized = done
-		return false, t.savePurge(i)
 	}
 	if detached, e := t.detachQuestions(id, i.DocumentID, limit); e != nil {
 		return false, e
@@ -686,7 +687,11 @@ func (t *writeTx) minimizePurgeReceipts(i *domain.PurgeIntent) (bool, error) {
 		if r.Response != nil {
 			_ = json.Unmarshal(r.Response.Body, &body)
 		}
-		owned := body["document_id"] == i.DocumentID
+		decisionOwned, e := t.decisionReceiptPurgeOwned(r, body, i.DocumentID)
+		if e != nil {
+			return false, e
+		}
+		owned := decisionOwned || body["document_id"] == i.DocumentID
 		parts := strings.Split(strings.Trim(strings.SplitN(r.Original.Target, "?", 2)[0], "/"), "/")
 		if len(parts) >= 4 && parts[0] == "api" && parts[1] == "v1" {
 			if parts[2] == "annotations" {
@@ -810,6 +815,105 @@ func (t *writeTx) minimizePurgeReceipts(i *domain.PurgeIntent) (bool, error) {
 	}
 	return len(keys) < 64, nil
 }
+
+// Decision receipts hold full nested findings/effects, including third-party
+// explanation evidence. Match exact document/version identities, never a string
+// search. Canonical route lookup also covers pending/failed receipts without a
+// nested result and must run before management/finding associations are scrubbed.
+func (t *writeTx) decisionReceiptPurgeOwned(r domain.Receipt, body map[string]any, document string) (bool, error) {
+	parts := strings.Split(strings.Trim(strings.SplitN(r.Original.Target, "?", 2)[0], "/"), "/")
+	findingRoute := len(parts) == 5 && parts[0] == "api" && parts[1] == "v1" && parts[2] == "findings" && parts[4] == "decisions"
+	effectRoute := len(parts) == 5 && parts[0] == "api" && parts[1] == "v1" && parts[2] == "overlays" && parts[4] == "undo"
+	topicRoute := len(parts) == 4 && parts[0] == "api" && parts[1] == "v1" && parts[2] == "topic-assignments"
+	if !findingRoute && !effectRoute && !topicRoute {
+		return false, nil
+	}
+	versions := map[string]bool{}
+	matchesVersion := func(id string) (bool, error) {
+		if match, found := versions[id]; found {
+			return match, nil
+		}
+		var match bool
+		err := t.tx.QueryRowContext(t.ctx, "SELECT EXISTS(SELECT 1 FROM purged_versions WHERE version_id=? AND document_id=?)", id, document).Scan(&match)
+		versions[id] = match
+		return match, err
+	}
+	var owns func(any) (bool, error)
+	owns = func(value any) (bool, error) {
+		switch v := value.(type) {
+		case []any:
+			for _, item := range v {
+				if match, e := owns(item); match || e != nil {
+					return match, e
+				}
+			}
+		case map[string]any:
+			for name, field := range v {
+				if name == "document_id" || name == "target_document_id" || name == "source_document_id" {
+					if id, ok := field.(string); ok && id == document {
+						return true, nil
+					}
+				}
+				if name == "version_id" || name == "target_version_id" || name == "source_version_id" {
+					if id, ok := field.(string); ok && id != "" {
+						if match, e := matchesVersion(id); match || e != nil {
+							return match, e
+						}
+					}
+				}
+				if name == "version_ids" || name == "document_ids" {
+					if ids, ok := field.([]any); ok {
+						for _, value := range ids {
+							if id, ok := value.(string); ok {
+								if name == "document_ids" && id == document {
+									return true, nil
+								}
+								if name == "version_ids" {
+									if match, e := matchesVersion(id); match || e != nil {
+										return match, e
+									}
+								}
+							}
+						}
+					}
+				}
+				if match, e := owns(field); match || e != nil {
+					return match, e
+				}
+			}
+		}
+		return false, nil
+	}
+	if match, e := owns(body); match || e != nil {
+		return match, e
+	}
+	var canonical any
+	if findingRoute {
+		f, e := t.Finding(parts[3])
+		if errors.Is(e, domain.ErrNotFound) {
+			return false, nil
+		}
+		if e != nil {
+			return false, e
+		}
+		if e = json.Unmarshal(jsonBytes(f), &canonical); e != nil {
+			return false, e
+		}
+	} else {
+		m, e := t.ManagementEffect(parts[3])
+		if errors.Is(e, domain.ErrNotFound) {
+			return false, nil
+		}
+		if e != nil {
+			return false, e
+		}
+		if e = json.Unmarshal(jsonBytes(m), &canonical); e != nil {
+			return false, e
+		}
+	}
+	return owns(canonical)
+}
+
 func lifecycleReceipt(target string) bool {
 	return len(target) >= 24 && (strings.Contains(target, "/lifecycle-plans") || strings.Contains(target, "/api/v1/trash"))
 }
@@ -1067,6 +1171,20 @@ func (t *writeTx) redactPurgedScanRecords(documentID string) error {
 			}
 		}
 
+		// This is an affected scan. Exact semantic keys are private owner
+		// context; do not retain a digest association after its inputs are purged.
+		run.RequestedScope.OwnerRevisions = nil
+		run.RequestedScope.OwnerBasisCaptured = false
+		if run.RequestedScope.FindingID != "" {
+			var purged bool
+			if err := t.tx.QueryRowContext(t.ctx, `SELECT EXISTS(SELECT 1 FROM findings WHERE finding_id=? AND reason=?)`, run.RequestedScope.FindingID, "document_purged").Scan(&purged); err != nil {
+				return err
+			}
+			if purged {
+				run.RequestedScope.FindingID = ""
+				run.RequestedScope.ExpectedFindingRevision = nil
+			}
+		}
 		if !currentOrdIsHealthy {
 			run.EnumAfterPath = ""
 			run.EnumAfterRegion = ""
@@ -1116,6 +1234,8 @@ func (t *writeTx) redactPurgedScanRecords(documentID string) error {
 			}
 		}
 		reqScopeCopy := run.RequestedScope
+		reqScopeCopy.OwnerRevisions = nil
+		reqScopeCopy.OwnerBasisCaptured = false
 		run.Report.RequestedScope = &reqScopeCopy
 		if err := t.refreshScanReportCounts(&run); err != nil {
 			return err

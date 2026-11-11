@@ -702,6 +702,27 @@ var _ = It("T-008-03 freshness-only guarded capture, complete-file provenance, a
 	history, e := queries.Assessments(ctx, owner.Token, version, query.AssessmentQuery{TargetSetID: set.TargetSetID})
 	Expect(e).NotTo(HaveOccurred())
 	Expect(history["items"]).To(HaveLen(1))
+	// T00805 publishes the retained proposed contribution without Execute/capture.
+	core := scan.New(s, auth, f.bytes, nil)
+	saved, e := core.ListJobFindings(ctx, owner.Token, domain.FindingFilter{JobID: proposed, Kind: "freshness_assessment", Status: "proposed"})
+	Expect(e).NotTo(HaveOccurred())
+	Expect(saved.Items).To(HaveLen(1))
+	approvalKey := f.id()
+	accepted, e := core.FindingAction(ctx, owner.Token, approvalKey, saved.Items[0].ID, saved.Items[0].ETag, "approve", []byte(`{"decision":"approve"}`))
+	Expect(e).NotTo(HaveOccurred())
+	Expect(accepted.Status).To(Equal(200))
+	Expect(driver.executeCalls).To(Equal(2))
+	Expect(actionResult(accepted).Finding.Status).To(Equal("applied"))
+	replay, e := core.FindingAction(ctx, owner.Token, approvalKey, saved.Items[0].ID, saved.Items[0].ETag, "approve", []byte(`{"decision":"approve"}`))
+	Expect(e).NotTo(HaveOccurred())
+	Expect(replay.Body).To(Equal(accepted.Body))
+	Expect(driver.executeCalls).To(Equal(2))
+	history, e = queries.Assessments(ctx, owner.Token, version, query.AssessmentQuery{TargetSetID: set.TargetSetID})
+	Expect(e).NotTo(HaveOccurred())
+	Expect(history["items"]).To(HaveLen(1)) // older exact target remains separate
+	var published int
+	Expect(s.db.QueryRow("SELECT count(*) FROM assessments WHERE version_id=?", version).Scan(&published)).To(Succeed())
+	Expect(published).To(Equal(2))
 	outcome = "partial"
 	partial := showReport(run())
 	Expect(partial.OutdatedUnits).To(Equal(1))

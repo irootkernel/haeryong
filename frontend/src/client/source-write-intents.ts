@@ -2,7 +2,7 @@
 // retain write identities and outcomes until the active consumer consumes them.
 import { PendingSourceWriteError } from "./source-operations.ts";
 import { StaleResponseError } from "./types.ts";
-import type { ConfigurationPlanView, ConfigurationCommitView, EvidenceVerificationRequest, EvidenceVerificationResult } from "./types.ts";
+import type { FindingActionResult, ScanAccepted, ScanRequest, TopicAssignmentChange, ConfigurationPlanView, ConfigurationCommitView, EvidenceVerificationRequest, EvidenceVerificationResult } from "./types.ts";
 
 export type WriteOutcome<T> =
   | { state: "pending" }
@@ -13,6 +13,14 @@ interface WriteIntent<T> {
   operationId: string;
   outcome: WriteOutcome<T>;
   inFlight?: Promise<T>;
+}
+export type MaintenanceRequest =
+  | { kind: "finding"; id: string; decision: "approve" | "reject"; etag: string }
+  | { kind: "topic"; id: string; body: TopicAssignmentChange; etag: string }
+  | { kind: "undo"; id: string; etag: string }
+  | { kind: "scan"; request: ScanRequest };
+export interface MaintenanceIntent extends WriteIntent<FindingActionResult | ScanAccepted> {
+  request: MaintenanceRequest;
 }
 export interface VerificationIntent extends WriteIntent<EvidenceVerificationResult> {
   request: EvidenceVerificationRequest;
@@ -55,6 +63,7 @@ export async function resolveWriteIntent<T>(
 
 /** One confirmed library/principal owns these operation-specific slots. */
 export class SourceWriteIntents {
+  maintenance = new Map<string, MaintenanceIntent>();
   verifications = new Map<string, VerificationIntent>();
   registration: RegistrationIntent | null = null;
   configurations = new Map<string, ConfigurationIntent>();

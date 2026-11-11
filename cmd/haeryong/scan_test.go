@@ -78,6 +78,11 @@ var _ = It("SCLI01 scan and findings CLI flag validation and request constructio
 		optAct, pErr := parse([]string{"findings", action, "f-1", "--if-match", `"etag"`, "--operation-id", validJob})
 		Expect(pErr).NotTo(HaveOccurred())
 		vErr := validateCommandFlags(optAct)
-		Expect(vErr).To(MatchError(ContainSubstring("FEATURE_NOT_READY")))
+		Expect(vErr).NotTo(HaveOccurred())
+		method, path, body, e := findingActionInput(optAct)
+		Expect(e).NotTo(HaveOccurred())
+		Expect(method).To(Equal("POST"))
+		Expect(path).To(Equal("/api/v1/findings/f-1/decisions"))
+		Expect(body).To(Equal(map[string]string{"decision": action}))
 	}
 })

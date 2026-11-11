@@ -547,3 +547,22 @@ Its normal completion commit and native finalization precede Task05; this record
 does not start Task05. Task05 decisions/pins/undo must reconcile all linked
 findings; Task06 retains drafts/full report/run-level membership discovery.
 Overall Epic/Stage B and Master acceptance remain future.
+
+TASK-008-05 adds schema24 owner decision/history/bases and current effect links,
+guarded finding approve/reject, actual Topic PUT, atomic all-linked Undo memory
+and exact owner-only finding-bound scan admission. The
+[finding-decision record](docs/testing/finding-decisions.md) owns settled source
+corrections, focused checks and qualified controlled browser/native observations.
+The browser selection passed; native action/frame rows passed but its broad
+Library DTO invariant aggregate failed. Separate GET-only poststate proof and
+source review explain the expected fixed no-C membership coverage projection
+and matching whole-DTO validators; this fixture exercises no genuine C case.
+The current canonical common passed with 1,464 mandatory Go tuples exactly once
+and 259 Python cases, including all 97 E2E cases; all child commands exited zero.
+Current factual documentation passed its separate affected check.
+Source-qualified empty selections and captured policy two/current configuration
+three remain distinct. Final independent criterion composition and Coordinator
+delegated member acceptance establish the bounded Task05 delivery. No commit or
+native finalization is recorded here. Task06 drafts/full report/assembled exit,
+overall Epic and Stage B acceptance, and physical-device qualification retain
+their ordered owners.

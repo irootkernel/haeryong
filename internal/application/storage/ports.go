@@ -244,6 +244,18 @@ type AssessmentTx interface {
 }
 
 type ScanTx interface {
+	ManagementEffect(string) (domain.ManagementEffect, error)
+	ManagementEffectByKey(string) (domain.ManagementEffect, bool, error)
+	ManagementLinkedFindings(string) ([]domain.FindingEffectLink, error)
+	SaveManagementLink(domain.FindingEffectLink) error
+	FindingDecision(string) (domain.FindingDecision, bool, error)
+	SaveFindingDecision(domain.FindingDecision, int64) error
+	FindingDecisionBasis(string) (domain.FindingDecisionBasis, bool, error)
+	SaveFindingDecisionBasis(domain.FindingDecisionBasis) error
+	TargetOwnerRevision(string) (int64, error)
+	FindingOwnerRevisions(string) (map[string]int64, error)
+	ReviseFinding(domain.Finding, int64) error
+
 	PutManagementEffect(domain.ManagementEffect) (domain.ManagementEffect, bool, error)
 	ReviseManagementEffect(domain.ManagementEffect, int64) error
 	ManagementEffects(domain.ManagementFilter, string, int) ([]domain.ManagementEffect, error)

@@ -315,6 +315,123 @@
     ]
   },
   "$defs": {
+    "finding_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^/%?#\\\\\\s]+$"
+    },
+    "owner_decision_view": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "revision"
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "approve",
+            "reject",
+            "undo"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "finding_decision_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision"
+      ],
+      "properties": {
+        "decision": {
+          "enum": [
+            "approve",
+            "reject"
+          ]
+        }
+      }
+    },
+    "topic_assignment_change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pinned",
+        "decision"
+      ],
+      "properties": {
+        "pinned": {
+          "type": "boolean"
+        },
+        "decision": {
+          "enum": [
+            "accepted",
+            "rejected"
+          ]
+        }
+      }
+    },
+    "overlay_undo_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "finding_action_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "state",
+        "finding",
+        "effect",
+        "job_id"
+      ],
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "state": {
+          "enum": [
+            "completed",
+            "repair_pending"
+          ]
+        },
+        "finding": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/finding_view"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effect": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/management_effect"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "job_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
     "id": {
       "type": "string",
       "format": "uuid"
@@ -9981,7 +10098,7 @@
           }
         },
         "finding_id": {
-          "$ref": "#/$defs/id"
+          "$ref": "#/$defs/finding_id"
         },
         "expected_finding_revision": {
           "type": "integer",
@@ -10370,7 +10487,7 @@
       ],
       "properties": {
         "finding_id": {
-          "$ref": "#/$defs/id"
+          "$ref": "#/$defs/finding_id"
         },
         "job_id": {
           "$ref": "#/$defs/id"
@@ -10446,7 +10563,17 @@
           ]
         },
         "evidence": {
-          "type": "object"
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          ]
         },
         "evidence_fingerprint": {
           "type": "string",
@@ -10457,11 +10584,7 @@
           "minLength": 1
         },
         "uncertainty": {
-          "enum": [
-            "low",
-            "medium",
-            "high"
-          ]
+          "type": "string"
         },
         "captured_config_revision": {
           "type": "integer",
@@ -10503,7 +10626,8 @@
         "decided_by": {
           "anyOf": [
             {
-              "$ref": "#/$defs/id"
+              "type": "string",
+              "minLength": 1
             },
             {
               "type": "null"
@@ -10533,6 +10657,12 @@
         },
         "updated_at": {
           "$ref": "#/$defs/time"
+        },
+        "effect": {
+          "$ref": "#/$defs/management_effect"
+        },
+        "owner_decision": {
+          "$ref": "#/$defs/owner_decision_view"
         }
       }
     },

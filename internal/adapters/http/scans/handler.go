@@ -49,6 +49,12 @@ func (h *handler) Handles(r *http.Request) bool {
 		return false
 	}
 	p := route(r)
+	if len(p) == 3 && p[1] != "" && ((p[0] == "findings" && p[2] == "decisions" && r.Method == http.MethodPost) || (p[0] == "overlays" && p[2] == "undo" && r.Method == http.MethodPost)) {
+		return true
+	}
+	if len(p) == 2 && p[0] == "topic-assignments" && p[1] != "" && r.Method == http.MethodPut {
+		return true
+	}
 	if len(p) == 1 && p[0] == "scans" && r.Method == http.MethodPost {
 		return true
 	}
@@ -107,6 +113,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := route(r)
+	if p[0] == "findings" || p[0] == "overlays" || p[0] == "topic-assignments" {
+		h.decision(w, r, token, p)
+		return
+	}
 	if len(p) == 1 && p[0] == "scans" && r.Method == http.MethodPost {
 		h.startScan(w, r, token)
 		return
@@ -325,6 +335,11 @@ func fail(w http.ResponseWriter, r *http.Request, err error) {
 			status, code, retryable = item.status, item.code, false
 			break
 		}
+	}
+	var ae *domain.FindingActionError
+	if errors.As(err, &ae) {
+		status, code, retryable = ae.Status, ae.Code, false
+		details["reason"] = ae.Reason
 	}
 	var mh missingHeader
 	if errors.As(err, &mh) {

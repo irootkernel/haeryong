@@ -1,4 +1,4 @@
-import type {ManagementEffect,ManagementFilter} from "./types.ts";
+import type {FindingActionResult,TopicAssignmentChange,ManagementEffect,ManagementFilter} from "./types.ts";
 import type {ScanRequest,ScanAccepted,FindingView,JobFindingsFilter,FindingKind,FindingStatus,QuestionRequest,QuestionAccepted,QuestionView,AnswerView,RetainedSourceRead,GenerationRequest,GenerationAccepted,DraftView,DraftPatch} from "./types.ts";
 import { providerStatus as verifiedProviderStatus } from "./provider-status.ts";
 // Narrow native transport boundary. The desktop companion (TASK-003-05) binds
@@ -151,6 +151,9 @@ export interface NativePort {
   call(operation:"answerCitationStream",payload:{answer_id:string;citation_index:number}):Promise<AnnotationStream>;
   call(operation:"retainedSourceReads",payload:{project_id:string;source_id:string;cursor?:string}):Promise<ListPage<RetainedSourceRead>>;
   call(operation:"generationStart",payload:{request:GenerationRequest;operation_id:string}):Promise<DecisionResult>;
+  call(operation:"findingDecision",payload:{finding_id:string;decision:"approve"|"reject";etag:string;operation_id:string}):Promise<DecisionResult>;
+  call(operation:"topicAssignmentSet",payload:{assignment_id:string;pinned:boolean;decision:"accepted"|"rejected";etag:string;operation_id:string}):Promise<DecisionResult>;
+  call(operation:"overlayUndo",payload:{overlay_id:string;etag:string;operation_id:string}):Promise<DecisionResult>;
   call(operation:"scanStart",payload:{request:ScanRequest;operation_id:string}):Promise<DecisionResult>;
   call(operation:"jobsList",payload:Record<string,never>):Promise<ListPage<JobView>>;
   call(operation:"versionRelated",payload:ManagementFilter & {version_id:string}):Promise<ListPage<ManagementEffect>>;
@@ -259,6 +262,7 @@ export interface NativePort {
 }
 
 export const NATIVE_OPERATIONS = [
+ "findingDecision","topicAssignmentSet","overlayUndo",
  "versionRelated","topicAssignmentsList","jobsList","scanStart","jobFindingsList",
  "questionStart","questionList","questionGet","questionAnswers","answerGet","questionTextStream","questionContextStream","answerBodyStream","answerCitationStream",
  "retainedSourceReads","generationStart","draftList","draftGet","draftHistory","draftPatch","draftPublish",
@@ -619,6 +623,22 @@ export class NativeHaeryongClient implements HaeryongClient, CredentialAware {
   annotationContextStream(id:string,revision:number):Promise<AnnotationStream>{return this.#savedStream("annotationContextStream",id,revision);}
   async #savedStream(operation:"annotationBodyStream"|"annotationContextStream",id:string,revision:number):Promise<AnnotationStream>{const era=this.#era;const s=await this.#freshStream(()=>this.#port.call(operation,{annotation_id:id,revision}),era);return {...s,body:eraGuardedStream(s.body,()=>era!==this.#era)};}
 
+  findingDecision(id:string,decision:"approve"|"reject",etag:string,key:string):Promise<FindingActionResult>{
+    return this.#findingWrite(key,()=>this.#port.call("findingDecision",{finding_id:id,decision,etag,operation_id:key}));
+  }
+  topicAssignmentSet(id:string,body:TopicAssignmentChange,etag:string,key:string):Promise<FindingActionResult>{
+    return this.#findingWrite(key,()=>this.#port.call("topicAssignmentSet",{assignment_id:id,...body,etag,operation_id:key}));
+  }
+  overlayUndo(id:string,etag:string,key:string):Promise<FindingActionResult>{
+    return this.#findingWrite(key,()=>this.#port.call("overlayUndo",{overlay_id:id,etag,operation_id:key}));
+  }
+  #findingWrite(key:string,dispatch:()=>Promise<DecisionResult>):Promise<FindingActionResult>{
+    const era=this.#era;
+    return sourceWrite<FindingActionResult>(key,async()=>{
+      const r=await this.#fresh(dispatch(),era),body=r.body as Partial<FindingActionResult>;
+      return r.kind==="accepted"&&body.operation_id===key&&body.state==="repair_pending"?{kind:"committed",body:r.body}:r;
+    },id=>{if(era!==this.#era)throw new StaleResponseError();return this.operation(id);},true);
+  }
   generationStart(request:GenerationRequest,key:string):Promise<GenerationAccepted>{const era=this.#era;return sourceWrite<GenerationAccepted>(key,()=>this.#fresh(this.#port.call("generationStart",{request,operation_id:key}),era),id=>{if(era!==this.#era)throw new StaleResponseError();return this.operation(id);},true);}
   scanStart(request:ScanRequest,key:string):Promise<ScanAccepted>{const era=this.#era;return sourceWrite<ScanAccepted>(key,()=>this.#fresh(this.#port.call("scanStart",{request,operation_id:key}),era),id=>{if(era!==this.#era)throw new StaleResponseError();return this.operation(id);},true);}
   jobsList():Promise<ListPage<JobView>>{return this.#fresh(this.#port.call("jobsList",{}),this.#era);}

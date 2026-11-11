@@ -949,3 +949,27 @@ revision only. Batch replay and final socket delivery recheck current owner and
 all originating/target/evidence version visibility, masking hidden IDs as library
 invalidation. Task05 retains owner decisions/undo and must settle all linked
 findings, not only the one selected by the owner.
+
+## Task05 owner decisions and current links
+
+Owner approve/reject uses existing legal finding transitions. Blocked approval
+explicitly audits current revalidation before application. Rejecting or undoing
+an accepted effect changes all active applied linked findings to undone; pin/
+unpin advances active application-reference revisions together. Reaccepting a
+rejected topic never resets terminal findings. Current undone Topic PUT is
+refused; only a new explicit reassessment/material-new proposal and separate
+guarded approval can supersede Undo.
+
+Schema24 current links are distinct from historical applied_ref and immutable
+effect revisions. Complete link/status/revision/history checks, prior-reference
+audit, effect/owner memory, outbox and receipt share one writer transaction.
+Equivalent automatic producers consult durable reject/Undo memory; changed
+run/read/capture IDs do not constitute new evidence. Material-new results require
+approval while that owner choice remains current. An authorized old receipt
+replay never changes a later owner decision. Purge scrubs new sensitive history/
+basis/origin links and cannot restore unavailable markers.
+
+Repair approval reports proposed/approved_repair_pending until actual guarded
+job completion, then applied; a paused/refused child is never applied. Freshness
+approval publishes only the retained validated exact fixed-unit contribution.
+Content approval remains with Task06. See [decision evidence](../testing/finding-decisions.md).

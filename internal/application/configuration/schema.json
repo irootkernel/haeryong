@@ -315,6 +315,446 @@
     ]
   },
   "$defs": {
+    "finding_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^/%?#\\\\\\s]+$"
+    },
+    "owner_decision_view": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "revision"
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "approve",
+            "reject",
+            "undo"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "finding_decision_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision"
+      ],
+      "properties": {
+        "decision": {
+          "enum": [
+            "approve",
+            "reject"
+          ]
+        }
+      }
+    },
+    "topic_assignment_change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pinned",
+        "decision"
+      ],
+      "properties": {
+        "pinned": {
+          "type": "boolean"
+        },
+        "decision": {
+          "enum": [
+            "accepted",
+            "rejected"
+          ]
+        }
+      }
+    },
+    "overlay_undo_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "finding_action_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "state",
+        "finding",
+        "effect",
+        "job_id"
+      ],
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "state": {
+          "enum": [
+            "completed",
+            "repair_pending"
+          ]
+        },
+        "finding": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/finding_view"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effect": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/management_effect"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "job_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "scan_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "enum": [
+            "selected_projects",
+            "all_allowed_projects"
+          ]
+        },
+        "project_id": {
+          "$ref": "#/$defs/id"
+        },
+        "project_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "document_id": {
+          "$ref": "#/$defs/id"
+        },
+        "document_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "path_prefix": {
+          "$ref": "#/$defs/path"
+        },
+        "page_path": {
+          "$ref": "#/$defs/path"
+        },
+        "region_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "depth": {
+          "enum": [
+            "change_focused",
+            "full_scope",
+            "deep_semantic",
+            "change-focused",
+            "full-scope",
+            "deep-semantic"
+          ]
+        },
+        "source_mode": {
+          "enum": [
+            "pinned",
+            "current"
+          ]
+        },
+        "target_set_id": {
+          "$ref": "#/$defs/id"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "project_id": {
+                "$ref": "#/$defs/id"
+              },
+              "source_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "source_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "mode": {
+                "enum": [
+                  "pinned",
+                  "current"
+                ]
+              },
+              "revision": {
+                "type": "string",
+                "minLength": 1
+              },
+              "branch": {
+                "type": "string",
+                "minLength": 1
+              },
+              "snapshot_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "target_set_id": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          }
+        },
+        "finding_id": {
+          "$ref": "#/$defs/finding_id"
+        },
+        "expected_finding_revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "finding_view": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "job_id",
+        "kind",
+        "origin",
+        "project_id",
+        "document_id",
+        "version_id",
+        "page_path",
+        "region_id",
+        "target_set_id",
+        "evidence",
+        "evidence_fingerprint",
+        "rationale",
+        "uncertainty",
+        "captured_config_revision",
+        "permissions_revision",
+        "proposal",
+        "status",
+        "approval_required",
+        "applied_ref",
+        "revision",
+        "etag",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "finding_id": {
+          "$ref": "#/$defs/finding_id"
+        },
+        "job_id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": [
+            "backlink_index_repair",
+            "related_explanation",
+            "topic_assignment",
+            "freshness_assessment",
+            "new_version_proposal",
+            "new_document_proposal"
+          ]
+        },
+        "origin": {
+          "enum": [
+            "deterministic",
+            "ai"
+          ]
+        },
+        "project_id": {
+          "$ref": "#/$defs/id"
+        },
+        "document_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "page_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "region_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target_set_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          ]
+        },
+        "evidence_fingerprint": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "uncertainty": {
+          "type": "string"
+        },
+        "captured_config_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "permissions_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "proposal": {
+          "type": "object"
+        },
+        "status": {
+          "enum": [
+            "proposed",
+            "applied",
+            "rejected",
+            "stale",
+            "blocked",
+            "undone"
+          ]
+        },
+        "approval_required": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "applied_ref": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decided_by": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decided_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "etag": {
+          "type": "string",
+          "pattern": "^\"finding-[^\"]+-r[1-9][0-9]*\"$"
+        },
+        "created_at": {
+          "$ref": "#/$defs/time"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/time"
+        },
+        "effect": {
+          "$ref": "#/$defs/management_effect"
+        },
+        "owner_decision": {
+          "$ref": "#/$defs/owner_decision_view"
+        }
+      }
+    },
     "id": {
       "type": "string",
       "format": "uuid"

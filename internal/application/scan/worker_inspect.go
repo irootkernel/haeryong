@@ -1048,6 +1048,12 @@ func (w *Worker) inspectOrRepairIndexItem(ctx context.Context, j domain.Job, run
 			"reasons": val.Reasons,
 		})
 
+		key := domain.ManagementDigest([]any{"backlink_index_repair", nullableStr(item.VersionID), (*string)(nil), (*string)(nil), materialValue(map[string]any{"action": "rebuild_reference_index", "version_id": item.VersionID})})
+		if d, found, e := tx.FindingDecision(key); e != nil {
+			return e
+		} else if found && (d.Action == "reject" || d.Action == "undo") {
+			effectiveMode = "propose"
+		}
 		switch effectiveMode {
 		case "disabled":
 			detail, _ := json.Marshal(map[string]any{
@@ -1459,6 +1465,9 @@ func (w *Worker) upsertBacklinkFinding(
 		return domain.Finding{}, err
 	}
 	if exists {
+		if existing.Status != "proposed" {
+			return existing, nil
+		}
 		existing.Status = status
 		existing.ApprovalRequired = approvalRequired
 		existing.Reason = reason
@@ -1470,7 +1479,7 @@ func (w *Worker) upsertBacklinkFinding(
 		existing.Revision++
 		existing.UpdatedAt = nowStr
 		existing.ETag = domain.FindingETag(existing)
-		if err := tx.PutFinding(existing); err != nil {
+		if err := saveDecisionFinding(tx, &existing, "propose", run.ConfigRevision, nowStr); err != nil {
 			return domain.Finding{}, err
 		}
 		return existing, nil
@@ -1507,7 +1516,7 @@ func (w *Worker) upsertBacklinkFinding(
 		UpdatedAt:              nowStr,
 	}
 	f.ETag = domain.FindingETag(f)
-	if err := tx.PutFinding(f); err != nil {
+	if err := saveDecisionFinding(tx, &f, "propose", run.ConfigRevision, nowStr); err != nil {
 		return domain.Finding{}, err
 	}
 	return f, nil

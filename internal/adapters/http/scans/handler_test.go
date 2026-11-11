@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -203,6 +204,9 @@ func (t *fakeScanTx) RecoveryHold() (*domain.RecoveryHold, error) {
 }
 func (t *fakeScanTx) Configuration() (domain.Configuration, error) {
 	return t.store.config, nil
+}
+func (t *fakeScanTx) FindingOwnerRevisions(string) (map[string]int64, error) {
+	return map[string]int64{}, nil
 }
 func (t *fakeScanTx) SessionByHash(hash string) (domain.Session, error) {
 	id, ok := t.store.sessionHash[hash]
@@ -585,7 +589,7 @@ func expectScanFreshnessMembership(store *fakeScanStore, jobID string) string {
 	return id
 }
 
-var _ = It("handles POST /api/v1/scans receipts, coalescing, unknown-field rejection, and premature finding_id 503", Label("integration"), func() {
+var _ = It("handles POST /api/v1/scans receipts, coalescing, unknown-field rejection, and invalid incomplete finding reassessment", Label("integration"), func() {
 	store := newFakeScanStore()
 	ownerToken, err := sec.Secret()
 	Expect(err).NotTo(HaveOccurred())
@@ -595,7 +599,7 @@ var _ = It("handles POST /api/v1/scans receipts, coalescing, unknown-field rejec
 	scanCore := scan.New(store, authCore, nil, nil)
 	h := New(scanCore)
 
-	// 1. Premature finding_id or expected_finding_revision returns 503 FEATURE_NOT_READY
+	// 1. Finding reassessment requires the paired revision and explicit scope.
 	key1 := "aaaaaaaa-1111-4111-8111-111111111111"
 	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/scans", bytes.NewBufferString(`{"finding_id":"ffffffff-1111-4111-8111-111111111111"}`))
 	req1.Header.Set("Authorization", "Bearer "+ownerToken)
@@ -603,9 +607,8 @@ var _ = It("handles POST /api/v1/scans receipts, coalescing, unknown-field rejec
 	req1.Header.Set("Idempotency-Key", key1)
 	rec1 := httptest.NewRecorder()
 	h.ServeHTTP(rec1, req1)
-	Expect(rec1.Code).To(Equal(http.StatusServiceUnavailable))
-	Expect(rec1.Body.String()).To(ContainSubstring("FEATURE_NOT_READY"))
-	Expect(rec1.Body.String()).To(ContainSubstring("finding_reassessment_not_ready"))
+	Expect(rec1.Code).To(Equal(http.StatusBadRequest))
+	Expect(rec1.Body.String()).To(ContainSubstring("INVALID_REQUEST"))
 
 	req1b := httptest.NewRequest(http.MethodPost, "/api/v1/scans", bytes.NewBufferString(`{"expected_finding_revision":1}`))
 	req1b.Header.Set("Authorization", "Bearer "+ownerToken)
@@ -613,9 +616,8 @@ var _ = It("handles POST /api/v1/scans receipts, coalescing, unknown-field rejec
 	req1b.Header.Set("Idempotency-Key", key1)
 	rec1b := httptest.NewRecorder()
 	h.ServeHTTP(rec1b, req1b)
-	Expect(rec1b.Code).To(Equal(http.StatusServiceUnavailable))
-	Expect(rec1b.Body.String()).To(ContainSubstring("FEATURE_NOT_READY"))
-	Expect(rec1b.Body.String()).To(ContainSubstring("finding_reassessment_not_ready"))
+	Expect(rec1b.Code).To(Equal(http.StatusBadRequest))
+	Expect(rec1b.Body.String()).To(ContainSubstring("INVALID_REQUEST"))
 
 	// 2. Forbidden max_files_inspect or duplicate keys return 400 INVALID_REQUEST
 	reqBad := httptest.NewRequest(http.MethodPost, "/api/v1/scans", bytes.NewBufferString(`{"max_files_inspect":10}`))
@@ -718,6 +720,18 @@ var _ = It("allows derived workflow scan.request on POST /api/v1/scans while kee
 	jobID := scanData.Data.JobID
 	Expect(jobID).NotTo(BeEmpty())
 	expectScanFreshnessMembership(store, jobID)
+
+	// T00805 F2: either association selector is owner-only before finding lookup,
+	// revision validation, or replay of the workflow\'s existing unbound receipt.
+	for _, body := range []string{`{"finding_id":"fnd-existing"}`, `{"finding_id":"fnd-unknown","expected_finding_revision":1}`, `{"expected_finding_revision":1}`} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/scans", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+wfToken)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", wfKey)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		Expect(rec.Code).To(Equal(http.StatusForbidden))
+	}
 
 	// Seed a finding on that job
 	f1 := domain.Finding{

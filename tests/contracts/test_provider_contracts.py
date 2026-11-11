@@ -5,6 +5,36 @@ import contract as c
 pytestmark = pytest.mark.integration
 
 
+def test_task05_closed_owner_decisions_and_explicit_finding_bound_scan_shapes():
+    for decision in ("approve", "reject"):
+        c.validate("finding_decision_request", {"decision": decision})
+    c.validate("overlay_undo_request", {})
+    for pin, decision in ((True, "accepted"), (False, "accepted"), (False, "rejected")):
+        c.validate("topic_assignment_change", {"pinned": pin, "decision": decision})
+    for shape, value in (
+        ("finding_decision_request", {"decision": "force"}),
+        ("finding_decision_request", {"decision": "approve", "publish": True}),
+        ("overlay_undo_request", {"restore_original": True}),
+        ("topic_assignment_change", {"pinned": True, "decision": "rejected"}),
+    ):
+        with pytest.raises(c.ContractError):
+            c.validate(shape, value)
+    identifier = "11111111-1111-4111-8111-111111111111"
+    request = {"finding_id": "fnd-opaque", "expected_finding_revision": 3,
+               "document_id": identifier, "version_id": identifier,
+               "depth": "full_scope", "source_mode": "pinned"}
+    c.validate("scan_request", request)
+    for missing in ("finding_id", "expected_finding_revision", "document_id",
+                    "version_id", "depth", "source_mode"):
+        with pytest.raises(c.ContractError):
+            c.validate("scan_request", {k: v for k, v in request.items() if k != missing})
+    c.validate("finding_action_result", {"operation_id": identifier, "state": "repair_pending",
+               "finding": None, "effect": None, "job_id": identifier})
+    with pytest.raises(c.ContractError):
+        c.validate("finding_action_result", {"operation_id": identifier, "state": "published",
+                   "finding": None, "effect": None, "job_id": None})
+
+
 def test_provider_resume_requires_explicit_decision_and_generation():
     for decision in ("reconcile_only", "continue", "retry"):
         c.validate("job_resume", {"decision": decision, "expected_attempt_generation": 7})

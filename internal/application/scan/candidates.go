@@ -62,6 +62,8 @@ func (w *Worker) checkCandidateTargetFence(
 	if err != nil || cv.ExclusionReason != "" || cv.EnumState == "purged" {
 		return domain.ScanCapturedVersion{}, domain.Document{}, domain.Version{}, false
 	}
+	// Exact owner decision keys are fenced once the candidate is known in
+	// saveDecisionFinding. Unrelated owner choices do not invalidate this version.
 	if tomb, err := tx.TombstonedVersion(targetVersionID); err != nil || tomb {
 		return domain.ScanCapturedVersion{}, domain.Document{}, domain.Version{}, false
 	}
@@ -4393,7 +4395,7 @@ func (w *Worker) ApplyMaintenance(tx app.WriteTx, attempt domain.ProviderAttempt
 			if kind == "topic_assignment" {
 				mode = topicMode
 			}
-			if err := storeManagementFinding(tx, &existing, mode, cfg.Revision, nowStr); err != nil {
+			if err := saveDecisionFinding(tx, &existing, mode, cfg.Revision, nowStr); err != nil {
 				return err
 			}
 			findingIDs = append(findingIDs, existing.ID)
@@ -4430,7 +4432,7 @@ func (w *Worker) ApplyMaintenance(tx app.WriteTx, attempt domain.ProviderAttempt
 		if kind == "topic_assignment" {
 			mode = topicMode
 		}
-		if err := storeManagementFinding(tx, &f, mode, cfg.Revision, nowStr); err != nil {
+		if err := saveDecisionFinding(tx, &f, mode, cfg.Revision, nowStr); err != nil {
 			return err
 		}
 		findingIDs = append(findingIDs, f.ID)

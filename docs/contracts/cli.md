@@ -554,9 +554,10 @@ payload. If the `202` response is lost, the CLI exits `5` with the pending
 `GET /api/v1/operations/{id}` first and reuses the committed scan receipt, or
 resends the exact saved request only when the receipt is absent under the same
 `runtime_generation`. `haeryong findings list --job` enumerates job findings for
-the owner (`--limit` `1..200`); `haeryong findings approve` and
-`haeryong findings reject` exit `5` (`UNAVAILABLE` envelope code with
-`FEATURE_NOT_READY: findings approve|reject` message) until TASK-008-05.
+the owner (`--limit` `1..200`). TASK-008-05 implements approve/reject with
+required individual --if-match and the existing durable mutation journal.
+Opaque finding IDs are accepted; changed preconditions require a new deliberate
+intent, never an automatic refreshed-validator overwrite.
 See [scan inventory evidence](../testing/scan-inventory.md).
 
 ## Task04 management reads
@@ -567,7 +568,7 @@ See [scan inventory evidence](../testing/scan-inventory.md).
 [--cursor CURSOR --limit N]` reads owner topic assignments. Page requires version;
 region requires page; limit is 1..200. Paths and opaque cursors preserve exact
 characters. Findings list remains the proposal read, with captured evidence and
-status. Topic set, finding decisions and overlay undo retain Task05 ownership.
+status. TASK-008-05 adds the owner operations below.
 Existing config read/plan/commit handles category settings; neither reads nor mode
 changes produce a new document or provider operation.
 Related rows share the closed available/unavailable DTO: unavailable includes only
@@ -575,3 +576,21 @@ the opaque overlay ID, authorized focal anchor, AI origin, decision and revision
 validator, without hidden target/evidence details or a distinguishing cause.
 Topic finding/effect legacy missing basis reads as legacy_unknown; new records
 carry explanation_text or source_verified from established evidence.
+
+## Owner decisions and reassessment (TASK-008-05)
+
+```sh
+haeryong topics set ASSIGNMENT_ID --pinned true|false --decision accepted|rejected --if-match ETAG [--operation-id K]
+haeryong overlays undo OVERLAY_ID --if-match ETAG [--operation-id K]
+haeryong scan --finding FINDING_ID --expected-finding-revision N --document DOCUMENT_ID --version VERSION_ID --depth change-focused|full-scope|deep-semantic --source-mode pinned|current [--path EXACT_PAGE --region ID] [--target-set TARGET_SET_ID] [--operation-id K]
+```
+
+Topic set sends actual conditioned PUT. Current undone Topic PUT is refused;
+reassessment and separate new-finding approval are required. Findings approve/
+reject and overlay Undo retain the original operation/request/preconditions
+through the existing journal and receipt recovery. Missing --if-match is a usage
+error; definite API conflicts preserve their actual code/reason. Repair202 means
+pending repair, not application. Scan --path is page_path for a finding-bound
+request; explicit origin revision/document/version/depth/source mode are required.
+This does not add content draft publication or a force option. See
+[finding decision evidence](../testing/finding-decisions.md).

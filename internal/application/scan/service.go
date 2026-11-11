@@ -88,12 +88,17 @@ func normalizeIDSlice(single string, multi []string) []string {
 }
 
 func (s *Service) StartScan(ctx context.Context, token, key string, rawBody []byte, req domain.ScanRequest) (domain.Response, error) {
-	if strings.TrimSpace(req.FindingID) != "" || req.ExpectedFindingRevision != nil {
-		return domain.Response{}, domain.ErrFeatureNotReady
-	}
 	actor, err := s.Auth.Authenticate(ctx, token)
 	if err != nil {
 		return domain.Response{}, err
+	}
+	if req.FindingID != "" || req.ExpectedFindingRevision != nil {
+		if actor.Scope.Kind != "owner" {
+			return domain.Response{}, domain.ErrDenied
+		}
+		if req.FindingID == "" || req.ExpectedFindingRevision == nil || *req.ExpectedFindingRevision < 1 || req.DocumentID == "" || req.VersionID == "" || req.Depth == "" || req.SourceMode == "" {
+			return domain.Response{}, domain.ErrInvalidTarget
+		}
 	}
 	if req.Scope != "" && req.Scope != "selected_projects" && req.Scope != "all_allowed_projects" {
 		return domain.Response{}, domain.ErrInvalidTarget
@@ -137,6 +142,11 @@ func (s *Service) StartScan(ctx context.Context, token, key string, rawBody []by
 	var resp domain.Response
 	var woke bool
 	for attempt := 0; attempt < 3; attempt++ {
+		if req.FindingID != "" || req.ExpectedFindingRevision != nil {
+			if e := s.Store.Write(ctx, func(tx app.WriteTx) error { return s.validateReassessment(tx, actor, req) }); e != nil {
+				return domain.Response{}, e
+			}
+		}
 		nowStr := s.Now().UTC().Format(time.RFC3339Nano)
 		var snap admissionSnapshot
 		if err := s.Store.Write(ctx, func(tx app.WriteTx) error {
@@ -387,6 +397,15 @@ func (s *Service) StartScan(ctx context.Context, token, key string, rawBody []by
 }
 
 func verifyAdmissionUnchanged(tx app.WriteTx, current domain.Session, snap admissionSnapshot) error {
+	if snap.RequestedScope.FindingID != "" {
+		f, e := tx.Finding(snap.RequestedScope.FindingID)
+		if e != nil {
+			return e
+		}
+		if snap.RequestedScope.ExpectedFindingRevision == nil || f.Revision != *snap.RequestedScope.ExpectedFindingRevision {
+			return domain.ErrPrecondition
+		}
+	}
 	authState, err := tx.AuthState()
 	if err != nil {
 		return err
@@ -407,6 +426,12 @@ func verifyAdmissionUnchanged(tx app.WriteTx, current domain.Session, snap admis
 			return err
 		}
 		if ps.Project.PermissionsRevision != snap.PermissionsRevisions[pid] {
+			return errAdmissionStateChanged
+		}
+	}
+	for key, expected := range snap.RequestedScope.OwnerRevisions {
+		decision, _, e := tx.FindingDecision(key)
+		if e != nil || decision.Revision != expected {
 			return errAdmissionStateChanged
 		}
 	}
@@ -800,6 +825,7 @@ func (s *Service) prepareAdmissionSnapshot(
 	}
 
 	reqScope := domain.ScanRequestedScope{
+		FindingID: req.FindingID, ExpectedFindingRevision: req.ExpectedFindingRevision,
 		Scope:       scopeMode,
 		ProjectIDs:  targetProjects,
 		DocumentIDs: explicitDocs,
@@ -811,6 +837,19 @@ func (s *Service) prepareAdmissionSnapshot(
 		SourceMode:  req.SourceMode,
 		TargetSetID: strings.TrimSpace(req.TargetSetID),
 		Sources:     req.Sources,
+	}
+	reqScope.OwnerBasisCaptured = true
+	reqScope.OwnerRevisions = map[string]int64{}
+	for _, entry := range entries {
+		if entry.Version != nil {
+			revisions, e := tx.FindingOwnerRevisions(entry.Version.ID)
+			if e != nil {
+				return admissionSnapshot{}, e
+			}
+			for key, revision := range revisions {
+				reqScope.OwnerRevisions[key] = revision
+			}
+		}
 	}
 	if len(explicitDocs) == 1 {
 		reqScope.DocumentID = explicitDocs[0]
@@ -927,6 +966,8 @@ func initialScanReport(
 		allTargets = append(allTargets, cv.Targets...)
 	}
 	scopeCopy := reqScope
+	scopeCopy.OwnerRevisions = nil // internal apply fence, never public owner-state disclosure
+	scopeCopy.OwnerBasisCaptured = false
 	policyCopy := policy
 	return domain.ScanReport{
 		JobID:                jobID,
@@ -1117,6 +1158,7 @@ func (s *Service) ListJobFindings(ctx context.Context, token string, filter doma
 						item.Proposal, _ = json.Marshal(proposal)
 					}
 				}
+				s.projectDecision(tx, actor, &item)
 				out.Items = append(out.Items, item)
 			}
 			if reachedPageLimit || len(rows) < f.Limit {

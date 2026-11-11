@@ -295,3 +295,12 @@ Shared Settings/Maintenance uses the existing revisioned impact plan and explici
 confirmation; conflicts preserve local inputs. Content remains disabled/propose/
 draft without automatic publication; finding-to-draft production remains Task06.
 No new setting, disclosure grant or scheduling engine is introduced.
+
+## Task05 explicit owner application
+
+Manual decisions retain the captured category policy and compare it with the
+current effective policy. A disabled category refuses application; broadening
+policy does not widen retained evidence or the captured target. Topic pin/reject
+and durable Undo decisions remain independent owner constraints, consulted by
+automatic producers and manual current-revision application. Reassessment is
+new explicit scope/source work, not a force or Review bypass.

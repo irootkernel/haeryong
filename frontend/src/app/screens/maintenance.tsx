@@ -1,3 +1,4 @@
+import { FindingActions, MaintenanceRecovery } from "./finding-actions.tsx";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ShellController } from "../../client/controller.ts";
 import type { FindingKind, FindingStatus, FindingView, JobView, ScanDepth, ScanRequest } from "../../client/types.ts";
@@ -45,6 +46,7 @@ function MaintenanceSelection({ controller, jobId }: { controller: ShellControll
       }}>수동 스캔 준비</button>
       <button type="button" onClick={() => navigate("/settings/maintenance")}>관리 정책 설정</button>
     </div>
+    {visible && <MaintenanceRecovery controller={controller} onChanged={() => model.refresh()} />}
     {scanActivationError && <p role="alert">{scanActivationError}</p>}
     {!enabled && <p role="status">현재 검증된 연결 또는 스캔 기능을 사용할 수 없습니다. 저장된 상세 정보는 표시하지 않습니다.</p>}
     {enabled && snap.accessLost && <p role="alert">이 대상의 접근 권한을 확인할 수 없어 보호된 정보를 지웠습니다. 현재 권한으로 새로 확인하세요.</p>}
@@ -74,9 +76,9 @@ function MaintenanceSelection({ controller, jobId }: { controller: ShellControll
       {grouped.map(group => <section key={group.id} aria-label={group.label} className="maintenance-group">
         <h2>{group.label} · 불러온 {group.rows.length}건</h2>
         {group.rows.length === 0 && <p className="muted">현재 불러온 페이지에는 이 종류의 항목이 없습니다.{!snap.findings.complete && " 아직 전체 열거가 끝나지 않았습니다."}</p>}
-        {group.rows.map(finding => <FindingCard key={finding.finding_id} finding={finding} job={snap.job} controller={controller} />)}
+        {group.rows.map(finding => <FindingCard key={finding.finding_id} finding={finding} job={snap.job} controller={controller} onChanged={() => model.refresh()} onDenied={() => model.clearProtected()} />)}
       </section>)}
-      {unknown.length > 0 && <section aria-label="해석할 수 없는 발견 항목"><h2>해석할 수 없는 종류</h2>{unknown.map(row => <FindingCard key={row.finding_id} finding={row} job={snap.job} controller={controller} />)}</section>}
+      {unknown.length > 0 && <section aria-label="해석할 수 없는 발견 항목"><h2>해석할 수 없는 종류</h2>{unknown.map(row => <FindingCard key={row.finding_id} finding={row} job={snap.job} controller={controller} onChanged={() => model.refresh()} onDenied={() => model.clearProtected()} />)}</section>}
     </>}
     {scanOpen && enabled && !snap.accessLost && <ScanDialog key={JSON.stringify(controller.captureDispatchAuthority())} controller={controller} model={model} onClose={() => setScanOpen(false)} />}
   </section>;
@@ -110,7 +112,7 @@ function JobReport({ job }: { job: JobView }) {
   </section>;
 }
 
-function FindingCard({ finding, job, controller }: { finding: FindingView; job: JobView | null; controller: ShellController }) {
+function FindingCard({ finding, job, controller, onChanged, onDenied }: { finding: FindingView; job: JobView | null; controller: ShellController; onChanged(): void | Promise<void>; onDenied(): void }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const proposal = object(finding.proposal), assessment = freshnessProposal(finding);
   const scope = assessment ? assessment.scope as FindingScope : null;
@@ -136,7 +138,7 @@ function FindingCard({ finding, job, controller }: { finding: FindingView; job: 
       <p>이 제안에는 적용 뷰의 캡처 시각·재평가 필요·전체 버전 커버리지 집계를 임의로 붙이지 않습니다. 실제 단위와 제한은 보관된 평가 근거에서 확인합니다.</p>
       {renderAssessmentText(assessment.evidence)}
       {ownLink && <button type="button" aria-expanded={historyOpen} onClick={() => { controller.requireVerifiedDispatch(controller.captureDispatchAuthority()); setHistoryOpen(value => !value); }}>동일 대상/범위의 적용된 평가와 이력 {historyOpen ? "닫기" : "보기"}</button>}
-      {historyOpen && <PublishedFreshness key={JSON.stringify([assessment.version_id, assessment.target_set_id, scope])} controller={controller} versionId={assessment.version_id} targetSetId={assessment.target_set_id!} scope={scope!} />}
+      {historyOpen && <PublishedFreshness key={JSON.stringify([assessment.version_id, assessment.target_set_id, scope, finding.revision])} controller={controller} versionId={assessment.version_id} targetSetId={assessment.target_set_id!} scope={scope!} />}
     </section> : finding.kind === "freshness_assessment" && <p role="status">보관된 평가 형식/범위를 해석할 수 없습니다. 바깥 page_path가 비어 있어도 버전 전체 평가로 추정하지 않습니다.</p>}
     {context && <details><summary>이 작업의 요청 소스 모드와 캡처 기록</summary>
       <p>요청 소스 모드: {renderAssessmentText(context.requested?.source_mode)} · 소스 의도 명시 기록: {renderAssessmentText(context.requested?.source_intent)}</p>
@@ -147,7 +149,7 @@ function FindingCard({ finding, job, controller }: { finding: FindingView; job: 
       {ownLink && <button type="button" className="link" onClick={() => navigate(ownLink)}>원래 버전/페이지/영역 열기</button>}
       {targetLink && <button type="button" className="link" onClick={() => navigate(targetLink)}>정확한 관계 대상 열기</button>}
     </div>
-    <p className="muted">승인·거절·고정·실행 취소·재평가는 후속 결정 기능에서 제공됩니다. 초안 생성·게시도 아직 실행할 수 없습니다. 이 화면에는 해당 작업을 실행하는 버튼이 없습니다.</p>
+    <FindingActions controller={controller} finding={finding} onChanged={onChanged} onDenied={onDenied} />
   </article>;
 }
 

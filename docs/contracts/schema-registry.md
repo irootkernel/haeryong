@@ -1471,3 +1471,22 @@ Closed native reads are `versionRelated`, `topicAssignmentsList` and
 `jobsList`; passive refresh uses existing passive=true/authority-era rules.
 No generic native HTTP/SQL operation is introduced. Existing finding and scoped
 assessment projections retain their own identities and publication meaning.
+
+## Task05 owner action projections
+
+The closed finding_action_result is {operation_id,state,finding,effect,job_id};
+state is completed or repair_pending. The native facade wraps the unchanged data
+in existing DecisionResult (committed/accepted); scanStart keeps its existing
+admission shape without an invented job field. New named native payloads are
+findingDecision {finding_id,decision,etag,operation_id},
+topicAssignmentSet {assignment_id,pinned,decision,etag,operation_id}, and
+overlayUndo {overlay_id,etag,operation_id}. No passive write header is allowed.
+
+Finding IDs accept opaque producer IDs. Finding view adds optional current
+authorized effect and owner_decision {action:approve/reject/undo,revision}.
+Evidence retains actual object/array forms and uncertainty remains a recorded
+string. Individual finding/effect ETags remain distinct from collection validators
+and historical application refs. Exact owner-only reassessment requires paired
+origin revision and explicit scope/depth/source controls. Current undone Topic
+PUT is always refused; no alternate reenable control is added.
+See [HTTP decisions](http-api.md#owner-finding-decisions-task-008-05).
